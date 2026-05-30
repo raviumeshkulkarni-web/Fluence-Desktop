@@ -1,4 +1,4 @@
-# Fluence — AI Voice Typing for Windows 🎙️✨
+# Fluence- AI Voice Typing for Windows 🎙️✨
 
 ### *Crystallize your cognition at the speed of thought*
 
@@ -61,7 +61,7 @@ Fluence is built for users who prioritize privacy and local data security:
 1. Download the latest installer (`.exe` or `.msi`) from the [Releases](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases) tab.
 2. Run the installer and open **Fluence**.
 3. The onboarding setup wizard will guide you to configure your **Groq API Key**.
-4. Press `Ctrl+Shift+Space` in any app, speak, and press it again to watch your voice convert to text instantly!
+4. Press `Ctrl+Shift+Space` in any app, Or set favorite custom shortcut , speak, and press it again to watch your voice convert to text instantly!
 
 ---
 
@@ -87,4 +87,4 @@ To run or build the application from source, you need **Rust** and **Node.js** i
 ---
 
 ## 📄 License
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+This project is licensed under the MIT License, see the [LICENSE](LICENSE) file for details.

@@ -165,12 +165,28 @@ async function handleAgentMode(voiceCommand, settings, durationMs) {
       target: 'Fluence/LLM_ApiKey'
     }).catch(() => '');
 
-    // Get clipboard context using web API
+    // Get clipboard context or grab selection
     let clipboardCtx = '';
-    try {
-      clipboardCtx = await navigator.clipboard.readText();
-    } catch {
-      // Clipboard read may fail if no permission — proceed without context
+    let grabbed = false;
+    if (settings.auto_grab_highlight !== false) {
+      try {
+        const selection = await invoke('grab_active_selection');
+        if (selection && selection.trim()) {
+          clipboardCtx = selection;
+          grabbed = true;
+          console.log('Successfully grabbed text selection as context:', selection);
+        }
+      } catch (err) {
+        console.warn('Failed to grab active selection, falling back to clipboard:', err);
+      }
+    }
+
+    if (!grabbed) {
+      try {
+        clipboardCtx = await navigator.clipboard.readText();
+      } catch {
+        // Clipboard read may fail if no permission — proceed without context
+      }
     }
 
     const action = await invoke('execute_agent_command', {
@@ -183,23 +199,35 @@ async function handleAgentMode(voiceCommand, settings, durationMs) {
       }
     });
 
-    // Hide overlay FIRST so focus is restored before text injection
-    setState('idle');
-    await invoke('hide_overlay');
+    if (action.action === 'copy') {
+      try {
+        await navigator.clipboard.writeText(action.content || '');
+      } catch (err) {
+        console.error('Failed to copy to clipboard:', err);
+      }
+      setState('success');
+      await new Promise(r => setTimeout(r, 1000));
+      setState('idle');
+      await invoke('hide_overlay');
+    } else {
+      // Hide overlay FIRST so focus is restored before text injection
+      setState('idle');
+      await invoke('hide_overlay');
 
-    // Execute the action
-    if (action.action === 'insert' || action.action === 'rewrite') {
-      const textToInsert = action.content || '';
-      await invoke('inject_text', { text: textToInsert });
-    } else if (action.action === 'delete_chars') {
-      await invoke('execute_keyboard_action', {
-        action: 'delete_chars',
-        charCount: action.char_count || 0,
-      });
-    } else if (action.action === 'select_all') {
-      await invoke('execute_keyboard_action', { action: 'select_all', charCount: null });
-    } else if (action.action === 'submit') {
-      await invoke('execute_keyboard_action', { action: 'submit', charCount: null });
+      // Execute the action
+      if (action.action === 'insert' || action.action === 'rewrite') {
+        const textToInsert = action.content || '';
+        await invoke('inject_text', { text: textToInsert });
+      } else if (action.action === 'delete_chars') {
+        await invoke('execute_keyboard_action', {
+          action: 'delete_chars',
+          charCount: action.char_count || 0,
+        });
+      } else if (action.action === 'select_all') {
+        await invoke('execute_keyboard_action', { action: 'select_all', charCount: null });
+      } else if (action.action === 'submit') {
+        await invoke('execute_keyboard_action', { action: 'submit', charCount: null });
+      }
     }
 
     await invoke('save_history_entry', {

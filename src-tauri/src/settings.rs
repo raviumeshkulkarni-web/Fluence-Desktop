@@ -66,6 +66,10 @@ pub struct AppSettings {
     pub agent_hotkey: String,           // e.g. "Ctrl+Shift+A"
     #[serde(default = "default_agent_recording_mode")]
     pub agent_recording_mode: String,   // "push_to_toggle" | "hold_to_record"
+    #[serde(default = "default_ai_polish_style")]
+    pub ai_polish_style: String,
+    #[serde(default = "default_true")]
+    pub auto_grab_highlight: bool,
 }
 
 fn default_hotkey() -> String { "Ctrl+Shift+Space".to_string() }
@@ -78,6 +82,7 @@ fn default_agent_mode_threshold_ms() -> u64 { 800 }
 fn default_language() -> String { "en".to_string() }
 fn default_agent_hotkey() -> String { "Ctrl+Shift+A".to_string() }
 fn default_agent_recording_mode() -> String { "push_to_toggle".to_string() }
+fn default_ai_polish_style() -> String { "none".to_string() }
 
 fn default_stt_provider() -> ProviderConfig {
     ProviderConfig {
@@ -113,6 +118,8 @@ impl Default for AppSettings {
             language: default_language(),
             agent_hotkey: default_agent_hotkey(),
             agent_recording_mode: default_agent_recording_mode(),
+            ai_polish_style: default_ai_polish_style(),
+            auto_grab_highlight: default_true(),
         }
     }
 }

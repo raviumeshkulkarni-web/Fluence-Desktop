@@ -423,6 +423,8 @@ async function saveWizardSettings() {
       language: 'en',
       agent_hotkey: 'Ctrl+Shift+A',
       agent_recording_mode: 'push_to_toggle',
+      ai_polish_style: 'none',
+      auto_grab_highlight: true,
       audio_device_id: null,
       theme: 'dark',
       first_run: false,

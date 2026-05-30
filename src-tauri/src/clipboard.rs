@@ -330,3 +330,63 @@ pub async fn execute_keyboard_action(action: String, char_count: Option<usize>) 
     #[cfg(not(target_os = "windows"))]
     Err("Keyboard actions not supported on this platform".to_string())
 }
+
+/// Send Ctrl+C keystroke via SendInput
+#[cfg(target_os = "windows")]
+fn send_ctrl_c() {
+    use windows::Win32::UI::Input::KeyboardAndMouse::VK_C;
+    let inputs = [
+        make_key_input(VK_CONTROL, KEYBD_EVENT_FLAGS(0)),
+        make_key_input(VK_C, KEYBD_EVENT_FLAGS(0)),
+        make_key_input(VK_C, KEYEVENTF_KEYUP),
+        make_key_input(VK_CONTROL, KEYEVENTF_KEYUP),
+    ];
+    unsafe {
+        let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
+        if sent != inputs.len() as u32 {
+            log::warn!("SendInput (ctrl_c): sent {} of {} events", sent, inputs.len());
+        }
+    }
+}
+
+/// Grab selected text from the active application by simulating Ctrl+C
+#[tauri::command]
+pub async fn grab_active_selection() -> Result<Option<String>, String> {
+    #[cfg(target_os = "windows")]
+    {
+        // 1. Save original clipboard text
+        let saved_text = get_clipboard_text();
+
+        // 2. Clear clipboard so we can detect if Ctrl+C successfully writes new text
+        unsafe {
+            if open_clipboard_with_retry().is_ok() {
+                let _ = EmptyClipboard();
+                let _ = CloseClipboard();
+            }
+        }
+
+        // 3. Release modifier keys
+        let released = release_held_modifiers();
+
+        // 4. Send Ctrl+C
+        send_ctrl_c();
+
+        // 5. Restore modifiers
+        restore_modifiers(&released);
+
+        // 6. Wait for target app to write to clipboard
+        sleep(Duration::from_millis(45)).await;
+
+        // 7. Read newly copied selection
+        let selection = get_clipboard_text();
+
+        // 8. Restore the original clipboard text
+        if let Some(original) = saved_text {
+            let _ = set_clipboard_text(&original);
+        }
+
+        Ok(selection)
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Active selection grabbing not supported on this platform".to_string())
+}

@@ -10,11 +10,40 @@ html, body {
 }
 
 body {
-  background: var(--color-background);
-  background-image: var(--gradient-bg);
+  background: #0d0c11; /* Deep Obsidian */
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Branded Purple glow at top-right */
+body::before {
+  content: "";
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.08) 0%, rgba(168, 85, 247, 0.0) 70%);
+  top: -100px;
+  right: -100px;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+/* Branded Cyan glow at bottom-left */
+body::after {
+  content: "";
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(0, 242, 254, 0.05) 0%, rgba(0, 242, 254, 0.0) 70%);
+  bottom: -100px;
+  left: -100px;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(40px);
 }
 
 .wizard-shell {
@@ -23,6 +52,9 @@ body {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
+  background: transparent;
 }
 
 /* ---- Progress Bar ---- */

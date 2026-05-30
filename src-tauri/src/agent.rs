@@ -30,8 +30,10 @@ Available actions:
 - {"action": "delete_chars", "char_count": <number>}
 - {"action": "select_all"}
 - {"action": "submit"}
+- {"action": "copy", "content": "<text to copy to clipboard>"}
 
 Rules:
+- If the user explicitly asks to copy the output, copy to clipboard, or save to clipboard, use "copy"
 - If the user says "delete last [N] words/characters/sentences", calculate char_count and use "delete_chars"
 - If the user says "make it more professional/formal/concise/casual", use "rewrite" with the improved text
 - If the user says "submit", "send", or "press enter", use "submit"

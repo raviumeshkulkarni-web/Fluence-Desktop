@@ -10,9 +10,39 @@ html, body {
 }
 
 body {
-  background: #090a0f; /* Deep Obsidian */
+  background: #0d0c11; /* Deep Obsidian */
   display: flex;
   flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Branded Purple glow at top-right */
+body::before {
+  content: "";
+  position: absolute;
+  width: 500px;
+  height: 500px;
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0.0) 70%);
+  top: -150px;
+  right: -150px;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(40px);
+}
+
+/* Branded Cyan glow at bottom-left */
+body::after {
+  content: "";
+  position: absolute;
+  width: 450px;
+  height: 450px;
+  background: radial-gradient(circle, rgba(0, 242, 254, 0.06) 0%, rgba(0, 242, 254, 0.0) 70%);
+  bottom: -150px;
+  left: -150px;
+  z-index: 0;
+  pointer-events: none;
+  filter: blur(40px);
 }
 
 /* ---- App Shell ---- */
@@ -20,6 +50,9 @@ body {
   display: flex;
   height: 100vh;
   overflow: hidden;
+  position: relative;
+  z-index: 1;
+  background: transparent;
 }
 
 /* ---- Sidebar Navigation ---- */

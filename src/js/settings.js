@@ -92,6 +92,8 @@ function populateUI(s) {
   setSelectValue('language-select', s.language || 'en');
   setChecked('autostart-cb', s.auto_start || false);
   setChecked('sound-cb', s.sound_on_complete !== false);
+  setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
+  setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
 
   // Providers tab
   selectProviderCard('stt', s.stt_provider?.preset || 'groq');
@@ -650,6 +652,8 @@ async function saveGeneral() {
   currentSettings.audio_device_id = document.getElementById('audio-device-select')?.value || null;
   currentSettings.language = document.getElementById('language-select')?.value || 'en';
   currentSettings.sound_on_complete = document.getElementById('sound-cb')?.checked ?? true;
+  currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
+  currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
 
   try {
     await invoke('update_settings', { settings: currentSettings });

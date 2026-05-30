@@ -111,6 +111,7 @@ pub fn run() {
             // Clipboard
             clipboard::inject_text,
             clipboard::execute_keyboard_action,
+            clipboard::grab_active_selection,
             // Dictionary
             dictionary::get_dictionary,
             dictionary::add_dictionary_entry,

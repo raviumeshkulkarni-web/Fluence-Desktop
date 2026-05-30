@@ -191,6 +191,21 @@
             </select>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">AI Polish Style</div>
+            <div class="setting-desc">Automatically rewrite or clean up text before pasting</div>
+          </div>
+          <div class="setting-control">
+            <select id="ai-polish-select" style="width:180px;">
+              <option value="none">None (Raw)</option>
+              <option value="clean">Clean Fillers & Grammar</option>
+              <option value="professional">Professional Tone</option>
+              <option value="bullet_points">Bulleted List</option>
+              <option value="translate_en">Translate to English</option>
+            </select>
+          </div>
+        </div>
       </div>
 
       <!-- System -->
@@ -204,6 +219,18 @@
           <div class="setting-control">
             <label class="toggle-switch" id="autostart-toggle">
               <input type="checkbox" id="autostart-cb" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Grab Highlighted Text</div>
+            <div class="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-grab-toggle">
+              <input type="checkbox" id="auto-grab-cb" />
               <div class="toggle-track"><div class="toggle-thumb"></div></div>
             </label>
           </div>

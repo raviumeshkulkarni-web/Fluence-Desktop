@@ -1,0 +1,106 @@
+/* ====================================================
+   Fluence Windows — Redesigned Overlay CSS
+   Centered glowing micro-pill (canvas waveform)
+   ==================================================== */
+
+@import './global.css';
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  font-family: var(--font-body);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-app-region: drag;  /* allow dragging the entire window */
+}
+
+/* CSS custom properties — updated by JS state changes */
+:root {
+  --pill-glow: rgba(168, 85, 247, 0.55);
+  --pill-glow-inset: rgba(168, 85, 247, 0.15);
+  --pill-border-gradient: linear-gradient(90deg, #A855F7, rgba(99, 102, 241, 0.5));
+}
+
+/* Amethyst/Obsidian pill */
+.overlay-root {
+  width: 120px;
+  height: 32px;
+  border-radius: 9999px;
+  background: rgba(13, 14, 18, 0.92); /* Deep Obsidian base */
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  
+  /* Glowing layered border via box-shadow trick */
+  box-shadow:
+    0 0 20px 4px var(--pill-glow),
+    0 4px 20px rgba(0, 0, 0, 0.6),
+    inset 0 0 8px var(--pill-glow-inset);
+  
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: box-shadow 0.4s ease, opacity 0.3s ease;
+}
+
+.overlay-root::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  padding: 1.2px;
+  background: var(--pill-border-gradient);
+  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+  pointer-events: none;
+}
+
+/* Agent mode — cyan glow */
+.overlay-root.state-agent,
+.overlay-root.state-agent_transcribing {
+  --pill-glow: rgba(0, 245, 212, 0.55);
+  --pill-glow-inset: rgba(0, 245, 212, 0.15);
+  --pill-border-gradient: linear-gradient(90deg, #00F5D4, rgba(0, 187, 249, 0.5));
+}
+
+/* Success mode — green glow */
+.overlay-root.state-success {
+  --pill-glow: rgba(16, 185, 129, 0.55);
+  --pill-glow-inset: rgba(16, 185, 129, 0.15);
+  --pill-border-gradient: linear-gradient(90deg, #10B981, rgba(16, 185, 129, 0.5));
+}
+
+/* Error mode — red glow */
+.overlay-root.state-error {
+  --pill-glow: rgba(239, 68, 68, 0.55);
+  --pill-glow-inset: rgba(239, 68, 68, 0.15);
+  --pill-border-gradient: linear-gradient(90deg, #EF4444, rgba(239, 68, 68, 0.5));
+}
+
+/* Processing animation */
+@keyframes pulse-processing {
+  0% { opacity: 0.9; box-shadow: 0 0 16px 2px var(--pill-glow), 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 8px var(--pill-glow-inset); }
+  50% { opacity: 0.4; box-shadow: 0 0 2px 0px var(--pill-glow), 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 0 2px var(--pill-glow-inset); }
+  100% { opacity: 0.9; box-shadow: 0 0 16px 2px var(--pill-glow), 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 8px var(--pill-glow-inset); }
+}
+
+/* Transcribing — pulsating */
+.overlay-root.state-transcribing,
+.overlay-root.state-agent_transcribing {
+  animation: pulse-processing 1.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+#waveform-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}

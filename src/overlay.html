@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost http://127.0.0.1:1430 https://api.groq.com https://api.openai.com https://api.mistral.ai https://*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline';" />
+  <title>Fluence Overlay</title>
+  <link rel="stylesheet" href="css/overlay.css" />
+</head>
+<body>
+  <div class="overlay-root" id="overlay-root">
+    <canvas id="waveform-canvas"></canvas>
+  </div>
+
+  <script src="js/audio-viz.js"></script>
+  <script src="js/overlay.js"></script>
+</body>
+</html>

@@ -1,0 +1,281 @@
+/* ====================================================
+   Fluence Windows — Wizard CSS
+   ==================================================== */
+
+@import './global.css';
+
+html, body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  background: var(--color-background);
+  background-image: var(--gradient-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.wizard-shell {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ---- Progress Bar ---- */
+.progress-bar-track {
+  height: 2px;
+  background: var(--color-outline-variant);
+  flex-shrink: 0;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: var(--gradient-mic);
+  border-radius: 1px;
+  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* ---- Wizard Steps Container ---- */
+.wizard-steps {
+  flex: 1;
+  overflow: hidden;
+  position: relative;
+}
+
+.wizard-step {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl) var(--spacing-2xl);
+  gap: var(--spacing-lg);
+  opacity: 0;
+  transform: translateX(40px);
+  pointer-events: none;
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.4,0,0.2,1);
+}
+
+.wizard-step.active {
+  opacity: 1;
+  transform: translateX(0);
+  pointer-events: all;
+}
+
+.wizard-step.exit-left {
+  opacity: 0;
+  transform: translateX(-40px);
+}
+
+/* ---- Step Content ---- */
+.step-icon {
+  width: 72px;
+  height: 72px;
+  border-radius: var(--radius-xl);
+  background: rgba(209,140,255,0.12);
+  border: 1px solid rgba(209,140,255,0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-glow);
+}
+
+.step-icon svg { width: 36px; height: 36px; color: var(--color-primary); fill: currentColor; }
+
+.step-title {
+  font-family: var(--font-display);
+  font-size: var(--text-headline-md);
+  font-weight: 700;
+  color: var(--color-on-surface);
+  text-align: center;
+  letter-spacing: -0.01em;
+}
+
+.step-desc {
+  font-size: var(--text-body-md);
+  color: var(--color-on-surface-variant);
+  text-align: center;
+  line-height: 1.6;
+  max-width: 420px;
+}
+
+.step-content {
+  width: 100%;
+  max-width: 440px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+/* ---- Form rows ---- */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row label {
+  font-size: var(--text-label-lg);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+}
+
+.input-with-btn {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.input-with-btn input { flex: 1; }
+.input-with-btn button { flex-shrink: 0; }
+
+/* ---- Overlay position selector ---- */
+.position-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+.position-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  border: 2px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: var(--transition-base);
+  background: transparent;
+  color: var(--color-on-surface-variant);
+}
+
+.position-option:hover {
+  border-color: rgba(209,140,255,0.4);
+  background: rgba(209,140,255,0.06);
+}
+
+.position-option.selected {
+  border-color: var(--color-primary);
+  background: rgba(209,140,255,0.12);
+  color: var(--color-primary);
+}
+
+.position-preview {
+  width: 60px;
+  height: 40px;
+  background: var(--color-surface-container-high);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--color-outline-variant);
+  position: relative;
+}
+
+.position-dot {
+  position: absolute;
+  width: 14px; height: 10px;
+  background: var(--color-primary);
+  border-radius: 3px;
+}
+
+.pos-center    .position-dot { bottom: 4px; left: 50%; transform: translateX(-50%); }
+.pos-left      .position-dot { bottom: 4px; left: 4px; }
+.pos-right     .position-dot { bottom: 4px; right: 4px; }
+
+.position-label { font-family: var(--font-label); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+/* ---- Recording mode selector ---- */
+.mode-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+}
+
+.mode-option {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 14px;
+  border: 2px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: var(--transition-base);
+  background: transparent;
+  text-align: left;
+}
+
+.mode-option:hover { border-color: rgba(209,140,255,0.4); background: rgba(209,140,255,0.06); }
+.mode-option.selected { border-color: var(--color-primary); background: rgba(209,140,255,0.1); }
+
+.mode-option .mode-title { font-weight: 600; color: var(--color-on-surface); font-size: var(--text-body-md); }
+.mode-option .mode-desc  { font-size: var(--text-label-sm); color: var(--color-on-surface-variant); }
+
+/* ---- Test recording area ---- */
+.test-area {
+  width: 100%;
+  max-width: 440px;
+  padding: var(--spacing-lg);
+  background: var(--color-surface-container);
+  border: 1px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+
+.test-result {
+  width: 100%;
+  min-height: 60px;
+  padding: var(--spacing-md);
+  background: var(--color-surface-container-high);
+  border-radius: var(--radius-md);
+  font-size: var(--text-body-md);
+  color: var(--color-on-surface);
+  line-height: 1.5;
+  text-align: left;
+}
+
+.test-result.placeholder { color: var(--color-outline); font-style: italic; }
+
+/* ---- Navigation ---- */
+.wizard-nav {
+  padding: var(--spacing-md) var(--spacing-xl);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid rgba(255,255,255,0.04);
+  flex-shrink: 0;
+}
+
+.step-dots {
+  display: flex;
+  gap: 6px;
+}
+
+.step-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-outline-variant);
+  transition: var(--transition-base);
+}
+
+.step-dot.active {
+  width: 20px;
+  border-radius: 3px;
+  background: var(--color-primary);
+}
+
+.step-dot.done { background: rgba(209,140,255,0.4); }
+
+/* Welcome step specific */
+.fluence-logo-hero {
+  width: 88px;
+  height: 88px;
+  border-radius: 20px;
+  box-shadow: 0 0 48px rgba(168,85,247,0.5);
+}

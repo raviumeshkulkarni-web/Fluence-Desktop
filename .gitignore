@@ -1,0 +1,27 @@
+# Node dependencies
+node_modules/
+
+# Rust build artifacts
+src-tauri/target/
+
+# Tauri bundling output
+src-tauri/gen/
+src-tauri/bin/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Env files
+.env
+.env.*

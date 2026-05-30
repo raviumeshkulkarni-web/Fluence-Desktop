@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost http://127.0.0.1:1430 https://api.groq.com https://api.openai.com https://api.mistral.ai https://*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline';" />
+  <title>Welcome to Fluence</title>
+  <link rel="stylesheet" href="css/wizard.css" />
+</head>
+<body>
+  <!-- Custom Titlebar -->
+  <div data-tauri-drag-region class="titlebar">
+    <div class="titlebar-title" data-tauri-drag-region>Welcome to Fluence</div>
+    <div class="titlebar-controls">
+      <div class="titlebar-button" id="titlebar-minimize">
+        <svg width="11" height="1" viewBox="0 0 11 1"><rect width="11" height="1" fill="currentColor"/></svg>
+      </div>
+      <div class="titlebar-button titlebar-close" id="titlebar-close">
+        <svg width="10" height="10" viewBox="0 0 10 10"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      </div>
+    </div>
+  </div>
+<div class="wizard-shell">
+
+  <!-- Progress bar -->
+  <div class="progress-bar-track">
+    <div class="progress-bar-fill" id="progress-fill" style="width: 0%"></div>
+  </div>
+
+  <!-- Steps -->
+  <div class="wizard-steps">
+
+    <!-- Step 1: Welcome -->
+    <div class="wizard-step active" id="step-1" data-step="1">
+      <div style="width:88px;height:88px;border-radius:20px;background:rgba(26,26,32,0.6);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 32px 0 rgba(0, 0, 0, 0.4);">
+        <svg width="52" height="52" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-wiz)" stroke-width="2.2" stroke-dasharray="1.8 3" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-wiz)" stroke-width="2.2" stroke-dasharray="2 3" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-wiz)" stroke-width="2.2" stroke-dasharray="2 2" stroke-linecap="round"/>
+          <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-wiz)"/>
+          <defs>
+            <linearGradient id="logo-grad-wiz" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#A855F7"/>
+              <stop offset="100%" stop-color="#00f2fe"/>
+            </linearGradient>
+          </defs>
+        </svg>
+      </div>
+      <h1 class="step-title" style="font-weight:700;letter-spacing:-0.03em;">Welcome to flu<span style="color:#00f2fe;">ence</span></h1>
+      <p class="step-desc">Your AI-powered voice typing assistant for Windows. Speak naturally, and Fluence transcribes your voice into any application — instantly.</p>
+      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:340px;">
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
+          <span style="font-size:20px;">🎤</span>
+          <div><div style="font-weight:600;font-size:14px;">Universal Voice Typing</div><div style="font-size:12px;color:var(--color-on-surface-variant);">Works in any app — VS Code, Chrome, Word</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
+          <span style="font-size:20px;">🤖</span>
+          <div><div style="font-weight:600;font-size:14px;">AI Agent Mode</div><div style="font-size:12px;color:var(--color-on-surface-variant);">Long press to edit, rewrite, or command</div></div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
+          <span style="font-size:20px;">🔒</span>
+          <div><div style="font-weight:600;font-size:14px;">Secure & Private</div><div style="font-size:12px;color:var(--color-on-surface-variant);">API keys stored in Windows Credential Manager</div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 2: API Key Setup -->
+    <div class="wizard-step" id="step-2" data-step="2">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12.65 10C11.83 7.67 9.61 6 7 6c-3.31 0-6 2.69-6 6s2.69 6 6 6c2.61 0 4.83-1.67 5.65-4H17v4h4v-4h2v-4H12.65zM7 14c-1.1 0-2-.9-2-2s.9-2 2-2 2 .9 2 2-.9 2-2 2z"/></svg>
+      </div>
+      <h1 class="step-title">Connect Your API Key</h1>
+      <p class="step-desc">Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.</p>
+      <div class="step-content">
+        <div class="form-row">
+          <label>Provider</label>
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+            <button class="provider-card selected" data-provider="groq" id="wiz-groq">
+              <svg width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <rect width="100" height="100" rx="16" fill="#F55036"/>
+                <path d="M53 20 C 37 20 28 30 28 45 C 28 60 37 70 53 70 C 58 70 63 68 67 65 L 67 71 C 67 82 59 90 47 90 C 40 90 35 87 31 81 L 22 88 C 28 97 37 100 47 100 C 65 100 78 88 78 71 L 78 22 L 67 22 L 67 27 C 63 23 58 20 53 20 Z M 53 60 C 44 60 39 53 39 45 C 39 37 44 30 53 30 C 62 30 67 37 67 45 C 67 53 62 60 53 60 Z" fill="#fff"/>
+              </svg>
+              <span class="provider-name">Groq</span>
+            </button>
+            <button class="provider-card" data-provider="openai" id="wiz-openai">
+              <span style="font-size:18px;">🌐</span>
+              <span class="provider-name">OpenAI</span>
+            </button>
+            <button class="provider-card" data-provider="custom" id="wiz-custom">
+              <span style="font-size:18px;">⚙</span>
+              <span class="provider-name">Custom</span>
+            </button>
+          </div>
+        </div>
+        <div class="form-row" id="wiz-endpoint-row">
+          <label>API Endpoint</label>
+          <input type="url" id="wiz-base-url" placeholder="https://api.groq.com/openai" />
+        </div>
+        <div class="form-row">
+          <label>API Key</label>
+          <div class="input-with-btn">
+            <input type="password" id="wiz-api-key" placeholder="gsk_••••••••••••••••" autocomplete="off" />
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Transcription Model</label>
+          <div class="input-with-btn">
+            <select id="wiz-model-select"><option value="whisper-large-v3">whisper-large-v3</option></select>
+            <button class="btn-ghost" id="wiz-fetch-models-btn" title="Fetch models" style="flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.9"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Agent Mode Model</label>
+          <div class="input-with-btn">
+            <select id="wiz-llm-model-select"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option></select>
+            <button class="btn-ghost" id="wiz-fetch-llm-models-btn" title="Fetch LLM models" style="flex-shrink:0;">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.9"/></svg>
+            </button>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;gap:12px;">
+          <button class="btn-secondary" id="wiz-test-btn" style="padding:8px 16px;">Test Connection</button>
+          <div style="display:flex;align-items:center;gap:6px;" id="wiz-test-status">
+            <div class="dot dot-idle"></div>
+            <span id="wiz-test-text" style="font-size:13px;color:var(--color-on-surface-variant);">Not tested</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 3: Hotkey Setup -->
+    <div class="wizard-step" id="step-3" data-step="3">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M8 8h.01M12 8h.01M16 8h.01M8 12h.01M12 12h.01M16 12h.01M8 16h8"/></svg>
+      </div>
+      <h1 class="step-title">Set Your Hotkey</h1>
+      <p class="step-desc">Choose a global keyboard shortcut to start recording. It will work in any application.</p>
+      <div class="step-content">
+        <div class="form-row" style="align-items:center;">
+          <label>Recording Shortcut</label>
+          <div class="hotkey-display" id="wiz-hotkey-display" tabindex="0" role="button">
+            <span id="wiz-hotkey-text">Ctrl+Shift+Space</span>
+          </div>
+        </div>
+        <div class="form-row">
+          <label>Recording Mode</label>
+          <div class="mode-selector">
+            <button class="mode-option selected" data-mode="push_to_toggle" id="wiz-mode-toggle">
+              <div class="mode-title">Push-to-Toggle</div>
+              <div class="mode-desc">Press once to start, press again to stop</div>
+            </button>
+            <button class="mode-option" data-mode="hold_to_record" id="wiz-mode-hold">
+              <div class="mode-title">Hold-to-Record</div>
+              <div class="mode-desc">Hold key to record, release to transcribe</div>
+            </button>
+          </div>
+        </div>
+        <p style="font-size:12px;color:var(--color-on-surface-variant);margin-top:4px;">
+          💡 <strong>Tip:</strong> Long press (&gt;800ms) activates Agent Mode for AI-powered editing commands
+        </p>
+      </div>
+    </div>
+
+    <!-- Step 4: Overlay Position -->
+    <div class="wizard-step" id="step-4" data-step="4">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      </div>
+      <h1 class="step-title">Overlay Position</h1>
+      <p class="step-desc">Choose where the floating recording indicator appears on your screen during voice capture.</p>
+      <div class="step-content">
+        <div class="position-selector">
+          <button class="position-option pos-left" data-pos="bottom_left" id="wiz-pos-left">
+            <div class="position-preview"><div class="position-dot"></div></div>
+            <div class="position-label">Bottom Left</div>
+          </button>
+          <button class="position-option pos-center" data-pos="center" id="wiz-pos-center">
+            <div class="position-preview"><div class="position-dot"></div></div>
+            <div class="position-label">Center</div>
+          </button>
+          <button class="position-option pos-right selected" data-pos="bottom_right" id="wiz-pos-right">
+            <div class="position-preview"><div class="position-dot"></div></div>
+            <div class="position-label">Bottom Right</div>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 5: Test Recording -->
+    <div class="wizard-step" id="step-5" data-step="5">
+      <div class="step-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/><path d="M19 10a7 7 0 0 1-14 0M12 19v3M8 22h8"/></svg>
+      </div>
+      <h1 class="step-title">Test Your Setup</h1>
+      <p class="step-desc">Let's make sure everything is working. Click the button and say something.</p>
+      <div class="test-area">
+        <button class="btn-primary" id="wiz-test-record-btn" style="min-width:160px;">
+          🎙 Start Recording
+        </button>
+        <div class="test-result placeholder" id="wiz-test-result">
+          Your transcription will appear here...
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 6: Done -->
+    <div class="wizard-step" id="step-6" data-step="6">
+      <div style="width:88px;height:88px;border-radius:20px;background:linear-gradient(135deg,#6fcf97,#219653);display:flex;align-items:center;justify-content:center;box-shadow:0 0 48px rgba(111,207,151,0.4);animation:success-pop 0.5s cubic-bezier(0.34,1.56,0.64,1) both;">
+        <span style="font-size:44px;">✓</span>
+      </div>
+      <h1 class="step-title">You're All Set!</h1>
+      <p class="step-desc">Fluence is running in your system tray. Press <span style="color:var(--color-primary);font-weight:600;" id="done-hotkey">Ctrl+Shift+Space</span> anywhere to start voice typing.</p>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:340px;">
+        <button class="btn-primary" id="wiz-open-settings-btn" style="width:100%;padding:14px;">Open Settings</button>
+        <button class="btn-ghost" id="wiz-close-btn" style="width:100%;">Close Wizard</button>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Navigation footer -->
+  <div class="wizard-nav">
+    <button class="btn-ghost" id="prev-btn" style="visibility:hidden;">← Back</button>
+
+    <div class="step-dots" id="step-dots">
+      <div class="step-dot active" data-dot="1"></div>
+      <div class="step-dot" data-dot="2"></div>
+      <div class="step-dot" data-dot="3"></div>
+      <div class="step-dot" data-dot="4"></div>
+      <div class="step-dot" data-dot="5"></div>
+      <div class="step-dot" data-dot="6"></div>
+    </div>
+
+    <button class="btn-primary" id="next-btn" style="min-width:120px;">Get Started</button>
+  </div>
+
+</div>
+
+<script src="js/wizard.js"></script>
+</body>
+</html>

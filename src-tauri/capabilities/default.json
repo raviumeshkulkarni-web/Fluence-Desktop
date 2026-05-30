@@ -1,0 +1,16 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default-capability",
+  "description": "Default permissions for Fluence windows",
+  "windows": [
+    "main",
+    "overlay",
+    "wizard"
+  ],
+  "permissions": [
+    "core:default",
+    "dialog:default",
+    "fs:default",
+    "shell:default"
+  ]
+}

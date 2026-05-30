@@ -1,0 +1,19 @@
+{
+  "name": "fluence-windows",
+  "version": "1.0.0",
+  "description": "Fluence — AI Voice Typing for Windows",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "tauri dev",
+    "build": "tauri build",
+    "check": "cd src-tauri && cargo check",
+    "clippy": "cd src-tauri && cargo clippy"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0"
+  }
+}

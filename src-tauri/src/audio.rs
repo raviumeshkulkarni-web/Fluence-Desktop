@@ -262,8 +262,8 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 300ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
+    // Give the audio stream 50ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -386,7 +386,7 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     // Encode to MP3 using shine-rs
     let config = Mp3EncoderConfig::new()
         .sample_rate(final_sample_rate)
-        .bitrate(64)
+        .bitrate(128)
         .channels(1)
         .stereo_mode(StereoMode::Mono);
 

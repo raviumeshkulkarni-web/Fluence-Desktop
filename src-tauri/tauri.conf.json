@@ -55,14 +55,7 @@
         "url": "wizard.html",
         "theme": "Dark"
       }
-    ],
-    "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true,
-      "menuOnLeftClick": false,
-      "title": "Fluence",
-      "tooltip": "Fluence — AI Voice Typing"
-    }
+    ]
   },
   "bundle": {
     "active": true,

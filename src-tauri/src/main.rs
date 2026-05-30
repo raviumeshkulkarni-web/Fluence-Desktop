@@ -36,6 +36,12 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                let _ = window.hide();
+                api.prevent_close();
+            }
+        })
         .setup(|app| {
             // Initialize SQLite history DB
             if let Err(e) = history::init_db() {
@@ -134,12 +140,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Fluence");
 
-    app.run(|_app, event| match event {
-        tauri::RunEvent::ExitRequested { api, .. } => {
-            api.prevent_exit();
-        }
-        _ => {}
-    });
+    app.run(|_app, _event| {});
 }
 
 fn main() {

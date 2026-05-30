@@ -14,6 +14,14 @@ Fluence is a lightweight, privacy-focused Windows application that brings human-
 
 ---
 
+## 🎬 Visual Showcase
+
+| 1. General Preferences | 2. AI Providers | 3. Custom Dictionary |
+| :---: | :---: | :---: |
+| <img src="docs/assets/general.png" width="300px" alt="General Settings" /> <br> *Hotkey & Recording preferences* | <img src="docs/assets/providers.png" width="300px" alt="AI Providers Settings" /> <br> *Groq / OpenAI STT and LLM configuration* | <img src="docs/assets/dictionary.png" width="300px" alt="Custom Dictionary" /> <br> *Automatic text-corrections table* |
+
+---
+
 ## 🛠️ Key Desktop Features
 
 * **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys (default `Ctrl+Shift+Space` for Voice Typing, and `Ctrl+Shift+A` for AI Agent Mode).

@@ -1,0 +1,43 @@
+name: 'publish'
+
+on:
+  push:
+    tags:
+      - 'v*' # Triggers when you push a tag like v1.0.0
+
+jobs:
+  publish-tauri:
+    permissions:
+      contents: write # Required to upload assets and create releases
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [windows-latest] # Add macos-latest or ubuntu-latest here if you support them later
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install dependencies (ubuntu only)
+        if: matrix.platform == 'ubuntu-latest'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libwebkit2gtk-4.1-dev libappindicator3-dev librsvg2-dev patchelf
+
+      - name: build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tagName: v__VERSION__ # Uses the package version from src-tauri/tauri.conf.json
+          releaseName: 'Fluence v__VERSION__'
+          releaseBody: 'See the assets below to download and install Fluence.'
+          releaseDraft: true
+          prerelease: false

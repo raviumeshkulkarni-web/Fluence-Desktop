@@ -33,15 +33,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         ],
     )?;
 
-    // Use the default window icon set in tauri.conf.json
-    let tray_builder = TrayIconBuilder::with_id("fluence-tray")
-        .tooltip("Fluence — AI Voice Typing");
+    // Load the tray icon explicitly from the embedded 128x128.png file
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))
+        .unwrap_or_else(|e| {
+            log::error!("Failed to load tray icon: {}", e);
+            app.default_window_icon().cloned().unwrap()
+        });
 
-    let tray_builder = if let Some(icon) = app.default_window_icon().cloned() {
-        tray_builder.icon(icon)
-    } else {
-        tray_builder
-    };
+    let tray_builder = TrayIconBuilder::with_id("fluence-tray")
+        .tooltip("Fluence — AI Voice Typing")
+        .icon(icon);
 
     let _tray = tray_builder
         .menu(&menu)

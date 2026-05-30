@@ -221,7 +221,7 @@ mod tests {
         let sample_rate = 16000;
         let config = Mp3EncoderConfig::new()
             .sample_rate(sample_rate)
-            .bitrate(128)
+            .bitrate(64)
             .channels(1)
             .stereo_mode(StereoMode::Mono);
         let mut encoder = Mp3Encoder::new(config).unwrap();

@@ -386,7 +386,7 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     // Encode to MP3 using shine-rs
     let config = Mp3EncoderConfig::new()
         .sample_rate(final_sample_rate)
-        .bitrate(128)
+        .bitrate(64)
         .channels(1)
         .stereo_mode(StereoMode::Mono);
 

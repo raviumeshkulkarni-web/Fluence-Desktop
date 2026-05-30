@@ -261,6 +261,10 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
+
+    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+
     RECORDING.store(false, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
@@ -332,8 +336,18 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
         (mono_samples, native_sample_rate)
     };
 
+    // Volume Normalization: Scale the audio so that the peak absolute sample is 0.9.
+    // This boosts quiet microphone inputs, preventing Whisper accuracy loss or hallucinations.
+    let peak = final_samples.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let normalized_samples = if peak > 0.01 && peak < 0.8 {
+        let scale = 0.9 / peak;
+        final_samples.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+    } else {
+        final_samples
+    };
+
     // Convert samples to i16 for MP3 encoding
-    let i16_samples: Vec<i16> = final_samples
+    let i16_samples: Vec<i16> = normalized_samples
         .iter()
         .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
         .collect();

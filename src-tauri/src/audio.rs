@@ -262,8 +262,8 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 300ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -303,12 +303,12 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
         samples
     };
 
-    // Downsample to 16kHz using linear interpolation.
-    // Whisper natively operates at 16kHz. Sending 48kHz audio wastes 3x upload bandwidth.
-    // Linear interpolation is extremely fast (zero CPU overhead), has no group delay, 
-    // and avoids the word-skipping tail cutoff artifacts caused by block-based sinc resamplers.
+    // Downsample to 16kHz using an area-weighted box filter resampler.
+    // Whisper natively operates at 16kHz. Downsampling on the client reduces upload bandwidth by 2.75x
+    // and avoids server-side resampling artifacts. Area weighting acts as a simple anti-aliasing
+    // filter to eliminate high-frequency noise that degrades speech-to-text accuracy.
     let native_sample_rate = NATIVE_SAMPLE_RATE.load(Ordering::SeqCst);
-    const TARGET_SAMPLE_RATE: u32 = 44_100;
+    const TARGET_SAMPLE_RATE: u32 = 16_000;
 
     let (final_samples, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
         let from_rate = native_sample_rate as f64;
@@ -319,43 +319,74 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
         let mut resampled = Vec::with_capacity(num_output_samples);
 
         for i in 0..num_output_samples {
-            let src_index = i as f64 * ratio;
-            let index_floor = src_index.floor() as usize;
-            let index_ceil = (index_floor + 1).min(mono_samples.len() - 1);
-            let t = (src_index - index_floor as f64) as f32;
+            let src_center = i as f64 * ratio;
+            let start = (src_center - ratio / 2.0).max(0.0);
+            let end = (src_center + ratio / 2.0).min((mono_samples.len() - 1) as f64);
 
-            if index_floor < mono_samples.len() {
-                let sample = (1.0 - t) * mono_samples[index_floor] + t * mono_samples[index_ceil];
-                resampled.push(sample);
+            let start_idx = start.floor() as usize;
+            let end_idx = end.ceil() as usize;
+
+            let mut sum = 0.0f32;
+            let mut count = 0.0f32;
+
+            for idx in start_idx..=end_idx {
+                let sample_start = idx as f64 - 0.5;
+                let sample_end = idx as f64 + 0.5;
+
+                let overlap_start = sample_start.max(start);
+                let overlap_end = sample_end.min(end);
+
+                if overlap_end > overlap_start {
+                    let weight = (overlap_end - overlap_start) as f32;
+                    sum += mono_samples[idx] * weight;
+                    count += weight;
+                }
+            }
+
+            if count > 0.0 {
+                resampled.push(sum / count);
+            } else {
+                resampled.push(0.0);
             }
         }
 
         (resampled, TARGET_SAMPLE_RATE)
     } else {
-        // Audio is already at 16kHz (unlikely but handle gracefully)
         (mono_samples, native_sample_rate)
     };
 
+    // DC Offset Removal: subtract the average value to eliminate hardware bias
+    let avg = if !final_samples.is_empty() {
+        final_samples.iter().sum::<f32>() / final_samples.len() as f32
+    } else {
+        0.0f32
+    };
+    let dc_removed_samples: Vec<f32> = final_samples.iter().map(|&s| s - avg).collect();
+
     // Volume Normalization: Scale the audio so that the peak absolute sample is 0.9.
     // This boosts quiet microphone inputs, preventing Whisper accuracy loss or hallucinations.
-    let peak = final_samples.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
-    let normalized_samples = if peak > 0.01 && peak < 0.8 {
+    let peak = dc_removed_samples.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let normalized_samples = if peak > 0.005 && peak < 0.98 {
         let scale = 0.9 / peak;
-        final_samples.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+        dc_removed_samples.iter().map(|&s| s * scale).collect::<Vec<f32>>()
     } else {
-        final_samples
+        dc_removed_samples
     };
 
     // Convert samples to i16 for MP3 encoding
-    let i16_samples: Vec<i16> = normalized_samples
+    let mut i16_samples: Vec<i16> = normalized_samples
         .iter()
         .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
         .collect();
 
+    // Append 500ms of silent padding (zeroes) to prevent Whisper from cutting off the final words
+    let padding_size = (final_sample_rate as usize) / 2;
+    i16_samples.resize(i16_samples.len() + padding_size, 0);
+
     // Encode to MP3 using shine-rs
     let config = Mp3EncoderConfig::new()
         .sample_rate(final_sample_rate)
-        .bitrate(96)
+        .bitrate(64)
         .channels(1)
         .stereo_mode(StereoMode::Mono);
 

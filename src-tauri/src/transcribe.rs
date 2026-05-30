@@ -72,11 +72,41 @@ pub async fn transcribe_mp3_bytes(
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
-        .text("response_format", "json");
+        .text("response_format", "json")
+        .text("temperature", "0.0");
 
     if let Some(lang) = language {
         if !lang.is_empty() && lang != "auto" {
             form = form.text("language", lang.to_string());
+        }
+    }
+
+    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint
+    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    if let Ok(entries) = crate::dictionary::get_dictionary() {
+        if !entries.is_empty() {
+            let mut prompt_words = Vec::new();
+            for entry in entries {
+                if !entry.corrected.trim().is_empty() {
+                    prompt_words.push(entry.corrected.clone());
+                }
+                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
+                    prompt_words.push(entry.spoken.clone());
+                }
+            }
+            if !prompt_words.is_empty() {
+                let mut prompt = prompt_words.join(", ");
+                if prompt.len() > 890 {
+                    let truncated = &prompt[..890];
+                    if let Some(last_comma) = truncated.rfind(',') {
+                        prompt = truncated[..last_comma].to_string();
+                    } else {
+                        prompt = truncated.to_string();
+                    }
+                    log::debug!("Prompt truncated to {} characters for Groq compatibility", prompt.len());
+                }
+                form = form.text("prompt", prompt);
+            }
         }
     }
 
@@ -186,12 +216,12 @@ mod tests {
             }
         };
 
-        // Create 5 seconds of dummy mono MP3 audio (sine wave) at 44100Hz
+        // Create 5 seconds of dummy mono MP3 audio (sine wave) at 16000Hz
         use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
-        let sample_rate = 44100;
+        let sample_rate = 16000;
         let config = Mp3EncoderConfig::new()
             .sample_rate(sample_rate)
-            .bitrate(96)
+            .bitrate(64)
             .channels(1)
             .stereo_mode(StereoMode::Mono);
         let mut encoder = Mp3Encoder::new(config).unwrap();

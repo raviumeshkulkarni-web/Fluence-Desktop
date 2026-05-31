@@ -95,7 +95,7 @@ pub async fn ensure_server_running() -> Result<u16> {
     log::info!("Starting sherpa-onnx websocket server on port {}", port);
 
     let tokens_arg = format!("--tokens={}", tokens_path.to_str().unwrap());
-    let model_arg = format!("--sense-voice={}", model_path.to_str().unwrap());
+    let model_arg = format!("--sense-voice-model={}", model_path.to_str().unwrap());
     let port_arg = format!("--port={}", port);
     let threads_arg = "--num-threads=3".to_string();
 

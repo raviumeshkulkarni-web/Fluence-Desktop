@@ -47,6 +47,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupNavigation();
   setupHotkeyRecorders();
   setupProviderCards();
+  setupOfflineDownloader();
   setupDictionary();
   setupHistory();
   setupSystemToggles();
@@ -96,7 +97,9 @@ function populateUI(s) {
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
 
   // Providers tab
-  selectProviderCard('stt', s.stt_provider?.preset || 'groq');
+  const sttPreset = s.stt_provider?.preset || 'groq';
+  selectProviderCard('stt', sttPreset);
+  updateSttUiVisibility(sttPreset);
   setInputValue('stt-base-url', s.stt_provider?.base_url || '');
   setSelectOption('stt-model-select', s.stt_provider?.model || 'whisper-large-v3');
 
@@ -250,7 +253,8 @@ function setupProviderCards() {
     card.addEventListener('click', async () => {
       const preset = card.dataset.provider;
       selectProviderCard('stt', preset);
-      if (preset !== 'custom') {
+      updateSttUiVisibility(preset);
+      if (preset !== 'custom' && preset !== 'Local Offline') {
         setInputValue('stt-base-url', STT_PRESETS[preset]?.base_url || '');
         setSelectOption('stt-model-select', STT_PRESETS[preset]?.model || '');
         
@@ -810,4 +814,132 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+// ── Offline ASR Downloader ────────────────────────────────────────
+
+function updateSttUiVisibility(preset) {
+  const credentialsWrapper = document.getElementById('stt-credentials-wrapper');
+  const offlineDownloader = document.getElementById('stt-offline-downloader');
+  
+  if (preset === 'Local Offline') {
+    if (credentialsWrapper) credentialsWrapper.classList.add('hidden');
+    if (offlineDownloader) {
+      offlineDownloader.classList.remove('hidden');
+      updateOfflineStatus();
+    }
+  } else {
+    if (credentialsWrapper) credentialsWrapper.classList.remove('hidden');
+    if (offlineDownloader) offlineDownloader.classList.add('hidden');
+  }
+}
+
+async function updateOfflineStatus() {
+  try {
+    const isInstalled = await invoke('get_offline_model_status');
+    const downloadBtn = document.getElementById('offline-download-btn');
+    const deleteBtn = document.getElementById('offline-delete-btn');
+    const progressWrapper = document.getElementById('offline-progress-wrapper');
+    
+    if (isInstalled) {
+      if (downloadBtn) {
+        downloadBtn.textContent = 'Installed';
+        downloadBtn.disabled = true;
+      }
+      if (deleteBtn) deleteBtn.classList.remove('hidden');
+      if (progressWrapper) progressWrapper.classList.add('hidden');
+    } else {
+      if (downloadBtn) {
+        downloadBtn.textContent = 'Download Model';
+        downloadBtn.disabled = false;
+      }
+      if (deleteBtn) deleteBtn.classList.add('hidden');
+    }
+  } catch (err) {
+    console.error('Failed to get offline model status:', err);
+  }
+}
+
+async function setupOfflineDownloader() {
+  const downloadBtn = document.getElementById('offline-download-btn');
+  const deleteBtn = document.getElementById('offline-delete-btn');
+  const cancelBtn = document.getElementById('offline-cancel-btn');
+  const progressWrapper = document.getElementById('offline-progress-wrapper');
+  
+  if (downloadBtn) {
+    downloadBtn.addEventListener('click', async () => {
+      try {
+        downloadBtn.disabled = true;
+        downloadBtn.textContent = 'Connecting...';
+        if (progressWrapper) progressWrapper.classList.remove('hidden');
+        await invoke('download_offline_model');
+      } catch (err) {
+        showToast('Failed to start download: ' + err, 'error');
+        updateOfflineStatus();
+      }
+    });
+  }
+
+  if (deleteBtn) {
+    deleteBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to delete the offline model files to free space (~240 MB)?')) return;
+      try {
+        const bytesFreed = await invoke('delete_offline_model');
+        const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
+        showToast(`Offline model files deleted. Freed ${mbFreed} MB ✓`, 'success');
+        updateOfflineStatus();
+      } catch (err) {
+        showToast('Failed to delete model files: ' + err, 'error');
+      }
+    });
+  }
+
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', async () => {
+      try {
+        await invoke('cancel_offline_download');
+      } catch (err) {
+        console.error('Failed to cancel download:', err);
+      }
+    });
+  }
+
+  // Listen to Tauri progress events
+  if (window.__TAURI__) {
+    const { listen } = window.__TAURI__.event;
+    await listen('offline-download-progress', (event) => {
+      const payload = event.payload;
+      const statusText = document.getElementById('offline-progress-status');
+      const percentageText = document.getElementById('offline-progress-percentage');
+      const progressFill = document.getElementById('offline-progress-fill');
+      const bytesText = document.getElementById('offline-progress-bytes');
+      
+      const progress = payload.progress;
+      const status = payload.status;
+      const currentFile = payload.currentFile;
+      
+      if (status === 'downloading') {
+        if (statusText) statusText.textContent = `Downloading: ${currentFile}`;
+        if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
+        if (progressFill) progressFill.style.width = `${progress}%`;
+        
+        const downloadedMb = (payload.bytesDownloaded / (1024 * 1024)).toFixed(1);
+        const totalMb = (payload.totalBytes / (1024 * 1024)).toFixed(1);
+        if (bytesText) bytesText.textContent = `${downloadedMb} / ${totalMb} MB`;
+      } else if (status === 'extracting') {
+        if (statusText) statusText.textContent = 'Extracting binaries...';
+        if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
+        if (progressFill) progressFill.style.width = `${progress}%`;
+      } else if (status === 'completed') {
+        showToast('Offline model downloaded and installed successfully ✓', 'success');
+        updateOfflineStatus();
+      } else if (status === 'error') {
+        showToast('Offline download failed: ' + payload.errorMessage, 'error');
+        updateOfflineStatus();
+      } else if (status === 'cancelled') {
+        showToast('Offline download cancelled', 'info');
+        updateOfflineStatus();
+      }
+    });
+  }
 }

@@ -12,28 +12,40 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
 
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
-    let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
-        .map_err(|_| "No STT API key found".to_string())?;
+    
+    let (text, transcribe_duration, _step_duration) = if settings.stt_provider.preset == "Local Offline" {
+        let transcribe_start = std::time::Instant::now();
+        let samples = crate::audio::stop_recording_f32_samples().await?;
+        let result = crate::offline_transcribe::transcribe_samples(samples)
+            .await
+            .map_err(|e| format!("Offline transcription error: {}", e))?;
+        
+        let corrected = crate::dictionary::apply_corrections(&result);
+        let elapsed = transcribe_start.elapsed();
+        (corrected, elapsed, elapsed)
+    } else {
+        let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
+            .map_err(|_| "No STT API key found. Please configure an API key in Providers settings.".to_string())?;
 
-    let mp3_start = std::time::Instant::now();
-    let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
-    let mp3_duration = mp3_start.elapsed();
+        let mp3_start = std::time::Instant::now();
+        let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
+        let mp3_duration = mp3_start.elapsed();
 
-    let transcribe_start = std::time::Instant::now();
-    let text = crate::transcribe::transcribe_mp3_bytes(
-        &settings.stt_provider.base_url,
-        &api_key,
-        &settings.stt_provider.model,
-        mp3_bytes,
-        Some(settings.language.as_str()),
-    )
-    .await?;
-    let transcribe_duration = transcribe_start.elapsed();
+        let transcribe_start = std::time::Instant::now();
+        let corrected = crate::transcribe::transcribe_mp3_bytes(
+            &settings.stt_provider.base_url,
+            &api_key,
+            &settings.stt_provider.model,
+            mp3_bytes,
+            Some(settings.language.as_str()),
+        )
+        .await?;
+        (corrected, transcribe_start.elapsed(), mp3_duration)
+    };
 
     log::info!(
-        "stop_and_transcribe workflow: total = {:?}, mp3 = {:?}, transcribe = {:?}",
+        "stop_and_transcribe workflow: total = {:?}, ASR duration = {:?}",
         start_time.elapsed(),
-        mp3_duration,
         transcribe_duration
     );
 

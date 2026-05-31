@@ -18,6 +18,8 @@ mod settings;
 mod tray;
 mod transcribe;
 mod workflow;
+mod offline_downloader;
+mod offline_transcribe;
 
 use tauri::Manager;
 
@@ -142,6 +144,11 @@ pub fn run() {
             workflow::finish_transcription_flow,
             // Autostart
             autostart::set_autostart,
+            // Offline ASR manager
+            offline_downloader::download_offline_model,
+            offline_downloader::get_offline_model_status,
+            offline_downloader::cancel_offline_download,
+            offline_downloader::delete_offline_model,
             // Misc
             get_app_version,
         ])

@@ -24,7 +24,9 @@ Fluence is a lightweight, privacy-focused Windows application that brings human-
 
 ## 🛠️ Key Desktop Features
 
-* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys for Voice Typing, and for AI Agent Mode is configurable.
+* **Completely Offline Mode**: Supports local offline transcription using the **SenseVoice-Small** model powered by `sherpa-onnx`, ensuring total privacy and internet-free voice typing.
+* **On-Demand Model Manager**: Built-in download manager in the settings dashboard to seamlessly download, monitor, or delete local transcription model files.
+* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys (default `Ctrl+Shift+Space` for Voice Typing, and `Ctrl+Shift+Space` for AI Agent Mode is configurable).
 * **Flexible Recording Modes**: Supports both **Push-to-Toggle** (press once to start, press again to stop) and **Hold-to-Record** (hold key down, speak, release to transcribe) recording styles.
 * **AI Polish Assistant**: Choose from multiple language model polish styles to automatically clean up filler words, rewrite text in a professional business tone, convert spoken thoughts into bullet points, or translate dictation into clear English before pasting.
 * **Smart Highlight Grabber**: In Agent Mode, the app can automatically grab currently selected text from your active application to use as context for edits, rewrites, or replies without changing your system clipboard.
@@ -61,6 +63,7 @@ Fluence captures your audio buffer, applies peak volume normalization to ensure 
 ## 🔒 Privacy & Local Security
 
 Fluence is built for users who prioritize privacy and local data security:
+* **100% Offline Dictation Option**: When using the local offline provider, your audio never leaves your system. Transcription runs completely locally on your hardware.
 * **Zero Telemetry or Phone-Home Code**: No tracking code, analytics scripts, background logging, or usage telemetry. The code is fully open source and verifiable.
 * **Direct HTTPS Transmission**: Audio goes directly from your local machine to the API endpoints (e.g., `https://api.groq.com`). No intermediate servers or proxies.
 * **Windows Credential Manager Storage**: Your secret API keys are stored using the Windows OS native secure credential store (`wincred`), encrypted via Windows DPAPI.

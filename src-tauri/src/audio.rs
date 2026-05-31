@@ -259,6 +259,135 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     }
 }
 
+pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
+    let start_time = std::time::Instant::now();
+
+    // Give the audio stream 50ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+
+    RECORDING.store(false, Ordering::SeqCst);
+
+    // Wait for the recording task to finish flushing (up to 2 seconds)
+    let rx = {
+        let mut rx_guard = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?;
+        rx_guard.take()
+    };
+
+    if let Some(rx) = rx {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
+    }
+    let wait_duration = start_time.elapsed();
+
+    // Use mem::take() instead of .clone() to avoid a full 7+ MB heap copy.
+    let samples = {
+        let mut buf = AUDIO_BUFFER.lock().map_err(|e| e.to_string())?;
+        std::mem::take(&mut *buf)
+    };
+
+    if samples.is_empty() {
+        return Err("No audio recorded".to_string());
+    }
+
+    let process_start = std::time::Instant::now();
+
+    // Downmix multi-channel stream to mono
+    let native_channels = NATIVE_CHANNELS.load(Ordering::SeqCst) as usize;
+    let mono_samples: Vec<f32> = if native_channels > 1 {
+        let mut v = Vec::with_capacity(samples.len() / native_channels);
+        for chunk in samples.chunks_exact(native_channels) {
+            let sum: f32 = chunk.iter().sum();
+            v.push(sum / native_channels as f32);
+        }
+        v
+    } else {
+        samples
+    };
+
+    // Downsample to 16kHz
+    let native_sample_rate = NATIVE_SAMPLE_RATE.load(Ordering::SeqCst);
+    const TARGET_SAMPLE_RATE: u32 = 16_000;
+
+    let (final_samples, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
+        let from_rate = native_sample_rate as f64;
+        let to_rate = TARGET_SAMPLE_RATE as f64;
+        let ratio = from_rate / to_rate;
+
+        let num_output_samples = (mono_samples.len() as f64 / ratio).round() as usize;
+        let mut resampled = Vec::with_capacity(num_output_samples);
+
+        for i in 0..num_output_samples {
+            let src_center = i as f64 * ratio;
+            let start = (src_center - ratio / 2.0).max(0.0);
+            let end = (src_center + ratio / 2.0).min((mono_samples.len() - 1) as f64);
+
+            let start_idx = start.floor() as usize;
+            let end_idx = end.ceil() as usize;
+
+            let mut sum = 0.0f32;
+            let mut count = 0.0f32;
+
+            for idx in start_idx..=end_idx {
+                let sample_start = idx as f64 - 0.5;
+                let sample_end = idx as f64 + 0.5;
+
+                let overlap_start = sample_start.max(start);
+                let overlap_end = sample_end.min(end);
+
+                if overlap_end > overlap_start {
+                    let weight = (overlap_end - overlap_start) as f32;
+                    sum += mono_samples[idx] * weight;
+                    count += weight;
+                }
+            }
+
+            if count > 0.0 {
+                resampled.push(sum / count);
+            } else {
+                resampled.push(0.0);
+            }
+        }
+
+        (resampled, TARGET_SAMPLE_RATE)
+    } else {
+        (mono_samples, native_sample_rate)
+    };
+
+    // DC Offset Removal
+    let avg = if !final_samples.is_empty() {
+        final_samples.iter().sum::<f32>() / final_samples.len() as f32
+    } else {
+        0.0f32
+    };
+    let dc_removed_samples: Vec<f32> = final_samples.iter().map(|&s| s - avg).collect();
+
+    // Volume Normalization
+    let peak = dc_removed_samples.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let mut normalized_samples = if peak > 0.005 && peak < 0.98 {
+        let scale = 0.9 / peak;
+        dc_removed_samples.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+    } else {
+        dc_removed_samples
+    };
+
+    // Append 500ms of silent padding (zeroes) to prevent cutoffs
+    let padding_size = (final_sample_rate as usize) / 2;
+    normalized_samples.resize(normalized_samples.len() + padding_size, 0.0);
+
+    let process_duration = process_start.elapsed();
+
+    log::info!(
+        "stop_recording_f32 performance: total = {:?}, wait stream = {:?}, process/resample = {:?}, native_rate = {}Hz -> {}Hz, final size = {} samples",
+        start_time.elapsed(),
+        wait_duration,
+        process_duration,
+        native_sample_rate,
+        final_sample_rate,
+        normalized_samples.len()
+    );
+
+    Ok(normalized_samples)
+}
+
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 

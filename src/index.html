@@ -297,8 +297,15 @@
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
             <span class="provider-name">Custom</span>
           </button>
+          <button class="provider-card" data-provider="Local Offline" id="stt-offline">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span class="provider-name">Local Offline</span>
+          </button>
         </div>
         <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:12px;">
+          <div id="stt-credentials-wrapper" style="display:flex;flex-direction:column;gap:12px;">
           <div class="form-row">
             <label>API Endpoint</label>
             <input type="url" id="stt-base-url" placeholder="https://api.groq.com/openai" />
@@ -324,6 +331,37 @@
             <div class="connection-status" id="stt-status">
               <div class="dot dot-idle"></div>
               <span id="stt-status-text">Not tested</span>
+            </div>
+          </div>
+        </div> <!-- Closes stt-credentials-wrapper -->
+
+        <!-- Offline Model Downloader -->
+        <div id="stt-offline-downloader" class="hidden" style="display:flex;flex-direction:column;gap:12px;margin-top:4px;padding-top:8px;">
+          <div style="font-weight:600;font-size:14px;color:#00f2fe;display:flex;align-items:center;gap:6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Offline Model Manager
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.01);padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-outline-variant);">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span class="text-body-md" style="font-weight:600;">SenseVoice-Small ASR Model</span>
+              <span class="text-muted text-label-md" style="font-size:12px;color:var(--color-outline);">Includes model.int8.onnx & tokens.txt (~240 MB)</span>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
+              <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;background:#ef4444;">Delete Model</button>
+            </div>
+          </div>
+          <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,0.02);padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-outline-variant);">
+            <div style="display:flex;justify-content:space-between;font-size:12px;">
+              <span id="offline-progress-status" style="font-weight:500;">Downloading ASR engine...</span>
+              <span id="offline-progress-percentage" style="font-weight:600;color:#00f2fe;">0%</span>
+            </div>
+            <div style="width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">
+              <div id="offline-progress-fill" style="width:0%;height:100%;background:linear-gradient(90deg, #A855F7, #00f2fe);border-radius:4px;transition:width 0.2s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-outline);">
+              <span id="offline-progress-bytes">0 / 0 MB</span>
+              <button class="btn-ghost" id="offline-cancel-btn" style="padding:4px 10px;font-size:11px;height:auto;background:rgba(255,255,255,0.04);">Cancel</button>
             </div>
           </div>
         </div>

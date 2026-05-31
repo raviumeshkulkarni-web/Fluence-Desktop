@@ -14,3 +14,5 @@ pub mod tray;
 pub mod transcribe;
 pub mod http_client;
 pub mod workflow;
+pub mod offline_downloader;
+pub mod offline_transcribe;

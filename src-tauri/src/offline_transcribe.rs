@@ -1,0 +1,199 @@
+// Fluence Windows — Offline Transcriber Module
+// Manages sherpa-onnx sidecar lifecycle and WebSocket communication.
+
+use anyhow::{anyhow, Result};
+use futures_util::{SinkExt, StreamExt};
+use once_cell::sync::Lazy;
+use std::os::windows::process::CommandExt;
+use std::process::{Child, Command};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Mutex;
+use std::time::Instant;
+use crate::offline_downloader::get_offline_dir;
+
+const CREATE_NO_WINDOW: u32 = 0x08000000;
+
+// Global process and port handles
+static SERVER_PROCESS: Lazy<Mutex<Option<Child>>> = Lazy::new(|| Mutex::new(None));
+static SERVER_PORT: Lazy<std::sync::atomic::AtomicU16> = Lazy::new(|| std::sync::atomic::AtomicU16::new(0));
+static LAST_USED: Lazy<Mutex<Instant>> = Lazy::new(|| Mutex::new(Instant::now()));
+static IDLE_MONITOR_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
+
+fn is_port_available(port: u16) -> bool {
+    std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
+}
+
+fn start_idle_monitor() {
+    if IDLE_MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
+        return; // Already running
+    }
+
+    tokio::spawn(async {
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+            
+            let last_used = {
+                let lock = LAST_USED.lock().unwrap();
+                *lock
+            };
+
+            if last_used.elapsed() > std::time::Duration::from_secs(180) { // 3 minutes
+                log::info!("Idle timeout reached. Shutting down sherpa-onnx server.");
+                let mut lock = SERVER_PROCESS.lock().unwrap();
+                if let Some(mut child) = lock.take() {
+                    let _ = child.kill();
+                }
+                SERVER_PORT.store(0, Ordering::SeqCst);
+                IDLE_MONITOR_RUNNING.store(false, Ordering::SeqCst);
+                break;
+            }
+        }
+    });
+}
+
+pub async fn ensure_server_running() -> Result<u16> {
+    {
+        let mut lock = SERVER_PROCESS.lock().unwrap();
+        if lock.is_some() {
+            if let Some(ref mut child) = *lock {
+                match child.try_wait() {
+                    Ok(None) => {
+                        // Still running, update last used timestamp
+                        *LAST_USED.lock().unwrap() = Instant::now();
+                        return Ok(SERVER_PORT.load(Ordering::SeqCst));
+                    }
+                    _ => {
+                        // Process exited
+                        *lock = None;
+                    }
+                }
+            }
+        }
+    }
+
+    let offline_dir = get_offline_dir();
+    let exe_path = offline_dir.join("sherpa-onnx-offline-websocket-server.exe");
+    let model_path = offline_dir.join("model.int8.onnx");
+    let tokens_path = offline_dir.join("tokens.txt");
+
+    if !exe_path.exists() || !model_path.exists() || !tokens_path.exists() {
+        return Err(anyhow!(
+            "Offline SenseVoice model is not installed. Please download it in Settings."
+        ));
+    }
+
+    // Find free port
+    let mut port = 6006;
+    for p in 6006..=6029 {
+        if is_port_available(p) {
+            port = p;
+            break;
+        }
+    }
+    SERVER_PORT.store(port, Ordering::SeqCst);
+
+    log::info!("Starting sherpa-onnx websocket server on port {}", port);
+
+    let tokens_arg = format!("--tokens={}", tokens_path.to_str().unwrap());
+    let model_arg = format!("--sense-voice={}", model_path.to_str().unwrap());
+    let port_arg = format!("--port={}", port);
+    let threads_arg = "--num-threads=3".to_string();
+
+    let mut cmd = Command::new(&exe_path);
+    cmd.args(&[&tokens_arg, &model_arg, &port_arg, &threads_arg]);
+    cmd.current_dir(&offline_dir);
+    cmd.creation_flags(CREATE_NO_WINDOW);
+
+    {
+        let mut lock = SERVER_PROCESS.lock().unwrap();
+        let child = cmd.spawn().map_err(|e| anyhow!("Failed to spawn ASR server: {}", e))?;
+        *lock = Some(child);
+        *LAST_USED.lock().unwrap() = Instant::now();
+    }
+
+    start_idle_monitor();
+
+    // Perform health checks
+    let mut ready = false;
+    for _ in 0..30 {
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        if std::net::TcpStream::connect(("127.0.0.1", port)).is_ok() {
+            ready = true;
+            break;
+        }
+    }
+
+    if !ready {
+        let mut lock = SERVER_PROCESS.lock().unwrap();
+        if let Some(mut child) = lock.take() {
+            let _ = child.kill();
+        }
+        SERVER_PORT.store(0, Ordering::SeqCst);
+        return Err(anyhow!("sherpa-onnx server failed to start on port {}", port));
+    }
+
+    log::info!("sherpa-onnx server is ready on port {}", port);
+    Ok(port)
+}
+
+pub async fn transcribe_samples(samples: Vec<f32>) -> Result<String> {
+    let port = ensure_server_running().await?;
+    *LAST_USED.lock().unwrap() = Instant::now();
+
+    let url = format!("ws://127.0.0.1:{}", port);
+    let (mut ws_stream, _) = tokio_tungstenite::connect_async(&url)
+        .await
+        .map_err(|e| anyhow!("Failed to connect to local ASR server: {}", e))?;
+
+    // Build the custom sherpa-onnx binary payload
+    // Format: [int32LE sample_rate][int32LE num_audio_bytes][float32 samples...]
+    let sample_rate = 16000u32;
+    let byte_len = (samples.len() * 4) as u32;
+    let mut payload = Vec::with_capacity(8 + samples.len() * 4);
+    payload.extend_from_slice(&sample_rate.to_le_bytes());
+    payload.extend_from_slice(&byte_len.to_le_bytes());
+    for &sample in &samples {
+        payload.extend_from_slice(&sample.to_le_bytes());
+    }
+
+    // Send audio payload
+    ws_stream
+        .send(tokio_tungstenite::tungstenite::Message::Binary(payload))
+        .await
+        .map_err(|e| anyhow!("Failed to send audio to ASR server: {}", e))?;
+
+    let mut result_text = String::new();
+    while let Some(msg) = ws_stream.next().await {
+        let msg = msg.map_err(|e| anyhow!("Error receiving from ASR server: {}", e))?;
+        match msg {
+            tokio_tungstenite::tungstenite::Message::Text(text) => {
+                result_text = text;
+                // Send "Done" text to instruct server to finalize ASR context
+                let _ = ws_stream
+                    .send(tokio_tungstenite::tungstenite::Message::Text("Done".to_string()))
+                    .await;
+                break;
+            }
+            tokio_tungstenite::tungstenite::Message::Close(_) => {
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    struct AsrResponse {
+        text: Option<String>,
+    }
+
+    if result_text.is_empty() {
+        return Err(anyhow!("Empty response from ASR server"));
+    }
+
+    // If it's valid JSON, extract text. Otherwise, use raw string.
+    let response: AsrResponse = serde_json::from_str(&result_text)
+        .unwrap_or_else(|_| AsrResponse { text: Some(result_text.trim().to_string()) });
+
+    let text = response.text.unwrap_or_default().trim().to_string();
+    Ok(text)
+}

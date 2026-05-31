@@ -4,7 +4,7 @@
 
 [![Build Windows App](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/actions/workflows/publish.yml/badge.svg)](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/actions/workflows/publish.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/raviumeshkulkarni-web/Fluence-Desktop?color=blue)](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases)
-[![License](https://img.shields.io/badge/License-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-brightgreen.svg)](https://microsoft.com)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange.svg)](https://www.rust-lang.org)
 
@@ -102,4 +102,4 @@ To run or build the application from source, you need **Rust** and **Node.js** i
 ---
 
 ## 📄 License
-This project is licensed under the MIT License, see the [LICENSE](LICENSE) file for details.
+This project is licensed under the Apache License 2.0, see the [LICENSE](LICENSE) file for details.

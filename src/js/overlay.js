@@ -121,6 +121,12 @@ async function stopAndTranscribe(agentMode) {
   try {
     if (agentMode) {
       console.time('StopAndTranscribeAgent');
+      // Grab the active text selection immediately, before ASR starts, to prevent losing focus/highlight context
+      const selectionPromise = invoke('grab_active_selection').catch((err) => {
+        console.warn('Failed to grab active selection early:', err);
+        return null;
+      });
+
       const [result, settings] = await Promise.all([
         invoke('stop_and_transcribe_recording'),
         invoke('get_settings'),
@@ -129,7 +135,8 @@ async function stopAndTranscribe(agentMode) {
       console.log(`stop_and_transcribe_recording returned: "${result.text}"`);
 
       console.time('HandleAgentMode');
-      await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs));
+      const selection = await selectionPromise;
+      await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection);
       console.timeEnd('HandleAgentMode');
     } else {
       console.time('FinishTranscriptionFlow');
@@ -157,7 +164,7 @@ async function stopAndTranscribe(agentMode) {
   }
 }
 
-async function handleAgentMode(voiceCommand, settings, durationMs) {
+async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection) {
   setState('agent');
 
   try {
@@ -169,15 +176,10 @@ async function handleAgentMode(voiceCommand, settings, durationMs) {
     let clipboardCtx = '';
     let grabbed = false;
     if (settings.auto_grab_highlight !== false) {
-      try {
-        const selection = await invoke('grab_active_selection');
-        if (selection && selection.trim()) {
-          clipboardCtx = selection;
-          grabbed = true;
-          console.log('Successfully grabbed text selection as context:', selection);
-        }
-      } catch (err) {
-        console.warn('Failed to grab active selection, falling back to clipboard:', err);
+      if (preGrabbedSelection && preGrabbedSelection.trim()) {
+        clipboardCtx = preGrabbedSelection;
+        grabbed = true;
+        console.log('Successfully grabbed text selection as context:', preGrabbedSelection);
       }
     }
 

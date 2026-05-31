@@ -375,7 +375,7 @@ pub async fn grab_active_selection() -> Result<Option<String>, String> {
         restore_modifiers(&released);
 
         // 6. Wait for target app to write to clipboard
-        sleep(Duration::from_millis(45)).await;
+        sleep(Duration::from_millis(120)).await;
 
         // 7. Read newly copied selection
         let selection = get_clipboard_text();

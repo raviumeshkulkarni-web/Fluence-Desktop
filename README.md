@@ -1,4 +1,4 @@
-# Fluence - AI Voice Typing for Windows 🎙️✨
+# Fluence 🎙️✨
 
 ### *Crystallize your cognition at the speed of thought*
 

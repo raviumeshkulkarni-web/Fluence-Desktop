@@ -1,4 +1,4 @@
-# Fluence- AI Voice Typing for Windows 🎙️✨
+# Fluence - AI Voice Typing for Windows 🎙️✨
 
 ### *Crystallize your cognition at the speed of thought*
 
@@ -24,9 +24,13 @@ Fluence is a lightweight, privacy-focused Windows application that brings human-
 
 ## 🛠️ Key Desktop Features
 
-* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys (default `Ctrl+Shift+Space` for Voice Typing, and `Ctrl+Shift+A` for AI Agent Mode).
+* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys (default `Ctrl+Shift+Space` for Voice Typing, and `Ctrl+Shift+Space` for AI Agent Mode is configurable).
 * **Flexible Recording Modes**: Supports both **Push-to-Toggle** (press once to start, press again to stop) and **Hold-to-Record** (hold key down, speak, release to transcribe) recording styles.
-* **Premium Glassmorphic Design**: An elegant, modern settings dashboard and a floating waveform visualizer window matching the Windows 11 Fluent design language.
+* **AI Polish Assistant**: Choose from multiple language model polish styles to automatically clean up filler words, rewrite text in a professional business tone, convert spoken thoughts into bullet points, or translate dictation into clear English before pasting.
+* **Smart Highlight Grabber**: In Agent Mode, the app can automatically grab currently selected text from your active application to use as context for edits, rewrites, or replies without changing your system clipboard.
+* **Copy to Clipboard Action**: Command the AI agent to copy its output directly to your system clipboard instead of pasting it, complete with a clean visual success verification.
+* **Single-Instance Support**: Built-in architecture that prevents multiple instances of Fluence from running. Launching a second instance automatically focuses and restores the active settings dashboard.
+* **Premium Fluent Design**: An elegant, modern settings dashboard featuring branded purple and cyan ambient glows, custom typography, and a glassmorphic waveform visualizer matching Windows 11.
 * **Silent & Fast Injection**: Injects transcribed text directly at your cursor via the native Windows `SendInput` keyboard API, preventing focus stealing and clipboard contamination.
 * **Secure API Storage**: Integrates with the **Windows Credential Manager** to encrypt and safely store your Groq API keys locally.
 * **SQLite History Database**: Keeps a searchable local log of your past dictations for quick reuse or search.
@@ -41,7 +45,7 @@ Fluence is a lightweight, privacy-focused Windows application that brings human-
 Built-in Windows dictation (Win+H) is often slow, struggles with accents, handles punctuation rigidly, and sends telemetry data to Microsoft servers. Other streaming voice tools transcribe word-by-word, missing the broader sentence context and frequently making homophone errors.
 
 **The Fluence Approach:**
-Fluence captures your audio buffer, applies peak volume normalization to ensure quiet speech is clearly heard, and sends it directly to Groq's high-speed Whisper servers. It transcribes full sentences in under a second with intelligent punctuation and deep context awareness, inserting it instantly at your cursor.
+Fluence captures your audio buffer, applies peak volume normalization to ensure quiet speech is clearly heard, encodes it into a highly optimized 64kbps MP3 stream to minimize network payload, and sends it directly to Groq's high-speed Whisper servers. It transcribes full sentences in under a second with intelligent punctuation and deep context awareness, inserting it instantly at your cursor.
 
 | Feature | **Fluence Windows** | Windows Built-In Speech |
 | :--- | :---: | :---: |
@@ -69,7 +73,7 @@ Fluence is built for users who prioritize privacy and local data security:
 1. Download the latest installer (`.exe` or `.msi`) from the [Releases](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases) tab.
 2. Run the installer and open **Fluence**.
 3. The onboarding setup wizard will guide you to configure your **Groq API Key**.
-4. Press `Ctrl+Shift+Space` in any app, Or set favorite custom shortcut , speak, and press it again to watch your voice convert to text instantly!
+4. Press `Ctrl+Shift+Space` in any app, or set your favorite custom shortcut, speak, and press it again to watch your voice convert to text instantly!
 
 ---
 

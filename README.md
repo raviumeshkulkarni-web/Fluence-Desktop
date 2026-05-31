@@ -24,7 +24,7 @@ Fluence is a lightweight, privacy-focused Windows application that brings human-
 
 ## 🛠️ Key Desktop Features
 
-* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys (default `Ctrl+Shift+Space` for Voice Typing, and `Ctrl+Shift+Space` for AI Agent Mode is configurable).
+* **Global System Shortcuts**: Start and stop recording from any app with configurable hotkeys for Voice Typing, and for AI Agent Mode is configurable.
 * **Flexible Recording Modes**: Supports both **Push-to-Toggle** (press once to start, press again to stop) and **Hold-to-Record** (hold key down, speak, release to transcribe) recording styles.
 * **AI Polish Assistant**: Choose from multiple language model polish styles to automatically clean up filler words, rewrite text in a professional business tone, convert spoken thoughts into bullet points, or translate dictation into clear English before pasting.
 * **Smart Highlight Grabber**: In Agent Mode, the app can automatically grab currently selected text from your active application to use as context for edits, rewrites, or replies without changing your system clipboard.

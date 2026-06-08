@@ -1,6 +1,6 @@
 {
   "name": "fluence-windows",
-  "version": "1.1.2",
+  "version": "1.1.3",
   "description": "Fluence — AI Voice Typing for Windows",
   "private": true,
   "scripts": {

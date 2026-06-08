@@ -68,7 +68,22 @@ body::after {
   height: 100%;
   background: var(--gradient-mic);
   border-radius: 1px;
-  transition: width 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+  transition: width 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.6);
+  position: relative;
+}
+
+.progress-bar-fill::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 4px;
+  height: 4px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 10px #fff, 0 0 20px var(--color-primary);
 }
 
 /* ---- Wizard Steps Container ---- */
@@ -88,9 +103,8 @@ body::after {
   padding: var(--spacing-xl) var(--spacing-2xl);
   gap: var(--spacing-lg);
   opacity: 0;
-  transform: translateX(40px);
   pointer-events: none;
-  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.4,0,0.2,1);
+  transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .wizard-step.active {
@@ -99,9 +113,25 @@ body::after {
   pointer-events: all;
 }
 
+/* Entering and exiting states for slide navigation */
+.wizard-step.enter-right {
+  opacity: 0;
+  transform: translateX(60px);
+}
+
+.wizard-step.enter-left {
+  opacity: 0;
+  transform: translateX(-60px);
+}
+
 .wizard-step.exit-left {
   opacity: 0;
-  transform: translateX(-40px);
+  transform: translateX(-60px);
+}
+
+.wizard-step.exit-right {
+  opacity: 0;
+  transform: translateX(60px);
 }
 
 /* ---- Step Content ---- */
@@ -293,16 +323,19 @@ body::after {
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--color-outline-variant);
-  transition: var(--transition-base);
+  transition: width 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), background-color 0.3s ease;
 }
 
 .step-dot.active {
-  width: 20px;
+  width: 22px;
   border-radius: 3px;
   background: var(--color-primary);
+  box-shadow: 0 0 10px rgba(209, 140, 255, 0.3);
 }
 
-.step-dot.done { background: rgba(209,140,255,0.4); }
+.step-dot.done {
+  background: rgba(209, 140, 255, 0.4);
+}
 
 /* Welcome step specific */
 .fluence-logo-hero {

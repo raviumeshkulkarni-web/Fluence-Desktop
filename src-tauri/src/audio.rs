@@ -288,6 +288,16 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
         return Err("No audio recorded".to_string());
     }
 
+    let native_channels = NATIVE_CHANNELS.load(Ordering::SeqCst) as usize;
+    let native_sample_rate = NATIVE_SAMPLE_RATE.load(Ordering::SeqCst) as usize;
+    if native_channels > 0 && native_sample_rate > 0 {
+        let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
+        if duration_ms < 350 {
+            log::info!("Recording duration too short ({}ms). Discarding as accidental press.", duration_ms);
+            return Ok(Vec::new());
+        }
+    }
+
     let process_start = std::time::Instant::now();
 
     // Downmix multi-channel stream to mono
@@ -415,6 +425,16 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
 
     if samples.is_empty() {
         return Err("No audio recorded".to_string());
+    }
+
+    let native_channels = NATIVE_CHANNELS.load(Ordering::SeqCst) as usize;
+    let native_sample_rate = NATIVE_SAMPLE_RATE.load(Ordering::SeqCst) as usize;
+    if native_channels > 0 && native_sample_rate > 0 {
+        let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
+        if duration_ms < 350 {
+            log::info!("Recording duration too short ({}ms). Discarding as accidental press.", duration_ms);
+            return Ok(Vec::new());
+        }
     }
 
     let process_start = std::time::Instant::now();

@@ -81,10 +81,18 @@ function setupNavButtons() {
 function updateStep(step) {
   // Animate out current
   const currentEl = document.getElementById(`step-${currentStep}`);
+  const isForward = step > currentStep;
+
   if (currentEl && step !== currentStep) {
-    currentEl.classList.add('exit-left');
+    currentEl.classList.remove('active', 'exit-left', 'exit-right', 'enter-left', 'enter-right');
+    if (isForward) {
+      currentEl.classList.add('exit-left');
+    } else {
+      currentEl.classList.add('exit-right');
+    }
+    const oldStep = currentEl;
     setTimeout(() => {
-      currentEl.classList.remove('active', 'exit-left');
+      oldStep.classList.remove('exit-left', 'exit-right');
     }, 350);
   }
 
@@ -93,9 +101,20 @@ function updateStep(step) {
   // Animate in new
   const nextEl = document.getElementById(`step-${step}`);
   if (nextEl) {
+    nextEl.classList.remove('active', 'enter-left', 'enter-right', 'exit-left', 'exit-right');
+    if (isForward) {
+      nextEl.classList.add('enter-right');
+    } else {
+      nextEl.classList.add('enter-left');
+    }
+
+    // Force reflow
+    nextEl.offsetHeight;
+
     setTimeout(() => {
       nextEl.classList.add('active');
-    }, 50);
+      nextEl.classList.remove('enter-left', 'enter-right');
+    }, 30);
   }
 
   // Update progress bar

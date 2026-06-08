@@ -158,12 +158,12 @@ button:focus-visible {
 }
 
 .btn-primary:hover {
-  box-shadow: var(--mic-glow-active);
-  transform: translateY(-1px);
+  box-shadow: var(--mic-glow-active), 0 4px 12px rgba(168, 85, 247, 0.25);
+  transform: translateY(-2px);
 }
 
 .btn-primary:active {
-  transform: scale(0.97);
+  transform: scale(0.95);
 }
 
 .btn-secondary {
@@ -282,7 +282,11 @@ select {
   height: 16px;
   background: var(--color-on-surface-variant);
   border-radius: var(--radius-full);
-  transition: var(--transition-spring);
+  transition: transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1), width 0.2s ease, background-color 0.25s ease;
+}
+
+.toggle-switch:active .toggle-thumb {
+  width: 22px; /* Elastic stretch on active press */
 }
 
 .toggle-switch input:checked ~ .toggle-track {
@@ -293,6 +297,10 @@ select {
 .toggle-switch input:checked ~ .toggle-track .toggle-thumb {
   transform: translateX(20px);
   background: var(--color-primary);
+}
+
+.toggle-switch input:checked:active ~ .toggle-track .toggle-thumb {
+  transform: translateX(14px); /* Shift back slightly while stretching when checked */
 }
 
 /* --- Badge --- */

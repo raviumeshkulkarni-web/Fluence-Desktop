@@ -41,8 +41,14 @@
       <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;">flu<span style="color:#00f2fe;">ence</span></span>
     </div>
 
+    <span class="nav-section-label">Overview</span>
+    <div class="nav-item active" data-page="dashboard" id="nav-dashboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:18px;height:18px;"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+      Dashboard
+    </div>
+
     <span class="nav-section-label">Configuration</span>
-    <div class="nav-item active" data-page="general" id="nav-general">
+    <div class="nav-item" data-page="general" id="nav-general">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
       General
     </div>
@@ -73,8 +79,47 @@
   <!-- Main Content -->
   <main class="content-area" role="main">
 
+    <!-- ===== DASHBOARD PAGE ===== -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-header">
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Overview of your voice typing activity and system status</p>
+      </div>
+
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-words">0</div>
+          <div class="stat-label">Words Dictated</div>
+          <div class="stat-sub" id="stat-chars">0 characters typed</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-voice-time">0m 0s</div>
+          <div class="stat-label">Voice Time</div>
+          <div class="stat-sub" id="stat-avg-session">Avg. session: 0s</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-latency">0.28s</div>
+          <div class="stat-label">Inference Latency</div>
+          <div class="stat-sub" id="stat-provider-type">Groq LPU whisper-large-v3</div>
+        </div>
+      </div>
+
+      <div class="settings-section" style="padding: var(--spacing-lg);">
+        <h3 style="font-size: 11px; font-family: var(--font-label); font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--color-on-surface-variant); margin-bottom: var(--spacing-md);">Weekly Dictation Activity</h3>
+        <div class="bar-chart-container">
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="0"></div><span>Mon</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="1"></div><span>Tue</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="2"></div><span>Wed</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="3"></div><span>Thu</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="4"></div><span>Fri</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="5"></div><span>Sat</span></div>
+          <div class="chart-bar-col"><div class="chart-bar" style="--bar-val: 0%;" data-day="6"></div><span>Sun</span></div>
+        </div>
+      </div>
+    </section>
+
     <!-- ===== GENERAL PAGE ===== -->
-    <section class="page active" id="page-general">
+    <section class="page" id="page-general">
       <div class="page-header">
         <h1 class="page-title">General</h1>
         <p class="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
@@ -546,11 +591,7 @@
           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
             Fluence brings AI-powered voice typing to your Windows desktop. Press your hotkey anywhere, speak naturally, and Fluence transcribes your voice directly into any focused application.
           </div>
-          <div class="about-links" style="display:flex;gap:var(--spacing-lg);">
-            <a href="#" id="open-data-dir-btn">Open Data Folder</a>
-            <a href="#" id="view-logs-btn">View Logs</a>
-          </div>
-          <div class="divider" style="width:100%;max-width:300px;"></div>
+
           <div class="text-label-sm text-muted">Powered by Tauri v2 · Rust · WebView2</div>
         </div>
       </div>
@@ -558,6 +599,8 @@
 
   </main>
 </div>
+
+
 
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>

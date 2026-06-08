@@ -13,34 +13,41 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
 
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     
-    let (text, transcribe_duration, _step_duration) = if settings.stt_provider.preset == "Local Offline" {
+    let (text, transcribe_duration) = if settings.stt_provider.preset == "Local Offline" {
         let transcribe_start = std::time::Instant::now();
         let samples = crate::audio::stop_recording_f32_samples().await?;
-        let result = crate::offline_transcribe::transcribe_samples(samples)
-            .await
-            .map_err(|e| format!("Offline transcription error: {}", e))?;
-        
-        let corrected = crate::dictionary::apply_corrections(&result);
-        let elapsed = transcribe_start.elapsed();
-        (corrected, elapsed, elapsed)
+        if samples.is_empty() {
+            ("".to_string(), std::time::Duration::from_secs(0))
+        } else {
+            let result = crate::offline_transcribe::transcribe_samples(samples)
+                .await
+                .map_err(|e| format!("Offline transcription error: {}", e))?;
+            
+            let corrected = crate::dictionary::apply_corrections(&result);
+            (corrected, transcribe_start.elapsed())
+        }
     } else {
-        let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
-            .map_err(|_| "No STT API key found. Please configure an API key in Providers settings.".to_string())?;
-
         let mp3_start = std::time::Instant::now();
         let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
-        let mp3_duration = mp3_start.elapsed();
+        let _mp3_duration = mp3_start.elapsed();
 
-        let transcribe_start = std::time::Instant::now();
-        let corrected = crate::transcribe::transcribe_mp3_bytes(
-            &settings.stt_provider.base_url,
-            &api_key,
-            &settings.stt_provider.model,
-            mp3_bytes,
-            Some(settings.language.as_str()),
-        )
-        .await?;
-        (corrected, transcribe_start.elapsed(), mp3_duration)
+        if mp3_bytes.is_empty() {
+            ("".to_string(), std::time::Duration::from_secs(0))
+        } else {
+            let transcribe_start = std::time::Instant::now();
+            let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
+                .map_err(|_| "No STT API key found. Please configure an API key in Providers settings.".to_string())?;
+
+            let corrected = crate::transcribe::transcribe_mp3_bytes(
+                &settings.stt_provider.base_url,
+                &api_key,
+                &settings.stt_provider.model,
+                mp3_bytes,
+                Some(settings.language.as_str()),
+            )
+            .await?;
+            (corrected, transcribe_start.elapsed())
+        }
     };
 
     log::info!(
@@ -140,9 +147,13 @@ async fn polish_transcribed_text(
 }
 
 #[tauri::command]
-pub async fn finish_transcription_flow(app: tauri::AppHandle) -> Result<TranscriptionFlowResult, String> {
+pub async fn finish_transcription_flow(_app: tauri::AppHandle) -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
     let mut result = stop_and_transcribe().await?;
+
+    if result.text.is_empty() {
+        return Ok(result);
+    }
 
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     
@@ -167,36 +178,7 @@ pub async fn finish_transcription_flow(app: tauri::AppHandle) -> Result<Transcri
         }
     }
 
-    // Hide the overlay BEFORE we inject text so that the underlying app regains focus.
-    let _ = crate::overlay::hide_overlay(app.clone());
-    
-    // Give the OS a moment to process the focus change. 50ms is sufficient on Windows.
-    // Previously 150ms — reduced to cut 100ms of unnecessary latency from every paste.
-    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
-
-    let inject_start = std::time::Instant::now();
-    crate::clipboard::inject_text(result.text.clone()).await?;
-    let inject_duration = inject_start.elapsed();
-
-    let history_text = result.text.clone();
-    let history_provider = result.provider.clone();
-    let history_duration_ms = result.duration_ms;
-    tokio::spawn(async move {
-        if let Err(e) = crate::history::add_history_entry(
-            &history_text,
-            "transcription",
-            history_duration_ms,
-            &history_provider,
-        ) {
-            log::warn!("Failed to save transcription history entry: {}", e);
-        }
-    });
-
-    log::info!(
-        "finish_transcription_flow workflow: total = {:?}, inject = {:?}",
-        start_time.elapsed(),
-        inject_duration
-    );
+    result.duration_ms = start_time.elapsed().as_millis() as u64;
 
     Ok(result)
 }

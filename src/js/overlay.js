@@ -35,12 +35,18 @@ async function setupEventListeners() {
   await listen('hotkey-start-recording', async () => {
     console.log('hotkey-start-recording event received');
     setState('recording');
+    if (overlayRoot) overlayRoot.classList.remove('active');
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
       console.log('start_recording successfully invoked');
       await invoke('show_overlay', { position: prefs.overlayPosition });
       console.log('show_overlay invoked with position:', prefs.overlayPosition);
+      
+      // Trigger opening transition after window is visible
+      setTimeout(() => {
+        if (overlayRoot) overlayRoot.classList.add('active');
+      }, 50);
     } catch (err) {
       console.error('Failed to start/show recording:', err);
       setState('idle');
@@ -56,12 +62,18 @@ async function setupEventListeners() {
   await listen('hotkey-start-agent-recording', async () => {
     console.log('hotkey-start-agent-recording event received');
     setState('agent');
+    if (overlayRoot) overlayRoot.classList.remove('active');
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
       console.log('start_recording (agent) successfully invoked');
       await invoke('show_overlay', { position: prefs.overlayPosition });
       console.log('show_overlay (agent) invoked with position:', prefs.overlayPosition);
+      
+      // Trigger opening transition after window is visible
+      setTimeout(() => {
+        if (overlayRoot) overlayRoot.classList.add('active');
+      }, 50);
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
       setState('idle');
@@ -111,6 +123,15 @@ async function getRecordingPreferences() {
   };
 }
 
+async function fadeAndHide() {
+  if (overlayRoot) {
+    overlayRoot.classList.remove('active');
+  }
+  await new Promise(r => setTimeout(r, 350)); // let CSS exit transition finish
+  await invoke('hide_overlay');
+  setState('idle');
+}
+
 async function stopAndTranscribe(agentMode) {
   console.log('stopAndTranscribe initiated');
   console.time('TotalStopAndTranscribe');
@@ -134,6 +155,13 @@ async function stopAndTranscribe(agentMode) {
       console.timeEnd('StopAndTranscribeAgent');
       console.log(`stop_and_transcribe_recording returned: "${result.text}"`);
 
+      const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
+      if (!result.text || !result.text.trim() || !hasAlphanumeric) {
+        console.log('Transcription is empty or silent. Discarding silently.');
+        await fadeAndHide();
+        return;
+      }
+
       console.time('HandleAgentMode');
       const selection = await selectionPromise;
       await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection);
@@ -144,29 +172,38 @@ async function stopAndTranscribe(agentMode) {
       console.timeEnd('FinishTranscriptionFlow');
       console.log(`finish_transcription_flow returned: "${result.text}"`);
 
-      setState('idle');
-      await invoke('hide_overlay');
+      const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
+      if (!result.text || !result.text.trim() || !hasAlphanumeric) {
+        console.log('Transcription is empty or silent. Discarding silently.');
+        await fadeAndHide();
+        return;
+      }
+
+      // Save history entry in database
+      await invoke('save_history_entry', {
+        text: result.text,
+        mode: 'transcription',
+        durationMs: result.durationMs || (Date.now() - startTs),
+        provider: result.provider,
+      }).catch(err => console.error('Failed to save history entry:', err));
+
+      // Smoothly fade out the overlay immediately
+      await fadeAndHide();
+
+      // Inject text after overlay is fully hidden so the target window has focus
+      await invoke('inject_text', { text: result.text });
     }
   } catch (err) {
     console.error('Transcription error:', err);
-    if (String(err).includes('No STT API key')) {
-      setState('error');
-      setTimeout(async () => {
-        setState('idle');
-        await invoke('hide_overlay');
-      }, 2000);
-      return;
-    }
-    setState('idle');
-    await invoke('hide_overlay');
+    setState('error');
+    await new Promise(r => setTimeout(r, 1500));
+    await fadeAndHide();
   } finally {
     console.timeEnd('TotalStopAndTranscribe');
   }
 }
 
 async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection) {
-  setState('agent');
-
   try {
     const llmKey = await invoke('get_api_key', {
       target: 'Fluence/LLM_ApiKey'
@@ -209,12 +246,10 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       }
       setState('success');
       await new Promise(r => setTimeout(r, 1000));
-      setState('idle');
-      await invoke('hide_overlay');
+      await fadeAndHide();
     } else {
       // Hide overlay FIRST so focus is restored before text injection
-      setState('idle');
-      await invoke('hide_overlay');
+      await fadeAndHide();
 
       // Execute the action
       if (action.action === 'insert' || action.action === 'rewrite') {
@@ -241,8 +276,9 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 
   } catch (err) {
     console.error('Agent Error:', err);
-    setState('idle');
-    await invoke('hide_overlay');
+    setState('error');
+    await new Promise(r => setTimeout(r, 1500));
+    await fadeAndHide();
   }
 }
 
@@ -251,6 +287,13 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 function setState(state) {
   currentState = state;
 
-  // Update aura visualizer
   if (aura) aura.setState(state);
+
+  if (overlayRoot) {
+    if (state !== 'idle') {
+      overlayRoot.classList.add('active');
+    } else {
+      overlayRoot.classList.remove('active');
+    }
+  }
 }

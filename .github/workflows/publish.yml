@@ -42,5 +42,5 @@ jobs:
           tagName: v__VERSION__ # Uses the package version from src-tauri/tauri.conf.json
           releaseName: 'Fluence v__VERSION__'
           releaseBody: 'See the assets below to download and install Fluence.'
-          releaseDraft: true
+          releaseDraft: false
           prerelease: false

@@ -24,7 +24,8 @@ body {
 
 /* CSS custom properties — updated by JS state changes */
 :root {
-  --pill-glow: rgba(168, 85, 247, 0.55);
+  --pill-glow: rgba(168, 85, 247, 0.45);
+  --pill-glow-soft: rgba(168, 85, 247, 0.18);
   --pill-glow-inset: rgba(168, 85, 247, 0.15);
   --pill-border-gradient: linear-gradient(90deg, #A855F7, rgba(99, 102, 241, 0.5));
 }
@@ -40,8 +41,10 @@ body {
   
   /* Glowing layered border via box-shadow trick */
   box-shadow:
-    0 0 16px 2px var(--pill-glow),
-    0 4px 16px rgba(0, 0, 0, 0.5),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 0 12px 1px var(--pill-glow-soft),
+    0 0 20px 2px var(--pill-glow),
+    inset 0 1px 0 rgba(255, 255, 255, 0.15),
     inset 0 0 6px var(--pill-glow-inset);
   
   display: flex;
@@ -77,41 +80,67 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  padding: 1.2px;
-  background: var(--pill-border-gradient);
-  -webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0);
-  -webkit-mask-composite: xor;
-  mask-composite: exclude;
+  border: 1px solid transparent;
+  background: 
+    linear-gradient(rgba(13, 14, 18, 0.94), rgba(13, 14, 18, 0.94)) padding-box,
+    var(--pill-border-gradient) border-box;
   pointer-events: none;
 }
 
 /* Agent mode — cyan glow */
 .overlay-root.state-agent,
 .overlay-root.state-agent_transcribing {
-  --pill-glow: rgba(0, 245, 212, 0.55);
+  --pill-glow: rgba(0, 245, 212, 0.45);
+  --pill-glow-soft: rgba(0, 245, 212, 0.18);
   --pill-glow-inset: rgba(0, 245, 212, 0.15);
   --pill-border-gradient: linear-gradient(90deg, #00F5D4, rgba(0, 187, 249, 0.5));
 }
 
 /* Success mode — green glow */
 .overlay-root.state-success {
-  --pill-glow: rgba(16, 185, 129, 0.55);
+  --pill-glow: rgba(16, 185, 129, 0.45);
+  --pill-glow-soft: rgba(16, 185, 129, 0.18);
   --pill-glow-inset: rgba(16, 185, 129, 0.15);
   --pill-border-gradient: linear-gradient(90deg, #10B981, rgba(16, 185, 129, 0.5));
 }
 
 /* Error mode — red glow */
 .overlay-root.state-error {
-  --pill-glow: rgba(239, 68, 68, 0.55);
+  --pill-glow: rgba(239, 68, 68, 0.45);
+  --pill-glow-soft: rgba(239, 68, 68, 0.18);
   --pill-glow-inset: rgba(239, 68, 68, 0.15);
   --pill-border-gradient: linear-gradient(90deg, #EF4444, rgba(239, 68, 68, 0.5));
 }
 
 /* Processing animation */
 @keyframes pulse-processing {
-  0% { opacity: 0.9; box-shadow: 0 0 16px 2px var(--pill-glow), 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 8px var(--pill-glow-inset); }
-  50% { opacity: 0.4; box-shadow: 0 0 2px 0px var(--pill-glow), 0 4px 10px rgba(0, 0, 0, 0.4), inset 0 0 2px var(--pill-glow-inset); }
-  100% { opacity: 0.9; box-shadow: 0 0 16px 2px var(--pill-glow), 0 4px 20px rgba(0, 0, 0, 0.6), inset 0 0 8px var(--pill-glow-inset); }
+  0% {
+    opacity: 0.95;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.55),
+      0 0 12px 1px var(--pill-glow-soft),
+      0 0 20px 2px var(--pill-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 0 6px var(--pill-glow-inset);
+  }
+  50% {
+    opacity: 0.5;
+    box-shadow:
+      0 4px 12px rgba(0, 0, 0, 0.35),
+      0 0 6px 0px var(--pill-glow-soft),
+      0 0 10px 1px var(--pill-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08),
+      inset 0 0 4px var(--pill-glow-inset);
+  }
+  100% {
+    opacity: 0.95;
+    box-shadow:
+      0 8px 24px rgba(0, 0, 0, 0.55),
+      0 0 12px 1px var(--pill-glow-soft),
+      0 0 20px 2px var(--pill-glow),
+      inset 0 1px 0 rgba(255, 255, 255, 0.15),
+      inset 0 0 6px var(--pill-glow-inset);
+  }
 }
 
 /* Transcribing — pulsating */
@@ -121,6 +150,8 @@ body {
 }
 
 #waveform-canvas {
+  position: relative;
+  z-index: 2;
   width: 100%;
   height: 100%;
   display: block;
@@ -134,6 +165,7 @@ body {
 
 /* Mic icon */
 .pill-mic-icon {
+  z-index: 3;
   width: 15px;
   height: 15px;
   color: var(--color-primary);
@@ -158,6 +190,7 @@ body {
 
 /* Status Icons (Success / Error) */
 .status-icon {
+  z-index: 3;
   position: absolute;
   left: 50%;
   top: 50%;

@@ -262,8 +262,8 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 300ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -401,8 +401,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 300ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(300)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 

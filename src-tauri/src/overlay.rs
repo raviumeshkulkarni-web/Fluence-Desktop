@@ -28,16 +28,16 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     let margin = 20.0;
 
     let (x, y) = match position.as_str() {
-        "bottom_left" => (margin, screen_size.height as f64 / scale - win_height - margin - 48.0),
+        "bottom_left" => (margin, screen_size.height as f64 / scale - win_height - margin - 24.0),
         "center" => (
             screen_size.width as f64 / scale / 2.0 - win_width / 2.0,
-            screen_size.height as f64 / scale - win_height - margin - 48.0,
+            screen_size.height as f64 / scale - win_height - margin - 24.0,
         ),
         _ => {
             // bottom_right (default)
             (
                 screen_size.width as f64 / scale - win_width - margin,
-                screen_size.height as f64 / scale - win_height - margin - 48.0,
+                screen_size.height as f64 / scale - win_height - margin - 24.0,
             )
         }
     };
@@ -46,6 +46,7 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
 
     win.show().map_err(|e| e.to_string())?;
+    win.set_always_on_top(true).map_err(|e| e.to_string())?;
     Ok(())
 }
 

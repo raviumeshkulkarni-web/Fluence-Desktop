@@ -509,49 +509,59 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 /* Stats KPI Cards */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--spacing-md);
-  margin-bottom: var(--spacing-md);
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-lg);
+  margin-top: var(--spacing-lg);
+  margin-bottom: var(--spacing-lg);
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.03);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
+  background: rgba(255, 255, 255, 0.02);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius-xl);
+  padding: var(--spacing-xl) var(--spacing-lg);
   display: flex;
   flex-direction: column;
-  box-shadow: var(--shadow-sm);
-  transition: var(--transition-base);
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  min-height: 240px;
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.2);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .stat-card:hover {
-  transform: translateY(-2px);
-  border-color: rgba(209, 140, 255, 0.2);
-  box-shadow: var(--shadow-md);
+  transform: translateY(-4px);
+  border-color: rgba(168, 85, 247, 0.4);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: 0 12px 40px 0 rgba(168, 85, 247, 0.15);
 }
 
 .stat-value {
   font-family: var(--font-display);
-  font-size: 24px;
-  font-weight: 700;
-  background: linear-gradient(135deg, #A855F7, #00f2fe);
+  font-size: 54px;
+  font-weight: 800;
+  background: linear-gradient(135deg, #A855F7, #6366F1, #00f2fe);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
-  margin-bottom: 4px;
+  margin-bottom: var(--spacing-sm);
+  letter-spacing: -0.02em;
 }
 
 .stat-label {
-  font-size: var(--text-label-lg);
+  font-size: 16px;
   font-weight: 600;
   color: var(--color-on-surface);
+  letter-spacing: 0.02em;
+  margin-bottom: var(--spacing-xs);
 }
 
 .stat-sub {
-  font-size: var(--text-label-sm);
+  font-size: 13px;
   color: var(--color-on-surface-variant);
+  opacity: 0.8;
   margin-top: 2px;
 }
 

@@ -17,7 +17,7 @@ const { listen } = window.__TAURI__.event;
 
 // ── State ───────────────────────────────────────────────────────
 let currentSettings = null;
-let currentPage = 'dashboard';
+let currentPage = 'general';
 let dictEntries = [];
 let historyPage = 0;
 let activeRecorder = null;
@@ -55,7 +55,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
-  setupDashboard();
+
+  // Refresh data when window is focused
+  window.addEventListener('focus', () => {
+    if (currentPage === 'history') {
+      loadHistory(true);
+    }
+  });
 });
 
 // ── Titlebar ──────────────────────────────────────────────────────
@@ -93,7 +99,6 @@ function populateUI(s) {
   setSelectValue('overlay-position-select', s.overlay_position || 'bottom_right');
   setSelectValue('language-select', s.language || 'en');
   setChecked('autostart-cb', s.auto_start || false);
-  setChecked('sound-cb', s.sound_on_complete !== false);
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
 
@@ -119,7 +124,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['dashboard', 'general', 'providers', 'dictionary', 'history', 'about'];
+const PAGE_ORDER = ['general', 'providers', 'dictionary', 'history', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -169,7 +174,6 @@ function _performNavigation(page) {
   });
 
   // Lazy load data for specific pages
-  if (page === 'dashboard') loadDashboardStats();
   if (page === 'history') loadHistory(true);
   if (page === 'dictionary') loadDictionary();
 }
@@ -672,7 +676,7 @@ async function saveGeneral() {
   currentSettings.overlay_position = document.getElementById('overlay-position-select')?.value || currentSettings.overlay_position;
   currentSettings.audio_device_id = document.getElementById('audio-device-select')?.value || null;
   currentSettings.language = document.getElementById('language-select')?.value || 'en';
-  currentSettings.sound_on_complete = document.getElementById('sound-cb')?.checked ?? true;
+  currentSettings.sound_on_complete = false;
   currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
 
@@ -749,6 +753,12 @@ async function listenForTauriEvents() {
     const mode = evt.payload;
     setSelectValue('recording-mode-select', mode);
     if (currentSettings) currentSettings.recording_mode = mode;
+  });
+
+  await listen('history-updated', () => {
+    if (currentPage === 'history') {
+      loadHistory(true);
+    }
   });
 }
 
@@ -960,76 +970,3 @@ async function setupOfflineDownloader() {
     });
   }
 }
-
-// ── Dashboard & Mockups ──────────────────────────────────────────
-
-function setupDashboard() {
-  loadDashboardStats();
-}
-
-async function loadDashboardStats() {
-  try {
-    const stats = await invoke('get_history_stats').catch(() => ({ total_entries: 0, total_chars: 0 }));
-    
-    // Words Dictated: average word is ~5 chars
-    const totalWords = Math.round(stats.total_chars / 5);
-    setText('stat-words', totalWords.toLocaleString());
-    setText('stat-chars', `${stats.total_chars.toLocaleString()} characters typed`);
-    
-    // Fetch last 50 history entries to calculate total recording duration
-    const entries = await invoke('get_history', { page: 0, searchQuery: null }).catch(() => []);
-    
-    let totalDurationMs = 0;
-    
-    // Day-of-week activity: 0 = Mon, 1 = Tue, ..., 6 = Sun
-    const dayCounts = [0, 0, 0, 0, 0, 0, 0];
-    
-    entries.forEach(entry => {
-      totalDurationMs += entry.duration_ms || 0;
-      
-      // Parse timestamp to get weekday
-      const d = new Date(entry.timestamp);
-      let dayIndex = d.getDay() - 1;
-      if (dayIndex < 0) dayIndex = 6; // Sunday
-      if (dayIndex >= 0 && dayIndex < 7) {
-        dayCounts[dayIndex]++;
-      }
-    });
-    
-    // Format total voice duration: e.g., 2m 14s
-    const totalSeconds = Math.round(totalDurationMs / 1000);
-    const m = Math.floor(totalSeconds / 60);
-    const s = totalSeconds % 60;
-    setText('stat-voice-time', `${m}m ${s}s`);
-    
-    const avgSessionSec = entries.length > 0 ? (totalSeconds / entries.length).toFixed(1) : '0';
-    setText('stat-avg-session', `Avg. session: ${avgSessionSec}s`);
-    
-    // Display current provider details
-    if (currentSettings) {
-      const preset = currentSettings.stt_provider?.preset || 'groq';
-      const model = currentSettings.stt_provider?.model || 'whisper-large-v3';
-      setText('stat-provider-type', `${preset.toUpperCase()} · ${model}`);
-    }
-    
-    // Animate bars
-    const maxCount = Math.max(...dayCounts, 1);
-    const bars = document.querySelectorAll('.chart-bar');
-    bars.forEach((bar, i) => {
-      bar.classList.remove('animated');
-      const val = (dayCounts[i] / maxCount) * 80 + 10; // min 10% height for active, max 90%
-      const finalVal = dayCounts[i] > 0 ? `${val}%` : '2%';
-      bar.style.setProperty('--bar-val', finalVal);
-      
-      // Staggered addition of active class to trigger transitions
-      setTimeout(() => {
-        bar.classList.add('animated');
-      }, 50 + i * 40);
-    });
-    
-  } catch (err) {
-    console.error('Failed to load dashboard stats:', err);
-  }
-}
-
-

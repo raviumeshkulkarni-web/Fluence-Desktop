@@ -127,6 +127,7 @@ pub fn run() {
             history::delete_history_entry,
             history::clear_history,
             history::get_history_stats,
+            history::get_weekly_activity,
             // Overlay
             overlay::show_overlay,
             overlay::hide_overlay,

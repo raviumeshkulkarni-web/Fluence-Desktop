@@ -8,6 +8,7 @@ use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Mutex;
+use tauri::Emitter;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HistoryEntry {
@@ -161,30 +162,37 @@ fn map_row(row: &rusqlite::Row) -> rusqlite::Result<HistoryEntry> {
 
 #[tauri::command]
 pub fn save_history_entry(
+    app: tauri::AppHandle,
     text: String,
     mode: String,
     duration_ms: u64,
     provider: String,
 ) -> Result<HistoryEntry, String> {
-    add_history_entry(&text, &mode, duration_ms, &provider).map_err(|e| e.to_string())
+    let entry = add_history_entry(&text, &mode, duration_ms, &provider).map_err(|e| e.to_string())?;
+    let _ = app.emit("history-updated", ());
+    Ok(entry)
 }
 
 #[tauri::command]
-pub fn delete_history_entry(id: String) -> Result<(), String> {
+pub fn delete_history_entry(app: tauri::AppHandle, id: String) -> Result<(), String> {
     with_db(|conn| {
         conn.execute("DELETE FROM history WHERE id = ?1", params![id])?;
         Ok(())
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit("history-updated", ());
+    Ok(())
 }
 
 #[tauri::command]
-pub fn clear_history() -> Result<(), String> {
+pub fn clear_history(app: tauri::AppHandle) -> Result<(), String> {
     with_db(|conn| {
         conn.execute("DELETE FROM history", [])?;
         Ok(())
     })
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+    let _ = app.emit("history-updated", ());
+    Ok(())
 }
 
 #[tauri::command]
@@ -196,10 +204,30 @@ pub fn get_history_stats() -> Result<serde_json::Value, String> {
         let total_chars: i64 = conn
             .query_row("SELECT COALESCE(SUM(char_count),0) FROM history", [], |r| r.get(0))
             .unwrap_or(0);
+        let total_duration_ms: i64 = conn
+            .query_row("SELECT COALESCE(SUM(duration_ms),0) FROM history", [], |r| r.get(0))
+            .unwrap_or(0);
         Ok(serde_json::json!({
             "total_entries": total,
-            "total_chars": total_chars
+            "total_chars": total_chars,
+            "total_duration_ms": total_duration_ms
         }))
+    })
+    .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_weekly_activity(start_of_week_utc: String) -> Result<Vec<String>, String> {
+    with_db(|conn| {
+        let mut stmt = conn.prepare("SELECT timestamp FROM history WHERE timestamp >= ?1")?;
+        let rows = stmt.query_map(params![start_of_week_utc], |r| r.get::<_, String>(0))?;
+        let mut timestamps = Vec::new();
+        for row in rows {
+            if let Ok(ts) = row {
+                timestamps.push(ts);
+            }
+        }
+        Ok(timestamps)
     })
     .map_err(|e| e.to_string())
 }

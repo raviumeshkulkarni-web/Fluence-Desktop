@@ -297,7 +297,7 @@ pub async fn inject_text(text: String) -> Result<(), String> {
         // Restore original clipboard after a delay
         let saved_clone = saved.clone();
         tokio::spawn(async move {
-            sleep(Duration::from_millis(300)).await;
+            sleep(Duration::from_millis(200)).await;
             if let Some(original) = saved_clone {
                 let _ = set_clipboard_text(&original);
             }

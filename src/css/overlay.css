@@ -27,7 +27,7 @@ body {
   --pill-glow: rgba(168, 85, 247, 0.45);
   --pill-glow-soft: rgba(168, 85, 247, 0.18);
   --pill-glow-inset: rgba(168, 85, 247, 0.15);
-  --pill-border-gradient: linear-gradient(90deg, #A855F7, rgba(99, 102, 241, 0.5));
+  --pill-border-gradient: linear-gradient(90deg, #A855F7, rgba(99, 102, 241, 0.75));
 }
 
 /* Amethyst/Obsidian pill */
@@ -35,44 +35,96 @@ body {
   width: 32px; /* starts as a small circle */
   height: 32px;
   border-radius: 9999px;
-  background: rgba(13, 14, 18, 0.94); /* Deep Obsidian base */
-  backdrop-filter: blur(24px);
-  -webkit-backdrop-filter: blur(24px);
-  
-  /* Glowing layered border via box-shadow trick */
+  background: rgba(10, 9, 13, 0.78); /* Deep translucent Obsidian base */
+  backdrop-filter: blur(28px);
+  -webkit-backdrop-filter: blur(28px);
+  overflow: hidden; /* Clips the rectangular canvas to the pill's rounded corners */
+
+  /* Layered, weightless, high-end drop shadow & glow */
   box-shadow:
-    0 8px 24px rgba(0, 0, 0, 0.45),
-    0 0 12px 1px var(--pill-glow-soft),
-    0 0 20px 2px var(--pill-glow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.15),
-    inset 0 0 6px var(--pill-glow-inset);
-  
+    0 12px 32px rgba(0, 0, 0, 0.55),
+    0 4px 12px rgba(0, 0, 0, 0.35),
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 0 16px var(--pill-glow-soft),
+    0 0 28px var(--pill-glow);
+
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   opacity: 0;
-  transform: scale(0.85);
-  
-  /* Exit transition (snappier, clean) */
-  transition: 
-    width 0.3s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.3s cubic-bezier(0.16, 1, 0.3, 1),
+
+  /* Individual CSS transform properties for clean stacking contexts */
+  scale: 0.85;
+  translate: 0px;
+  rotate: 0deg;
+
+  /* Exit transition (smooth deceleration) */
+  transition:
+    width 0.35s cubic-bezier(0.25, 1, 0.5, 1),
+    scale 0.35s cubic-bezier(0.25, 1, 0.5, 1),
     opacity 0.25s ease,
     box-shadow 0.28s ease;
+}
+
+/* Idle breathing animation — subtle premium feel */
+@keyframes breathe {
+  0%, 100% {
+    scale: 1;
+    box-shadow:
+      0 12px 32px rgba(0, 0, 0, 0.55),
+      0 4px 12px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 0 16px var(--pill-glow-soft),
+      0 0 28px var(--pill-glow);
+  }
+  50% {
+    scale: 1.015;
+    box-shadow:
+      0 14px 38px rgba(0, 0, 0, 0.6),
+      0 6px 16px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.11) inset,
+      0 0 20px var(--pill-glow-soft),
+      0 0 32px var(--pill-glow);
+  }
+}
+
+.overlay-root:not(.active):not(.state-transcribing):not(.state-agent_transcribing):not(.state-success):not(.state-error) {
+  animation: breathe 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
 }
 
 .overlay-root.active {
   width: 120px;
   opacity: 1;
-  transform: scale(1);
-  
-  /* Entry transition (smooth, springy) */
-  transition: 
-    width 0.45s cubic-bezier(0.16, 1, 0.3, 1),
-    transform 0.45s cubic-bezier(0.34, 1.56, 0.64, 1),
-    opacity 0.35s ease,
-    box-shadow 0.4s ease;
+  scale: 1;
+
+  /* Entry transition (premium spring ease) */
+  transition:
+    width 0.48s cubic-bezier(0.34, 1.56, 0.64, 1),
+    scale 0.48s cubic-bezier(0.34, 1.56, 0.64, 1),
+    opacity 0.3s ease,
+    box-shadow 0.35s ease;
+}
+
+/* Hover state micro-interactions */
+.overlay-root.active:hover {
+  scale: 1.04;
+  box-shadow:
+    0 16px 40px rgba(0, 0, 0, 0.6),
+    0 4px 16px rgba(0, 0, 0, 0.4),
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 0 20px var(--pill-glow-soft),
+    0 0 32px var(--pill-glow);
+}
+
+.overlay-root.active:active {
+  scale: 0.96;
+}
+
+/* Morph back to circle on success or error states */
+.overlay-root.active.state-success,
+.overlay-root.active.state-error {
+  width: 32px;
 }
 
 .overlay-root::before {
@@ -80,10 +132,13 @@ body {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  border: 1px solid transparent;
-  background: 
-    linear-gradient(rgba(13, 14, 18, 0.94), rgba(13, 14, 18, 0.94)) padding-box,
-    var(--pill-border-gradient) border-box;
+  padding: 1.2px; /* border thickness increased slightly for cleaner subpixel anti-aliasing */
+  background: var(--pill-border-gradient);
+  -webkit-mask: 
+    linear-gradient(#fff 0 0) content-box, 
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+          mask-composite: exclude;
   pointer-events: none;
 }
 
@@ -93,7 +148,7 @@ body {
   --pill-glow: rgba(0, 245, 212, 0.45);
   --pill-glow-soft: rgba(0, 245, 212, 0.18);
   --pill-glow-inset: rgba(0, 245, 212, 0.15);
-  --pill-border-gradient: linear-gradient(90deg, #00F5D4, rgba(0, 187, 249, 0.5));
+  --pill-border-gradient: linear-gradient(90deg, #00F5D4, rgba(0, 187, 249, 0.75));
 }
 
 /* Success mode — green glow */
@@ -101,7 +156,7 @@ body {
   --pill-glow: rgba(16, 185, 129, 0.45);
   --pill-glow-soft: rgba(16, 185, 129, 0.18);
   --pill-glow-inset: rgba(16, 185, 129, 0.15);
-  --pill-border-gradient: linear-gradient(90deg, #10B981, rgba(16, 185, 129, 0.5));
+  --pill-border-gradient: linear-gradient(90deg, #10B981, rgba(16, 185, 129, 0.75));
 }
 
 /* Error mode — red glow */
@@ -109,37 +164,30 @@ body {
   --pill-glow: rgba(239, 68, 68, 0.45);
   --pill-glow-soft: rgba(239, 68, 68, 0.18);
   --pill-glow-inset: rgba(239, 68, 68, 0.15);
-  --pill-border-gradient: linear-gradient(90deg, #EF4444, rgba(239, 68, 68, 0.5));
+  --pill-border-gradient: linear-gradient(90deg, #EF4444, rgba(239, 68, 68, 0.75));
 }
 
-/* Processing animation */
+/* Processing animation — smooth premium pulse */
 @keyframes pulse-processing {
-  0% {
-    opacity: 0.95;
+  0%, 100% {
+    opacity: 1;
+    scale: 1;
     box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.55),
-      0 0 12px 1px var(--pill-glow-soft),
-      0 0 20px 2px var(--pill-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      inset 0 0 6px var(--pill-glow-inset);
+      0 12px 32px rgba(0, 0, 0, 0.55),
+      0 4px 12px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+      0 0 16px var(--pill-glow-soft),
+      0 0 28px var(--pill-glow);
   }
   50% {
-    opacity: 0.5;
+    opacity: 0.85;
+    scale: 1.02;
     box-shadow:
-      0 4px 12px rgba(0, 0, 0, 0.35),
-      0 0 6px 0px var(--pill-glow-soft),
-      0 0 10px 1px var(--pill-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08),
-      inset 0 0 4px var(--pill-glow-inset);
-  }
-  100% {
-    opacity: 0.95;
-    box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.55),
-      0 0 12px 1px var(--pill-glow-soft),
-      0 0 20px 2px var(--pill-glow),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15),
-      inset 0 0 6px var(--pill-glow-inset);
+      0 14px 38px rgba(0, 0, 0, 0.6),
+      0 6px 16px rgba(0, 0, 0, 0.4),
+      0 0 0 1px rgba(255, 255, 255, 0.11) inset,
+      0 0 20px var(--pill-glow-soft),
+      0 0 32px var(--pill-glow);
   }
 }
 
@@ -150,13 +198,16 @@ body {
 }
 
 #waveform-canvas {
-  position: relative;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 100px; /* Centered width slightly increased to 100px, keeping wave drawing safe from curved border bleeding */
+  height: 32px;
   z-index: 2;
-  width: 100%;
-  height: 100%;
   display: block;
   opacity: 0;
-  transition: opacity 0.25s ease 0.15s, transform 0.25s ease; /* wait for width expansion */
+  transition: opacity 0.25s ease 0.15s; /* wait for width expansion before showing */
 }
 
 .overlay-root.active #waveform-canvas {
@@ -172,9 +223,10 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%) scale(1);
+  translate: -50% -50%;
+  scale: 1;
   opacity: 1;
-  transition: opacity 0.2s ease, transform 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.2s ease, scale 0.25s cubic-bezier(0.16, 1, 0.3, 1);
   pointer-events: none;
 }
 
@@ -185,7 +237,7 @@ body {
 .overlay-root.state-transcribing .pill-mic-icon,
 .overlay-root.state-agent_transcribing .pill-mic-icon {
   opacity: 0;
-  transform: translate(-50%, -50%) scale(0.5);
+  scale: 0.5;
 }
 
 /* Status Icons (Success / Error) */
@@ -194,29 +246,38 @@ body {
   position: absolute;
   left: 50%;
   top: 50%;
-  transform: translate(-50%, -50%) scale(0.5);
+  translate: -50% -50%;
+  scale: 0.5;
   opacity: 0;
   color: #fff;
   display: flex;
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), scale 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .overlay-root.state-success .status-icon.success-icon {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1.1);
+  scale: 1;
+  animation: success-burst 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
 .overlay-root.state-error .status-icon.error-icon {
   opacity: 1;
-  transform: translate(-50%, -50%) scale(1.1);
+  scale: 1;
+  animation: success-burst 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-/* Fade out waveform when success/error is showing */
+@keyframes success-burst {
+  0% { scale: 0.5; }
+  60% { scale: 1.15; }
+  100% { scale: 1; }
+}
+
+/* Fade out waveform when success/error is showing (instant fadeout, no delay) */
 .overlay-root.state-success #waveform-canvas,
 .overlay-root.state-error #waveform-canvas {
   opacity: 0;
-  transform: scale(0.8);
+  transition: opacity 0.1s ease;
 }

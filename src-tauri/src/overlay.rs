@@ -45,8 +45,8 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     win.set_position(tauri::LogicalPosition::new(x, y))
         .map_err(|e| e.to_string())?;
 
-    win.show().map_err(|e| e.to_string())?;
     win.set_always_on_top(true).map_err(|e| e.to_string())?;
+    win.show().map_err(|e| e.to_string())?;
     Ok(())
 }
 

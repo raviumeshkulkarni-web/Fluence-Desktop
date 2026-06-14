@@ -179,18 +179,18 @@ async function stopAndTranscribe(agentMode) {
         return;
       }
 
-      // Save history entry in database
-      await invoke('save_history_entry', {
+      // Save history entry in database asynchronously (non-blocking)
+      invoke('save_history_entry', {
         text: result.text,
         mode: 'transcription',
         durationMs: result.durationMs || (Date.now() - startTs),
         provider: result.provider,
       }).catch(err => console.error('Failed to save history entry:', err));
 
-      // Smoothly fade out the overlay immediately
-      await fadeAndHide();
+      // Start fading out the overlay concurrently
+      fadeAndHide();
 
-      // Inject text after overlay is fully hidden so the target window has focus
+      // Inject text immediately while fade transition is occurring
       await invoke('inject_text', { text: result.text });
     }
   } catch (err) {
@@ -248,10 +248,10 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       await new Promise(r => setTimeout(r, 1000));
       await fadeAndHide();
     } else {
-      // Hide overlay FIRST so focus is restored before text injection
-      await fadeAndHide();
+      // Start fading out overlay in parallel
+      fadeAndHide();
 
-      // Execute the action
+      // Execute the action immediately while fade transition is occurring
       if (action.action === 'insert' || action.action === 'rewrite') {
         const textToInsert = action.content || '';
         await invoke('inject_text', { text: textToInsert });
@@ -267,12 +267,13 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       }
     }
 
-    await invoke('save_history_entry', {
+    // Save history entry asynchronously (non-blocking)
+    invoke('save_history_entry', {
       text: `[Agent] ${voiceCommand}`,
       mode: 'agent',
       durationMs,
       provider: settings.llm_provider.preset,
-    });
+    }).catch(err => console.error('Failed to save history entry:', err));
 
   } catch (err) {
     console.error('Agent Error:', err);

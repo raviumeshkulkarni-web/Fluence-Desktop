@@ -98,7 +98,15 @@ class AuraVisualizer {
     normalized *= scale;
 
     // Exponential moving average — faster attack (0.4) for snappy reactivity
-    this.smoothedAmplitude = this.smoothedAmplitude * 0.6 + normalized * 0.4;
+    // Elastic decay: when amplitude drops, decay slowly for a bouncy, premium feel
+    const prevAmplitude = this.smoothedAmplitude;
+    if (normalized < prevAmplitude) {
+      // Slow decay on drop (elastic feel)
+      this.smoothedAmplitude = this.smoothedAmplitude * 0.92 + normalized * 0.08;
+    } else {
+      // Fast attack on rise
+      this.smoothedAmplitude = this.smoothedAmplitude * 0.6 + normalized * 0.4;
+    }
   }
 
   setState(state) {
@@ -123,10 +131,18 @@ class AuraVisualizer {
 
   _loop(timestamp) {
     this._rafId = requestAnimationFrame((t) => this._loop(t));
-    
+
     if (this.lastTime === null) { this.lastTime = timestamp; }
     const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1); // cap at 100ms
     this.lastTime = timestamp;
+
+    // Idle heartbeat — subtle periodic pulse
+    if (this.currentState === 'idle') {
+      const heartbeatPeriod = 4000; // 4 seconds
+      const heartbeatPhase = (timestamp % heartbeatPeriod) / heartbeatPeriod;
+      const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.08;
+      this.smoothedAmplitude = heartbeatPulse;
+    }
 
     // Phase integration: speed increases with amplitude (matches Android)
     const speed = 1.0 + this.smoothedAmplitude * 4.0;
@@ -147,7 +163,30 @@ class AuraVisualizer {
 
     const W = this._logicalW || 160;
     const H = this._logicalH || 44;
+
+    // Clear canvas in idle state — no wave rendering when idle
+    if (this.currentState === 'idle') {
+      ctx.clearRect(0, 0, W, H);
+      this._prevImageData = null;
+      return;
+    }
+
+    // Motion trail: draw previous frame at low opacity before clearing
+    if (this._prevImageData) {
+      ctx.putImageData(this._prevImageData, 0, 0);
+      ctx.globalAlpha = 0.15;
+      ctx.clearRect(0, 0, W, H);
+      ctx.globalAlpha = 1.0;
+    }
+
+    // Store current frame for next trail effect
+    this._prevImageData = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+
     ctx.clearRect(0, 0, W, H);
+
+    // Smooth line rendering
+    ctx.lineCap = 'round';
+    ctx.lineJoin = 'round';
 
     const isAgent = this.currentState === 'agent' || this.currentState === 'agent_transcribing';
     const isActive = this.currentState === 'recording' || this.currentState === 'agent' || this.currentState === 'agent_transcribing';
@@ -170,7 +209,7 @@ class AuraVisualizer {
     // Wave 1: background wave (color: primary, alpha ~0.4)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 3) {
+    for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.5 + phase1;
       const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 4;
@@ -188,7 +227,7 @@ class AuraVisualizer {
     // Wave 2: middle wave (slightly higher freq, bolder)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 3) {
+    for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 2.5 + phase2;
       const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 3;
@@ -206,7 +245,7 @@ class AuraVisualizer {
     // Wave 3: forefront wave (brightest, most visible)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 3) {
+    for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.2 + (phase1 - phase2) * 0.5;
       const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 5;

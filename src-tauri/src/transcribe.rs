@@ -16,15 +16,29 @@ pub struct TranscribeRequest {
     pub base_url: String,
     pub api_key: String,
     pub model: String,
-    pub wav_b64: String,    // base64-encoded WAV data
+    /// Base64-encoded audio bytes (FLAC or WAV, determined by mime_type/filename)
+    /// Semantically renamed in documentation, but kept as wav_b64 for frontend compatibility.
+    pub wav_b64: String,
     pub language: Option<String>,
+    #[serde(default = "default_mime_type")]
+    pub mime_type: String,
+    #[serde(default = "default_filename")]
+    pub filename: String,
+}
+
+fn default_mime_type() -> String {
+    "audio/wav".to_string()
+}
+
+fn default_filename() -> String {
+    "audio.wav".to_string()
 }
 
 /// Transcribe audio via OpenAI-compatible API, then apply dictionary corrections.
 #[tauri::command]
 pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
     let start_time = std::time::Instant::now();
-    let mp3_bytes = base64::Engine::decode(
+    let audio_bytes = base64::Engine::decode(
         &base64::engine::general_purpose::STANDARD,
         &req.wav_b64,
     )
@@ -32,11 +46,13 @@ pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> 
 
     let decode_duration = start_time.elapsed();
 
-    let corrected = transcribe_mp3_bytes(
+    let corrected = transcribe_audio_bytes(
         &req.base_url,
         &req.api_key,
         &req.model,
-        mp3_bytes,
+        audio_bytes,
+        &req.mime_type,
+        &req.filename,
         req.language.as_deref(),
     )
     .await?;
@@ -50,11 +66,13 @@ pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> 
     Ok(corrected)
 }
 
-pub async fn transcribe_mp3_bytes(
+pub async fn transcribe_audio_bytes(
     base_url: &str,
     api_key: &str,
     model: &str,
-    mp3_bytes: Vec<u8>,
+    audio_bytes: Vec<u8>,
+    mime_type: &str,
+    filename: &str,
     language: Option<&str>,
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
@@ -64,9 +82,9 @@ pub async fn transcribe_mp3_bytes(
         base_url.trim_end_matches('/')
     );
 
-    let file_part = reqwest::multipart::Part::bytes(mp3_bytes)
-        .file_name("audio.mp3")
-        .mime_str("audio/mpeg")
+    let file_part = reqwest::multipart::Part::bytes(audio_bytes)
+        .file_name(filename.to_string())
+        .mime_str(mime_type)
         .map_err(|e| e.to_string())?;
 
     let mut form = reqwest::multipart::Form::new()
@@ -83,15 +101,14 @@ pub async fn transcribe_mp3_bytes(
 
     // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint
     // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    // Clean version: only send a unique list of 'corrected' target terms, avoiding 'spoken' errors.
     if let Ok(entries) = crate::dictionary::get_dictionary() {
         if !entries.is_empty() {
             let mut prompt_words = Vec::new();
             for entry in entries {
-                if !entry.corrected.trim().is_empty() {
-                    prompt_words.push(entry.corrected.clone());
-                }
-                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
-                    prompt_words.push(entry.spoken.clone());
+                let corrected_trimmed = entry.corrected.trim().to_string();
+                if !corrected_trimmed.is_empty() && !prompt_words.contains(&corrected_trimmed) {
+                    prompt_words.push(corrected_trimmed);
                 }
             }
             if !prompt_words.is_empty() {
@@ -137,7 +154,7 @@ pub async fn transcribe_mp3_bytes(
     let corrected = dictionary::apply_corrections(&result.text);
     
     log::info!(
-        "transcribe_mp3_bytes performance: total = {:?}, network = {:?}, parse/dict = {:?}",
+        "transcribe_wav_bytes performance: total = {:?}, network = {:?}, parse/dict = {:?}",
         start_time.elapsed(),
         network_duration,
         parse_start.elapsed()
@@ -216,17 +233,8 @@ mod tests {
             }
         };
 
-        // Create 5 seconds of dummy mono MP3 audio (sine wave) at 16000Hz
-        use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
+        // Create 5 seconds of dummy mono WAV audio (sine wave) at 16000Hz
         let sample_rate = 16000;
-        let config = Mp3EncoderConfig::new()
-            .sample_rate(sample_rate)
-            .bitrate(64)
-            .channels(1)
-            .stereo_mode(StereoMode::Mono);
-        let mut encoder = Mp3Encoder::new(config).unwrap();
-        let samples_per_frame = encoder.samples_per_frame();
-        let mut mp3_bytes = Vec::new();
         let num_samples = sample_rate as usize * 5;
         let mut dummy_samples = Vec::with_capacity(num_samples);
         for i in 0..num_samples {
@@ -235,41 +243,27 @@ mod tests {
             dummy_samples.push((sample * i16::MAX as f32) as i16);
         }
         
-        for chunk in dummy_samples.chunks(samples_per_frame) {
-            if chunk.len() == samples_per_frame {
-                let mut frames = encoder.encode_interleaved(chunk).unwrap();
-                for mut f in frames {
-                    mp3_bytes.append(&mut f);
-                }
-            } else {
-                let mut padded = chunk.to_vec();
-                padded.resize(samples_per_frame, 0);
-                let mut frames = encoder.encode_interleaved(&padded).unwrap();
-                for mut f in frames {
-                    mp3_bytes.append(&mut f);
-                }
-            }
-        }
-        let mut final_frames = encoder.finish().unwrap();
-        mp3_bytes.append(&mut final_frames);
+        let wav_bytes = crate::audio::create_wav_bytes(&dummy_samples, sample_rate);
 
-        println!("Sending 10 seconds of dummy MP3 audio ({} bytes) to STT API...", mp3_bytes.len());
+        println!("Sending 5 seconds of dummy WAV audio ({} bytes) to STT API...", wav_bytes.len());
         let start = std::time::Instant::now();
-        let res = transcribe_mp3_bytes(
+        let res = transcribe_audio_bytes(
             &settings.stt_provider.base_url,
             &api_key,
             &settings.stt_provider.model,
-            mp3_bytes,
+            wav_bytes,
+            "audio/wav",
+            "audio.wav",
             Some("en"),
         )
         .await;
 
         match res {
             Ok(text) => {
-                println!("--- BENCHMARK RESULT: STT 10s audio transcription successful in {:?}. Response: {:?}", start.elapsed(), text);
+                println!("--- BENCHMARK RESULT: STT 5s audio transcription successful in {:?}. Response: {:?}", start.elapsed(), text);
             }
             Err(e) => {
-                println!("--- BENCHMARK RESULT: STT 10s audio transcription failed in {:?}: {}", start.elapsed(), e);
+                println!("--- BENCHMARK RESULT: STT 5s audio transcription failed in {:?}: {}", start.elapsed(), e);
             }
         }
     }

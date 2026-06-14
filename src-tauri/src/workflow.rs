@@ -27,22 +27,22 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             (corrected, transcribe_start.elapsed())
         }
     } else {
-        let mp3_start = std::time::Instant::now();
-        let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
-        let _mp3_duration = mp3_start.elapsed();
+        let payload = crate::audio::stop_recording_audio_bytes().await?;
 
-        if mp3_bytes.is_empty() {
+        if payload.bytes.is_empty() {
             ("".to_string(), std::time::Duration::from_secs(0))
         } else {
             let transcribe_start = std::time::Instant::now();
             let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
                 .map_err(|_| "No STT API key found. Please configure an API key in Providers settings.".to_string())?;
 
-            let corrected = crate::transcribe::transcribe_mp3_bytes(
+            let corrected = crate::transcribe::transcribe_audio_bytes(
                 &settings.stt_provider.base_url,
                 &api_key,
                 &settings.stt_provider.model,
-                mp3_bytes,
+                payload.bytes,
+                payload.mime_type,
+                payload.filename,
                 Some(settings.language.as_str()),
             )
             .await?;

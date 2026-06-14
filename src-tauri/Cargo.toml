@@ -1,6 +1,6 @@
 [package]
 name = "fluence-windows"
-version = "1.1.6"
+version = "1.1.8"
 description = "Fluence — AI Voice Typing for Windows"
 authors = ["Fluence Team"]
 license = "Apache-2.0"
@@ -44,9 +44,9 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 once_cell = "1"
 regex = "1"
-shine-rs = "0.1"
 tokio-tungstenite = "0.23"
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+flacenc = "0.5.1"
 
 
 

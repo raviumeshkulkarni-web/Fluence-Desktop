@@ -10,39 +10,33 @@ html, body {
 }
 
 body {
-  background: #0d0c11; /* Deep Obsidian */
+  background: radial-gradient(circle at 50% 20%, #14111d 0%, #07060a 100%); /* Premium Deep Obsidian */
   display: flex;
   flex-direction: column;
   position: relative;
   overflow: hidden;
 }
 
-/* Branded Purple glow at top-right */
-body::before {
-  content: "";
+#background-canvas {
   position: absolute;
-  width: 500px;
-  height: 500px;
-  background: radial-gradient(circle, rgba(168, 85, 247, 0.12) 0%, rgba(168, 85, 247, 0.0) 70%);
-  top: -150px;
-  right: -150px;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
   z-index: 0;
   pointer-events: none;
-  filter: blur(40px);
 }
 
-/* Branded Cyan glow at bottom-left */
-body::after {
-  content: "";
+.film-grain {
   position: absolute;
-  width: 450px;
-  height: 450px;
-  background: radial-gradient(circle, rgba(0, 242, 254, 0.06) 0%, rgba(0, 242, 254, 0.0) 70%);
-  bottom: -150px;
-  left: -150px;
-  z-index: 0;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 9999;
   pointer-events: none;
-  filter: blur(40px);
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noiseFilter'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/svg%3E");
+  opacity: 0.02;
 }
 
 /* ---- App Shell ---- */

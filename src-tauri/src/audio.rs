@@ -366,7 +366,7 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
     }
 }
 
-pub fn create_wav_bytes(samples: &[i16], sample_rate: u32) -> Vec<u8> {
+pub fn create_wav_bytes(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
     let mut wav = Vec::with_capacity(44 + samples.len() * 2);
 
     // RIFF Header
@@ -379,11 +379,12 @@ pub fn create_wav_bytes(samples: &[i16], sample_rate: u32) -> Vec<u8> {
     wav.extend_from_slice(b"fmt ");
     wav.extend_from_slice(&16u32.to_le_bytes()); // Subchunk size (16 for PCM)
     wav.extend_from_slice(&1u16.to_le_bytes()); // Audio format (1 = PCM)
-    wav.extend_from_slice(&1u16.to_le_bytes()); // Mono (1 channel)
+    wav.extend_from_slice(&channels.to_le_bytes()); // Channel count
     wav.extend_from_slice(&sample_rate.to_le_bytes());
-    let byte_rate = sample_rate * 2; // SampleRate * NumChannels * BitsPerSample/8
+    let byte_rate = sample_rate * channels as u32 * 2; // SampleRate * NumChannels * BitsPerSample/8
     wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes()); // Block align
+    let block_align = channels * 2; // NumChannels * BitsPerSample/8
+    wav.extend_from_slice(&block_align.to_le_bytes()); // Block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // Bits per sample (16-bit)
 
     // data subchunk
@@ -405,7 +406,7 @@ pub fn process_audio_samples(
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
     // 1. Downmix multi-channel stream to mono by taking the first channel.
-    // This avoids phase cancellation issues that occur when averaging 
+    // This avoids phase cancellation issues that occur when averaging
     // inverted channels in professional hardware.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
@@ -472,61 +473,19 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono by taking the first channel.
-    // This avoids phase cancellation issues that occur when averaging 
-    // inverted channels in professional hardware.
-    let mono_samples = if native_channels > 1 {
-        let mut v = Vec::with_capacity(samples.len() / native_channels);
-        for chunk in samples.chunks_exact(native_channels) {
-            v.push(chunk[0]);
-        }
-        v
-    } else {
-        samples
-    };
+    // 1. RMS Normalization and Mono Downmixing bypassed for the online path
+    // (replicates Openwhisper's raw stereo/multichannel stream upload).
+    let mut normalized = samples;
 
-    // 2. DC Offset Removal
-    let avg = if !mono_samples.is_empty() {
-        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
-    } else {
-        0.0f32
-    };
-    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
-
-    // 3. RMS Normalization with Soft Peak Limiting
-    // We apply this to the online path to ensure the API receives an optimal signal level,
-    // reducing reliance on the API's built-in AGC which can boost noise on quiet mics.
-    let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
-    let rms = (square_sum / dc_removed.len() as f32).sqrt();
-    let mut normalized = if rms > 0.001 {
-        let target_rms = 0.18f32;
-        let scale = target_rms / rms;
-        dc_removed
-            .iter()
-            .map(|&s| {
-                let scaled = s * scale;
-                if scaled.abs() > 0.95 {
-                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
-                } else {
-                    scaled
-                }
-            })
-            .collect::<Vec<f32>>()
-    } else {
-        dc_removed
-    };
-
-    // Prepend 100ms of silence padding to prevent first-syllable clipping 
+    // 2. Prepend 100ms of silence padding to prevent first-syllable clipping
     // caused by hardware spin-up delay or OS buffer lag.
-    let leading_padding_len = (native_sample_rate as f32 * 0.1) as usize;
+    // Ensure padding size respects the channel layout!
+    let leading_padding_len = (native_sample_rate as f32 * 0.1) as usize * native_channels;
     let mut leading_padded = vec![0.0f32; leading_padding_len];
     leading_padded.extend(normalized);
     normalized = leading_padded;
 
-    // Append 500ms of silence padding to give the ASR model enough context
-    // to finalize properly without truncating the final syllables.
-    let padding_len = (native_sample_rate as f32 * 0.5) as usize;
-    normalized.resize(normalized.len() + padding_len, 0.0);
+    // Note: Trailing silence padding removed to prevent artificial tail clipping by VAD.
 
     (normalized, native_sample_rate)
 }
@@ -632,8 +591,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 500ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Give the audio stream 600ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -685,7 +644,7 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
             .collect();
 
         // Create WAV bytes
-        create_wav_bytes(&i16_samples, final_sample_rate)
+        create_wav_bytes(&i16_samples, final_sample_rate, native_channels as u16)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -714,8 +673,8 @@ pub struct AudioPayload {
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 500ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Give the audio stream 600ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -761,7 +720,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let (processed, sample_rate) =
             process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
-        encode_flac_samples(&processed, sample_rate, 1)
+        encode_flac_samples(&processed, sample_rate, native_channels)
     })
     .await
     .map_err(|e| e.to_string())??;

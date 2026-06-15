@@ -114,7 +114,7 @@ pub async fn transcribe_audio_bytes(
         .bearer_auth(api_key)
         .multipart(form);
 
-    // Mistral sometimes requires the 'x-api-key' header specifically for their 
+    // Mistral sometimes requires the 'x-api-key' header specifically for their
     // transcription gateway. We provide it conditionally for maximum compatibility.
     if is_mistral {
         request = request.header("x-api-key", api_key);
@@ -243,7 +243,7 @@ mod tests {
             dummy_samples.push((sample * i16::MAX as f32) as i16);
         }
 
-        let wav_bytes = crate::audio::create_wav_bytes(&dummy_samples, sample_rate);
+        let wav_bytes = crate::audio::create_wav_bytes(&dummy_samples, sample_rate, 1);
 
         println!(
             "Sending 5 seconds of dummy WAV audio ({} bytes) to STT API...",

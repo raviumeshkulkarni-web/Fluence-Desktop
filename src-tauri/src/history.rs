@@ -15,7 +15,7 @@ pub struct HistoryEntry {
     pub id: String,
     pub timestamp: String,
     pub text: String,
-    pub mode: String,         // "transcription" | "agent"
+    pub mode: String, // "transcription" | "agent"
     pub duration_ms: u64,
     pub provider: String,
     pub char_count: usize,
@@ -50,7 +50,9 @@ pub fn init_db() -> Result<()> {
         CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);",
     )?;
 
-    let mut db = DB.lock().map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+    let mut db = DB
+        .lock()
+        .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
     *db = Some(conn);
     Ok(())
 }
@@ -61,13 +63,17 @@ where
 {
     // Try to get connection; if None, initialize first (outside the lock scope)
     let needs_init = {
-        let db = DB.lock().map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+        let db = DB
+            .lock()
+            .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
         db.is_none()
     };
     if needs_init {
         init_db()?;
     }
-    let db = DB.lock().map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
+    let db = DB
+        .lock()
+        .map_err(|e| anyhow::anyhow!("DB lock poisoned: {}", e))?;
     match db.as_ref() {
         Some(conn) => f(conn),
         None => Err(anyhow::anyhow!("DB not initialized after init_db()")),
@@ -168,7 +174,8 @@ pub fn save_history_entry(
     duration_ms: u64,
     provider: String,
 ) -> Result<HistoryEntry, String> {
-    let entry = add_history_entry(&text, &mode, duration_ms, &provider).map_err(|e| e.to_string())?;
+    let entry =
+        add_history_entry(&text, &mode, duration_ms, &provider).map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
     Ok(entry)
 }
@@ -202,10 +209,16 @@ pub fn get_history_stats() -> Result<serde_json::Value, String> {
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
             .unwrap_or(0);
         let total_chars: i64 = conn
-            .query_row("SELECT COALESCE(SUM(char_count),0) FROM history", [], |r| r.get(0))
+            .query_row("SELECT COALESCE(SUM(char_count),0) FROM history", [], |r| {
+                r.get(0)
+            })
             .unwrap_or(0);
         let total_duration_ms: i64 = conn
-            .query_row("SELECT COALESCE(SUM(duration_ms),0) FROM history", [], |r| r.get(0))
+            .query_row(
+                "SELECT COALESCE(SUM(duration_ms),0) FROM history",
+                [],
+                |r| r.get(0),
+            )
             .unwrap_or(0);
         Ok(serde_json::json!({
             "total_entries": total,

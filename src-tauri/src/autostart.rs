@@ -7,8 +7,7 @@ use anyhow::{anyhow, Result};
 use windows::{
     core::PCWSTR,
     Win32::System::Registry::{
-        RegCloseKey, RegDeleteValueW, RegSetValueExW,
-        HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ,
+        RegCloseKey, RegDeleteValueW, RegSetValueExW, HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ,
     },
 };
 
@@ -32,10 +31,7 @@ pub fn enable_autostart() -> Result<()> {
     let app_name_wide = to_wide(APP_NAME);
     let value_wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
     let value_bytes = unsafe {
-        std::slice::from_raw_parts(
-            value_wide.as_ptr() as *const u8,
-            value_wide.len() * 2,
-        )
+        std::slice::from_raw_parts(value_wide.as_ptr() as *const u8, value_wide.len() * 2)
     };
 
     unsafe {
@@ -50,17 +46,19 @@ pub fn enable_autostart() -> Result<()> {
         .ok()
         .map_err(|e| anyhow!("RegOpenKeyExW failed: {}", e))?;
 
-        RegSetValueExW(
+        let result = RegSetValueExW(
             hkey,
             PCWSTR(app_name_wide.as_ptr()),
             0,
             REG_SZ,
             Some(value_bytes),
-        )
-        .ok()
-        .map_err(|e| anyhow!("RegSetValueExW failed: {}", e))?;
+        );
 
         let _ = RegCloseKey(hkey);
+
+        result
+            .ok()
+            .map_err(|e| anyhow!("RegSetValueExW failed: {}", e))?;
     }
     Ok(())
 }

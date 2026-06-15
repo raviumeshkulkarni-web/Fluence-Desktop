@@ -27,13 +27,19 @@ pub fn register_hotkeys(
     }
 
     // Parse both shortcuts up-front so we fail fast before registering either
-    let t_shortcut = <tauri_plugin_global_shortcut::Shortcut as std::str::FromStr>
-        ::from_str(transcription_shortcut_str)
-        .map_err(|e| format!("Invalid transcription hotkey '{}': {}", transcription_shortcut_str, e))?;
+    let t_shortcut = <tauri_plugin_global_shortcut::Shortcut as std::str::FromStr>::from_str(
+        transcription_shortcut_str,
+    )
+    .map_err(|e| {
+        format!(
+            "Invalid transcription hotkey '{}': {}",
+            transcription_shortcut_str, e
+        )
+    })?;
 
-    let a_shortcut = <tauri_plugin_global_shortcut::Shortcut as std::str::FromStr>
-        ::from_str(agent_shortcut_str)
-        .map_err(|e| format!("Invalid agent hotkey '{}': {}", agent_shortcut_str, e))?;
+    let a_shortcut =
+        <tauri_plugin_global_shortcut::Shortcut as std::str::FromStr>::from_str(agent_shortcut_str)
+            .map_err(|e| format!("Invalid agent hotkey '{}': {}", agent_shortcut_str, e))?;
 
     if t_shortcut == a_shortcut {
         return Err("Transcription and agent hotkeys must be different".to_string());
@@ -76,9 +82,13 @@ pub fn register_hotkeys(
     }
 
     HOTKEYS_REGISTERED.store(true, Ordering::SeqCst);
-    log::info!("Hotkeys registered: transcription='{}' ({}), agent='{}' ({})",
-        transcription_shortcut_str, transcription_mode,
-        agent_shortcut_str, agent_mode);
+    log::info!(
+        "Hotkeys registered: transcription='{}' ({}), agent='{}' ({})",
+        transcription_shortcut_str,
+        transcription_mode,
+        agent_shortcut_str,
+        agent_mode
+    );
     Ok(())
 }
 
@@ -127,7 +137,13 @@ pub fn update_hotkeys(
     agent_shortcut: String,
     agent_mode: String,
 ) -> Result<(), String> {
-    register_hotkeys(&app, &transcription_shortcut, &transcription_mode, &agent_shortcut, &agent_mode)
+    register_hotkeys(
+        &app,
+        &transcription_shortcut,
+        &transcription_mode,
+        &agent_shortcut,
+        &agent_mode,
+    )
 }
 
 #[tauri::command]

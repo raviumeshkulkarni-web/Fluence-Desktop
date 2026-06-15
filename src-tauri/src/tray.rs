@@ -7,17 +7,19 @@ use tauri::{
     AppHandle, Emitter, Manager,
 };
 
-
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
-    let open_settings = MenuItem::with_id(app, "open_settings", "Open Settings", true, None::<&str>)?;
-    let history_item = MenuItem::with_id(app, "history", "Transcription History", true, None::<&str>)?;
+    let open_settings =
+        MenuItem::with_id(app, "open_settings", "Open Settings", true, None::<&str>)?;
+    let history_item =
+        MenuItem::with_id(app, "history", "Transcription History", true, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
     let sep2 = PredefinedMenuItem::separator(app)?;
 
     // Recording mode submenu
     let mode_toggle = MenuItem::with_id(app, "mode_toggle", "Push-to-Toggle", true, None::<&str>)?;
     let mode_hold = MenuItem::with_id(app, "mode_hold", "Hold-to-Record", true, None::<&str>)?;
-    let mode_submenu = Submenu::with_items(app, "Recording Mode", true, &[&mode_toggle, &mode_hold])?;
+    let mode_submenu =
+        Submenu::with_items(app, "Recording Mode", true, &[&mode_toggle, &mode_hold])?;
 
     let quit = MenuItem::with_id(app, "quit", "Quit Fluence", true, None::<&str>)?;
 

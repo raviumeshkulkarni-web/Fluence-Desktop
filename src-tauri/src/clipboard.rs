@@ -13,12 +13,12 @@ use windows::Win32::{
             CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
             OpenClipboard, SetClipboardData,
         },
-        Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE},
+        Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE},
     },
     UI::Input::KeyboardAndMouse::{
         GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-        KEYEVENTF_KEYUP, VK_CONTROL, VK_V, VIRTUAL_KEY, VK_LCONTROL, VK_RCONTROL,
-        VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN,
+        KEYEVENTF_KEYUP, VIRTUAL_KEY, VK_CONTROL, VK_LCONTROL, VK_LMENU, VK_LSHIFT, VK_LWIN,
+        VK_RCONTROL, VK_RMENU, VK_RSHIFT, VK_RWIN, VK_V,
     },
 };
 
@@ -40,6 +40,13 @@ fn make_key_input(vk: VIRTUAL_KEY, flags: KEYBD_EVENT_FLAGS) -> INPUT {
 
 #[cfg(target_os = "windows")]
 const CF_UNICODETEXT: u32 = 13;
+
+#[cfg(target_os = "windows")]
+#[link(name = "kernel32")]
+extern "system" {
+    fn GlobalFree(hmem: windows::Win32::Foundation::HGLOBAL)
+        -> windows::Win32::Foundation::HGLOBAL;
+}
 
 #[cfg(target_os = "windows")]
 fn open_clipboard_with_retry() -> Result<()> {
@@ -73,6 +80,11 @@ fn get_clipboard_text() -> Option<String> {
         }
         let h = GetClipboardData(CF_UNICODETEXT);
         let result = h.ok().and_then(|handle| {
+            let total_size = GlobalSize(windows::Win32::Foundation::HGLOBAL(handle.0));
+            if total_size == 0 {
+                return None;
+            }
+            let max_words = total_size / 2;
             let ptr = GlobalLock(windows::Win32::Foundation::HGLOBAL(handle.0));
             if ptr.is_null() {
                 return None;
@@ -80,7 +92,7 @@ fn get_clipboard_text() -> Option<String> {
             // Read null-terminated UTF-16 string
             let mut len = 0usize;
             let wptr = ptr as *const u16;
-            while *wptr.add(len) != 0 {
+            while len < max_words && *wptr.add(len) != 0 {
                 len += 1;
             }
             let slice = std::slice::from_raw_parts(wptr, len);
@@ -116,6 +128,7 @@ fn set_clipboard_text(text: &str) -> Result<()> {
         let ptr = GlobalLock(hmem);
         if ptr.is_null() {
             let _ = CloseClipboard();
+            let _ = GlobalFree(hmem);
             return Err(anyhow!("GlobalLock failed"));
         }
         std::ptr::copy_nonoverlapping(wide.as_ptr() as *const u8, ptr as *mut u8, byte_len);
@@ -124,6 +137,7 @@ fn set_clipboard_text(text: &str) -> Result<()> {
         if let Err(e) = SetClipboardData(CF_UNICODETEXT, windows::Win32::Foundation::HANDLE(hmem.0))
         {
             let _ = CloseClipboard();
+            let _ = GlobalFree(hmem);
             return Err(anyhow!("SetClipboardData failed: {}", e));
         }
 
@@ -134,10 +148,14 @@ fn set_clipboard_text(text: &str) -> Result<()> {
 
 #[cfg(target_os = "windows")]
 const MODIFIER_VKS: &[VIRTUAL_KEY] = &[
-    VK_LCONTROL, VK_RCONTROL,
-    VK_LSHIFT, VK_RSHIFT,
-    VK_LMENU, VK_RMENU, // Alt keys
-    VK_LWIN, VK_RWIN,
+    VK_LCONTROL,
+    VK_RCONTROL,
+    VK_LSHIFT,
+    VK_RSHIFT,
+    VK_LMENU,
+    VK_RMENU, // Alt keys
+    VK_LWIN,
+    VK_RWIN,
 ];
 
 #[cfg(target_os = "windows")]
@@ -158,7 +176,11 @@ fn release_held_modifiers() -> Vec<VIRTUAL_KEY> {
         unsafe {
             let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
             if sent != inputs.len() as u32 {
-                log::warn!("SendInput (release modifiers): sent {} of {} events", sent, inputs.len());
+                log::warn!(
+                    "SendInput (release modifiers): sent {} of {} events",
+                    sent,
+                    inputs.len()
+                );
             }
         }
     }
@@ -177,7 +199,11 @@ fn restore_modifiers(released: &[VIRTUAL_KEY]) {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (restore modifiers): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (restore modifiers): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }
@@ -194,7 +220,11 @@ fn send_ctrl_v() {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (ctrl_v): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (ctrl_v): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }
@@ -214,7 +244,11 @@ pub fn send_backspaces(count: usize) {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (backspaces): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (backspaces): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }
@@ -230,7 +264,11 @@ pub fn send_enter() {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (enter): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (enter): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }
@@ -248,7 +286,11 @@ pub fn send_select_all() {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (select_all): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (select_all): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }
@@ -308,7 +350,10 @@ pub async fn inject_text(text: String) -> Result<(), String> {
 
 /// Execute a keyboard action from agent mode
 #[tauri::command]
-pub async fn execute_keyboard_action(action: String, char_count: Option<usize>) -> Result<(), String> {
+pub async fn execute_keyboard_action(
+    action: String,
+    char_count: Option<usize>,
+) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         sleep(Duration::from_millis(80)).await;
@@ -341,7 +386,11 @@ fn send_ctrl_c() {
     unsafe {
         let sent = SendInput(&inputs, std::mem::size_of::<INPUT>() as i32);
         if sent != inputs.len() as u32 {
-            log::warn!("SendInput (ctrl_c): sent {} of {} events", sent, inputs.len());
+            log::warn!(
+                "SendInput (ctrl_c): sent {} of {} events",
+                sent,
+                inputs.len()
+            );
         }
     }
 }

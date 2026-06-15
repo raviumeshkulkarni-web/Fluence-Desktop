@@ -513,12 +513,14 @@ function renderHistoryItem(entry, container) {
       <span class="history-item-time">${timeStr}</span>
       <div style="display:flex;gap:6px;align-items:center;">
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${entry.mode}</span>
-        <button class="btn-ghost" onclick="copyHistoryItem('${escapeHtml(entry.text.replace(/'/g, "\\'"))}')" style="padding:2px 8px;font-size:11px;">Copy</button>
+        <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
         <button class="btn-ghost" onclick="deleteHistoryItem('${entry.id}')" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
       </div>
     </div>
     <div class="history-item-text">${escapeHtml(entry.text)}</div>
   `;
+
+  div.querySelector('.history-copy-btn').addEventListener('click', () => copyHistoryItem(entry.text));
 
   container?.appendChild(div);
 }

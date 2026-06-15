@@ -10,7 +10,7 @@ use std::path::PathBuf;
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     #[serde(default = "default_preset")]
-    pub preset: String,      // "groq" | "openai" | "custom" | "mistral"
+    pub preset: String, // "groq" | "openai" | "custom" | "mistral"
     #[serde(default = "default_base_url")]
     pub base_url: String,
     #[serde(default = "default_model")]
@@ -19,10 +19,18 @@ pub struct ProviderConfig {
     pub api_key_saved: bool, // whether credential is stored in Credential Manager
 }
 
-fn default_preset() -> String { "groq".to_string() }
-fn default_base_url() -> String { "https://api.groq.com/openai".to_string() }
-fn default_model() -> String { "whisper-large-v3".to_string() }
-fn default_api_key_saved() -> bool { false }
+fn default_preset() -> String {
+    "groq".to_string()
+}
+fn default_base_url() -> String {
+    "https://api.groq.com/openai".to_string()
+}
+fn default_model() -> String {
+    "whisper-large-v3".to_string()
+}
+fn default_api_key_saved() -> bool {
+    false
+}
 
 impl Default for ProviderConfig {
     fn default() -> Self {
@@ -40,9 +48,9 @@ pub struct AppSettings {
     #[serde(default = "default_hotkey")]
     pub hotkey: String,
     #[serde(default = "default_recording_mode")]
-    pub recording_mode: String,      // "push_to_toggle" | "hold_to_record"
+    pub recording_mode: String, // "push_to_toggle" | "hold_to_record"
     #[serde(default = "default_overlay_position")]
-    pub overlay_position: String,    // "center" | "bottom_left" | "bottom_right"
+    pub overlay_position: String, // "center" | "bottom_left" | "bottom_right"
     #[serde(default)]
     pub audio_device_id: Option<String>,
     #[serde(default = "default_stt_provider")]
@@ -54,7 +62,7 @@ pub struct AppSettings {
     #[serde(default = "default_true")]
     pub sound_on_complete: bool,
     #[serde(default = "default_theme")]
-    pub theme: String,               // "dark" | "light"
+    pub theme: String, // "dark" | "light"
     #[serde(default = "default_agent_mode_threshold_ms")]
     #[allow(dead_code)]
     pub agent_mode_threshold_ms: u64,
@@ -63,26 +71,48 @@ pub struct AppSettings {
     #[serde(default = "default_language")]
     pub language: String,
     #[serde(default = "default_agent_hotkey")]
-    pub agent_hotkey: String,           // e.g. "Ctrl+Shift+A"
+    pub agent_hotkey: String, // e.g. "Ctrl+Shift+A"
     #[serde(default = "default_agent_recording_mode")]
-    pub agent_recording_mode: String,   // "push_to_toggle" | "hold_to_record"
+    pub agent_recording_mode: String, // "push_to_toggle" | "hold_to_record"
     #[serde(default = "default_ai_polish_style")]
     pub ai_polish_style: String,
     #[serde(default = "default_true")]
     pub auto_grab_highlight: bool,
 }
 
-fn default_hotkey() -> String { "Ctrl+Shift+Space".to_string() }
-fn default_recording_mode() -> String { "push_to_toggle".to_string() }
-fn default_overlay_position() -> String { "bottom_right".to_string() }
-fn default_false() -> bool { false }
-fn default_true() -> bool { true }
-fn default_theme() -> String { "dark".to_string() }
-fn default_agent_mode_threshold_ms() -> u64 { 800 }
-fn default_language() -> String { "en".to_string() }
-fn default_agent_hotkey() -> String { "Ctrl+Shift+A".to_string() }
-fn default_agent_recording_mode() -> String { "push_to_toggle".to_string() }
-fn default_ai_polish_style() -> String { "none".to_string() }
+fn default_hotkey() -> String {
+    "Ctrl+Shift+Space".to_string()
+}
+fn default_recording_mode() -> String {
+    "push_to_toggle".to_string()
+}
+fn default_overlay_position() -> String {
+    "bottom_right".to_string()
+}
+fn default_false() -> bool {
+    false
+}
+fn default_true() -> bool {
+    true
+}
+fn default_theme() -> String {
+    "dark".to_string()
+}
+fn default_agent_mode_threshold_ms() -> u64 {
+    800
+}
+fn default_language() -> String {
+    "en".to_string()
+}
+fn default_agent_hotkey() -> String {
+    "Ctrl+Shift+A".to_string()
+}
+fn default_agent_recording_mode() -> String {
+    "push_to_toggle".to_string()
+}
+fn default_ai_polish_style() -> String {
+    "none".to_string()
+}
 
 fn default_stt_provider() -> ProviderConfig {
     ProviderConfig {
@@ -173,4 +203,3 @@ pub fn get_settings() -> Result<AppSettings, String> {
 pub fn update_settings(settings: AppSettings) -> Result<(), String> {
     save_settings(&settings).map_err(|e| e.to_string())
 }
-

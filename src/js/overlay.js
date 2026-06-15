@@ -224,7 +224,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 
     if (!grabbed) {
       try {
-        clipboardCtx = await navigator.clipboard.readText();
+        clipboardCtx = (await invoke('grab_active_selection').catch(() => '')) || '';
       } catch {
         // Clipboard read may fail if no permission — proceed without context
       }

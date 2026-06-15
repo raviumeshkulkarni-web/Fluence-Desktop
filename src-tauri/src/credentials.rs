@@ -7,8 +7,8 @@ use anyhow::{anyhow, Result};
 use windows::{
     core::{PCWSTR, PWSTR},
     Win32::Security::Credentials::{
-        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS, CRED_PERSIST_LOCAL_MACHINE,
-        CRED_TYPE_GENERIC,
+        CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS,
+        CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
     },
 };
 
@@ -68,7 +68,8 @@ pub fn read_credential(target: &str) -> Result<String> {
         }
 
         let cred = &*pcred;
-        let blob = std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
+        let blob =
+            std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
         let secret = String::from_utf8_lossy(blob).to_string();
         CredFree(pcred as *mut _);
         Ok(secret)
@@ -108,12 +109,20 @@ pub const LLM_API_KEY_TARGET: &str = "Fluence/LLM_ApiKey";
 
 /// Generate a provider-specific target for STT keys
 pub fn get_stt_target(preset: &str) -> String {
-    format!("{}/{}", STT_API_KEY_TARGET, preset.to_lowercase().replace(' ', "_"))
+    format!(
+        "{}/{}",
+        STT_API_KEY_TARGET,
+        preset.to_lowercase().replace(' ', "_")
+    )
 }
 
 /// Generate a provider-specific target for LLM keys
 pub fn get_llm_target(preset: &str) -> String {
-    format!("{}/{}", LLM_API_KEY_TARGET, preset.to_lowercase().replace(' ', "_"))
+    format!(
+        "{}/{}",
+        LLM_API_KEY_TARGET,
+        preset.to_lowercase().replace(' ', "_")
+    )
 }
 
 // Tauri commands

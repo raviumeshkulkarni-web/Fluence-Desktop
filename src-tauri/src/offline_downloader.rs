@@ -67,7 +67,7 @@ pub fn delete_model_files() -> Result<u64> {
     if !dir.exists() {
         return Ok(0);
     }
-    
+
     let mut bytes_freed = 0;
     if let Ok(entries) = fs::read_dir(&dir) {
         for entry in entries.flatten() {
@@ -77,7 +77,7 @@ pub fn delete_model_files() -> Result<u64> {
             let _ = fs::remove_file(entry.path());
         }
     }
-    
+
     // Remove directory itself
     let _ = fs::remove_dir(dir);
     Ok(bytes_freed)
@@ -112,7 +112,7 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
                 IS_DOWNLOADING.store(false, Ordering::SeqCst);
                 let err_msg = e.to_string();
                 log::error!("Offline download failed: {}", err_msg);
-                
+
                 let status = if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
                     "cancelled".to_string()
                 } else {
@@ -130,7 +130,7 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
                         error_message: Some(err_msg),
                     },
                 );
-                
+
                 // Clean up incomplete temp files
                 let dir = get_offline_dir();
                 let _ = clean_temp_files(&dir);
@@ -263,7 +263,7 @@ async fn download_file_to_path(
     }
 
     let mut file = tokio::fs::File::create(&tmp_path).await?;
-    
+
     while let Some(chunk) = response.chunk().await? {
         if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
             let _ = file.shutdown().await;
@@ -366,4 +366,3 @@ pub fn cancel_offline_download() {
 pub fn delete_offline_model() -> Result<u64, String> {
     delete_model_files().map_err(|e| e.to_string())
 }
-

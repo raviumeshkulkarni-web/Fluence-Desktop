@@ -32,12 +32,21 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             ("".to_string(), std::time::Duration::from_secs(0))
         } else {
             let transcribe_start = std::time::Instant::now();
-            
+
             // Fetch the specific key for the current provider preset
             let target = crate::credentials::get_stt_target(&settings.stt_provider.preset);
             let api_key = crate::credentials::get_api_key(target).map_err(|_| {
-                format!("No API key found for {}. Please configure it in Providers settings.", settings.stt_provider.preset)
+                format!(
+                    "No API key found for {}. Please configure it in Providers settings.",
+                    settings.stt_provider.preset
+                )
             })?;
+
+            let prompt = if settings.language == "en" {
+                Some("Hello, this is a clean transcription with proper punctuation and capitalization.")
+            } else {
+                None
+            };
 
             let corrected = crate::transcribe::transcribe_audio_bytes(
                 &settings.stt_provider.base_url,
@@ -47,7 +56,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
                 payload.mime_type,
                 payload.filename,
                 Some(settings.language.as_str()),
-                Some("Hello, this is a clean transcription with proper punctuation and capitalization."),
+                prompt,
             )
             .await?;
             (corrected, transcribe_start.elapsed())

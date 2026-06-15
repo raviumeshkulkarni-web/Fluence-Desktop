@@ -16,7 +16,7 @@ pub struct AgentRequest {
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AgentAction {
-    pub action: String,   // "insert" | "delete_chars" | "select_all" | "submit" | "rewrite"
+    pub action: String, // "insert" | "delete_chars" | "select_all" | "submit" | "rewrite"
     pub content: Option<String>,
     pub char_count: Option<usize>,
 }
@@ -107,14 +107,18 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
         .map(|c| c.message.content)
         .ok_or_else(|| "Empty response from LLM".to_string())?;
 
-    let action: AgentAction =
-        serde_json::from_str(&content).map_err(|e| format!("Action parse error: {}: {}", e, content))?;
+    let action: AgentAction = serde_json::from_str(&content)
+        .map_err(|e| format!("Action parse error: {}: {}", e, content))?;
 
     Ok(action)
 }
 
 #[tauri::command]
-pub async fn test_llm_connection(base_url: String, api_key: String, model: String) -> Result<String, String> {
+pub async fn test_llm_connection(
+    base_url: String,
+    api_key: String,
+    model: String,
+) -> Result<String, String> {
     // Smart URL parsing: handle both trailing slashes and missing/extra /v1
     let base = base_url.trim_end_matches('/');
     let url = if base.to_lowercase().ends_with("/v1") {

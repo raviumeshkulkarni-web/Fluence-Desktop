@@ -12,8 +12,8 @@ html, body {
 body {
   background: radial-gradient(circle at 50% 20%, #14111d 0%, #07060a 100%); /* Premium Deep Obsidian */
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
+  align-items: stretch;
   position: relative;
   overflow: hidden;
 }
@@ -51,11 +51,23 @@ body {
   background: transparent;
 }
 
+/* ---- Page wrapper: titlebar + shell stacked ---- */
+.wizard-page {
+  width: 100%;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
+}
+
 /* ---- Progress Bar ---- */
 .progress-bar-track {
   height: 2px;
   background: var(--color-outline-variant);
   flex-shrink: 0;
+  transition: opacity 0.3s ease;
 }
 
 .progress-bar-fill {
@@ -93,9 +105,9 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  padding: var(--spacing-xl) var(--spacing-2xl);
-  gap: var(--spacing-lg);
+  justify-content: flex-start;
+  padding: 40px var(--spacing-xl) var(--spacing-md);
+  gap: var(--spacing-md);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.35s ease, transform 0.35s cubic-bezier(0.16, 1, 0.3, 1);
@@ -130,9 +142,9 @@ body {
 
 /* ---- Step Content ---- */
 .step-icon {
-  width: 72px;
-  height: 72px;
-  border-radius: var(--radius-xl);
+  width: 48px;
+  height: 48px;
+  border-radius: var(--radius-lg);
   background: rgba(209,140,255,0.12);
   border: 1px solid rgba(209,140,255,0.25);
   display: flex;
@@ -142,7 +154,7 @@ body {
   box-shadow: var(--shadow-glow);
 }
 
-.step-icon svg { width: 36px; height: 36px; color: var(--color-primary); fill: currentColor; }
+.step-icon svg { width: 24px; height: 24px; color: var(--color-primary); fill: currentColor; }
 
 .step-title {
   font-family: var(--font-display);
@@ -337,4 +349,141 @@ body {
   height: 88px;
   border-radius: 20px;
   box-shadow: 0 0 48px rgba(168,85,247,0.5);
+}
+
+/* ====================================================
+   Wizard refinements: Titlebar, Logo, Provider Cards
+   ==================================================== */
+
+/* Unified Window: Remove titlebar border */
+.titlebar {
+  border-bottom: none !important;
+}
+
+/* Free-Floating Glowing Logo */
+.fluence-logo-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin-bottom: var(--spacing-xs);
+  width: 80px;
+  height: 80px;
+}
+
+.fluence-logo-svg {
+  filter: drop-shadow(0 0 16px rgba(168, 85, 247, 0.6)) drop-shadow(0 0 32px rgba(0, 242, 254, 0.35));
+  animation: logo-float 4s ease-in-out infinite alternate;
+}
+
+@keyframes logo-float {
+  0% { transform: translateY(0px) scale(1); }
+  100% { transform: translateY(-4px) scale(1.02); }
+}
+
+/* Glassmorphic Provider Cards */
+.provider-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 12px 10px;
+  border: 1.5px solid var(--color-outline-variant);
+  border-radius: var(--radius-lg);
+  cursor: pointer;
+  transition: var(--transition-base);
+  background: rgba(22, 21, 26, 0.4);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  color: var(--color-on-surface-variant);
+}
+
+.provider-card:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+/* Hover Brand Colors */
+.provider-card[data-provider="groq"]:hover {
+  border-color: rgba(245, 80, 54, 0.5);
+}
+.provider-card[data-provider="openai"]:hover {
+  border-color: rgba(16, 163, 127, 0.5);
+}
+.provider-card[data-provider="custom"]:hover {
+  border-color: rgba(209, 140, 255, 0.5);
+}
+
+/* Selected Brand States */
+.provider-card[data-provider="groq"].selected {
+  border-color: #F55036;
+  background: rgba(245, 80, 54, 0.08);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(245, 80, 54, 0.2);
+}
+
+.provider-card[data-provider="openai"].selected {
+  border-color: #10a37f;
+  background: rgba(16, 163, 127, 0.08);
+  color: #fff;
+  box-shadow: 0 0 16px rgba(16, 163, 127, 0.2);
+}
+
+.provider-card[data-provider="custom"].selected {
+  border-color: var(--color-primary);
+  background: rgba(209, 140, 255, 0.08);
+  color: var(--color-primary);
+  box-shadow: 0 0 16px rgba(209, 140, 255, 0.2);
+}
+
+.provider-card .provider-name {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.25s ease;
+}
+
+/* Provider Icons micro-interactions */
+.provider-icon {
+  width: 24px;
+  height: 24px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), filter 0.3s ease, color 0.3s ease;
+}
+
+.groq-icon {
+  border-radius: 4px;
+}
+
+.openai-icon {
+  color: #849495;
+}
+.provider-card.selected .openai-icon,
+.provider-card:hover .openai-icon {
+  color: #10a37f;
+}
+
+.custom-icon {
+  color: #849495;
+}
+.provider-card.selected .custom-icon,
+.provider-card:hover .custom-icon {
+  color: var(--color-primary);
+}
+
+/* Micro-animations on card hover */
+.provider-card:hover .provider-icon {
+  transform: scale(1.12);
+}
+.provider-card:hover .openai-icon {
+  transform: scale(1.12) rotate(25deg);
+  filter: drop-shadow(0 0 6px rgba(16, 163, 127, 0.5));
+}
+.provider-card:hover .custom-icon {
+  transform: scale(1.12) rotate(45deg);
+  filter: drop-shadow(0 0 6px rgba(209, 140, 255, 0.5));
+}
+.provider-card:hover .groq-icon {
+  filter: drop-shadow(0 0 6px rgba(245, 80, 54, 0.5));
 }

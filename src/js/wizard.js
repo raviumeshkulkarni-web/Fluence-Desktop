@@ -122,6 +122,11 @@ function updateStep(step) {
   const fill = document.getElementById('progress-fill');
   if (fill) fill.style.width = `${progress}%`;
 
+  const track = document.querySelector('.progress-bar-track');
+  if (track) {
+    track.style.opacity = (step === 1) ? '0' : '1';
+  }
+
   // Update dots
   document.querySelectorAll('.step-dot').forEach(dot => {
     const dotStep = parseInt(dot.dataset.dot);
@@ -204,7 +209,7 @@ function setupStep2() {
 
       // Show/hide endpoint for custom
       const endpointRow = document.getElementById('wiz-endpoint-row');
-      if (endpointRow) endpointRow.style.display = (preset === 'custom') ? '' : '';
+      if (endpointRow) endpointRow.style.display = (preset === 'custom') ? 'flex' : 'none';
     });
   });
 

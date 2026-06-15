@@ -502,18 +502,62 @@ pub fn process_audio_samples_online(
         samples
     };
 
-    // 2. DC Offset Removal
-    let avg = if !mono_samples.is_empty() {
-        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
+    // 2. Downsample to 16kHz using windowed-sinc resampler
+    // OpenWhisper rigidly expects 16kHz. Sending native rates causes severe pitch-shifting in local/open API endpoints.
+    const TARGET_SAMPLE_RATE: u32 = 16_000;
+    let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
+        let resampled_data = resample_sinc(
+            &mono_samples,
+            native_sample_rate as f64,
+            TARGET_SAMPLE_RATE as f64,
+        );
+        (resampled_data, TARGET_SAMPLE_RATE)
+    } else {
+        (mono_samples, native_sample_rate)
+    };
+
+    // 3. DC Offset Removal
+    let avg = if !resampled.is_empty() {
+        resampled.iter().sum::<f32>() / resampled.len() as f32
     } else {
         0.0f32
     };
-    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
+    let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
-    // Note: Silence padding, client-side resampling, and RMS normalization/soft-limiting
-    // removed to prevent clipping final syllables, dynamic distortion, and anti-aliasing filter distortions.
-    // We send raw, un-normalized native sample-rate mono.
-    (dc_removed, native_sample_rate)
+    // 4. RMS Normalization with Soft Peak Limiting
+    // Target RMS: 0.18 (ideal level for Whisper ASR). Without this, quiet mics fail to transcribe.
+    let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
+    let rms = (square_sum / dc_removed.len() as f32).sqrt();
+    let mut normalized = if rms > 0.001 {
+        let target_rms = 0.18f32;
+        let scale = target_rms / rms;
+        dc_removed
+            .iter()
+            .map(|&s| {
+                let scaled = s * scale;
+                if scaled.abs() > 0.95 {
+                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
+                } else {
+                    scaled
+                }
+            })
+            .collect::<Vec<f32>>()
+    } else {
+        dc_removed
+    };
+
+    // 5. Silence Padding
+    // Prepend 100ms of silence to prevent first-syllable hardware clipping.
+    let leading_padding_len = (final_sample_rate as f32 * 0.1) as usize;
+    let mut padded = vec![0.0f32; leading_padding_len];
+    padded.extend(normalized);
+    normalized = padded;
+
+    // Append 300ms of silence so the VAD in open models doesn't clip the final syllables.
+    let trailing_padding_len = (final_sample_rate as f32 * 0.3) as usize;
+    normalized.resize(normalized.len() + trailing_padding_len, 0.0);
+
+    (normalized, final_sample_rate)
 }
 
 fn encode_flac_samples(

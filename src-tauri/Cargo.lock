@@ -1342,7 +1342,7 @@ dependencies = [
 
 [[package]]
 name = "fluence-windows"
-version = "1.1.11"
+version = "1.1.14"
 dependencies = [
  "anyhow",
  "base64 0.22.1",

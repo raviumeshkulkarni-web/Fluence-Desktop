@@ -473,21 +473,47 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. RMS Normalization and Mono Downmixing bypassed for the online path
-    // (replicates Openwhisper's raw stereo/multichannel stream upload).
-    let mut normalized = samples;
+    // 1. Smart Max-Energy Channel Selection (Mono Downmixing)
+    // Calculates the energy (sum of squares) of each channel and selects the loudest one.
+    // This prevents phase cancellation from summing and dead channels from hardcoding channel 0.
+    let mono_samples = if native_channels > 1 {
+        let mut channel_energies = vec![0.0f64; native_channels];
+        for chunk in samples.chunks_exact(native_channels) {
+            for (ch, &sample) in chunk.iter().enumerate() {
+                channel_energies[ch] += (sample * sample) as f64;
+            }
+        }
 
-    // 2. Prepend 100ms of silence padding to prevent first-syllable clipping
-    // caused by hardware spin-up delay or OS buffer lag.
-    // Ensure padding size respects the channel layout!
-    let leading_padding_len = (native_sample_rate as f32 * 0.1) as usize * native_channels;
-    let mut leading_padded = vec![0.0f32; leading_padding_len];
-    leading_padded.extend(normalized);
-    normalized = leading_padded;
+        let mut max_ch = 0;
+        let mut max_energy = -1.0;
+        for (ch, &energy) in channel_energies.iter().enumerate() {
+            if energy > max_energy {
+                max_energy = energy;
+                max_ch = ch;
+            }
+        }
 
-    // Note: Trailing silence padding removed to prevent artificial tail clipping by VAD.
+        let mut v = Vec::with_capacity(samples.len() / native_channels);
+        for chunk in samples.chunks_exact(native_channels) {
+            v.push(chunk[max_ch]);
+        }
+        v
+    } else {
+        samples
+    };
 
-    (normalized, native_sample_rate)
+    // 2. DC Offset Removal
+    let avg = if !mono_samples.is_empty() {
+        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
+    } else {
+        0.0f32
+    };
+    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
+
+    // Note: Silence padding, client-side resampling, and RMS normalization/soft-limiting
+    // removed to prevent clipping final syllables, dynamic distortion, and anti-aliasing filter distortions.
+    // We send raw, un-normalized native sample-rate mono.
+    (dc_removed, native_sample_rate)
 }
 
 fn encode_flac_samples(
@@ -525,8 +551,8 @@ fn encode_flac_samples(
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 500ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -591,8 +617,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 600ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -643,8 +669,8 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
             .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
             .collect();
 
-        // Create WAV bytes
-        create_wav_bytes(&i16_samples, final_sample_rate, native_channels as u16)
+        // Create WAV bytes (mono layout after online processing)
+        create_wav_bytes(&i16_samples, final_sample_rate, 1)
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -673,8 +699,8 @@ pub struct AudioPayload {
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 600ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(600)).await;
+    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -720,7 +746,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let (processed, sample_rate) =
             process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
-        encode_flac_samples(&processed, sample_rate, native_channels)
+        encode_flac_samples(&processed, sample_rate, 1)
     })
     .await
     .map_err(|e| e.to_string())??;
@@ -740,24 +766,12 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 }
 
 pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
-    let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
-    let preset = settings.stt_provider.preset.to_lowercase();
-
-    if preset == "groq" || preset == "openai" || preset == "mistral" {
-        let flac_bytes = stop_recording_flac_bytes().await?;
-        Ok(AudioPayload {
-            bytes: flac_bytes,
-            mime_type: "audio/flac",
-            filename: "audio.flac",
-        })
-    } else {
-        let wav_bytes = stop_recording_wav_bytes().await?;
-        Ok(AudioPayload {
-            bytes: wav_bytes,
-            mime_type: "audio/wav",
-            filename: "audio.wav",
-        })
-    }
+    let wav_bytes = stop_recording_wav_bytes().await?;
+    Ok(AudioPayload {
+        bytes: wav_bytes,
+        mime_type: "audio/wav",
+        filename: "audio.wav",
+    })
 }
 
 /// Stop recording and return the audio file as base64

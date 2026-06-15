@@ -12,7 +12,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
 
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
-    
+
     let (text, transcribe_duration) = if settings.stt_provider.preset == "Local Offline" {
         let transcribe_start = std::time::Instant::now();
         let samples = crate::audio::stop_recording_f32_samples().await?;
@@ -22,9 +22,8 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             let result = crate::offline_transcribe::transcribe_samples(samples)
                 .await
                 .map_err(|e| format!("Offline transcription error: {}", e))?;
-            
-            let corrected = crate::dictionary::apply_corrections(&result);
-            (corrected, transcribe_start.elapsed())
+
+            (result, transcribe_start.elapsed())
         }
     } else {
         let payload = crate::audio::stop_recording_audio_bytes().await?;
@@ -33,8 +32,12 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             ("".to_string(), std::time::Duration::from_secs(0))
         } else {
             let transcribe_start = std::time::Instant::now();
-            let api_key = crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
-                .map_err(|_| "No STT API key found. Please configure an API key in Providers settings.".to_string())?;
+            let api_key =
+                crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET)
+                    .map_err(|_| {
+                        "No STT API key found. Please configure an API key in Providers settings."
+                            .to_string()
+                    })?;
 
             let corrected = crate::transcribe::transcribe_audio_bytes(
                 &settings.stt_provider.base_url,
@@ -83,10 +86,7 @@ async fn polish_transcribed_text(
         _ => return Ok(raw_text.to_string()),
     };
 
-    let url = format!(
-        "{}/v1/chat/completions",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
 
     let body = serde_json::json!({
         "model": model,
@@ -147,7 +147,9 @@ async fn polish_transcribed_text(
 }
 
 #[tauri::command]
-pub async fn finish_transcription_flow(_app: tauri::AppHandle) -> Result<TranscriptionFlowResult, String> {
+pub async fn finish_transcription_flow(
+    _app: tauri::AppHandle,
+) -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
     let mut result = stop_and_transcribe().await?;
 
@@ -156,9 +158,9 @@ pub async fn finish_transcription_flow(_app: tauri::AppHandle) -> Result<Transcr
     }
 
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
-    
+
     if settings.ai_polish_style != "none" {
-        let llm_key = crate::credentials::read_credential("Fluence/LLM_ApiKey").unwrap_or_default();
+        let llm_key = crate::credentials::read_credential(crate::credentials::LLM_API_KEY_TARGET).unwrap_or_default();
         match polish_transcribed_text(
             &settings.llm_provider.base_url,
             &llm_key,
@@ -169,7 +171,11 @@ pub async fn finish_transcription_flow(_app: tauri::AppHandle) -> Result<Transcr
         .await
         {
             Ok(polished) => {
-                log::info!("AI polished dictation from '{}' to '{}'", result.text, polished);
+                log::info!(
+                    "AI polished dictation from '{}' to '{}'",
+                    result.text,
+                    polished
+                );
                 result.text = polished;
             }
             Err(e) => {
@@ -182,4 +188,3 @@ pub async fn finish_transcription_flow(_app: tauri::AppHandle) -> Result<Transcr
 
     Ok(result)
 }
-

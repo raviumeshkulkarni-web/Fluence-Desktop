@@ -6,22 +6,19 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 #[cfg(target_os = "windows")]
-use windows::{
-    core::PCWSTR,
-    Win32::{
-        Foundation::{HANDLE, HWND},
-        System::{
-            DataExchange::{
-                CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
-                OpenClipboard, SetClipboardData,
-            },
-            Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE},
+use windows::Win32::{
+    Foundation::HWND,
+    System::{
+        DataExchange::{
+            CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+            OpenClipboard, SetClipboardData,
         },
-        UI::Input::KeyboardAndMouse::{
-            GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
-            KEYEVENTF_KEYUP, VK_CONTROL, VK_V, VIRTUAL_KEY, VK_LCONTROL, VK_RCONTROL,
-            VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN,
-        },
+        Memory::{GlobalAlloc, GlobalLock, GlobalUnlock, GMEM_MOVEABLE},
+    },
+    UI::Input::KeyboardAndMouse::{
+        GetAsyncKeyState, SendInput, INPUT, INPUT_0, INPUT_KEYBOARD, KEYBDINPUT, KEYBD_EVENT_FLAGS,
+        KEYEVENTF_KEYUP, VK_CONTROL, VK_V, VIRTUAL_KEY, VK_LCONTROL, VK_RCONTROL,
+        VK_LSHIFT, VK_RSHIFT, VK_LMENU, VK_RMENU, VK_LWIN, VK_RWIN,
     },
 };
 

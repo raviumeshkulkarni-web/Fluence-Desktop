@@ -2,9 +2,8 @@
 // Sends recorded WAV audio to any OpenAI-compatible /v1/audio/transcriptions endpoint.
 // Supports Groq, OpenAI, and custom providers.
 
-use anyhow::{anyhow, Result};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use crate::dictionary;
 
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
@@ -34,15 +33,13 @@ fn default_filename() -> String {
     "audio.wav".to_string()
 }
 
-/// Transcribe audio via OpenAI-compatible API, then apply dictionary corrections.
+/// Transcribe audio via an OpenAI-compatible API.
 #[tauri::command]
 pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
     let start_time = std::time::Instant::now();
-    let audio_bytes = base64::Engine::decode(
-        &base64::engine::general_purpose::STANDARD,
-        &req.wav_b64,
-    )
-    .map_err(|e| format!("Base64 decode error: {}", e))?;
+    let audio_bytes =
+        base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.wav_b64)
+            .map_err(|e| format!("Base64 decode error: {}", e))?;
 
     let decode_duration = start_time.elapsed();
 
@@ -77,10 +74,7 @@ pub async fn transcribe_audio_bytes(
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
 
-    let url = format!(
-        "{}/v1/audio/transcriptions",
-        base_url.trim_end_matches('/')
-    );
+    let url = format!("{}/v1/audio/transcriptions", base_url.trim_end_matches('/'));
 
     let file_part = reqwest::multipart::Part::bytes(audio_bytes)
         .file_name(filename.to_string())
@@ -96,34 +90,6 @@ pub async fn transcribe_audio_bytes(
     if let Some(lang) = language {
         if !lang.is_empty() && lang != "auto" {
             form = form.text("language", lang.to_string());
-        }
-    }
-
-    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint
-    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
-    // Clean version: only send a unique list of 'corrected' target terms, avoiding 'spoken' errors.
-    if let Ok(entries) = crate::dictionary::get_dictionary() {
-        if !entries.is_empty() {
-            let mut prompt_words = Vec::new();
-            for entry in entries {
-                let corrected_trimmed = entry.corrected.trim().to_string();
-                if !corrected_trimmed.is_empty() && !prompt_words.contains(&corrected_trimmed) {
-                    prompt_words.push(corrected_trimmed);
-                }
-            }
-            if !prompt_words.is_empty() {
-                let mut prompt = prompt_words.join(", ");
-                if prompt.len() > 890 {
-                    let truncated = &prompt[..890];
-                    if let Some(last_comma) = truncated.rfind(',') {
-                        prompt = truncated[..last_comma].to_string();
-                    } else {
-                        prompt = truncated.to_string();
-                    }
-                    log::debug!("Prompt truncated to {} characters for Groq compatibility", prompt.len());
-                }
-                form = form.text("prompt", prompt);
-            }
         }
     }
 
@@ -150,17 +116,14 @@ pub async fn transcribe_audio_bytes(
         .await
         .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    // Apply custom dictionary corrections
-    let corrected = dictionary::apply_corrections(&result.text);
-    
     log::info!(
-        "transcribe_wav_bytes performance: total = {:?}, network = {:?}, parse/dict = {:?}",
+        "transcribe_audio_bytes performance: total = {:?}, network = {:?}, parse = {:?}",
         start_time.elapsed(),
         network_duration,
         parse_start.elapsed()
     );
 
-    Ok(corrected)
+    Ok(result.text)
 }
 
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
@@ -225,13 +188,17 @@ mod tests {
     #[tokio::test]
     async fn test_stt_transcribe_perf() {
         let settings = crate::settings::load_settings().unwrap();
-        let api_key = match crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET) {
-            Ok(k) => k,
-            Err(e) => {
-                println!("--- BENCHMARK RESULT: Skipping STT test because no API key found: {}", e);
-                return;
-            }
-        };
+        let api_key =
+            match crate::credentials::read_credential(crate::credentials::STT_API_KEY_TARGET) {
+                Ok(k) => k,
+                Err(e) => {
+                    println!(
+                        "--- BENCHMARK RESULT: Skipping STT test because no API key found: {}",
+                        e
+                    );
+                    return;
+                }
+            };
 
         // Create 5 seconds of dummy mono WAV audio (sine wave) at 16000Hz
         let sample_rate = 16000;
@@ -242,10 +209,13 @@ mod tests {
             let sample = (t * 440.0 * 2.0 * std::f32::consts::PI).sin() * 0.5;
             dummy_samples.push((sample * i16::MAX as f32) as i16);
         }
-        
+
         let wav_bytes = crate::audio::create_wav_bytes(&dummy_samples, sample_rate);
 
-        println!("Sending 5 seconds of dummy WAV audio ({} bytes) to STT API...", wav_bytes.len());
+        println!(
+            "Sending 5 seconds of dummy WAV audio ({} bytes) to STT API...",
+            wav_bytes.len()
+        );
         let start = std::time::Instant::now();
         let res = transcribe_audio_bytes(
             &settings.stt_provider.base_url,
@@ -263,9 +233,12 @@ mod tests {
                 println!("--- BENCHMARK RESULT: STT 5s audio transcription successful in {:?}. Response: {:?}", start.elapsed(), text);
             }
             Err(e) => {
-                println!("--- BENCHMARK RESULT: STT 5s audio transcription failed in {:?}: {}", start.elapsed(), e);
+                println!(
+                    "--- BENCHMARK RESULT: STT 5s audio transcription failed in {:?}: {}",
+                    start.elapsed(),
+                    e
+                );
             }
         }
     }
 }
-

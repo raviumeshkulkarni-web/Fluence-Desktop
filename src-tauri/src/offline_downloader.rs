@@ -187,7 +187,7 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
 
     log::info!("Extracting ASR binary archive to {:?}", temp_extract_dir);
     let output = tokio::process::Command::new("tar")
-        .args(&[
+        .args([
             "-xjf",
             archive_path.to_str().unwrap(),
             "-C",

@@ -3,7 +3,7 @@
 
 use tauri::{
     menu::{Menu, MenuItem, PredefinedMenuItem, Submenu},
-    tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent},
+    tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
 
@@ -46,7 +46,7 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
 
     let _tray = tray_builder
         .menu(&menu)
-        .menu_on_left_click(false)
+        .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
             "open_settings" => {
                 if let Some(win) = app.get_webview_window("main") {

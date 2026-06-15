@@ -100,7 +100,7 @@ pub async fn ensure_server_running() -> Result<u16> {
     let threads_arg = "--num-threads=3".to_string();
 
     let mut cmd = Command::new(&exe_path);
-    cmd.args(&[&tokens_arg, &model_arg, &port_arg, &threads_arg]);
+    cmd.args([&tokens_arg, &model_arg, &port_arg, &threads_arg]);
     cmd.current_dir(&offline_dir);
     cmd.creation_flags(CREATE_NO_WINDOW);
 

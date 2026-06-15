@@ -1,15 +1,13 @@
 use anyhow::Result;
 use cpal::traits::DeviceTrait;
+use flacenc::component::BitRepr;
+use flacenc::error::Verify;
 use once_cell::sync::Lazy;
 use std::sync::{
-    atomic::{AtomicBool, Ordering, AtomicU32, AtomicU16},
+    atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
     Arc, Mutex,
 };
 use tauri::{AppHandle, Emitter};
-use flacenc::error::Verify;
-use flacenc::component::BitRepr;
-
-
 
 // Shared recording state
 static RECORDING: AtomicBool = AtomicBool::new(false);
@@ -19,8 +17,10 @@ static NATIVE_CHANNELS: AtomicU16 = AtomicU16::new(2);
 static AUDIO_BUFFER: Lazy<Mutex<Vec<f32>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 // Global completion channels
-static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> = Lazy::new(|| Mutex::new(None));
-static STREAM_DONE_RX: Lazy<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>> = Lazy::new(|| Mutex::new(None));
+static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
+    Lazy::new(|| Mutex::new(None));
+static STREAM_DONE_RX: Lazy<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>> =
+    Lazy::new(|| Mutex::new(None));
 
 /// List available audio input devices
 #[tauri::command]
@@ -29,12 +29,8 @@ pub fn list_audio_devices() -> Result<Vec<String>, String> {
     {
         use cpal::traits::HostTrait;
         let host = cpal::default_host();
-        let devices = host
-            .input_devices()
-            .map_err(|e| e.to_string())?;
-        let names: Vec<String> = devices
-            .filter_map(|d| d.name().ok())
-            .collect();
+        let devices = host.input_devices().map_err(|e| e.to_string())?;
+        let names: Vec<String> = devices.filter_map(|d| d.name().ok()).collect();
         Ok(names)
     }
     #[cfg(not(target_os = "windows"))]
@@ -81,7 +77,9 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
             let device = if let Some(ref id) = device_id {
                 host.input_devices()
                     .ok()
-                    .and_then(|mut devs| devs.find(|d| d.name().ok().as_deref() == Some(id.as_str())))
+                    .and_then(|mut devs| {
+                        devs.find(|d| d.name().ok().as_deref() == Some(id.as_str()))
+                    })
                     .or_else(|| host.default_input_device())
             } else {
                 host.default_input_device()
@@ -91,7 +89,10 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Some(d) => d,
                 None => {
                     log::error!("No audio input device found");
-                    let _ = STREAM_READY_TX.lock().ok().and_then(|mut guard| guard.take());
+                    let _ = STREAM_READY_TX
+                        .lock()
+                        .ok()
+                        .and_then(|mut guard| guard.take());
                     return;
                 }
             };
@@ -101,7 +102,10 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("Failed to get default input config: {}", e);
-                    let _ = STREAM_READY_TX.lock().ok().and_then(|mut guard| guard.take());
+                    let _ = STREAM_READY_TX
+                        .lock()
+                        .ok()
+                        .and_then(|mut guard| guard.take());
                     return;
                 }
             };
@@ -187,7 +191,8 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                     device.build_input_stream(
                         &config,
                         move |data: &[i16], _| {
-                            let f32_data: Vec<f32> = data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
+                            let f32_data: Vec<f32> =
+                                data.iter().map(|&s| s as f32 / i16::MAX as f32).collect();
                             on_data(&f32_data);
                         },
                         err_fn,
@@ -199,7 +204,10 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                     device.build_input_stream(
                         &config,
                         move |data: &[u16], _| {
-                            let f32_data: Vec<f32> = data.iter().map(|&s| (s as f32 - i16::MAX as f32) / i16::MAX as f32).collect();
+                            let f32_data: Vec<f32> = data
+                                .iter()
+                                .map(|&s| (s as f32 - i16::MAX as f32) / i16::MAX as f32)
+                                .collect();
                             on_data(&f32_data);
                         },
                         err_fn,
@@ -209,7 +217,10 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 _ => {
                     log::error!("Unsupported sample format: {:?}", sample_format);
                     RECORDING.store(false, Ordering::SeqCst);
-                    let _ = STREAM_READY_TX.lock().ok().and_then(|mut guard| guard.take());
+                    let _ = STREAM_READY_TX
+                        .lock()
+                        .ok()
+                        .and_then(|mut guard| guard.take());
                     return;
                 }
             };
@@ -222,22 +233,26 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                             std::thread::sleep(std::time::Duration::from_millis(10));
                         }
                         // Copy samples to global buffer
-                        if let (Ok(local), Ok(mut global)) =
-                            (buffer.lock(), AUDIO_BUFFER.lock())
-                        {
+                        if let (Ok(local), Ok(mut global)) = (buffer.lock(), AUDIO_BUFFER.lock()) {
                             *global = local.clone();
                         }
                         let _ = done_tx.send(());
                     } else {
                         log::error!("Failed to play stream");
                         RECORDING.store(false, Ordering::SeqCst);
-                        let _ = STREAM_READY_TX.lock().ok().and_then(|mut guard| guard.take());
+                        let _ = STREAM_READY_TX
+                            .lock()
+                            .ok()
+                            .and_then(|mut guard| guard.take());
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to build audio stream: {}", e);
                     RECORDING.store(false, Ordering::SeqCst);
-                    let _ = STREAM_READY_TX.lock().ok().and_then(|mut guard| guard.take());
+                    let _ = STREAM_READY_TX
+                        .lock()
+                        .ok()
+                        .and_then(|mut guard| guard.take());
                 }
             }
         });
@@ -282,9 +297,12 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
     let mut window = vec![0.0f64; num_taps];
     for j in 0..num_taps {
         let term1 = 0.35875;
-        let term2 = 0.48829 * (2.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
-        let term3 = 0.14128 * (4.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
-        let term4 = 0.01168 * (6.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
+        let term2 =
+            0.48829 * (2.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
+        let term3 =
+            0.14128 * (4.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
+        let term4 =
+            0.01168 * (6.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
         window[j] = term1 - term2 + term3 - term4;
     }
 
@@ -292,7 +310,7 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
     let mut padded = Vec::with_capacity(input.len() + 2 * pad);
     let left_pad: Vec<f32> = input[..pad].iter().rev().copied().collect();
     let right_pad: Vec<f32> = input[input.len() - pad..].iter().rev().copied().collect();
-    
+
     padded.extend_from_slice(&left_pad);
     padded.extend_from_slice(input);
     padded.extend_from_slice(&right_pad);
@@ -311,7 +329,7 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
             let tap_idx = center_floor - half_taps + j as isize;
             if tap_idx >= 0 && tap_idx < padded.len() as isize {
                 let t = (tap_idx as f64) - center;
-                
+
                 // Sinc function
                 let sinc_val = if t == 0.0 {
                     1.0
@@ -322,7 +340,7 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
 
                 // Blackman-Harris window (precomputed)
                 let w = window[j];
-                
+
                 let weight = sinc_val * w;
                 sum += padded[tap_idx as usize] as f64 * weight;
                 weight_sum += weight;
@@ -340,7 +358,7 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
     // Each pad corresponds to (pad * ratio) output samples.
     let start_trim = (pad as f64 * ratio).round() as usize;
     let end_trim = (pad as f64 * ratio).round() as usize;
-    
+
     if output.len() > start_trim + end_trim {
         output[start_trim..output.len() - end_trim].to_vec()
     } else {
@@ -350,34 +368,34 @@ fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
 
 pub fn create_wav_bytes(samples: &[i16], sample_rate: u32) -> Vec<u8> {
     let mut wav = Vec::with_capacity(44 + samples.len() * 2);
-    
+
     // RIFF Header
     wav.extend_from_slice(b"RIFF");
     let file_size = (36 + samples.len() * 2) as u32;
     wav.extend_from_slice(&file_size.to_le_bytes());
     wav.extend_from_slice(b"WAVE");
-    
+
     // fmt subchunk
     wav.extend_from_slice(b"fmt ");
     wav.extend_from_slice(&16u32.to_le_bytes()); // Subchunk size (16 for PCM)
-    wav.extend_from_slice(&1u16.to_le_bytes());  // Audio format (1 = PCM)
-    wav.extend_from_slice(&1u16.to_le_bytes());  // Mono (1 channel)
+    wav.extend_from_slice(&1u16.to_le_bytes()); // Audio format (1 = PCM)
+    wav.extend_from_slice(&1u16.to_le_bytes()); // Mono (1 channel)
     wav.extend_from_slice(&sample_rate.to_le_bytes());
-    let byte_rate = sample_rate * 2;             // SampleRate * NumChannels * BitsPerSample/8
+    let byte_rate = sample_rate * 2; // SampleRate * NumChannels * BitsPerSample/8
     wav.extend_from_slice(&byte_rate.to_le_bytes());
-    wav.extend_from_slice(&2u16.to_le_bytes());  // Block align
+    wav.extend_from_slice(&2u16.to_le_bytes()); // Block align
     wav.extend_from_slice(&16u16.to_le_bytes()); // Bits per sample (16-bit)
-    
+
     // data subchunk
     wav.extend_from_slice(b"data");
     let data_size = (samples.len() * 2) as u32;
     wav.extend_from_slice(&data_size.to_le_bytes());
-    
+
     // PCM samples
     for &sample in samples {
         wav.extend_from_slice(&sample.to_le_bytes());
     }
-    
+
     wav
 }
 
@@ -387,11 +405,12 @@ pub fn process_audio_samples(
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
     // 1. Downmix multi-channel stream to mono
+    // Extract the primary (first) channel to avoid phase cancellation from averaging
+    // stereo/multi-channel recordings. This is the standard approach in voice apps.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            let sum: f32 = chunk.iter().sum();
-            v.push(sum / native_channels as f32);
+            v.push(chunk[0]);
         }
         v
     } else {
@@ -401,7 +420,11 @@ pub fn process_audio_samples(
     // 2. Downsample to 16kHz using windowed-sinc resampler
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_sinc(&mono_samples, native_sample_rate as f64, TARGET_SAMPLE_RATE as f64);
+        let resampled_data = resample_sinc(
+            &mono_samples,
+            native_sample_rate as f64,
+            TARGET_SAMPLE_RATE as f64,
+        );
         (resampled_data, TARGET_SAMPLE_RATE)
     } else {
         (mono_samples, native_sample_rate)
@@ -423,21 +446,25 @@ pub fn process_audio_samples(
     let mut normalized = if rms > 0.001 {
         let target_rms = 0.18f32;
         let scale = target_rms / rms;
-        dc_removed.iter().map(|&s| {
-            let scaled = s * scale;
-            if scaled.abs() > 0.95 {
-                scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
-            } else {
-                scaled
-            }
-        }).collect::<Vec<f32>>()
+        dc_removed
+            .iter()
+            .map(|&s| {
+                let scaled = s * scale;
+                if scaled.abs() > 0.95 {
+                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
+                } else {
+                    scaled
+                }
+            })
+            .collect::<Vec<f32>>()
     } else {
         dc_removed
     };
 
-    // Append 1000ms of silence padding (16,000 zero samples at 16kHz) to prevent ASR models
-    // from clipping or skipping the final syllables due to lack of a silence tail.
-    normalized.resize(normalized.len() + 16000, 0.0);
+    // Append 250ms of silence padding (4,000 zero samples at 16kHz) to give the ASR model
+    // enough context to finalize properly without hallucinating words during long silence tails.
+    // The 500ms OS buffer sleep already captures trailing syllables.
+    normalized.resize(normalized.len() + 4000, 0.0);
 
     (normalized, final_sample_rate)
 }
@@ -448,11 +475,12 @@ pub fn process_audio_samples_online(
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
     // 1. Downmix multi-channel stream to mono
+    // Extract the primary (first) channel to avoid phase cancellation from averaging
+    // stereo/multi-channel recordings. This is the standard approach in voice apps.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            let sum: f32 = chunk.iter().sum();
-            v.push(sum / native_channels as f32);
+            v.push(chunk[0]);
         }
         v
     } else {
@@ -464,7 +492,11 @@ pub fn process_audio_samples_online(
     // while reducing the file size by nearly 3x, lowering latency.
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_sinc(&mono_samples, native_sample_rate as f64, TARGET_SAMPLE_RATE as f64);
+        let resampled_data = resample_sinc(
+            &mono_samples,
+            native_sample_rate as f64,
+            TARGET_SAMPLE_RATE as f64,
+        );
         (resampled_data, TARGET_SAMPLE_RATE)
     } else {
         (mono_samples, native_sample_rate)
@@ -478,13 +510,46 @@ pub fn process_audio_samples_online(
     };
     let mut dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
-    // Append 1000ms of silence padding (16,000 zero samples at 16kHz) to prevent ASR models
-    // from clipping or skipping the final syllables due to lack of a silence tail.
-    dc_removed.resize(dc_removed.len() + 16000, 0.0);
+    // Append 250ms of silence padding (4,000 zero samples at 16kHz) to give the ASR model
+    // enough context to finalize properly without hallucinating words during long silence tails.
+    // The 500ms OS buffer sleep already captures trailing syllables.
+    dc_removed.resize(dc_removed.len() + 4000, 0.0);
 
     // Note: We skip the destructive RMS normalization to avoid clipping,
     // and rely on the online API's built-in VAD and AGC.
     (dc_removed, final_sample_rate)
+}
+
+fn encode_flac_samples(
+    samples: &[f32],
+    sample_rate: u32,
+    channels: usize,
+) -> Result<Vec<u8>, String> {
+    if samples.is_empty() {
+        return Ok(Vec::new());
+    }
+
+    let channels = channels.clamp(1, 8);
+    let complete_len = samples.len() - (samples.len() % channels);
+
+    let pcm_samples: Vec<i32> = samples[..complete_len]
+        .iter()
+        .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i32)
+        .collect();
+
+    let config = flacenc::config::Encoder::default()
+        .into_verified()
+        .map_err(|e| format!("FLAC config error: {:?}", e))?;
+
+    let source =
+        flacenc::source::MemSource::from_samples(&pcm_samples, channels, 16, sample_rate as usize);
+
+    let flac_stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
+        .map_err(|e| format!("FLAC encode error: {:?}", e))?;
+
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    let _ = flac_stream.write(&mut sink);
+    Ok(sink.as_slice().to_vec())
 }
 
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
@@ -521,7 +586,10 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     if native_channels > 0 && native_sample_rate > 0 {
         let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
         if duration_ms < 200 {
-            log::info!("Recording duration too short ({}ms). Discarding as accidental press.", duration_ms);
+            log::info!(
+                "Recording duration too short ({}ms). Discarding as accidental press.",
+                duration_ms
+            );
             return Ok(Vec::new());
         }
     }
@@ -530,12 +598,10 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
     let (processed_samples, final_sample_rate) = tokio::task::spawn_blocking(move || {
-        process_audio_samples(
-            samples,
-            native_sample_rate as u32,
-            native_channels,
-        )
-    }).await.map_err(|e| e.to_string())?;
+        process_audio_samples(samples, native_sample_rate as u32, native_channels)
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     let process_duration = process_start.elapsed();
 
@@ -586,7 +652,10 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     if native_channels > 0 && native_sample_rate > 0 {
         let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
         if duration_ms < 200 {
-            log::info!("Recording duration too short ({}ms). Discarding as accidental press.", duration_ms);
+            log::info!(
+                "Recording duration too short ({}ms). Discarding as accidental press.",
+                duration_ms
+            );
             return Ok(Vec::new());
         }
     }
@@ -595,11 +664,8 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
 
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
     let wav_bytes = tokio::task::spawn_blocking(move || {
-        let (processed_samples, final_sample_rate) = process_audio_samples_online(
-            samples,
-            native_sample_rate as u32,
-            native_channels,
-        );
+        let (processed_samples, final_sample_rate) =
+            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
 
         // Convert samples to i16 for WAV container
         let i16_samples: Vec<i16> = processed_samples
@@ -609,7 +675,9 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
 
         // Create WAV bytes (including trailing silence padding to prevent ASR truncation)
         create_wav_bytes(&i16_samples, final_sample_rate)
-    }).await.map_err(|e| e.to_string())?;
+    })
+    .await
+    .map_err(|e| e.to_string())?;
 
     let process_duration = process_start.elapsed();
 
@@ -666,58 +734,31 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if native_channels > 0 && native_sample_rate > 0 {
         let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
         if duration_ms < 200 {
-            log::info!("Recording duration too short ({}ms). Discarding as accidental press.", duration_ms);
+            log::info!(
+                "Recording duration too short ({}ms). Discarding as accidental press.",
+                duration_ms
+            );
             return Ok(Vec::new());
         }
     }
 
     let process_start = std::time::Instant::now();
 
-    // Run CPU-intensive audio processing and encoding on a dedicated thread to avoid blocking the async executor
+    // Resample to 16kHz mono (same as offline path), then lossless FLAC encode.
+    // This gives Whisper optimal input at its native training rate and reduces
+    // file size ~6x compared to native-rate encoding, lowering upload latency.
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
-        let (processed_samples, final_sample_rate) = process_audio_samples_online(
-            samples,
-            native_sample_rate as u32,
-            native_channels,
-        );
-
-        if processed_samples.is_empty() {
-            return Ok(Vec::new());
-        }
-
-        // Convert samples to i32 for flacenc (scaled to 16-bit range: [-32768, 32767])
-        let i32_samples: Vec<i32> = processed_samples
-            .iter()
-            .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i32)
-            .collect();
-
-        // Configure flacenc encoder
-        let config = flacenc::config::Encoder::default()
-            .into_verified()
-            .map_err(|e| format!("FLAC config error: {:?}", e))?;
-
-        // Create source (mono, 16 bits per sample)
-        let source = flacenc::source::MemSource::from_samples(&i32_samples, 1, 16, final_sample_rate as usize);
-
-        // Encode
-        let flac_stream = flacenc::encode_with_fixed_block_size(
-            &config,
-            source,
-            config.block_size,
-        )
-        .map_err(|e| format!("FLAC encode error: {:?}", e))?;
-
-        // Write stream to byte sink
-        let mut sink = flacenc::bitsink::ByteSink::new();
-        let _ = flac_stream.write(&mut sink);
-
-        Ok(sink.as_slice().to_vec())
-    }).await.map_err(|e| e.to_string())??;
+        let (processed, sample_rate) =
+            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
+        encode_flac_samples(&processed, sample_rate, 1)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
 
     let process_duration = process_start.elapsed();
 
     log::info!(
-        "stop_recording_flac_bytes performance: total = {:?}, wait stream = {:?}, process/flac = {:?}, native_rate = {}Hz, final size = {} bytes",
+        "stop_recording_flac_bytes performance: total = {:?}, wait stream = {:?}, process/encode = {:?}, native_rate = {}Hz -> 16000Hz, final size = {} bytes",
         start_time.elapsed(),
         wait_duration,
         process_duration,
@@ -731,7 +772,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     let preset = settings.stt_provider.preset.to_lowercase();
-    
+
     if preset == "groq" || preset == "openai" || preset == "mistral" {
         let flac_bytes = stop_recording_flac_bytes().await?;
         Ok(AudioPayload {
@@ -774,8 +815,8 @@ pub fn is_recording() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::Ordering;
     use once_cell::sync::Lazy;
+    use std::sync::atomic::Ordering;
 
     static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
 
@@ -785,13 +826,13 @@ mod tests {
         let sample_rate = 48000;
         NATIVE_SAMPLE_RATE.store(sample_rate, Ordering::SeqCst);
         NATIVE_CHANNELS.store(2, Ordering::SeqCst);
-        
+
         let seconds = 40;
         let num_samples = sample_rate as usize * 2 * seconds; // stereo, 40 seconds
         let dummy_samples = vec![0.1f32; num_samples];
-        
+
         *AUDIO_BUFFER.lock().unwrap() = dummy_samples;
-        
+
         let start = std::time::Instant::now();
         let bytes = stop_recording_wav_bytes().await.unwrap();
         println!("--- BENCHMARK RESULT: Resample & WAV encode performance test: 40s took {:?}, final size = {} bytes", start.elapsed(), bytes.len());
@@ -822,7 +863,7 @@ mod tests {
         );
 
         assert!(!payload.bytes.is_empty());
-        
+
         let settings = crate::settings::load_settings().unwrap();
         let preset = settings.stt_provider.preset.to_lowercase();
         if preset == "groq" || preset == "openai" || preset == "mistral" {
@@ -836,5 +877,3 @@ mod tests {
         }
     }
 }
-
-

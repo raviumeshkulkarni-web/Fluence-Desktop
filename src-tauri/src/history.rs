@@ -222,10 +222,8 @@ pub fn get_weekly_activity(start_of_week_utc: String) -> Result<Vec<String>, Str
         let mut stmt = conn.prepare("SELECT timestamp FROM history WHERE timestamp >= ?1")?;
         let rows = stmt.query_map(params![start_of_week_utc], |r| r.get::<_, String>(0))?;
         let mut timestamps = Vec::new();
-        for row in rows {
-            if let Ok(ts) = row {
-                timestamps.push(ts);
-            }
+        for ts in rows.flatten() {
+            timestamps.push(ts);
         }
         Ok(timestamps)
     })

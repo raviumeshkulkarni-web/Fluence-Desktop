@@ -5,9 +5,9 @@ use anyhow::{anyhow, Result};
 
 #[cfg(target_os = "windows")]
 use windows::{
-    core::{PCWSTR, PWSTR},
+    core::PCWSTR,
     Win32::System::Registry::{
-        RegCloseKey, RegDeleteValueW, RegOpenKeyExW, RegSetValueExW,
+        RegCloseKey, RegDeleteValueW, RegSetValueExW,
         HKEY_CURRENT_USER, KEY_SET_VALUE, REG_SZ,
     },
 };

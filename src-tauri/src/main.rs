@@ -9,17 +9,16 @@ mod audio;
 mod autostart;
 mod clipboard;
 mod credentials;
-mod dictionary;
 mod history;
 mod hotkey;
 mod http_client;
-mod overlay;
-mod settings;
-mod tray;
-mod transcribe;
-mod workflow;
 mod offline_downloader;
 mod offline_transcribe;
+mod overlay;
+mod settings;
+mod transcribe;
+mod tray;
+mod workflow;
 
 use tauri::Manager;
 
@@ -40,8 +39,6 @@ pub fn run() {
             }
         }))
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
@@ -114,13 +111,6 @@ pub fn run() {
             clipboard::inject_text,
             clipboard::execute_keyboard_action,
             clipboard::grab_active_selection,
-            // Dictionary
-            dictionary::get_dictionary,
-            dictionary::add_dictionary_entry,
-            dictionary::update_dictionary_entry,
-            dictionary::delete_dictionary_entry,
-            dictionary::import_dictionary,
-            dictionary::export_dictionary,
             // History
             history::get_history,
             history::save_history_entry,

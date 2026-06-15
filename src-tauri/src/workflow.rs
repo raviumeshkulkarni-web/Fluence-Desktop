@@ -42,7 +42,11 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
                 )
             })?;
 
-            let prompt = None;
+            let prompt = if settings.language == "en" {
+                Some("Proper English capitalization and punctuation. Correct spelling of acronyms like ASR, OS, API, and UI.")
+            } else {
+                None
+            };
 
             let corrected = crate::transcribe::transcribe_audio_bytes(
                 &settings.stt_provider.base_url,

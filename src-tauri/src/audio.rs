@@ -42,7 +42,7 @@ pub fn list_audio_devices() -> Result<Vec<String>, String> {
 pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Result<(), String> {
     // If a previous recording is currently stopping/flushing, wait for it to finish
     let start_wait = std::time::Instant::now();
-    while RECORDING.load(Ordering::SeqCst) && start_wait.elapsed().as_millis() < 600 {
+    while RECORDING.load(Ordering::SeqCst) && start_wait.elapsed().as_millis() < 100 {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
@@ -285,25 +285,55 @@ fn resample_fast_voice(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> 
     let out_len = (input.len() as f64 / ratio).floor() as usize;
     let mut out = Vec::with_capacity(out_len);
     
-    // Boxcar filter (moving average) decimation.
-    // This perfectly averages samples to prevent aliasing without causing the metallic 
-    // ringing or high-frequency muffling associated with short-tap Sinc filters.
+    // Hann-windowed Sinc FIR Filter (anti-aliasing)
+    // 31 taps provides a good balance between anti-aliasing strength and performance.
+    // The Hann window ensures there is no "metallic ringing" (Gibbs phenomenon) while
+    // still maintaining a steep roll-off to block high frequencies that confuse Whisper.
+    let num_taps = 31;
+    let mut filter = vec![0.0f32; num_taps];
+    let half_taps = (num_taps / 2) as isize;
+    
+    // Cutoff frequency at 90% of the Nyquist of the target sample rate
+    // (e.g., for 16kHz target, Nyquist is 8kHz, cutoff is 7.2kHz)
+    let cutoff_freq = (to_rate as f64 / 2.0) * 0.9;
+    let normalized_cutoff = cutoff_freq / from_rate as f64;
+    
+    let mut sum_taps = 0.0;
+    for i in 0..num_taps {
+        let n = i as isize - half_taps;
+        
+        let sinc = if n == 0 {
+            2.0 * normalized_cutoff
+        } else {
+            let x = 2.0 * std::f64::consts::PI * normalized_cutoff * (n as f64);
+            (x.sin() / x) * (2.0 * normalized_cutoff)
+        };
+        
+        // Hann window formula: 0.5 * (1 - cos(2*PI*i / (N-1)))
+        let window = 0.5 * (1.0 - (2.0 * std::f64::consts::PI * (i as f64) / ((num_taps - 1) as f64)).cos());
+        
+        filter[i] = (sinc * window) as f32;
+        sum_taps += filter[i];
+    }
+    
+    // Normalize filter coefficients so they sum to 1.0 (0 dB DC gain)
+    for i in 0..num_taps {
+        filter[i] /= sum_taps;
+    }
+    
+    // Convolution and decimation
     for i in 0..out_len {
-        let start_idx = (i as f64 * ratio).floor() as usize;
-        let end_idx = ((i + 1) as f64 * ratio).floor() as usize;
+        let center_idx = (i as f64 * ratio).round() as isize;
+        let mut sample = 0.0;
         
-        let mut sum = 0.0;
-        let mut count = 0;
-        for j in start_idx..end_idx.min(input.len()) {
-            sum += input[j];
-            count += 1;
+        for (j, &coeff) in filter.iter().enumerate() {
+            let input_idx = center_idx + j as isize - half_taps;
+            if input_idx >= 0 && input_idx < input.len() as isize {
+                sample += input[input_idx as usize] * coeff;
+            }
         }
         
-        if count > 0 {
-            out.push(sum / count as f32);
-        } else if start_idx < input.len() {
-            out.push(input[start_idx]);
-        }
+        out.push(sample);
     }
     
     out
@@ -423,44 +453,28 @@ pub fn process_audio_samples_online(
         samples
     };
 
-    // 2. Downsample to 16kHz using Boxcar (Moving Average) Resampler
-    // OpenWhisper rigidly expects 16kHz. Sending native rates causes severe pitch-shifting.
-    // The Boxcar filter is used because it has zero metallic ringing and preserves consonants perfectly.
-    const TARGET_SAMPLE_RATE: u32 = 16_000;
-    let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_fast_voice(
-            &mono_samples,
-            native_sample_rate,
-            TARGET_SAMPLE_RATE,
-        );
-        (resampled_data, TARGET_SAMPLE_RATE)
-    } else {
-        (mono_samples, native_sample_rate)
-    };
-
-    // 3. DC Offset Removal
-    let avg = if !resampled.is_empty() {
-        resampled.iter().sum::<f32>() / resampled.len() as f32
+    // 2. DC Offset Removal
+    let avg = if !mono_samples.is_empty() {
+        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
     } else {
         0.0f32
     };
-    let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
+    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
 
-    // Note: RMS Normalization is intentionally removed to prevent noise-pumping and Whisper hallucinations.
-    let mut normalized = dc_removed;
+    // 3. Peak Normalization: Scale the audio so that the peak absolute sample is 0.9.
+    // This acts like Chrome's Automatic Gain Control (AGC) to prevent Whisper misinterpretation on quiet mics.
+    let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let normalized = if peak > 0.005 && peak < 0.98 {
+        let scale = 0.9 / peak;
+        dc_removed.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+    } else {
+        dc_removed
+    };
 
-    // 5. Silence Padding
-    // Prepend 100ms of silence to prevent first-syllable hardware clipping.
-    let leading_padding_len = (final_sample_rate as f32 * 0.1) as usize;
-    let mut padded = vec![0.0f32; leading_padding_len];
-    padded.extend(normalized);
-    normalized = padded;
-
-    // Append 300ms of silence so the VAD in open models doesn't clip the final syllables.
-    let trailing_padding_len = (final_sample_rate as f32 * 0.3) as usize;
-    normalized.resize(normalized.len() + trailing_padding_len, 0.0);
-
-    (normalized, final_sample_rate)
+    // Note: Local resampling to 16kHz is bypassed for the online path.
+    // Online APIs (Groq, OpenAI, Mistral) handle native sample rates (44.1kHz/48kHz) perfectly
+    // and perform high-quality backend downsampling, avoiding local anti-aliasing filter distortions.
+    (normalized, native_sample_rate)
 }
 
 fn encode_flac_samples(
@@ -498,8 +512,8 @@ fn encode_flac_samples(
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -564,8 +578,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -646,8 +660,8 @@ pub struct AudioPayload {
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let start_time = std::time::Instant::now();
 
-    // Give the audio stream 150ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(150)).await;
+    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     RECORDING.store(false, Ordering::SeqCst);
 
@@ -795,16 +809,8 @@ mod tests {
 
         assert!(!payload.bytes.is_empty());
 
-        let settings = crate::settings::load_settings().unwrap();
-        let preset = settings.stt_provider.preset.to_lowercase();
-        if preset == "groq" || preset == "openai" || preset == "mistral" {
-            assert_eq!(payload.mime_type, "audio/flac");
-            assert_eq!(payload.filename, "audio.flac");
-            assert!(payload.bytes.starts_with(b"fLaC"));
-        } else {
-            assert_eq!(payload.mime_type, "audio/wav");
-            assert_eq!(payload.filename, "audio.wav");
-            assert!(payload.bytes.starts_with(b"RIFF"));
-        }
+        assert_eq!(payload.mime_type, "audio/flac");
+        assert_eq!(payload.filename, "audio.flac");
+        assert!(payload.bytes.starts_with(b"fLaC"));
     }
 }

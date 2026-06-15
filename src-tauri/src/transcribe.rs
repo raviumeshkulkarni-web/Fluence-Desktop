@@ -84,8 +84,14 @@ pub async fn transcribe_audio_bytes(
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
-        .text("response_format", "json")
-        .text("temperature", "0.0");
+        .text("response_format", "json");
+
+    // Mistral's transcription API is stricter than OpenAI/Groq and often rejects 
+    // the 'temperature' parameter, causing a 400 error. We omit it for Mistral.
+    let is_mistral = base_url.contains("mistral.ai");
+    if !is_mistral {
+        form = form.text("temperature", "0.0");
+    }
 
     if let Some(lang) = language {
         if !lang.is_empty() && lang != "auto" {
@@ -94,10 +100,18 @@ pub async fn transcribe_audio_bytes(
     }
 
     let network_start = std::time::Instant::now();
-    let resp = crate::http_client::CLIENT
+    let mut request = crate::http_client::CLIENT
         .post(&url)
         .bearer_auth(api_key)
-        .multipart(form)
+        .multipart(form);
+
+    // Mistral sometimes requires the 'x-api-key' header specifically for their 
+    // transcription gateway. We provide it conditionally for maximum compatibility.
+    if is_mistral {
+        request = request.header("x-api-key", api_key);
+    }
+
+    let resp = request
         .send()
         .await
         .map_err(|e| format!("Network error: {}", e))?;

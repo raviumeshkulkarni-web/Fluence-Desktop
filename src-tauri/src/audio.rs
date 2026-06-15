@@ -404,13 +404,14 @@ pub fn process_audio_samples(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono
-    // Extract the primary (first) channel to avoid phase cancellation from averaging
-    // stereo/multi-channel recordings. This is the standard approach in voice apps.
+    // 1. Downmix multi-channel stream to mono by averaging channels.
+    // This is safer than taking only the first channel, as it handles hardware
+    // where the primary signal might be on a different channel.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            v.push(chunk[0]);
+            let sum: f32 = chunk.iter().sum();
+            v.push(sum / native_channels as f32);
         }
         v
     } else {
@@ -443,7 +444,7 @@ pub fn process_audio_samples(
     // Target RMS: 0.18 (ideal level for Whisper ASR).
     let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
     let rms = (square_sum / dc_removed.len() as f32).sqrt();
-    let mut normalized = if rms > 0.001 {
+    let normalized = if rms > 0.001 {
         let target_rms = 0.18f32;
         let scale = target_rms / rms;
         dc_removed
@@ -461,10 +462,8 @@ pub fn process_audio_samples(
         dc_removed
     };
 
-    // Append 250ms of silence padding (4,000 zero samples at 16kHz) to give the ASR model
-    // enough context to finalize properly without hallucinating words during long silence tails.
-    // The 500ms OS buffer sleep already captures trailing syllables.
-    normalized.resize(normalized.len() + 4000, 0.0);
+    // Note: Silence padding removed to prevent artificial tail clipping by VAD.
+    // The 500ms OS buffer sleep in the stop logic already captures trailing syllables.
 
     (normalized, final_sample_rate)
 }
@@ -474,50 +473,55 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono
-    // Extract the primary (first) channel to avoid phase cancellation from averaging
-    // stereo/multi-channel recordings. This is the standard approach in voice apps.
+    // 1. Downmix multi-channel stream to mono by averaging channels.
+    // This is safer than taking only the first channel, as it handles hardware
+    // where the primary signal might be on a different channel.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            v.push(chunk[0]);
+            let sum: f32 = chunk.iter().sum();
+            v.push(sum / native_channels as f32);
         }
         v
     } else {
         samples
     };
 
-    // 2. Downsample to 16kHz to prevent payload size limits on long recordings.
-    // Whisper natively operates on 16kHz anyway, so this preserves quality
-    // while reducing the file size by nearly 3x, lowering latency.
-    const TARGET_SAMPLE_RATE: u32 = 16_000;
-    let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_sinc(
-            &mono_samples,
-            native_sample_rate as f64,
-            TARGET_SAMPLE_RATE as f64,
-        );
-        (resampled_data, TARGET_SAMPLE_RATE)
-    } else {
-        (mono_samples, native_sample_rate)
-    };
-
-    // 3. DC Offset Removal
-    let avg = if !resampled.is_empty() {
-        resampled.iter().sum::<f32>() / resampled.len() as f32
+    // 2. DC Offset Removal
+    let avg = if !mono_samples.is_empty() {
+        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
     } else {
         0.0f32
     };
-    let mut dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
+    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
 
-    // Append 250ms of silence padding (4,000 zero samples at 16kHz) to give the ASR model
-    // enough context to finalize properly without hallucinating words during long silence tails.
-    // The 500ms OS buffer sleep already captures trailing syllables.
-    dc_removed.resize(dc_removed.len() + 4000, 0.0);
+    // 3. RMS Normalization with Soft Peak Limiting
+    // We apply this to the online path to ensure the API receives an optimal signal level,
+    // reducing reliance on the API's built-in AGC which can boost noise on quiet mics.
+    let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
+    let rms = (square_sum / dc_removed.len() as f32).sqrt();
+    let normalized = if rms > 0.001 {
+        let target_rms = 0.18f32;
+        let scale = target_rms / rms;
+        dc_removed
+            .iter()
+            .map(|&s| {
+                let scaled = s * scale;
+                if scaled.abs() > 0.95 {
+                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
+                } else {
+                    scaled
+                }
+            })
+            .collect::<Vec<f32>>()
+    } else {
+        dc_removed
+    };
 
-    // Note: We skip the destructive RMS normalization to avoid clipping,
-    // and rely on the online API's built-in VAD and AGC.
-    (dc_removed, final_sample_rate)
+    // Note: Silence padding and destructive resampling removed to prevent 
+    // clipping final syllables and aliasing artifacts. We send native rate 
+    // to the API for maximum accuracy.
+    (normalized, native_sample_rate)
 }
 
 fn encode_flac_samples(
@@ -673,7 +677,7 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
             .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
             .collect();
 
-        // Create WAV bytes (including trailing silence padding to prevent ASR truncation)
+        // Create WAV bytes
         create_wav_bytes(&i16_samples, final_sample_rate)
     })
     .await
@@ -682,7 +686,7 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     let process_duration = process_start.elapsed();
 
     log::info!(
-        "stop_recording_wav_bytes performance: total = {:?}, wait stream = {:?}, process/wav = {:?}, native_rate = {}Hz, final size = {} bytes",
+        "stop_recording_wav_bytes performance: total = {:?}, wait stream = {:?}, process/wav = {:?}, rate = {}Hz, final size = {} bytes",
         start_time.elapsed(),
         wait_duration,
         process_duration,
@@ -744,9 +748,9 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 
     let process_start = std::time::Instant::now();
 
-    // Resample to 16kHz mono (same as offline path), then lossless FLAC encode.
-    // This gives Whisper optimal input at its native training rate and reduces
-    // file size ~6x compared to native-rate encoding, lowering upload latency.
+    // Preserve native sample rate and use lossless FLAC encode for the online path.
+    // This provides the API with maximum audio detail while FLAC compression
+    // keeps the file size well within the 25MB limit for typical dictation.
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let (processed, sample_rate) =
             process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
@@ -758,7 +762,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     let process_duration = process_start.elapsed();
 
     log::info!(
-        "stop_recording_flac_bytes performance: total = {:?}, wait stream = {:?}, process/encode = {:?}, native_rate = {}Hz -> 16000Hz, final size = {} bytes",
+        "stop_recording_flac_bytes performance: total = {:?}, wait stream = {:?}, process/encode = {:?}, rate = {}Hz, final size = {} bytes",
         start_time.elapsed(),
         wait_duration,
         process_duration,

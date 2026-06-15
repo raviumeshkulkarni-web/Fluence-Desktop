@@ -106,15 +106,19 @@ function populateUI(s) {
   setInputValue('stt-base-url', s.stt_provider?.base_url || '');
   setSelectOption('stt-model-select', s.stt_provider?.model || 'whisper-large-v3');
 
-  selectProviderCard('llm', s.llm_provider?.preset || 'groq');
+  const llmPreset = s.llm_provider?.preset || 'groq';
+  selectProviderCard('llm', llmPreset);
   setInputValue('llm-base-url', s.llm_provider?.base_url || '');
   setSelectOption('llm-model-select', s.llm_provider?.model || '');
 
   setTimeout(async () => {
-    const sttKey = await invoke('get_api_key', { target: 'Fluence/STT_ApiKey' }).catch(() => null);
+    // Populate keys for currently selected presets specifically
+    const sttTarget = `Fluence/STT_ApiKey/${sttPreset.toLowerCase().replace(/ /g, '_')}`;
+    const sttKey = await invoke('get_api_key', { target: sttTarget }).catch(() => null);
     if (sttKey) fetchModels('stt', true);
     
-    const llmKey = await invoke('get_api_key', { target: 'Fluence/LLM_ApiKey' }).catch(() => null);
+    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
+    const llmKey = await invoke('get_api_key', { target: llmTarget }).catch(() => null);
     if (llmKey) fetchModels('llm', true);
   }, 500);
 }
@@ -274,12 +278,16 @@ function setupProviderCards() {
       if (preset !== 'custom' && preset !== 'Local Offline') {
         setInputValue('stt-base-url', STT_PRESETS[preset]?.base_url || '');
         setSelectOption('stt-model-select', STT_PRESETS[preset]?.model || '');
-        
-        // Auto-fetch models if key is available
-        const hasKey = await invoke('get_api_key', { target: 'Fluence/STT_ApiKey' }).then(() => true).catch(() => false);
-        if (hasKey) {
-          fetchModels('stt');
-        }
+      }
+
+      // Always clear the key input on switch, but try to fetch the existing key for this provider
+      const keyInput = document.getElementById('stt-api-key');
+      if (keyInput) keyInput.value = '';
+
+      const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
+      if (hasKey) {
+        fetchModels('stt', true);
       }
     });
   });
@@ -292,12 +300,15 @@ function setupProviderCards() {
       if (preset !== 'custom') {
         setInputValue('llm-base-url', LLM_PRESETS[preset]?.base_url || '');
         setSelectOption('llm-model-select', LLM_PRESETS[preset]?.model || '');
-        
-        // Auto-fetch models if key is available
-        const hasKey = await invoke('get_api_key', { target: 'Fluence/LLM_ApiKey' }).then(() => true).catch(() => false);
-        if (hasKey) {
-          fetchModels('llm');
-        }
+      }
+
+      const keyInput = document.getElementById('llm-api-key');
+      if (keyInput) keyInput.value = '';
+
+      const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
+      if (hasKey) {
+        fetchModels('llm', true);
       }
     });
   });
@@ -306,10 +317,14 @@ function setupProviderCards() {
   document.getElementById('stt-save-key-btn')?.addEventListener('click', async () => {
     const key = document.getElementById('stt-api-key')?.value?.trim();
     if (!key) return showToast('Please enter an API key', 'error');
+    
+    const preset = document.querySelector('#stt-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
+    const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+    
     try {
-      await invoke('save_api_key', { target: 'Fluence/STT_ApiKey', key });
+      await invoke('save_api_key', { target, key });
       document.getElementById('stt-api-key').value = '';
-      showToast('STT API key saved securely ✓', 'success');
+      showToast(`${preset} API key saved securely ✓`, 'success');
     } catch (err) {
       showToast('Failed to save key: ' + err, 'error');
     }
@@ -318,10 +333,14 @@ function setupProviderCards() {
   document.getElementById('llm-save-key-btn')?.addEventListener('click', async () => {
     const key = document.getElementById('llm-api-key')?.value?.trim();
     if (!key) return showToast('Please enter an API key', 'error');
+
+    const preset = document.querySelector('#llm-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
+    const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+
     try {
-      await invoke('save_api_key', { target: 'Fluence/LLM_ApiKey', key });
+      await invoke('save_api_key', { target, key });
       document.getElementById('llm-api-key').value = '';
-      showToast('LLM API key saved securely ✓', 'success');
+      showToast(`${preset} API key saved securely ✓`, 'success');
     } catch (err) {
       showToast('Failed to save key: ' + err, 'error');
     }
@@ -358,11 +377,13 @@ function selectProviderCard(type, preset) {
 async function fetchModels(type, silent = false) {
   const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim();
   const keyInput = document.getElementById(`${type}-api-key`)?.value?.trim();
-  
+
   // Try stored key if input is empty
   let apiKey = keyInput;
   if (!apiKey) {
-    const target = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+    const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
+    const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+    const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
     apiKey = await invoke('get_api_key', { target }).catch(() => '');
   }
 
@@ -393,10 +414,11 @@ async function fetchModels(type, silent = false) {
 
 async function testConnection(type) {
   const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim();
-  const target = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+  const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
+  const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+  const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
   const apiKey = await invoke('get_api_key', { target }).catch(() => '');
-  const model = document.getElementById(`${type}-model-select`)?.value || '';
-  
+  const model = document.getElementById(`${type}-model-select`)?.value || '';  
   const statusDot = document.querySelector(`#${type}-status .dot`);
   const statusText = document.getElementById(`${type}-status-text`);
 

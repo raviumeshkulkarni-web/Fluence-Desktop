@@ -19,6 +19,7 @@ pub struct TranscribeRequest {
     /// Semantically renamed in documentation, but kept as wav_b64 for frontend compatibility.
     pub wav_b64: String,
     pub language: Option<String>,
+    pub prompt: Option<String>,
     #[serde(default = "default_mime_type")]
     pub mime_type: String,
     #[serde(default = "default_filename")]
@@ -51,6 +52,7 @@ pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> 
         &req.mime_type,
         &req.filename,
         req.language.as_deref(),
+        req.prompt.as_deref(),
     )
     .await?;
 
@@ -71,10 +73,17 @@ pub async fn transcribe_audio_bytes(
     mime_type: &str,
     filename: &str,
     language: Option<&str>,
+    prompt: Option<&str>,
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
 
-    let url = format!("{}/v1/audio/transcriptions", base_url.trim_end_matches('/'));
+    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
+    let base = base_url.trim_end_matches('/');
+    let url = if base.to_lowercase().ends_with("/v1") {
+        format!("{}/audio/transcriptions", base)
+    } else {
+        format!("{}/v1/audio/transcriptions", base)
+    };
 
     let file_part = reqwest::multipart::Part::bytes(audio_bytes)
         .file_name(filename.to_string())
@@ -86,11 +95,10 @@ pub async fn transcribe_audio_bytes(
         .text("model", model.to_string())
         .text("response_format", "json");
 
-    // Mistral's transcription API is stricter than OpenAI/Groq and often rejects 
-    // the 'temperature' parameter, causing a 400 error. We omit it for Mistral.
-    let is_mistral = base_url.contains("mistral.ai");
-    if !is_mistral {
-        form = form.text("temperature", "0.0");
+    if let Some(p) = prompt {
+        if !p.is_empty() {
+            form = form.text("prompt", p.to_string());
+        }
     }
 
     if let Some(lang) = language {
@@ -100,6 +108,7 @@ pub async fn transcribe_audio_bytes(
     }
 
     let network_start = std::time::Instant::now();
+    let is_mistral = base_url.contains("mistral.ai");
     let mut request = crate::http_client::CLIENT
         .post(&url)
         .bearer_auth(api_key)
@@ -143,7 +152,12 @@ pub async fn transcribe_audio_bytes(
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let base = base_url.trim_end_matches('/');
+    let url = if base.to_lowercase().ends_with("/v1") {
+        format!("{}/models", base)
+    } else {
+        format!("{}/v1/models", base)
+    };
 
     let resp = crate::http_client::CLIENT
         .get(&url)
@@ -178,7 +192,12 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 /// Test connectivity to an STT provider.
 #[tauri::command]
 pub async fn test_stt_connection(base_url: String, api_key: String) -> Result<String, String> {
-    let url = format!("{}/v1/models", base_url.trim_end_matches('/'));
+    let base = base_url.trim_end_matches('/');
+    let url = if base.to_lowercase().ends_with("/v1") {
+        format!("{}/models", base)
+    } else {
+        format!("{}/v1/models", base)
+    };
 
     let resp = crate::http_client::CLIENT
         .get(&url)
@@ -239,6 +258,7 @@ mod tests {
             "audio/wav",
             "audio.wav",
             Some("en"),
+            None,
         )
         .await;
 

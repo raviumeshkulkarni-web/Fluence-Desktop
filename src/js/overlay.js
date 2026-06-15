@@ -205,8 +205,10 @@ async function stopAndTranscribe(agentMode) {
 
 async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection) {
   try {
+    const llmPreset = settings.llm_provider.preset || 'groq';
+    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
     const llmKey = await invoke('get_api_key', {
-      target: 'Fluence/LLM_ApiKey'
+      target: llmTarget
     }).catch(() => '');
 
     // Get clipboard context or grab selection

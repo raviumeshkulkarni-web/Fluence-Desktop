@@ -106,6 +106,16 @@ pub fn delete_credential(_target: &str) -> Result<()> {
 pub const STT_API_KEY_TARGET: &str = "Fluence/STT_ApiKey";
 pub const LLM_API_KEY_TARGET: &str = "Fluence/LLM_ApiKey";
 
+/// Generate a provider-specific target for STT keys
+pub fn get_stt_target(preset: &str) -> String {
+    format!("{}/{}", STT_API_KEY_TARGET, preset.to_lowercase().replace(' ', "_"))
+}
+
+/// Generate a provider-specific target for LLM keys
+pub fn get_llm_target(preset: &str) -> String {
+    format!("{}/{}", LLM_API_KEY_TARGET, preset.to_lowercase().replace(' ', "_"))
+}
+
 // Tauri commands
 #[tauri::command]
 pub fn save_api_key(target: String, key: String) -> Result<(), String> {
@@ -114,6 +124,32 @@ pub fn save_api_key(target: String, key: String) -> Result<(), String> {
 
 #[tauri::command]
 pub fn get_api_key(target: String) -> Result<String, String> {
+    // 1. Try the specific target requested
+    if let Ok(key) = read_credential(&target) {
+        return Ok(key);
+    }
+
+    // 2. Fallback: If it's a provider-specific target, check the legacy global slot
+    if target.contains('/') {
+        let base = if target.starts_with(STT_API_KEY_TARGET) {
+            Some(STT_API_KEY_TARGET)
+        } else if target.starts_with(LLM_API_KEY_TARGET) {
+            Some(LLM_API_KEY_TARGET)
+        } else {
+            None
+        };
+
+        if let Some(base_target) = base {
+            if let Ok(legacy_key) = read_credential(base_target) {
+                log::info!("Found legacy key in global slot, migrating to: {}", target);
+                // Optional: Migrate the key to the new specific slot automatically
+                let _ = store_credential(&target, "fluence", &legacy_key);
+                return Ok(legacy_key);
+            }
+        }
+    }
+
+    // 3. Final attempt at the raw target (or return the read error)
     read_credential(&target).map_err(|e| e.to_string())
 }
 

@@ -1,4 +1,4 @@
-# Fluence 🎙️✨
+# Fluence 
 
 ### *Crystallize your cognition at the speed of thought*
 

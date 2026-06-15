@@ -404,14 +404,13 @@ pub fn process_audio_samples(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono by averaging channels.
-    // This is safer than taking only the first channel, as it handles hardware
-    // where the primary signal might be on a different channel.
+    // 1. Downmix multi-channel stream to mono by taking the first channel.
+    // This avoids phase cancellation issues that occur when averaging 
+    // inverted channels in professional hardware.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            let sum: f32 = chunk.iter().sum();
-            v.push(sum / native_channels as f32);
+            v.push(chunk[0]);
         }
         v
     } else {
@@ -473,14 +472,13 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono by averaging channels.
-    // This is safer than taking only the first channel, as it handles hardware
-    // where the primary signal might be on a different channel.
+    // 1. Downmix multi-channel stream to mono by taking the first channel.
+    // This avoids phase cancellation issues that occur when averaging 
+    // inverted channels in professional hardware.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            let sum: f32 = chunk.iter().sum();
-            v.push(sum / native_channels as f32);
+            v.push(chunk[0]);
         }
         v
     } else {
@@ -500,7 +498,7 @@ pub fn process_audio_samples_online(
     // reducing reliance on the API's built-in AGC which can boost noise on quiet mics.
     let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
     let rms = (square_sum / dc_removed.len() as f32).sqrt();
-    let normalized = if rms > 0.001 {
+    let mut normalized = if rms > 0.001 {
         let target_rms = 0.18f32;
         let scale = target_rms / rms;
         dc_removed
@@ -518,9 +516,18 @@ pub fn process_audio_samples_online(
         dc_removed
     };
 
-    // Note: Silence padding and destructive resampling removed to prevent 
-    // clipping final syllables and aliasing artifacts. We send native rate 
-    // to the API for maximum accuracy.
+    // Prepend 100ms of silence padding to prevent first-syllable clipping 
+    // caused by hardware spin-up delay or OS buffer lag.
+    let leading_padding_len = (native_sample_rate as f32 * 0.1) as usize;
+    let mut leading_padded = vec![0.0f32; leading_padding_len];
+    leading_padded.extend(normalized);
+    normalized = leading_padded;
+
+    // Append 500ms of silence padding to give the ASR model enough context
+    // to finalize properly without truncating the final syllables.
+    let padding_len = (native_sample_rate as f32 * 0.5) as usize;
+    normalized.resize(normalized.len() + padding_len, 0.0);
+
     (normalized, native_sample_rate)
 }
 

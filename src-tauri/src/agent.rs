@@ -48,10 +48,13 @@ Current clipboard/editor context:
 pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, String> {
     let system_prompt = AGENT_SYSTEM_PROMPT.replace("{CONTEXT}", &req.clipboard_context);
 
-    let url = format!(
-        "{}/v1/chat/completions",
-        req.base_url.trim_end_matches('/')
-    );
+    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
+    let base = req.base_url.trim_end_matches('/');
+    let url = if base.to_lowercase().ends_with("/v1") {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    };
 
     let body = serde_json::json!({
         "model": req.model,
@@ -112,7 +115,13 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
 
 #[tauri::command]
 pub async fn test_llm_connection(base_url: String, api_key: String, model: String) -> Result<String, String> {
-    let url = format!("{}/v1/chat/completions", base_url.trim_end_matches('/'));
+    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
+    let base = base_url.trim_end_matches('/');
+    let url = if base.to_lowercase().ends_with("/v1") {
+        format!("{}/chat/completions", base)
+    } else {
+        format!("{}/v1/chat/completions", base)
+    };
 
     let body = serde_json::json!({
         "model": model,

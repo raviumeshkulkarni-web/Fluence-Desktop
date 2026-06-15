@@ -766,11 +766,11 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 }
 
 pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
-    let wav_bytes = stop_recording_wav_bytes().await?;
+    let flac_bytes = stop_recording_flac_bytes().await?;
     Ok(AudioPayload {
-        bytes: wav_bytes,
-        mime_type: "audio/wav",
-        filename: "audio.wav",
+        bytes: flac_bytes,
+        mime_type: "audio/flac",
+        filename: "audio.flac",
     })
 }
 

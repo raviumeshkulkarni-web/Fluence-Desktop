@@ -276,94 +276,37 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     }
 }
 
-fn resample_sinc(input: &[f32], from_rate: f64, to_rate: f64) -> Vec<f32> {
-    let ratio = to_rate / from_rate;
-    if ratio == 1.0 || input.is_empty() {
+fn resample_fast_voice(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> {
+    if from_rate == to_rate || input.is_empty() {
         return input.to_vec();
     }
-
-    // Cutoff frequency at Nyquist limit of output rate.
-    // Apply a guard band (0.92) to maximize high-frequency speech preservation while preventing aliasing.
-    let cutoff = 0.92 * (ratio.min(1.0) / 2.0);
-    let num_taps = 63; // Reduced to 63 to fix computation latency issue on stopping
-    let half_taps = (num_taps / 2) as isize;
-    let pad = half_taps as usize;
-
-    if input.len() <= pad {
-        return input.to_vec(); // Audio is too short to pad/resample properly
-    }
-
-    // Precompute Blackman-Harris window coefficients (92 dB stopband rejection for minimal aliasing)
-    let mut window = vec![0.0f64; num_taps];
-    for j in 0..num_taps {
-        let term1 = 0.35875;
-        let term2 =
-            0.48829 * (2.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
-        let term3 =
-            0.14128 * (4.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
-        let term4 =
-            0.01168 * (6.0 * std::f64::consts::PI * j as f64 / (num_taps as f64 - 1.0)).cos();
-        window[j] = term1 - term2 + term3 - term4;
-    }
-
-    // Pad both ends with mirror reflections of the border samples to prevent boundary distortion
-    let mut padded = Vec::with_capacity(input.len() + 2 * pad);
-    let left_pad: Vec<f32> = input[..pad].iter().rev().copied().collect();
-    let right_pad: Vec<f32> = input[input.len() - pad..].iter().rev().copied().collect();
-
-    padded.extend_from_slice(&left_pad);
-    padded.extend_from_slice(input);
-    padded.extend_from_slice(&right_pad);
-
-    let num_output = (padded.len() as f64 * ratio).round() as usize;
-    let mut output = Vec::with_capacity(num_output);
-
-    for i in 0..num_output {
-        let center = i as f64 / ratio;
-        let mut sum = 0.0f64;
-        let mut weight_sum = 0.0f64;
-
-        let center_floor = center.floor() as isize;
-
-        for j in 0..num_taps {
-            let tap_idx = center_floor - half_taps + j as isize;
-            if tap_idx >= 0 && tap_idx < padded.len() as isize {
-                let t = (tap_idx as f64) - center;
-
-                // Sinc function
-                let sinc_val = if t == 0.0 {
-                    1.0
-                } else {
-                    let x = 2.0 * std::f64::consts::PI * cutoff * t;
-                    x.sin() / x
-                };
-
-                // Blackman-Harris window (precomputed)
-                let w = window[j];
-
-                let weight = sinc_val * w;
-                sum += padded[tap_idx as usize] as f64 * weight;
-                weight_sum += weight;
-            }
+    
+    let ratio = from_rate as f64 / to_rate as f64;
+    let out_len = (input.len() as f64 / ratio).floor() as usize;
+    let mut out = Vec::with_capacity(out_len);
+    
+    // Boxcar filter (moving average) decimation.
+    // This perfectly averages samples to prevent aliasing without causing the metallic 
+    // ringing or high-frequency muffling associated with short-tap Sinc filters.
+    for i in 0..out_len {
+        let start_idx = (i as f64 * ratio).floor() as usize;
+        let end_idx = ((i + 1) as f64 * ratio).floor() as usize;
+        
+        let mut sum = 0.0;
+        let mut count = 0;
+        for j in start_idx..end_idx.min(input.len()) {
+            sum += input[j];
+            count += 1;
         }
-
-        if weight_sum > 0.0 {
-            output.push((sum / weight_sum) as f32);
-        } else {
-            output.push(0.0);
+        
+        if count > 0 {
+            out.push(sum / count as f32);
+        } else if start_idx < input.len() {
+            out.push(input[start_idx]);
         }
     }
-
-    // Remove the padded duration from both ends of the output.
-    // Each pad corresponds to (pad * ratio) output samples.
-    let start_trim = (pad as f64 * ratio).round() as usize;
-    let end_trim = (pad as f64 * ratio).round() as usize;
-
-    if output.len() > start_trim + end_trim {
-        output[start_trim..output.len() - end_trim].to_vec()
-    } else {
-        output
-    }
+    
+    out
 }
 
 pub fn create_wav_bytes(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
@@ -418,13 +361,14 @@ pub fn process_audio_samples(
         samples
     };
 
-    // 2. Downsample to 16kHz using windowed-sinc resampler
+    // 2. Downsample to 16kHz using Boxcar (Moving Average) Resampler
+    // This perfectly preserves high-frequency crispness without metallic ringing.
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_sinc(
+        let resampled_data = resample_fast_voice(
             &mono_samples,
-            native_sample_rate as f64,
-            TARGET_SAMPLE_RATE as f64,
+            native_sample_rate,
+            TARGET_SAMPLE_RATE,
         );
         (resampled_data, TARGET_SAMPLE_RATE)
     } else {
@@ -439,33 +383,10 @@ pub fn process_audio_samples(
     };
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
-    // 4. RMS Normalization with Soft Peak Limiting
-    // Calculates the Root Mean Square (RMS) of the active signal.
-    // Target RMS: 0.18 (ideal level for Whisper ASR).
-    let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
-    let rms = (square_sum / dc_removed.len() as f32).sqrt();
-    let normalized = if rms > 0.001 {
-        let target_rms = 0.18f32;
-        let scale = target_rms / rms;
-        dc_removed
-            .iter()
-            .map(|&s| {
-                let scaled = s * scale;
-                if scaled.abs() > 0.95 {
-                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
-                } else {
-                    scaled
-                }
-            })
-            .collect::<Vec<f32>>()
-    } else {
-        dc_removed
-    };
-
     // Note: Silence padding removed to prevent artificial tail clipping by VAD.
-    // The 500ms OS buffer sleep in the stop logic already captures trailing syllables.
+    // The OS buffer sleep in the stop logic already captures trailing syllables.
 
-    (normalized, final_sample_rate)
+    (dc_removed, final_sample_rate)
 }
 
 pub fn process_audio_samples_online(
@@ -502,14 +423,15 @@ pub fn process_audio_samples_online(
         samples
     };
 
-    // 2. Downsample to 16kHz using windowed-sinc resampler
-    // OpenWhisper rigidly expects 16kHz. Sending native rates causes severe pitch-shifting in local/open API endpoints.
+    // 2. Downsample to 16kHz using Boxcar (Moving Average) Resampler
+    // OpenWhisper rigidly expects 16kHz. Sending native rates causes severe pitch-shifting.
+    // The Boxcar filter is used because it has zero metallic ringing and preserves consonants perfectly.
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
-        let resampled_data = resample_sinc(
+        let resampled_data = resample_fast_voice(
             &mono_samples,
-            native_sample_rate as f64,
-            TARGET_SAMPLE_RATE as f64,
+            native_sample_rate,
+            TARGET_SAMPLE_RATE,
         );
         (resampled_data, TARGET_SAMPLE_RATE)
     } else {
@@ -524,27 +446,8 @@ pub fn process_audio_samples_online(
     };
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
-    // 4. RMS Normalization with Soft Peak Limiting
-    // Target RMS: 0.18 (ideal level for Whisper ASR). Without this, quiet mics fail to transcribe.
-    let square_sum: f32 = dc_removed.iter().map(|&s| s * s).sum();
-    let rms = (square_sum / dc_removed.len() as f32).sqrt();
-    let mut normalized = if rms > 0.001 {
-        let target_rms = 0.18f32;
-        let scale = target_rms / rms;
-        dc_removed
-            .iter()
-            .map(|&s| {
-                let scaled = s * scale;
-                if scaled.abs() > 0.95 {
-                    scaled.signum() * (0.95 + 0.04 * ((scaled.abs() - 0.95) / 0.04).tanh())
-                } else {
-                    scaled
-                }
-            })
-            .collect::<Vec<f32>>()
-    } else {
-        dc_removed
-    };
+    // Note: RMS Normalization is intentionally removed to prevent noise-pumping and Whisper hallucinations.
+    let mut normalized = dc_removed;
 
     // 5. Silence Padding
     // Prepend 100ms of silence to prevent first-syllable hardware clipping.

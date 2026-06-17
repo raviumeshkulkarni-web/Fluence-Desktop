@@ -24,11 +24,31 @@ class AuraVisualizer {
     this.lastTime = null;
     this._rafId = null;
     this._resize();
-    this._loop(performance.now());
-    
+
+    if (window.__TAURI__?.event?.listen) {
+      // Tauri context: overlay window starts hidden; only run the animation
+      // loop when the backend explicitly shows the window.
+      window.__TAURI__.event.listen('window-visibility', (evt) => {
+        if (evt.payload === true) {
+          if (this._rafId === null) this._loop(performance.now());
+        } else {
+          if (this._rafId !== null) {
+            cancelAnimationFrame(this._rafId);
+            this._rafId = null;
+            this.lastTime = null;
+          }
+        }
+      });
+    } else {
+      // Non-Tauri context (e.g. browser preview): start the loop immediately.
+      this._loop(performance.now());
+    }
+
     window.addEventListener('resize', () => this._resize());
 
     // Pause rAF when window is hidden, restart when it becomes visible again.
+    // In Tauri context this is handled by the window-visibility event above;
+    // this listener covers standard browser tab switching as a fallback.
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden && this._rafId === null) {
         this._loop(performance.now());

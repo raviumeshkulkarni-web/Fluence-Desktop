@@ -20,7 +20,7 @@ mod transcribe;
 mod tray;
 mod workflow;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 #[tauri::command]
 fn get_app_version(app: tauri::AppHandle) -> String {
@@ -36,6 +36,8 @@ pub fn run() {
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.set_focus();
+                // Notify frontend to resume canvas animations
+                let _ = win.emit("window-visibility", true);
             }
         }))
         .plugin(tauri_plugin_shell::init())
@@ -43,9 +45,18 @@ pub fn run() {
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .plugin(tauri_plugin_clipboard_manager::init())
         .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                let _ = window.hide();
-                api.prevent_close();
+            match event {
+                tauri::WindowEvent::CloseRequested { api, .. } => {
+                    // Pause canvas animations before hiding window
+                    let _ = window.emit("window-visibility", false);
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                tauri::WindowEvent::Focused(true) => {
+                    // Resume animations when window gains focus (e.g. restored from minimize)
+                    let _ = window.emit("window-visibility", true);
+                }
+                _ => {}
             }
         })
         .setup(|app| {
@@ -75,10 +86,11 @@ pub fn run() {
 
             // Determine which window to show on startup
             if app_settings.first_run {
-                // Show setup wizard
+                // Show setup wizard and notify frontend to start animations
                 if let Some(win) = app.get_webview_window("wizard") {
                     let _ = win.show();
                     let _ = win.set_focus();
+                    let _ = win.emit("window-visibility", true);
                 }
             } else {
                 // App runs in background — main window only shows from tray

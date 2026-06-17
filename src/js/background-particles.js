@@ -64,7 +64,8 @@
       this.resize();
       this.createParticles();
       this.setupEventListeners();
-      this.start();
+      // Animation start is deferred — driven by window-visibility events from
+      // the Tauri backend, so we don't burn GPU in hidden/background windows.
     }
 
     resize() {
@@ -321,6 +322,21 @@
   // Auto-initialize when the DOM is ready
   window.addEventListener('DOMContentLoaded', () => {
     window.networkInstance = new ParticleNetwork('background-canvas');
+
+    if (window.__TAURI__?.event?.listen) {
+      // Tauri context: windows start hidden by default, so wait for the
+      // backend to signal visibility before running the animation loop.
+      window.__TAURI__.event.listen('window-visibility', (evt) => {
+        if (evt.payload === true) {
+          window.networkInstance?.start();
+        } else {
+          window.networkInstance?.stop();
+        }
+      });
+    } else {
+      // Non-Tauri context (e.g. browser dev tools preview): start immediately.
+      window.networkInstance?.start();
+    }
   });
 
   // Pause animation when the window is hidden (e.g. minimized to tray),

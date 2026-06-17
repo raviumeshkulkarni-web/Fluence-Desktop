@@ -1,7 +1,7 @@
 // Fluence Windows — Overlay window management
 // Controls the floating, always-on-top recording overlay window.
 
-use tauri::{AppHandle, Manager, WebviewWindow};
+use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
 
 pub fn get_overlay_window(app: &AppHandle) -> Option<WebviewWindow> {
     app.get_webview_window("overlay")
@@ -55,12 +55,16 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
 
     win.set_always_on_top(true).map_err(|e| e.to_string())?;
     win.show().map_err(|e| e.to_string())?;
+    // Notify overlay frontend to start the waveform animation loop
+    let _ = win.emit("window-visibility", true);
     Ok(())
 }
 
 #[tauri::command]
 pub fn hide_overlay(app: AppHandle) -> Result<(), String> {
     let win = get_overlay_window(&app).ok_or("Overlay window not found")?;
+    // Notify overlay frontend to stop the waveform animation loop
+    let _ = win.emit("window-visibility", false);
     win.hide().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -72,6 +76,8 @@ pub fn show_main_window(app: AppHandle) -> Result<(), String> {
         .ok_or("Main window not found")?;
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
+    // Notify main window frontend to resume canvas animations
+    let _ = win.emit("window-visibility", true);
     Ok(())
 }
 
@@ -80,6 +86,8 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or("Main window not found")?;
+    // Notify main window frontend to pause canvas animations
+    let _ = win.emit("window-visibility", false);
     win.hide().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -89,6 +97,8 @@ pub fn minimize_main_window(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("main")
         .ok_or("Main window not found")?;
+    // Notify main window frontend to pause canvas animations while minimized
+    let _ = win.emit("window-visibility", false);
     win.minimize().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -100,6 +110,8 @@ pub fn show_wizard_window(app: AppHandle) -> Result<(), String> {
         .ok_or("Wizard window not found")?;
     win.show().map_err(|e| e.to_string())?;
     win.set_focus().map_err(|e| e.to_string())?;
+    // Notify wizard frontend to resume canvas animations
+    let _ = win.emit("window-visibility", true);
     Ok(())
 }
 
@@ -108,6 +120,8 @@ pub fn minimize_wizard(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("wizard")
         .ok_or("Wizard window not found")?;
+    // Notify wizard frontend to pause canvas animations while minimized
+    let _ = win.emit("window-visibility", false);
     win.minimize().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -117,6 +131,8 @@ pub fn close_wizard(app: AppHandle) -> Result<(), String> {
     let win = app
         .get_webview_window("wizard")
         .ok_or("Wizard window not found")?;
+    // Notify wizard frontend to pause canvas animations before hiding
+    let _ = win.emit("window-visibility", false);
     win.hide().map_err(|e| e.to_string())?;
     Ok(())
 }

@@ -54,12 +54,16 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.set_focus();
+                    // Notify main window frontend to resume canvas animations
+                    let _ = win.emit("window-visibility", true);
                 }
             }
             "history" => {
                 if let Some(win) = app.get_webview_window("main") {
                     let _ = win.show();
                     let _ = win.set_focus();
+                    // Notify main window frontend to resume canvas animations
+                    let _ = win.emit("window-visibility", true);
                     // Emit event to navigate to history tab
                     let _ = win.emit("navigate-to", "history");
                 }

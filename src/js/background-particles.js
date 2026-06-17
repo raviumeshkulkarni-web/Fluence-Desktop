@@ -322,4 +322,14 @@
   window.addEventListener('DOMContentLoaded', () => {
     window.networkInstance = new ParticleNetwork('background-canvas');
   });
+
+  // Pause animation when the window is hidden (e.g. minimized to tray),
+  // resume when it becomes visible again. Uses the existing stop/start methods.
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) {
+      window.networkInstance?.stop();
+    } else {
+      window.networkInstance?.start();
+    }
+  });
 })();

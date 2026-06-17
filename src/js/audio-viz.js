@@ -27,6 +27,13 @@ class AuraVisualizer {
     this._loop(performance.now());
     
     window.addEventListener('resize', () => this._resize());
+
+    // Pause rAF when window is hidden, restart when it becomes visible again.
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden && this._rafId === null) {
+        this._loop(performance.now());
+      }
+    });
   }
 
   _resize() {
@@ -130,6 +137,12 @@ class AuraVisualizer {
   getState() { return this.currentState; }
 
   _loop(timestamp) {
+    // Pause when the window is hidden — don't burn GPU on an invisible canvas.
+    if (document.hidden) {
+      this._rafId = null;
+      return;
+    }
+
     this._rafId = requestAnimationFrame((t) => this._loop(t));
 
     if (this.lastTime === null) { this.lastTime = timestamp; }

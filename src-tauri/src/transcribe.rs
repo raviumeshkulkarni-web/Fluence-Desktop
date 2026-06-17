@@ -93,11 +93,7 @@ pub async fn transcribe_audio_bytes(
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
-        .text("response_format", "json")
-        // Force deterministic greedy decoding — prevents non-deterministic sampling
-        // on ambiguous phonemes. Groq defaults to 0 but we make this explicit to
-        // guarantee consistent transcriptions across API versions.
-        .text("temperature", "0");
+        .text("response_format", "json");
 
     if let Some(p) = prompt {
         if !p.is_empty() {

@@ -459,30 +459,11 @@ pub fn process_audio_samples_online(
     };
     let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
 
-    // 3. Noise Gate: Zero out samples below the ambient noise floor (~-50 dBFS).
-    // This mimics Android's hardware noise suppression at the AudioSource.MIC level,
-    // silencing inter-word gaps and background hiss before they reach Whisper.
-    // Safe threshold: normal speech peaks at 0.1–0.7; ambient hiss is typically < 0.003.
-    const NOISE_GATE_THRESHOLD: f32 = 0.003;
-    let gated: Vec<f32> = dc_removed
-        .iter()
-        .map(|&s| if s.abs() < NOISE_GATE_THRESHOLD { 0.0 } else { s })
-        .collect();
-
-    // 4. Peak Normalization: Scale the audio so that the peak absolute sample is 0.9.
-    // This acts like Chrome's Automatic Gain Control (AGC) to prevent Whisper misinterpretation on quiet mics.
-    let peak = gated.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
-    let normalized = if peak > 0.005 && peak < 0.98 {
-        let scale = 0.9 / peak;
-        gated.iter().map(|&s| s * scale).collect::<Vec<f32>>()
-    } else {
-        gated
-    };
-
-    // Note: Local resampling to 16kHz is bypassed for the online path.
-    // Online APIs (Groq, OpenAI, Mistral) handle native sample rates (44.1kHz/48kHz) perfectly
-    // and perform high-quality backend downsampling, avoiding local anti-aliasing filter distortions.
-    (normalized, native_sample_rate)
+    // Online path: minimal processing to match Android's clean-audio strategy.
+    // No noise gate, no normalization — those were found to cause crossover distortion
+    // and noise-pumping hallucinations (see git history v1.1.16, v1.1.23).
+    // Native sample rate preserved; Groq handles downsampling server-side.
+    (dc_removed, native_sample_rate)
 }
 
 fn encode_flac_samples(

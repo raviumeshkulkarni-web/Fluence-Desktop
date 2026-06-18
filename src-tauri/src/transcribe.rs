@@ -87,7 +87,8 @@ pub async fn transcribe_audio_bytes(
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
-        .text("response_format", "json");
+        .text("response_format", "json")
+        .text("temperature", "0");
 
     if let Some(p) = prompt {
         if !p.is_empty() {

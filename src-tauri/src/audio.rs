@@ -459,14 +459,24 @@ pub fn process_audio_samples_online(
     };
     let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
 
-    // 3. Peak Normalization: Scale the audio so that the peak absolute sample is 0.9.
+    // 3. Noise Gate: Zero out samples below the ambient noise floor (~-50 dBFS).
+    // This mimics Android's hardware noise suppression at the AudioSource.MIC level,
+    // silencing inter-word gaps and background hiss before they reach Whisper.
+    // Safe threshold: normal speech peaks at 0.1–0.7; ambient hiss is typically < 0.003.
+    const NOISE_GATE_THRESHOLD: f32 = 0.003;
+    let gated: Vec<f32> = dc_removed
+        .iter()
+        .map(|&s| if s.abs() < NOISE_GATE_THRESHOLD { 0.0 } else { s })
+        .collect();
+
+    // 4. Peak Normalization: Scale the audio so that the peak absolute sample is 0.9.
     // This acts like Chrome's Automatic Gain Control (AGC) to prevent Whisper misinterpretation on quiet mics.
-    let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let peak = gated.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
     let normalized = if peak > 0.005 && peak < 0.98 {
         let scale = 0.9 / peak;
-        dc_removed.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+        gated.iter().map(|&s| s * scale).collect::<Vec<f32>>()
     } else {
-        dc_removed
+        gated
     };
 
     // Note: Local resampling to 16kHz is bypassed for the online path.

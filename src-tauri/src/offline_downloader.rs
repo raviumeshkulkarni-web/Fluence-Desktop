@@ -153,8 +153,8 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
     let total_bytes: u64 = 263_500_000;
     let mut bytes_downloaded: u64 = 0;
 
-    // Create client
-    let client = reqwest::Client::new();
+    // Use the shared HTTP client (reuses the global connection pool)
+    let client = &crate::http_client::CLIENT;
 
     // 1. Download sherpa-onnx archive
     let archive_path = dest_dir.join("sherpa-onnx-win-x64.tar.bz2");

@@ -77,13 +77,7 @@ pub async fn transcribe_audio_bytes(
 ) -> Result<String, String> {
     let start_time = std::time::Instant::now();
 
-    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
-    let base = base_url.trim_end_matches('/');
-    let url = if base.to_lowercase().ends_with("/v1") {
-        format!("{}/audio/transcriptions", base)
-    } else {
-        format!("{}/v1/audio/transcriptions", base)
-    };
+    let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
 
     let file_part = reqwest::multipart::Part::bytes(audio_bytes)
         .file_name(filename.to_string())
@@ -152,12 +146,7 @@ pub async fn transcribe_audio_bytes(
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    let base = base_url.trim_end_matches('/');
-    let url = if base.to_lowercase().ends_with("/v1") {
-        format!("{}/models", base)
-    } else {
-        format!("{}/v1/models", base)
-    };
+    let url = crate::http_client::build_api_url(&base_url, "models");
 
     let resp = crate::http_client::CLIENT
         .get(&url)
@@ -192,12 +181,7 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 /// Test connectivity to an STT provider.
 #[tauri::command]
 pub async fn test_stt_connection(base_url: String, api_key: String) -> Result<String, String> {
-    let base = base_url.trim_end_matches('/');
-    let url = if base.to_lowercase().ends_with("/v1") {
-        format!("{}/models", base)
-    } else {
-        format!("{}/v1/models", base)
-    };
+    let url = crate::http_client::build_api_url(&base_url, "models");
 
     let resp = crate::http_client::CLIENT
         .get(&url)

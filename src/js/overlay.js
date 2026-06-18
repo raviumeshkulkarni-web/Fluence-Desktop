@@ -29,7 +29,6 @@ window.addEventListener('DOMContentLoaded', () => {
 // ── Tauri Event Listeners ───────────────────────────────────────
 
 async function setupEventListeners() {
-  console.log('setupEventListeners called in overlay.js');
 
   // Hotkey events from Rust (Transcription Mode)
   await listen('hotkey-start-recording', async () => {
@@ -39,9 +38,7 @@ async function setupEventListeners() {
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
-      console.log('start_recording successfully invoked');
       await invoke('show_overlay', { position: prefs.overlayPosition });
-      console.log('show_overlay invoked with position:', prefs.overlayPosition);
       
       // Trigger opening transition after window is visible
       setTimeout(() => {
@@ -54,7 +51,6 @@ async function setupEventListeners() {
   });
 
   await listen('hotkey-stop-recording', async () => {
-    console.log('hotkey-stop-recording event received');
     await stopAndTranscribe(false);
   });
 
@@ -66,9 +62,7 @@ async function setupEventListeners() {
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
-      console.log('start_recording (agent) successfully invoked');
       await invoke('show_overlay', { position: prefs.overlayPosition });
-      console.log('show_overlay (agent) invoked with position:', prefs.overlayPosition);
       
       // Trigger opening transition after window is visible
       setTimeout(() => {
@@ -81,17 +75,11 @@ async function setupEventListeners() {
   });
 
   await listen('hotkey-stop-agent-recording', async () => {
-    console.log('hotkey-stop-agent-recording event received');
     await stopAndTranscribe(true);
   });
 
   // Live amplitude data from Rust audio stream
-  let amplitudeCount = 0;
   await listen('audio-amplitude', (evt) => {
-    if (amplitudeCount < 10) {
-      amplitudeCount++;
-      console.log(`audio-amplitude event #${amplitudeCount} payload:`, evt.payload);
-    }
     let raw = evt.payload;
     if (typeof raw === 'object' && raw !== null) {
       raw = raw.payload ?? raw.value ?? 0;
@@ -103,7 +91,6 @@ async function setupEventListeners() {
 
   // Navigate overlay to specific state (from main window)
   await listen('overlay-state', (evt) => {
-    console.log('overlay-state event received:', evt.payload);
     setState(evt.payload);
   });
 }
@@ -133,8 +120,6 @@ async function fadeAndHide() {
 }
 
 async function stopAndTranscribe(agentMode) {
-  console.log('stopAndTranscribe initiated');
-  console.time('TotalStopAndTranscribe');
   setState(agentMode ? 'agent_transcribing' : 'transcribing');
 
   let startTs = Date.now();
@@ -152,29 +137,18 @@ async function stopAndTranscribe(agentMode) {
         invoke('stop_and_transcribe_recording'),
         invoke('get_settings'),
       ]);
-      console.timeEnd('StopAndTranscribeAgent');
-      console.log(`stop_and_transcribe_recording returned: "${result.text}"`);
-
-      const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
-      if (!result.text || !result.text.trim() || !hasAlphanumeric) {
-        console.log('Transcription is empty or silent. Discarding silently.');
+      if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
         await fadeAndHide();
         return;
       }
 
-      console.time('HandleAgentMode');
       const selection = await selectionPromise;
       await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection);
-      console.timeEnd('HandleAgentMode');
     } else {
-      console.time('FinishTranscriptionFlow');
       const result = await invoke('finish_transcription_flow');
-      console.timeEnd('FinishTranscriptionFlow');
-      console.log(`finish_transcription_flow returned: "${result.text}"`);
 
       const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
       if (!result.text || !result.text.trim() || !hasAlphanumeric) {
-        console.log('Transcription is empty or silent. Discarding silently.');
         await fadeAndHide();
         return;
       }
@@ -198,8 +172,6 @@ async function stopAndTranscribe(agentMode) {
     setState('error');
     await new Promise(r => setTimeout(r, 1500));
     await fadeAndHide();
-  } finally {
-    console.timeEnd('TotalStopAndTranscribe');
   }
 }
 

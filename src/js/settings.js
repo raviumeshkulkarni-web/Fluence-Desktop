@@ -570,7 +570,7 @@ async function saveGeneral() {
   currentSettings.overlay_position = document.getElementById('overlay-position-select')?.value || currentSettings.overlay_position;
   currentSettings.audio_device_id = document.getElementById('audio-device-select')?.value || null;
   currentSettings.language = document.getElementById('language-select')?.value || 'en';
-  currentSettings.sound_on_complete = false;
+  currentSettings.sound_on_complete = document.getElementById('sound-on-complete-cb')?.checked ?? false;
   currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
 
@@ -643,10 +643,18 @@ async function populateAudioDevices() {
 // ── Tauri Events ─────────────────────────────────────────────────
 
 async function listenForTauriEvents() {
-  await listen('set-recording-mode', (evt) => {
+  await listen('set-recording-mode', async (evt) => {
     const mode = evt.payload;
     setSelectValue('recording-mode-select', mode);
-    if (currentSettings) currentSettings.recording_mode = mode;
+    if (currentSettings) {
+      currentSettings.recording_mode = mode;
+      // Persist the tray-selected mode so it survives app restarts
+      try {
+        await invoke('update_settings', { settings: currentSettings });
+      } catch (err) {
+        console.error('Failed to persist tray recording mode:', err);
+      }
+    }
   });
 
   await listen('history-updated', () => {

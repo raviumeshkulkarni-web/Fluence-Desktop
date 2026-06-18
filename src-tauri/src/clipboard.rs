@@ -306,8 +306,6 @@ pub async fn inject_text(text: String) -> Result<(), String> {
         let saved = get_clipboard_text();
         let save_duration = start_time.elapsed();
 
-        let sleep_duration = std::time::Duration::from_millis(0);
-
         let set_start = std::time::Instant::now();
         // Set clipboard to our transcribed text
         set_clipboard_text(&text).map_err(|e| e.to_string())?;
@@ -325,10 +323,9 @@ pub async fn inject_text(text: String) -> Result<(), String> {
         let ctrlv_duration = ctrlv_start.elapsed();
 
         log::info!(
-            "inject_text performance: total = {:?}, save_clip = {:?}, focus_sleep = {:?}, set_clip = {:?}, send_ctrl_v = {:?}",
+            "inject_text performance: total = {:?}, save_clip = {:?}, set_clip = {:?}, send_ctrl_v = {:?}",
             start_time.elapsed(),
             save_duration,
-            sleep_duration,
             set_duration,
             ctrlv_duration
         );

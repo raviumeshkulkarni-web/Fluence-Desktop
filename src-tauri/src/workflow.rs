@@ -42,11 +42,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
                 )
             })?;
 
-            let prompt = if settings.language == "en" {
-                Some("Proper English capitalization and punctuation. Correct spelling of acronyms like ASR, OS, API, and UI.")
-            } else {
-                None
-            };
+            let prompt = Some("Proper capitalization and punctuation. Correct spelling of acronyms like ASR, OS, API, and UI.");
 
             let corrected = crate::transcribe::transcribe_audio_bytes(
                 &settings.stt_provider.base_url,
@@ -96,13 +92,7 @@ async fn polish_transcribed_text(
         _ => return Ok(raw_text.to_string()),
     };
 
-    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
-    let base = base_url.trim_end_matches('/');
-    let url = if base.to_lowercase().ends_with("/v1") {
-        format!("{}/chat/completions", base)
-    } else {
-        format!("{}/v1/chat/completions", base)
-    };
+    let url = crate::http_client::build_api_url(base_url, "chat/completions");
 
     let user_content = format!("TEXT TO PROCESS:\n\"\"\"\n{}\n\"\"\"", raw_text);
 

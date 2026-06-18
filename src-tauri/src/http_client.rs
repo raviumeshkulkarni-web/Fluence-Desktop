@@ -12,3 +12,21 @@ pub static CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
         .build()
         .expect("Failed to build HTTP client")
 });
+
+/// Builds a full API endpoint URL from a base URL and path suffix.
+/// Handles trailing slashes and whether or not the base already includes `/v1`.
+///
+/// # Examples
+/// ```
+/// // "https://api.groq.com/openai"      → "https://api.groq.com/openai/v1/audio/transcriptions"
+/// // "https://api.groq.com/openai/v1"   → "https://api.groq.com/openai/v1/audio/transcriptions"
+/// // "https://api.groq.com/openai/v1/"  → "https://api.groq.com/openai/v1/audio/transcriptions"
+/// ```
+pub fn build_api_url(base_url: &str, path: &str) -> String {
+    let base = base_url.trim_end_matches('/');
+    if base.to_lowercase().ends_with("/v1") {
+        format!("{}/{}", base, path.trim_start_matches('/'))
+    } else {
+        format!("{}/v1/{}", base, path.trim_start_matches('/'))
+    }
+}

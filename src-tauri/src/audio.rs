@@ -11,10 +11,16 @@ use tauri::{AppHandle, Emitter};
 
 // Shared recording state
 static RECORDING: AtomicBool = AtomicBool::new(false);
+static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+static CALLBACKS_POST_STOP: AtomicU32 = AtomicU32::new(0);
 static NATIVE_SAMPLE_RATE: AtomicU32 = AtomicU32::new(44100);
 static NATIVE_CHANNELS: AtomicU16 = AtomicU16::new(2);
 
 static AUDIO_BUFFER: Lazy<Mutex<Vec<f32>>> = Lazy::new(|| Mutex::new(Vec::new()));
+
+// Diagnostics timing statics
+static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
+static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
 
 // Global completion channels
 static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
@@ -51,6 +57,15 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     }
 
     RECORDING.store(true, Ordering::SeqCst);
+    STOP_REQUESTED.store(false, Ordering::SeqCst);
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+
+    if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
+        *guard = None;
+    }
+    if let Ok(mut guard) = TIMING_LAST_CALLBACK.lock() {
+        *guard = None;
+    }
 
     // Clear buffer
     if let Ok(mut buf) = AUDIO_BUFFER.lock() {
@@ -129,6 +144,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 move |data: &[f32]| {
                     if !is_recording_clone.load(Ordering::SeqCst) {
                         return;
+                    }
+
+                    if let Ok(mut guard) = TIMING_LAST_CALLBACK.lock() {
+                        *guard = Some(std::time::Instant::now());
+                    }
+                    if STOP_REQUESTED.load(Ordering::SeqCst) {
+                        CALLBACKS_POST_STOP.fetch_add(1, Ordering::SeqCst);
                     }
 
                     // Signal that the stream is ready and actively capturing audio on the very first callback
@@ -228,14 +250,56 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
             match stream {
                 Ok(s) => {
                     if s.play().is_ok() {
-                        // Wait until recording stops
-                        while RECORDING.load(Ordering::SeqCst) {
+                        // Wait until stop is requested
+                        while !STOP_REQUESTED.load(Ordering::SeqCst) {
                             std::thread::sleep(std::time::Duration::from_millis(10));
                         }
-                        // Copy samples to global buffer
+
+                        // Hybrid bounded drain handshake:
+                        // Wait until 2 post-stop callbacks arrive, 50 ms quiet period is reached after
+                        // at least one callback has arrived, or a hard 200 ms timeout is reached.
+                        let drain_start = std::time::Instant::now();
+                        let quiet_window = std::time::Duration::from_millis(50);
+
+                        while drain_start.elapsed().as_millis() < 200 {
+                            if CALLBACKS_POST_STOP.load(Ordering::SeqCst) >= 2 {
+                                break;
+                            }
+
+                            // Only allow quiet-window exit if we have received at least one post-stop callback.
+                            // This prevents premature exits on slower devices before the first callback arrives.
+                            if CALLBACKS_POST_STOP.load(Ordering::SeqCst) >= 1 {
+                                let last_cb = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
+                                if let Some(last_time) = last_cb {
+                                    if last_time.elapsed() >= quiet_window {
+                                        log::info!(
+                                            "Drain stopped early: quiet window of {} ms met after first callback",
+                                            last_time.elapsed().as_millis()
+                                        );
+                                        break;
+                                    }
+                                }
+                            }
+
+                            std::thread::sleep(std::time::Duration::from_millis(5));
+                        }
+
+                        let drain_duration = drain_start.elapsed();
+                        log::info!("Drain completed in {:?} (callbacks captured: {})", drain_duration, CALLBACKS_POST_STOP.load(Ordering::SeqCst));
+
+                        // Stop accepting new callbacks
+                        is_recording.store(false, Ordering::SeqCst);
+
+                        // Copy samples to global buffer under lock
                         if let (Ok(local), Ok(mut global)) = (buffer.lock(), AUDIO_BUFFER.lock()) {
                             *global = local.clone();
                         }
+
+                        // Explicitly drop stream to quiesce WASAPI before signaling completion
+                        drop(s);
+
+                        // Set RECORDING to false and notify stop commands
+                        RECORDING.store(false, Ordering::SeqCst);
                         let _ = done_tx.send(());
                     } else {
                         log::error!("Failed to play stream");
@@ -499,12 +563,12 @@ fn encode_flac_samples(
 }
 
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
-    let start_time = std::time::Instant::now();
-
-    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    RECORDING.store(false, Ordering::SeqCst);
+    let stop_request_time = std::time::Instant::now();
+    if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
+        *guard = Some(stop_request_time);
+    }
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -515,7 +579,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     if let Some(rx) = rx {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
     }
-    let wait_duration = start_time.elapsed();
+    let wait_duration = stop_request_time.elapsed();
+    let encoding_start_time = std::time::Instant::now();
 
     // Use mem::take() instead of .clone() to avoid a full 7+ MB heap copy.
     let samples = {
@@ -551,9 +616,27 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 
     let process_duration = process_start.elapsed();
 
+    let last_cb_time = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
+    let cb_delay = last_cb_time
+        .map(|cb| {
+            if cb > stop_request_time {
+                cb.duration_since(stop_request_time).as_millis()
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+
+    log::info!(
+        "Stop lifecycle diagnostics (f32): total wait = {:?}, last callback arrived {} ms after stop request, processing started {} ms after stop request",
+        stop_request_time.elapsed(),
+        cb_delay,
+        encoding_start_time.duration_since(stop_request_time).as_millis()
+    );
+
     log::info!(
         "stop_recording_f32 performance: total = {:?}, wait stream = {:?}, process/resample = {:?}, native_rate = {}Hz -> {}Hz, final size = {} samples",
-        start_time.elapsed(),
+        stop_request_time.elapsed(),
         wait_duration,
         process_duration,
         native_sample_rate,
@@ -565,12 +648,12 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 }
 
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
-    let start_time = std::time::Instant::now();
-
-    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    RECORDING.store(false, Ordering::SeqCst);
+    let stop_request_time = std::time::Instant::now();
+    if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
+        *guard = Some(stop_request_time);
+    }
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -581,7 +664,8 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     if let Some(rx) = rx {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
     }
-    let wait_duration = start_time.elapsed();
+    let wait_duration = stop_request_time.elapsed();
+    let encoding_start_time = std::time::Instant::now();
 
     // Use mem::take() instead of .clone() to avoid a full 7+ MB heap copy.
     let samples = {
@@ -627,9 +711,27 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
 
     let process_duration = process_start.elapsed();
 
+    let last_cb_time = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
+    let cb_delay = last_cb_time
+        .map(|cb| {
+            if cb > stop_request_time {
+                cb.duration_since(stop_request_time).as_millis()
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+
+    log::info!(
+        "Stop lifecycle diagnostics (wav): total wait = {:?}, last callback arrived {} ms after stop request, processing started {} ms after stop request",
+        stop_request_time.elapsed(),
+        cb_delay,
+        encoding_start_time.duration_since(stop_request_time).as_millis()
+    );
+
     log::info!(
         "stop_recording_wav_bytes performance: total = {:?}, wait stream = {:?}, process/wav = {:?}, rate = {}Hz, final size = {} bytes",
-        start_time.elapsed(),
+        stop_request_time.elapsed(),
         wait_duration,
         process_duration,
         native_sample_rate,
@@ -647,12 +749,12 @@ pub struct AudioPayload {
 }
 
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
-    let start_time = std::time::Instant::now();
-
-    // Give the audio stream 100ms to capture the final spoken syllables from the OS buffer
-    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
-
-    RECORDING.store(false, Ordering::SeqCst);
+    let stop_request_time = std::time::Instant::now();
+    if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
+        *guard = Some(stop_request_time);
+    }
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -663,7 +765,8 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if let Some(rx) = rx {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
     }
-    let wait_duration = start_time.elapsed();
+    let wait_duration = stop_request_time.elapsed();
+    let encoding_start_time = std::time::Instant::now();
 
     // Use mem::take() instead of .clone() to avoid a full 7+ MB heap copy.
     let samples = {
@@ -703,9 +806,27 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 
     let process_duration = process_start.elapsed();
 
+    let last_cb_time = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
+    let cb_delay = last_cb_time
+        .map(|cb| {
+            if cb > stop_request_time {
+                cb.duration_since(stop_request_time).as_millis()
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+
+    log::info!(
+        "Stop lifecycle diagnostics (flac): total wait = {:?}, last callback arrived {} ms after stop request, processing started {} ms after stop request",
+        stop_request_time.elapsed(),
+        cb_delay,
+        encoding_start_time.duration_since(stop_request_time).as_millis()
+    );
+
     log::info!(
         "stop_recording_flac_bytes performance: total = {:?}, wait stream = {:?}, process/encode = {:?}, rate = {}Hz, final size = {} bytes",
-        start_time.elapsed(),
+        stop_request_time.elapsed(),
         wait_duration,
         process_duration,
         native_sample_rate,

@@ -32,7 +32,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: 'npm'
 
       - name: Install Rust stable
@@ -43,13 +43,6 @@ jobs:
       - name: Install Rust stable toolchain
         run: rustup default stable
 
-      - name: Install dependencies (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          Invoke-WebRequest -Uri https://github.com/EpicGames/UnrealEngine/raw/release/Engine/Build/BatchFiles/MsBuildInstall.ps1 -OutFile C:\msbuild_install.ps1
-          powershell -ExecutionPolicy Bypass -File C:\msbuild_install.ps1 -IgnoreLinkedEngineErrors
-          echo "C:\Program Files (x86)\MSBuild\14.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        shell: pwsh
 
       - name: Cache Rust dependencies
         uses: Swatinem/rust-cache@v2

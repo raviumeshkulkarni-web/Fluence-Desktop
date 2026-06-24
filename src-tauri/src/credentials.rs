@@ -13,11 +13,19 @@ use windows::{
 };
 
 fn to_wide(s: &str) -> Vec<u16> {
+    #[cfg(target_os = "windows")]
     use std::os::windows::ffi::OsStrExt;
-    std::ffi::OsStr::new(s)
+
+    #[cfg(target_os = "windows")]
+    let w = std::ffi::OsStr::new(s)
         .encode_wide()
         .chain(std::iter::once(0))
-        .collect()
+        .collect();
+
+    #[cfg(not(target_os = "windows"))]
+    let w = vec![];
+
+    w
 }
 
 /// Store an API key in Windows Credential Manager

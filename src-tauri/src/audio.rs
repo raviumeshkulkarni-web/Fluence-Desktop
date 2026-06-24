@@ -19,8 +19,10 @@ static NATIVE_CHANNELS: AtomicU16 = AtomicU16::new(2);
 static AUDIO_BUFFER: Lazy<Mutex<Vec<f32>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 // Diagnostics timing statics
-static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
-static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
+static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> =
+    Lazy::new(|| Mutex::new(None));
+static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> =
+    Lazy::new(|| Mutex::new(None));
 
 // Global completion channels
 static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
@@ -285,7 +287,11 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         }
 
                         let drain_duration = drain_start.elapsed();
-                        log::info!("Drain completed in {:?} (callbacks captured: {})", drain_duration, CALLBACKS_POST_STOP.load(Ordering::SeqCst));
+                        log::info!(
+                            "Drain completed in {:?} (callbacks captured: {})",
+                            drain_duration,
+                            CALLBACKS_POST_STOP.load(Ordering::SeqCst)
+                        );
 
                         // Stop accepting new callbacks
                         is_recording.store(false, Ordering::SeqCst);

@@ -5,12 +5,14 @@ use crate::offline_downloader::get_offline_dir;
 use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Instant;
 
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 // Global process and port handles
@@ -101,6 +103,8 @@ pub async fn ensure_server_running() -> Result<u16> {
     let mut cmd = Command::new(&exe_path);
     cmd.args([&tokens_arg, &model_arg, &port_arg, &threads_arg]);
     cmd.current_dir(&offline_dir);
+
+    #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     {

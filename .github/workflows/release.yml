@@ -31,10 +31,11 @@ jobs:
         run: npm ci
 
       - name: build and release
-        uses: tauri-apps/tauri-action@v0
+        uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
+          projectPath: src-tauri
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: 'See the assets below to download and install Fluence.'

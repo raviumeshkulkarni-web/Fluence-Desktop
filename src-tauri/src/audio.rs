@@ -523,10 +523,9 @@ pub fn process_audio_samples_online(
     };
     let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
 
-    // Online path: minimal processing to match Android's clean-audio strategy.
-    // No noise gate, no normalization — those were found to cause crossover distortion
-    // and noise-pumping hallucinations (see git history v1.1.16, v1.1.23).
-    // Native sample rate preserved; Groq handles downsampling server-side.
+    // OpenWhispr forensic analysis (June 2026) confirmed: sending raw, unprocessed
+    // audio to Groq/Whisper achieves 99% accuracy. Noise gate and normalization
+    // introduce signal artifacts that confuse Whisper's beam-search decoder.
     (dc_removed, native_sample_rate)
 }
 
@@ -648,6 +647,11 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 }
 
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
+    // Give the microphone stream 100ms of continued recording after the hotkey release
+    // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
+    // the final syllable lands in the buffer while the stream is still fully active.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     let stop_request_time = std::time::Instant::now();
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
@@ -749,6 +753,11 @@ pub struct AudioPayload {
 }
 
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
+    // Give the microphone stream 100ms of continued recording after the hotkey release
+    // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
+    // the final syllable lands in the buffer while the stream is still fully active.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
     let stop_request_time = std::time::Instant::now();
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);

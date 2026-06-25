@@ -1,6 +1,12 @@
 # Node dependencies
 node_modules/
 
+# Local Rust toolchain (installed project-locally, not system-wide)
+.rust/
+
+# Local MSVC Build Tools + Windows SDK (installed project-locally)
+.msvc/
+
 # Rust build artifacts
 src-tauri/target/
 

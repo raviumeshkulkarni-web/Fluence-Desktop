@@ -5,7 +5,7 @@
   "private": true,
   "scripts": {
     "tauri": "tauri",
-    "dev": "tauri dev",
+    "dev": "pwsh -File dev.ps1",
     "build": "tauri build",
     "check": "cd src-tauri && cargo check",
     "clippy": "cd src-tauri && cargo clippy"

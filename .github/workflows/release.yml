@@ -13,49 +13,30 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - platform: 'windows-latest'
-            target: 'x86_64-pc-windows-msvc'
+        platform: [windows-latest]
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install Node.js
+      - name: setup node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
-          cache: 'npm'
+          node-version: lts/*
 
-      - name: Install Rust
-        uses: dtolnay/rust-action@stable
-        with:
-          targets: ${{ matrix.target }}
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
 
-      - name: Install frontend dependencies
+      - name: install frontend dependencies
         run: npm ci
 
-      - name: Build Tauri app
-        run: npm run build
+      - name: build and release
+        uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Upload release artifact
-        uses: actions/upload-release-asset@v1
         with:
-          upload_url: ${{ steps.create_release.outputs.upload_url }}
-          asset_path: src-tauri/target/release/bundle/
-          asset_name: Fluence-${{ github.ref_name }}-windows
-          asset_content_type: application/zip
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Create Release
-        id: create_release
-        uses: softprops/action-gh-release@v2
-        with:
-          files: src-tauri/target/release/bundle/**/*
-          generate_release_notes: true
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          tagName: v__VERSION__
+          releaseName: 'Fluence v__VERSION__'
+          releaseBody: 'See the assets below to download and install Fluence.'
+          releaseDraft: false
+          prerelease: false

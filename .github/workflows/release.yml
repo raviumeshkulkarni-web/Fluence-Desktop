@@ -1,99 +1,61 @@
-name: Build and Release
+name: Release
 
 on:
   push:
     tags:
       - 'v*'
-  workflow_dispatch:
-    inputs:
-      version:
-        description: 'Version tag (e.g., v1.1.19)'
-        required: true
-        type: string
 
-env:
-  CARGO_TERM_COLOR: always
+permissions:
+  contents: write
 
 jobs:
-  build:
+  release:
     strategy:
       fail-fast: false
       matrix:
         include:
           - platform: 'windows-latest'
-            args: '--target x86_64-pc-windows-msvc'
-            rust_target: 'x86_64-pc-windows-msvc'
+            target: 'x86_64-pc-windows-msvc'
 
     runs-on: ${{ matrix.platform }}
     steps:
-      - name: Checkout repository
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Install Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20'
           cache: 'npm'
 
-      - name: Install Rust stable
+      - name: Install Rust
         uses: dtolnay/rust-action@stable
         with:
-          targets: ${{ matrix.rust_target }}
-
-      - name: Install Rust stable toolchain
-        run: rustup default stable
-
-      - name: Install dependencies (Windows)
-        if: matrix.platform == 'windows-latest'
-        run: |
-          Invoke-WebRequest -Uri https://github.com/EpicGames/UnrealEngine/raw/release/Engine/Build/BatchFiles/MsBuildInstall.ps1 -OutFile C:\msbuild_install.ps1
-          powershell -ExecutionPolicy Bypass -File C:\msbuild_install.ps1 -IgnoreLinkedEngineErrors
-          echo "C:\Program Files (x86)\MSBuild\14.0\Bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-        shell: pwsh
-
-      - name: Cache Rust dependencies
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: src-tauri
+          targets: ${{ matrix.target }}
 
       - name: Install frontend dependencies
         run: npm ci
 
       - name: Build Tauri app
-        uses: tauri-apps/tauri-action@v0
+        run: npm run build
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload release artifact
+        uses: actions/upload-release-asset@v1
         with:
-          tagName: v__VERSION__
-          releaseName: 'Fluence v__VERSION__'
-          releaseBody: |
-            ## Download
-
-            Download the installer below for your platform.
-
-            ### Changes in v__VERSION__
-            - Audio pipeline improvements for better transcription accuracy
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
-
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v')
-    steps:
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Display structure of downloaded files
-        run: ls -R
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: src-tauri/target/release/bundle/
+          asset_name: Fluence-${{ github.ref_name }}-windows
+          asset_content_type: application/zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        id: create_release
+        uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
-          draft: true
+          files: src-tauri/target/release/bundle/**/*
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

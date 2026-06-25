@@ -255,32 +255,16 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                             std::thread::sleep(std::time::Duration::from_millis(10));
                         }
 
-                        // Hybrid bounded drain handshake:
-                        // Wait until 2 post-stop callbacks arrive, 50 ms quiet period is reached after
-                        // at least one callback has arrived, or a hard 200 ms timeout is reached.
+                        // Bounded drain: wait until 2 post-stop callbacks arrive (fast path,
+                        // typically ~20-40ms) or a hard 200ms timeout is reached (safety net).
+                        // The quiet-window heuristic was removed because it misfired after natural
+                        // speech pauses, causing the final OS buffer flush callback to be gated away.
                         let drain_start = std::time::Instant::now();
-                        let quiet_window = std::time::Duration::from_millis(150);
 
                         while drain_start.elapsed().as_millis() < 200 {
                             if CALLBACKS_POST_STOP.load(Ordering::SeqCst) >= 2 {
                                 break;
                             }
-
-                            // Only allow quiet-window exit if we have received at least one post-stop callback.
-                            // This prevents premature exits on slower devices before the first callback arrives.
-                            if CALLBACKS_POST_STOP.load(Ordering::SeqCst) >= 1 {
-                                let last_cb = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
-                                if let Some(last_time) = last_cb {
-                                    if last_time.elapsed() >= quiet_window {
-                                        log::info!(
-                                            "Drain stopped early: quiet window of {} ms met after first callback",
-                                            last_time.elapsed().as_millis()
-                                        );
-                                        break;
-                                    }
-                                }
-                            }
-
                             std::thread::sleep(std::time::Duration::from_millis(5));
                         }
 

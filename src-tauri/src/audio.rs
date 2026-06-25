@@ -259,7 +259,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         // Wait until 2 post-stop callbacks arrive, 50 ms quiet period is reached after
                         // at least one callback has arrived, or a hard 200 ms timeout is reached.
                         let drain_start = std::time::Instant::now();
-                        let quiet_window = std::time::Duration::from_millis(50);
+                        let quiet_window = std::time::Duration::from_millis(150);
 
                         while drain_start.elapsed().as_millis() < 200 {
                             if CALLBACKS_POST_STOP.load(Ordering::SeqCst) >= 2 {
@@ -656,8 +656,10 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
-    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
+    // then reset the counter so we start counting from a clean baseline.
     STOP_REQUESTED.store(true, Ordering::SeqCst);
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -762,8 +764,10 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
-    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
+    // then reset the counter so we start counting from a clean baseline.
     STOP_REQUESTED.store(true, Ordering::SeqCst);
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {

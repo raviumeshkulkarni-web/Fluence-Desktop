@@ -87,9 +87,8 @@ pub async fn transcribe_audio_bytes(
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
-        .text("response_format", "json");
-    // temperature intentionally omitted — Groq adaptive decoding outperforms T=0
-    // for ambiguous phonemes. OpenWhispr forensic analysis confirms absence = 99% accuracy.
+        .text("response_format", "json")
+        .text("temperature", "0.0");
 
     if let Some(p) = prompt {
         if !p.is_empty() {
@@ -98,8 +97,9 @@ pub async fn transcribe_audio_bytes(
     }
 
     if let Some(lang) = language {
-        let effective = if lang.is_empty() || lang == "auto" { "en" } else { lang };
-        form = form.text("language", effective.to_string());
+        if !lang.is_empty() && lang != "auto" {
+            form = form.text("language", lang.to_string());
+        }
     }
 
     let network_start = std::time::Instant::now();

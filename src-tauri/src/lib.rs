@@ -1,4 +1,5 @@
 // Fluence Windows — Library module declarations
+#![allow(clippy::needless_range_loop, clippy::needless_borrow, clippy::too_many_arguments)]
 
 pub mod agent;
 pub mod audio;

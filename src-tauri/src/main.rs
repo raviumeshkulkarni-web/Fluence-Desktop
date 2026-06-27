@@ -3,6 +3,7 @@
 // hotkey, SQLite history, and handles first-run wizard detection.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![allow(clippy::needless_range_loop, clippy::needless_borrow, clippy::too_many_arguments)]
 
 mod agent;
 mod audio;

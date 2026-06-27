@@ -470,47 +470,86 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Smart Max-Energy Channel Selection (Mono Downmixing)
-    // Calculates the energy (sum of squares) of each channel and selects the loudest one.
-    // This prevents phase cancellation from summing and dead channels from hardcoding channel 0.
+    // 1. Mono Downmixing (v1.0.0 Channel Averaging)
     let mono_samples = if native_channels > 1 {
-        let mut channel_energies = vec![0.0f64; native_channels];
-        for chunk in samples.chunks_exact(native_channels) {
-            for (ch, &sample) in chunk.iter().enumerate() {
-                channel_energies[ch] += (sample * sample) as f64;
-            }
-        }
-
-        let mut max_ch = 0;
-        let mut max_energy = -1.0;
-        for (ch, &energy) in channel_energies.iter().enumerate() {
-            if energy > max_energy {
-                max_energy = energy;
-                max_ch = ch;
-            }
-        }
-
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            v.push(chunk[max_ch]);
+            let sum: f32 = chunk.iter().sum();
+            v.push(sum / native_channels as f32);
         }
         v
     } else {
         samples
     };
 
-    // 2. DC Offset Removal
-    let avg = if !mono_samples.is_empty() {
-        mono_samples.iter().sum::<f32>() / mono_samples.len() as f32
+    // 2. Client-Side Resampling to 16kHz (v1.0.0 Box Filter)
+    const TARGET_SAMPLE_RATE: u32 = 16_000;
+    let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
+        let from_rate = native_sample_rate as f64;
+        let to_rate = TARGET_SAMPLE_RATE as f64;
+        let ratio = from_rate / to_rate;
+
+        let num_output_samples = (mono_samples.len() as f64 / ratio).round() as usize;
+        let mut v = Vec::with_capacity(num_output_samples);
+
+        for i in 0..num_output_samples {
+            let src_center = i as f64 * ratio;
+            let start = (src_center - ratio / 2.0).max(0.0);
+            let end = (src_center + ratio / 2.0).min((mono_samples.len() - 1) as f64);
+
+            let start_idx = start.floor() as usize;
+            let end_idx = end.ceil() as usize;
+
+            let mut sum = 0.0f32;
+            let mut count = 0.0f32;
+
+            for idx in start_idx..=end_idx {
+                let sample_start = idx as f64 - 0.5;
+                let sample_end = idx as f64 + 0.5;
+
+                let overlap_start = sample_start.max(start);
+                let overlap_end = sample_end.min(end);
+
+                if overlap_end > overlap_start {
+                    let weight = (overlap_end - overlap_start) as f32;
+                    sum += mono_samples[idx] * weight;
+                    count += weight;
+                }
+            }
+
+            if count > 0.0 {
+                v.push(sum / count);
+            } else {
+                v.push(0.0);
+            }
+        }
+        (v, TARGET_SAMPLE_RATE)
+    } else {
+        (mono_samples, native_sample_rate)
+    };
+
+    // 3. DC Offset Removal
+    let avg = if !resampled.is_empty() {
+        resampled.iter().sum::<f32>() / resampled.len() as f32
     } else {
         0.0f32
     };
-    let dc_removed: Vec<f32> = mono_samples.iter().map(|&s| s - avg).collect();
+    let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
-    // OpenWhispr forensic analysis (June 2026) confirmed: sending raw, unprocessed
-    // audio to Groq/Whisper achieves 99% accuracy. Noise gate and normalization
-    // introduce signal artifacts that confuse Whisper's beam-search decoder.
-    (dc_removed, native_sample_rate)
+    // 4. Volume Normalization (v1.0.0 Peak Normalization to 0.9)
+    let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let mut normalized = if peak > 0.005 && peak < 0.98 {
+        let scale = 0.9 / peak;
+        dc_removed.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+    } else {
+        dc_removed
+    };
+
+    // 5. Silence Padding (v1.0.0 500ms Trailing Padding)
+    let padding_size = (final_sample_rate as usize) / 2;
+    normalized.resize(normalized.len() + padding_size, 0.0);
+
+    (normalized, final_sample_rate)
 }
 
 fn encode_flac_samples(
@@ -685,7 +724,11 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
     let wav_bytes = tokio::task::spawn_blocking(move || {
         let (processed_samples, final_sample_rate) =
-            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
+            process_audio_samples_online(
+                samples,
+                native_sample_rate as u32,
+                native_channels,
+            );
 
         // Convert samples to i16 for WAV container
         let i16_samples: Vec<i16> = processed_samples
@@ -795,7 +838,11 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     // keeps the file size well within the 25MB limit for typical dictation.
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let (processed, sample_rate) =
-            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
+            process_audio_samples_online(
+                samples,
+                native_sample_rate as u32,
+                native_channels,
+            );
         encode_flac_samples(&processed, sample_rate, 1)
     })
     .await

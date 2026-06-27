@@ -151,6 +151,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                     }
                     if STOP_REQUESTED.load(Ordering::SeqCst) {
                         CALLBACKS_POST_STOP.fetch_add(1, Ordering::SeqCst);
+                        println!("[TIMING] Audio callback received post-stop");
                     }
 
                     // Signal that the stream is ready and actively capturing audio on the very first callback
@@ -257,8 +258,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         // Bounded drain: wait until 2 post-stop callbacks arrive (fast path,
                         // typically ~20-40ms) or a hard 200ms timeout is reached (safety net).
-                        // The quiet-window heuristic was removed because it misfired after natural
-                        // speech pauses, causing the final OS buffer flush callback to be gated away.
+                        println!("[TIMING] Bounded drain starts");
                         let drain_start = std::time::Instant::now();
 
                         while drain_start.elapsed().as_millis() < 200 {
@@ -270,6 +270,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         let drain_duration = drain_start.elapsed();
                         log::info!("Drain completed in {:?} (callbacks captured: {})", drain_duration, CALLBACKS_POST_STOP.load(Ordering::SeqCst));
+                        println!("[TIMING] Bounded drain ends");
 
                         // Stop accepting new callbacks
                         is_recording.store(false, Ordering::SeqCst);
@@ -280,7 +281,9 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         }
 
                         // Explicitly drop stream to quiesce WASAPI before signaling completion
+                        println!("[TIMING] drop(stream) starts");
                         drop(s);
+                        println!("[TIMING] drop(stream) ends");
 
                         // Set RECORDING to false and notify stop commands
                         RECORDING.store(false, Ordering::SeqCst);
@@ -470,7 +473,10 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
+    println!("[TIMING] process_audio_samples_online starts");
+    
     // 1. Mono Downmixing (v1.0.0 Channel Averaging)
+    let t_start = std::time::Instant::now();
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
@@ -481,8 +487,10 @@ pub fn process_audio_samples_online(
     } else {
         samples
     };
+    println!("[TIMING] Downmix duration: {:?}", t_start.elapsed());
 
     // 2. Client-Side Resampling to 16kHz (v1.0.0 Box Filter)
+    let t_start = std::time::Instant::now();
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
         let from_rate = native_sample_rate as f64;
@@ -527,16 +535,20 @@ pub fn process_audio_samples_online(
     } else {
         (mono_samples, native_sample_rate)
     };
+    println!("[TIMING] Resampler duration: {:?}", t_start.elapsed());
 
     // 3. DC Offset Removal
+    let t_start = std::time::Instant::now();
     let avg = if !resampled.is_empty() {
         resampled.iter().sum::<f32>() / resampled.len() as f32
     } else {
         0.0f32
     };
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
+    println!("[TIMING] DC removal duration: {:?}", t_start.elapsed());
 
     // 4. Volume Normalization (v1.0.0 Peak Normalization to 0.9)
+    let t_start = std::time::Instant::now();
     let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
     let mut normalized = if peak > 0.005 && peak < 0.98 {
         let scale = 0.9 / peak;
@@ -544,10 +556,13 @@ pub fn process_audio_samples_online(
     } else {
         dc_removed
     };
+    println!("[TIMING] Normalization duration: {:?}", t_start.elapsed());
 
     // 5. Silence Padding (v1.0.0 500ms Trailing Padding)
+    let t_start = std::time::Instant::now();
     let padding_size = (final_sample_rate as usize) / 2;
     normalized.resize(normalized.len() + padding_size, 0.0);
+    println!("[TIMING] Silence padding duration: {:?}", t_start.elapsed());
 
     (normalized, final_sample_rate)
 }
@@ -788,12 +803,14 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let stop_request_time = std::time::Instant::now();
+    println!("[TIMING] Hotkey released / stop_recording_flac_bytes starts");
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
     // Signal stop FIRST so any in-flight callback sees it and increments the counter,
     // then reset the counter so we start counting from a clean baseline.
     STOP_REQUESTED.store(true, Ordering::SeqCst);
+    println!("[TIMING] STOP_REQUESTED set");
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
@@ -805,6 +822,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if let Some(rx) = rx {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
     }
+    println!("[TIMING] done_rx received (elapsed from STOP_REQUESTED: {:?})", stop_request_time.elapsed());
     let wait_duration = stop_request_time.elapsed();
     let encoding_start_time = std::time::Instant::now();
 
@@ -843,7 +861,10 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
                 native_sample_rate as u32,
                 native_channels,
             );
-        encode_flac_samples(&processed, sample_rate, 1)
+        let encode_start = std::time::Instant::now();
+        let encoded = encode_flac_samples(&processed, sample_rate, 1);
+        println!("[TIMING] FLAC encoding duration: {:?}", encode_start.elapsed());
+        encoded
     })
     .await
     .map_err(|e| e.to_string())??;

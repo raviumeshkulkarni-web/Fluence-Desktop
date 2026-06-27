@@ -84,6 +84,7 @@ pub async fn transcribe_audio_bytes(
         .mime_str(mime_type)
         .map_err(|e| e.to_string())?;
 
+    let multipart_start = std::time::Instant::now();
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
@@ -101,6 +102,7 @@ pub async fn transcribe_audio_bytes(
             form = form.text("language", lang.to_string());
         }
     }
+    println!("[TIMING] Multipart request creation duration: {:?}", multipart_start.elapsed());
 
     let network_start = std::time::Instant::now();
     let is_mistral = base_url.contains("mistral.ai");
@@ -114,6 +116,8 @@ pub async fn transcribe_audio_bytes(
     if is_mistral {
         request = request.header("x-api-key", api_key);
     }
+
+    println!("[TIMING] HTTP request starts");
 
     let resp = request
         .send()

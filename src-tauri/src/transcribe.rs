@@ -4,6 +4,7 @@
 
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
+use crate::dictionary;
 
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
@@ -38,21 +39,18 @@ fn default_filename() -> String {
 #[tauri::command]
 pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
     let start_time = std::time::Instant::now();
-    let audio_bytes =
+    let mp3_bytes =
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.wav_b64)
             .map_err(|e| format!("Base64 decode error: {}", e))?;
 
     let decode_duration = start_time.elapsed();
 
-    let corrected = transcribe_audio_bytes(
+    let corrected = transcribe_mp3_bytes(
         &req.base_url,
         &req.api_key,
         &req.model,
-        audio_bytes,
-        &req.mime_type,
-        &req.filename,
+        mp3_bytes,
         req.language.as_deref(),
-        req.prompt.as_deref(),
     )
     .await?;
 
@@ -84,7 +82,6 @@ pub async fn transcribe_audio_bytes(
         .mime_str(mime_type)
         .map_err(|e| e.to_string())?;
 
-    let multipart_start = std::time::Instant::now();
     let mut form = reqwest::multipart::Form::new()
         .part("file", file_part)
         .text("model", model.to_string())
@@ -102,7 +99,6 @@ pub async fn transcribe_audio_bytes(
             form = form.text("language", lang.to_string());
         }
     }
-    println!("[TIMING] Multipart request creation duration: {:?}", multipart_start.elapsed());
 
     let network_start = std::time::Instant::now();
     let is_mistral = base_url.contains("mistral.ai");
@@ -117,7 +113,6 @@ pub async fn transcribe_audio_bytes(
         request = request.header("x-api-key", api_key);
     }
 
-    println!("[TIMING] HTTP request starts");
 
     let resp = request
         .send()
@@ -146,6 +141,113 @@ pub async fn transcribe_audio_bytes(
     );
 
     Ok(result.text)
+}
+
+pub async fn transcribe_mp3_bytes(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    mp3_bytes: Vec<u8>,
+    language: Option<&str>,
+) -> Result<String, String> {
+    let start_time = std::time::Instant::now();
+
+    let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
+
+    let file_part = reqwest::multipart::Part::bytes(mp3_bytes)
+        .file_name("audio.mp3")
+        .mime_str("audio/mpeg")
+        .map_err(|e| e.to_string())?;
+
+    let multipart_start = std::time::Instant::now();
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", model.to_string())
+        .text("response_format", "json")
+        .text("temperature", "0.0");
+
+    if let Some(lang) = language {
+        if !lang.is_empty() && lang != "auto" {
+            form = form.text("language", lang.to_string());
+        }
+    }
+
+    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint.
+    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    if let Ok(entries) = crate::dictionary::get_dictionary() {
+        if !entries.is_empty() {
+            let mut prompt_words = Vec::new();
+            for entry in entries {
+                if !entry.corrected.trim().is_empty() {
+                    prompt_words.push(entry.corrected.clone());
+                }
+                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
+                    prompt_words.push(entry.spoken.clone());
+                }
+            }
+            if !prompt_words.is_empty() {
+                let mut prompt = prompt_words.join(", ");
+                if prompt.len() > 890 {
+                    let truncated = &prompt[..890];
+                    if let Some(last_comma) = truncated.rfind(',') {
+                        prompt = truncated[..last_comma].to_string();
+                    } else {
+                        prompt = truncated.to_string();
+                    }
+                    log::debug!(
+                        "Prompt truncated to {} characters for Groq compatibility",
+                        prompt.len()
+                    );
+                }
+                form = form.text("prompt", prompt);
+            }
+        }
+    }
+
+    let network_start = std::time::Instant::now();
+    let is_mistral = base_url.contains("mistral.ai");
+    let mut request = crate::http_client::CLIENT
+        .post(&url)
+        .bearer_auth(api_key)
+        .multipart(form);
+
+    // Mistral sometimes requires the 'x-api-key' header specifically for their
+    // transcription gateway. We provide it conditionally for maximum compatibility.
+    if is_mistral {
+        request = request.header("x-api-key", api_key);
+    }
+
+    let resp = request
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let network_duration = network_start.elapsed();
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let parse_start = std::time::Instant::now();
+    let result: TranscriptionResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+
+    // Apply custom dictionary corrections
+    let corrected = dictionary::apply_corrections(&result.text);
+
+    log::info!(
+        "transcribe_mp3_bytes performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
+        start_time.elapsed(),
+        network_duration,
+        parse_start.elapsed(),
+        multipart_start.elapsed()
+    );
+
+    Ok(corrected)
 }
 
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.

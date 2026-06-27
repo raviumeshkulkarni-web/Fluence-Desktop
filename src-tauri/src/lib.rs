@@ -6,6 +6,7 @@ pub mod audio;
 pub mod autostart;
 pub mod clipboard;
 pub mod credentials;
+pub mod dictionary;
 pub mod history;
 pub mod hotkey;
 pub mod http_client;

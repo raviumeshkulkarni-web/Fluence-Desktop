@@ -21,6 +21,7 @@ let historyPage = 0;
 let activeRecorder = null;
 let pendingHotkey = '';
 let pendingHotkeyKeys = new Set();
+let dictEntries = [];
 
 // Provider presets
 const STT_PRESETS = {
@@ -49,6 +50,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupHistory();
   setupSystemToggles();
   setupSaveButtons();
+  setupDictionary();
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
@@ -125,7 +127,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['general', 'providers', 'history', 'about'];
+const PAGE_ORDER = ['general', 'providers', 'dictionary', 'history', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -176,6 +178,7 @@ function _performNavigation(page) {
 
   // Lazy load data for specific pages
   if (page === 'history') loadHistory(true);
+  if (page === 'dictionary') loadDictionary();
 }
 
 // ── Hotkey Recorder ──────────────────────────────────────────────
@@ -870,5 +873,130 @@ async function setupOfflineDownloader() {
         updateOfflineStatus();
       }
     });
+  }
+}
+
+// ── Dictionary ───────────────────────────────────────────────────
+
+function setupDictionary() {
+  document.getElementById('add-dict-btn')?.addEventListener('click', () => {
+    toggleDictAddRow(true);
+  });
+
+  document.getElementById('dict-cancel-btn')?.addEventListener('click', () => {
+    toggleDictAddRow(false);
+  });
+
+  document.getElementById('dict-save-btn')?.addEventListener('click', saveDictEntry);
+
+  document.getElementById('import-dict-btn')?.addEventListener('click', importDictionary);
+  document.getElementById('export-dict-btn')?.addEventListener('click', exportDictionary);
+}
+
+function toggleDictAddRow(show) {
+  const row = document.getElementById('dict-add-row');
+  if (row) row.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('dict-spoken-input')?.focus();
+  } else {
+    setInputValue('dict-spoken-input', '');
+    setInputValue('dict-corrected-input', '');
+  }
+}
+
+async function loadDictionary() {
+  try {
+    dictEntries = await invoke('get_dictionary');
+    renderDictTable();
+  } catch (err) {
+    showToast('Failed to load dictionary: ' + err, 'error');
+  }
+}
+
+function renderDictTable() {
+  const tbody = document.getElementById('dict-table-body');
+  const emptyRow = document.getElementById('dict-empty-row');
+  if (!tbody) return;
+
+  // Remove all non-empty rows
+  tbody.querySelectorAll('tr[data-dict-id]').forEach(r => r.remove());
+
+  if (dictEntries.length === 0) {
+    if (emptyRow) emptyRow.style.display = '';
+  } else {
+    if (emptyRow) emptyRow.style.display = 'none';
+    dictEntries.forEach(entry => {
+      const tr = document.createElement('tr');
+      tr.dataset.dictId = entry.id;
+      tr.innerHTML = `
+        <td class="spoken-word">${escapeHtml(entry.spoken)}</td>
+        <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
+        <td class="actions">
+          <button class="btn-ghost" onclick="deleteDictEntry('${entry.id}')" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+async function saveDictEntry() {
+  const spoken = document.getElementById('dict-spoken-input')?.value?.trim();
+  const corrected = document.getElementById('dict-corrected-input')?.value?.trim();
+
+  if (!spoken || !corrected) {
+    showToast('Please fill in both fields', 'error');
+    return;
+  }
+
+  try {
+    const entry = await invoke('add_dictionary_entry', { spoken, corrected });
+    dictEntries.push(entry);
+    renderDictTable();
+    toggleDictAddRow(false);
+    showToast('Entry added ✓', 'success');
+  } catch (err) {
+    showToast('Failed to add entry: ' + err, 'error');
+  }
+}
+
+window.deleteDictEntry = async (id) => {
+  try {
+    await invoke('delete_dictionary_entry', { id });
+    dictEntries = dictEntries.filter(e => e.id !== id);
+    renderDictTable();
+    showToast('Entry deleted', 'success');
+  } catch (err) {
+    showToast('Failed to delete: ' + err, 'error');
+  }
+};
+
+async function importDictionary() {
+  try {
+    const { open } = window.__TAURI__.dialog;
+    const path = await open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (!path) return;
+    const { readTextFile } = window.__TAURI__.fs;
+    const json = await readTextFile(path);
+    const count = await invoke('import_dictionary', { jsonData: json });
+    showToast(`Imported ${count} entries ✓`, 'success');
+    loadDictionary();
+  } catch (err) {
+    showToast('Import failed: ' + err, 'error');
+  }
+}
+
+async function exportDictionary() {
+  try {
+    const json = await invoke('export_dictionary');
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'fluence-dictionary.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  } catch (err) {
+    showToast('Export failed: ' + err, 'error');
   }
 }

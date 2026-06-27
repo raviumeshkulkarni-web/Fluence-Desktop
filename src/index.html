@@ -52,6 +52,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
       Providers
     </div>
+    <div class="nav-item" data-page="dictionary" id="nav-dictionary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Dictionary
+    </div>
     <span class="nav-section-label" style="margin-top:8px;">Data</span>
     <div class="nav-item" data-page="history" id="nav-history">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
@@ -422,6 +426,55 @@
 
       <div style="display:flex;justify-content:flex-end;padding-top:8px;">
         <button class="btn-primary" id="save-providers-btn" style="min-width:120px;">Save Changes</button>
+      </div>
+    </section>
+
+    <!-- ===== DICTIONARY PAGE ===== -->
+    <section class="page" id="page-dictionary">
+      <div class="page-header">
+        <h1 class="page-title">Custom Dictionary</h1>
+        <p class="page-subtitle">Correct specific words or phrases automatically after transcription</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Word Corrections</span>
+          <div style="display:flex;gap:8px;">
+            <button class="btn-ghost" id="import-dict-btn" style="font-size:12px;">Import</button>
+            <button class="btn-ghost" id="export-dict-btn" style="font-size:12px;">Export</button>
+            <button class="btn-primary" id="add-dict-btn" style="padding:6px 14px;font-size:13px;">+ Add Entry</button>
+          </div>
+        </div>
+        <div id="dict-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:12px;align-items:flex-end;border-bottom:1px solid var(--color-outline-variant);">
+          <div class="form-row" style="flex:1;">
+            <label>Spoken word/phrase</label>
+            <input type="text" id="dict-spoken-input" placeholder="e.g. fluence" />
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label>Corrected form</label>
+            <input type="text" id="dict-corrected-input" placeholder="e.g. Fluence" />
+          </div>
+          <div style="display:flex;gap:8px;padding-bottom:1px;">
+            <button class="btn-primary" id="dict-save-btn" style="padding:10px 16px;">Save</button>
+            <button class="btn-ghost" id="dict-cancel-btn">Cancel</button>
+          </div>
+        </div>
+        <table class="dict-table">
+          <thead>
+            <tr>
+              <th>Spoken</th>
+              <th>Corrected</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="dict-table-body">
+            <tr id="dict-empty-row">
+              <td colspan="3" style="text-align:center;color:var(--color-outline);padding:var(--spacing-xl);font-style:italic;">
+                No entries yet. Add corrections for words that are often misheard.
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 

@@ -567,3 +567,34 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   color: var(--color-outline);
 }
 
+/* Dictionary table */
+.dict-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.dict-table th {
+  text-align: left;
+  padding: 10px var(--spacing-md);
+  font-family: var(--font-label);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  color: var(--color-on-surface-variant);
+  border-bottom: 1px solid var(--color-outline-variant);
+  background: rgba(255,255,255,0.02);
+}
+
+.dict-table td {
+  padding: 10px var(--spacing-md);
+  font-size: var(--text-body-md);
+  border-bottom: 1px solid rgba(255,255,255,0.04);
+  vertical-align: middle;
+}
+
+.dict-table tr:hover td { background: rgba(255,255,255,0.02); }
+.dict-table .spoken-word { color: var(--color-on-surface-variant); font-style: italic; }
+.dict-table .corrected-word { color: var(--color-primary); font-weight: 500; }
+.dict-table .actions { width: 80px; text-align: right; }
+

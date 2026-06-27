@@ -2,6 +2,7 @@ use anyhow::Result;
 use cpal::traits::DeviceTrait;
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
+use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
 use once_cell::sync::Lazy;
 use std::sync::{
     atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
@@ -151,7 +152,6 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                     }
                     if STOP_REQUESTED.load(Ordering::SeqCst) {
                         CALLBACKS_POST_STOP.fetch_add(1, Ordering::SeqCst);
-                        println!("[TIMING] Audio callback received post-stop");
                     }
 
                     // Signal that the stream is ready and actively capturing audio on the very first callback
@@ -258,7 +258,6 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         // Bounded drain: wait until 2 post-stop callbacks arrive (fast path,
                         // typically ~20-40ms) or a hard 200ms timeout is reached (safety net).
-                        println!("[TIMING] Bounded drain starts");
                         let drain_start = std::time::Instant::now();
 
                         while drain_start.elapsed().as_millis() < 200 {
@@ -270,7 +269,6 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         let drain_duration = drain_start.elapsed();
                         log::info!("Drain completed in {:?} (callbacks captured: {})", drain_duration, CALLBACKS_POST_STOP.load(Ordering::SeqCst));
-                        println!("[TIMING] Bounded drain ends");
 
                         // Stop accepting new callbacks
                         is_recording.store(false, Ordering::SeqCst);
@@ -281,9 +279,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         }
 
                         // Explicitly drop stream to quiesce WASAPI before signaling completion
-                        println!("[TIMING] drop(stream) starts");
                         drop(s);
-                        println!("[TIMING] drop(stream) ends");
 
                         // Set RECORDING to false and notify stop commands
                         RECORDING.store(false, Ordering::SeqCst);
@@ -473,7 +469,6 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    println!("[TIMING] process_audio_samples_online starts");
     
     // 1. Mono Downmixing (v1.0.0 Channel Averaging)
     let t_start = std::time::Instant::now();
@@ -487,7 +482,6 @@ pub fn process_audio_samples_online(
     } else {
         samples
     };
-    println!("[TIMING] Downmix duration: {:?}", t_start.elapsed());
 
     // 2. Client-Side Resampling to 16kHz (v1.0.0 Box Filter)
     let t_start = std::time::Instant::now();
@@ -535,7 +529,6 @@ pub fn process_audio_samples_online(
     } else {
         (mono_samples, native_sample_rate)
     };
-    println!("[TIMING] Resampler duration: {:?}", t_start.elapsed());
 
     // 3. DC Offset Removal
     let t_start = std::time::Instant::now();
@@ -545,7 +538,6 @@ pub fn process_audio_samples_online(
         0.0f32
     };
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
-    println!("[TIMING] DC removal duration: {:?}", t_start.elapsed());
 
     // 4. Volume Normalization (v1.0.0 Peak Normalization to 0.9)
     let t_start = std::time::Instant::now();
@@ -556,13 +548,11 @@ pub fn process_audio_samples_online(
     } else {
         dc_removed
     };
-    println!("[TIMING] Normalization duration: {:?}", t_start.elapsed());
 
     // 5. Silence Padding (v1.0.0 500ms Trailing Padding)
     let t_start = std::time::Instant::now();
     let padding_size = (final_sample_rate as usize) / 2;
     normalized.resize(normalized.len() + padding_size, 0.0);
-    println!("[TIMING] Silence padding duration: {:?}", t_start.elapsed());
 
     (normalized, final_sample_rate)
 }
@@ -803,14 +793,12 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     tokio::time::sleep(std::time::Duration::from_millis(100)).await;
 
     let stop_request_time = std::time::Instant::now();
-    println!("[TIMING] Hotkey released / stop_recording_flac_bytes starts");
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
     // Signal stop FIRST so any in-flight callback sees it and increments the counter,
     // then reset the counter so we start counting from a clean baseline.
     STOP_REQUESTED.store(true, Ordering::SeqCst);
-    println!("[TIMING] STOP_REQUESTED set");
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
@@ -822,7 +810,6 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if let Some(rx) = rx {
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
     }
-    println!("[TIMING] done_rx received (elapsed from STOP_REQUESTED: {:?})", stop_request_time.elapsed());
     let wait_duration = stop_request_time.elapsed();
     let encoding_start_time = std::time::Instant::now();
 
@@ -863,7 +850,6 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
             );
         let encode_start = std::time::Instant::now();
         let encoded = encode_flac_samples(&processed, sample_rate, 1);
-        println!("[TIMING] FLAC encoding duration: {:?}", encode_start.elapsed());
         encoded
     })
     .await
@@ -901,6 +887,146 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     Ok(flac_bytes)
 }
 
+pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
+    // Give the microphone stream 100ms of continued recording after the hotkey release
+    // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
+    // the final syllable lands in the buffer while the stream is still fully active.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+
+    let stop_request_time = std::time::Instant::now();
+    if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
+        *guard = Some(stop_request_time);
+    }
+    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
+    // then reset the counter so we start counting from a clean baseline.
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
+    CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+
+    // Wait for the recording task to finish flushing (up to 2 seconds)
+    let rx = {
+        let mut rx_guard = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?;
+        rx_guard.take()
+    };
+
+    if let Some(rx) = rx {
+        let _ = tokio::time::timeout(std::time::Duration::from_secs(2), rx).await;
+    }
+    let wait_duration = stop_request_time.elapsed();
+    let encoding_start_time = std::time::Instant::now();
+
+    // Use mem::take() instead of .clone() to avoid a full 7+ MB heap copy.
+    let samples = {
+        let mut buf = AUDIO_BUFFER.lock().map_err(|e| e.to_string())?;
+        std::mem::take(&mut *buf)
+    };
+
+    if samples.is_empty() {
+        return Err("No audio recorded".to_string());
+    }
+
+    let native_channels = NATIVE_CHANNELS.load(Ordering::SeqCst) as usize;
+    let native_sample_rate = NATIVE_SAMPLE_RATE.load(Ordering::SeqCst) as usize;
+    if native_channels > 0 && native_sample_rate > 0 {
+        let duration_ms = (samples.len() * 1000) / (native_channels * native_sample_rate);
+        if duration_ms < 200 {
+            log::info!(
+                "Recording duration too short ({}ms). Discarding as accidental press.",
+                duration_ms
+            );
+            return Ok(Vec::new());
+        }
+    }
+
+    let process_start = std::time::Instant::now();
+
+    // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
+    let mp3_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
+        // Process audio using the validated v1.0.0 signal chain:
+        // channel-averaged mono downmix, area-weighted box resampler to 16kHz,
+        // DC offset removal, peak normalization to 0.9, 500ms silence padding.
+        let (processed_samples, final_sample_rate) =
+            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
+
+        // Convert f32 samples to i16 for MP3 encoding
+        let i16_samples: Vec<i16> = processed_samples
+            .iter()
+            .map(|&s| (s.clamp(-1.0, 1.0) * i16::MAX as f32) as i16)
+            .collect();
+
+        // Encode to MP3 using shine-rs (v1.0.0 behavior)
+        let config = Mp3EncoderConfig::new()
+            .sample_rate(final_sample_rate)
+            .bitrate(64)
+            .channels(1)
+            .stereo_mode(StereoMode::Mono);
+
+        let mut encoder = Mp3Encoder::new(config)
+            .map_err(|e| format!("Failed to create MP3 encoder: {:?}", e))?;
+        let samples_per_frame = encoder.samples_per_frame();
+        let mut mp3_bytes = Vec::new();
+
+        for chunk in i16_samples.chunks(samples_per_frame) {
+            if chunk.len() == samples_per_frame {
+                let frames = encoder
+                    .encode_interleaved(chunk)
+                    .map_err(|e| format!("MP3 encoding error: {:?}", e))?;
+                for mut f in frames {
+                    mp3_bytes.append(&mut f);
+                }
+            } else {
+                let mut padded = chunk.to_vec();
+                padded.resize(samples_per_frame, 0);
+                let frames = encoder
+                    .encode_interleaved(&padded)
+                    .map_err(|e| format!("MP3 encoding error: {:?}", e))?;
+                for mut f in frames {
+                    mp3_bytes.append(&mut f);
+                }
+            }
+        }
+
+        let mut final_frames = encoder
+            .finish()
+            .map_err(|e| format!("Failed to finalize MP3 encoder: {:?}", e))?;
+        mp3_bytes.append(&mut final_frames);
+
+        Ok(mp3_bytes)
+    })
+    .await
+    .map_err(|e| e.to_string())??;
+
+    let process_duration = process_start.elapsed();
+
+    let last_cb_time = TIMING_LAST_CALLBACK.lock().ok().and_then(|g| *g);
+    let cb_delay = last_cb_time
+        .map(|cb| {
+            if cb > stop_request_time {
+                cb.duration_since(stop_request_time).as_millis()
+            } else {
+                0
+            }
+        })
+        .unwrap_or(0);
+
+    log::info!(
+        "Stop lifecycle diagnostics (mp3): total wait = {:?}, last callback arrived {} ms after stop request, processing started {} ms after stop request",
+        stop_request_time.elapsed(),
+        cb_delay,
+        encoding_start_time.duration_since(stop_request_time).as_millis()
+    );
+
+    log::info!(
+        "stop_recording_mp3_bytes performance: total = {:?}, wait stream = {:?}, process/encode = {:?}, rate = {}Hz, final size = {} bytes",
+        stop_request_time.elapsed(),
+        wait_duration,
+        process_duration,
+        native_sample_rate,
+        mp3_bytes.len()
+    );
+
+    Ok(mp3_bytes)
+}
+
 pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     let preset = settings.stt_provider.preset.to_lowercase();
@@ -933,13 +1059,12 @@ pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
 #[tauri::command]
 pub async fn stop_recording() -> Result<String, String> {
     let encode_start = std::time::Instant::now();
-    let payload = stop_recording_audio_bytes().await?;
-    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &payload.bytes);
+    let mp3_bytes = stop_recording_mp3_bytes().await?;
+    let b64 = base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &mp3_bytes);
     log::info!(
-        "stop_recording base64 bridge: encode = {:?}, format = {}, size = {} bytes, b64 = {} bytes",
+        "stop_recording base64 bridge: encode = {:?}, format = audio.mp3, size = {} bytes, b64 = {} bytes",
         encode_start.elapsed(),
-        payload.filename,
-        payload.bytes.len(),
+        mp3_bytes.len(),
         b64.len()
     );
     Ok(b64)

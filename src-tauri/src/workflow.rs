@@ -26,14 +26,13 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             (result, transcribe_start.elapsed())
         }
     } else {
-        let payload = crate::audio::stop_recording_audio_bytes().await?;
+        let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
 
-        if payload.bytes.is_empty() {
+        if mp3_bytes.is_empty() {
             ("".to_string(), std::time::Duration::from_secs(0))
         } else {
             let transcribe_start = std::time::Instant::now();
 
-            // Fetch the specific key for the current provider preset
             let target = crate::credentials::get_stt_target(&settings.stt_provider.preset);
             let api_key = crate::credentials::get_api_key(target).map_err(|_| {
                 format!(
@@ -42,17 +41,12 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
                 )
             })?;
 
-            let prompt = Some("Proper capitalization and punctuation.");
-
-            let corrected = crate::transcribe::transcribe_audio_bytes(
+            let corrected = crate::transcribe::transcribe_mp3_bytes(
                 &settings.stt_provider.base_url,
                 &api_key,
                 &settings.stt_provider.model,
-                payload.bytes,
-                payload.mime_type,
-                payload.filename,
+                mp3_bytes,
                 Some(settings.language.as_str()),
-                prompt,
             )
             .await?;
             (corrected, transcribe_start.elapsed())

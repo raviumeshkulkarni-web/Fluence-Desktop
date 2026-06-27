@@ -10,6 +10,7 @@ mod audio;
 mod autostart;
 mod clipboard;
 mod credentials;
+mod dictionary;
 mod history;
 mod hotkey;
 mod http_client;
@@ -108,6 +109,13 @@ pub fn run() {
             credentials::save_api_key,
             credentials::get_api_key,
             credentials::delete_api_key,
+            // Dictionary
+            dictionary::get_dictionary,
+            dictionary::add_dictionary_entry,
+            dictionary::update_dictionary_entry,
+            dictionary::delete_dictionary_entry,
+            dictionary::import_dictionary,
+            dictionary::export_dictionary,
             // Audio
             audio::list_audio_devices,
             audio::start_recording,

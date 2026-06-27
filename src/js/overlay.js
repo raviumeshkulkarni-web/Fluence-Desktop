@@ -40,10 +40,8 @@ async function setupEventListeners() {
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
       await invoke('show_overlay', { position: prefs.overlayPosition });
       
-      // Trigger opening transition after window is visible
-      setTimeout(() => {
-        if (overlayRoot) overlayRoot.classList.add('active');
-      }, 50);
+      // Trigger opening transition immediately
+      if (overlayRoot) overlayRoot.classList.add('active');
     } catch (err) {
       console.error('Failed to start/show recording:', err);
       setState('idle');
@@ -64,10 +62,8 @@ async function setupEventListeners() {
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
       await invoke('show_overlay', { position: prefs.overlayPosition });
       
-      // Trigger opening transition after window is visible
-      setTimeout(() => {
-        if (overlayRoot) overlayRoot.classList.add('active');
-      }, 50);
+      // Trigger opening transition immediately
+      if (overlayRoot) overlayRoot.classList.add('active');
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
       setState('idle');
@@ -114,7 +110,7 @@ async function fadeAndHide() {
   if (overlayRoot) {
     overlayRoot.classList.remove('active');
   }
-  await new Promise(r => setTimeout(r, 350)); // let CSS exit transition finish
+  await new Promise(r => setTimeout(r, 200)); // let CSS exit transition finish
   await invoke('hide_overlay');
   setState('idle');
 }

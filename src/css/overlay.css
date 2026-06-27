@@ -59,12 +59,12 @@ body {
   translate: 0px;
   rotate: 0deg;
 
-  /* Exit transition (smooth deceleration) */
+  /* Exit transition (fast deceleration) */
   transition:
-    width 0.35s cubic-bezier(0.25, 1, 0.5, 1),
-    scale 0.35s cubic-bezier(0.25, 1, 0.5, 1),
-    opacity 0.25s ease,
-    box-shadow 0.28s ease;
+    width 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+    scale 0.2s cubic-bezier(0.25, 1, 0.5, 1),
+    opacity 0.18s ease,
+    box-shadow 0.22s ease;
 }
 
 /* Idle breathing animation — subtle premium feel */
@@ -79,7 +79,7 @@ body {
       0 0 28px var(--pill-glow);
   }
   50% {
-    scale: 1.015;
+    scale: 1.008;
     box-shadow:
       0 14px 38px rgba(0, 0, 0, 0.6),
       0 6px 16px rgba(0, 0, 0, 0.4),
@@ -98,12 +98,12 @@ body {
   opacity: 1;
   scale: 1;
 
-  /* Entry transition (premium spring ease) */
+  /* Entry transition (subtle spring, fast settle) */
   transition:
-    width 0.48s cubic-bezier(0.34, 1.56, 0.64, 1),
-    scale 0.48s cubic-bezier(0.34, 1.56, 0.64, 1),
-    opacity 0.3s ease,
-    box-shadow 0.35s ease;
+    width 0.32s cubic-bezier(0.34, 1.2, 0.64, 1),
+    scale 0.32s cubic-bezier(0.34, 1.2, 0.64, 1),
+    opacity 0.22s ease,
+    box-shadow 0.28s ease;
 }
 
 /* Hover state micro-interactions */
@@ -207,7 +207,7 @@ body {
   z-index: 2;
   display: block;
   opacity: 0;
-  transition: opacity 0.25s ease 0.15s; /* wait for width expansion before showing */
+  transition: opacity 0.2s ease 0.08s; /* reduced delay for faster waveform appearance */
 }
 
 .overlay-root.active #waveform-canvas {

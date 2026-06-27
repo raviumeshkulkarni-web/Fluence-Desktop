@@ -2,8 +2,8 @@ use anyhow::Result;
 use cpal::traits::DeviceTrait;
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
-use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
 use once_cell::sync::Lazy;
+use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
 use std::sync::{
     atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
     Arc, Mutex,
@@ -20,8 +20,10 @@ static NATIVE_CHANNELS: AtomicU16 = AtomicU16::new(2);
 static AUDIO_BUFFER: Lazy<Mutex<Vec<f32>>> = Lazy::new(|| Mutex::new(Vec::new()));
 
 // Diagnostics timing statics
-static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
-static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> = Lazy::new(|| Mutex::new(None));
+static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> =
+    Lazy::new(|| Mutex::new(None));
+static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> =
+    Lazy::new(|| Mutex::new(None));
 
 // Global completion channels
 static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
@@ -268,7 +270,11 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         }
 
                         let drain_duration = drain_start.elapsed();
-                        log::info!("Drain completed in {:?} (callbacks captured: {})", drain_duration, CALLBACKS_POST_STOP.load(Ordering::SeqCst));
+                        log::info!(
+                            "Drain completed in {:?} (callbacks captured: {})",
+                            drain_duration,
+                            CALLBACKS_POST_STOP.load(Ordering::SeqCst)
+                        );
 
                         // Stop accepting new callbacks
                         is_recording.store(false, Ordering::SeqCst);
@@ -387,6 +393,7 @@ fn resample_fast_voice(input: &[f32], from_rate: u32, to_rate: u32) -> Vec<f32> 
     out
 }
 
+#[allow(dead_code)]
 pub fn create_wav_bytes(samples: &[i16], sample_rate: u32, channels: u16) -> Vec<u8> {
     let mut wav = Vec::with_capacity(44 + samples.len() * 2);
 
@@ -469,9 +476,8 @@ pub fn process_audio_samples_online(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    
     // 1. Mono Downmixing (v1.0.0 Channel Averaging)
-    let t_start = std::time::Instant::now();
+    let _t_start = std::time::Instant::now();
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
@@ -484,7 +490,7 @@ pub fn process_audio_samples_online(
     };
 
     // 2. Client-Side Resampling to 16kHz (v1.0.0 Box Filter)
-    let t_start = std::time::Instant::now();
+    let _t_start = std::time::Instant::now();
     const TARGET_SAMPLE_RATE: u32 = 16_000;
     let (resampled, final_sample_rate) = if native_sample_rate != TARGET_SAMPLE_RATE {
         let from_rate = native_sample_rate as f64;
@@ -531,7 +537,7 @@ pub fn process_audio_samples_online(
     };
 
     // 3. DC Offset Removal
-    let t_start = std::time::Instant::now();
+    let _t_start = std::time::Instant::now();
     let avg = if !resampled.is_empty() {
         resampled.iter().sum::<f32>() / resampled.len() as f32
     } else {
@@ -540,7 +546,7 @@ pub fn process_audio_samples_online(
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
     // 4. Volume Normalization (v1.0.0 Peak Normalization to 0.9)
-    let t_start = std::time::Instant::now();
+    let _t_start = std::time::Instant::now();
     let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
     let mut normalized = if peak > 0.005 && peak < 0.98 {
         let scale = 0.9 / peak;
@@ -550,13 +556,14 @@ pub fn process_audio_samples_online(
     };
 
     // 5. Silence Padding (v1.0.0 500ms Trailing Padding)
-    let t_start = std::time::Instant::now();
+    let _t_start = std::time::Instant::now();
     let padding_size = (final_sample_rate as usize) / 2;
     normalized.resize(normalized.len() + padding_size, 0.0);
 
     (normalized, final_sample_rate)
 }
 
+#[allow(dead_code)]
 fn encode_flac_samples(
     samples: &[f32],
     sample_rate: u32,
@@ -674,6 +681,7 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     Ok(processed_samples)
 }
 
+#[allow(dead_code)]
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
@@ -729,11 +737,7 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
     let wav_bytes = tokio::task::spawn_blocking(move || {
         let (processed_samples, final_sample_rate) =
-            process_audio_samples_online(
-                samples,
-                native_sample_rate as u32,
-                native_channels,
-            );
+            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
 
         // Convert samples to i16 for WAV container
         let i16_samples: Vec<i16> = processed_samples
@@ -779,6 +783,7 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     Ok(wav_bytes)
 }
 
+#[allow(dead_code)]
 #[derive(Clone, Debug)]
 pub struct AudioPayload {
     pub bytes: Vec<u8>,
@@ -786,6 +791,7 @@ pub struct AudioPayload {
     pub filename: &'static str,
 }
 
+#[allow(dead_code)]
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
@@ -843,12 +849,8 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     // keeps the file size well within the 25MB limit for typical dictation.
     let flac_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {
         let (processed, sample_rate) =
-            process_audio_samples_online(
-                samples,
-                native_sample_rate as u32,
-                native_channels,
-            );
-        let encode_start = std::time::Instant::now();
+            process_audio_samples_online(samples, native_sample_rate as u32, native_channels);
+        let _encode_start = std::time::Instant::now();
         let encoded = encode_flac_samples(&processed, sample_rate, 1);
         encoded
     })
@@ -1027,6 +1029,7 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     Ok(mp3_bytes)
 }
 
+#[allow(dead_code)]
 pub async fn stop_recording_audio_bytes() -> Result<AudioPayload, String> {
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     let preset = settings.stt_provider.preset.to_lowercase();

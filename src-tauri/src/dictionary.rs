@@ -4,10 +4,10 @@
 
 use anyhow::Result;
 use dirs::data_local_dir;
-use std::sync::Mutex;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DictionaryEntry {
@@ -61,7 +61,11 @@ fn cache_entries(entries: Vec<DictionaryEntry>) -> Vec<CachedEntry> {
                 cached.push(CachedEntry { entry, regex: re });
             }
             Err(e) => {
-                log::warn!("Invalid regex pattern for spoken phrase '{}': {}", entry.spoken, e);
+                log::warn!(
+                    "Invalid regex pattern for spoken phrase '{}': {}",
+                    entry.spoken,
+                    e
+                );
             }
         }
     }
@@ -85,7 +89,10 @@ pub fn apply_corrections(text: &str) -> String {
 
     let mut result = text.to_string();
     for cached_entry in &entries {
-        result = cached_entry.regex.replace_all(&result, cached_entry.entry.corrected.as_str()).to_string();
+        result = cached_entry
+            .regex
+            .replace_all(&result, cached_entry.entry.corrected.as_str())
+            .to_string();
     }
     result
 }
@@ -129,7 +136,11 @@ pub fn add_dictionary_entry(spoken: String, corrected: String) -> Result<Diction
 }
 
 #[tauri::command]
-pub fn update_dictionary_entry(id: String, spoken: String, corrected: String) -> Result<(), String> {
+pub fn update_dictionary_entry(
+    id: String,
+    spoken: String,
+    corrected: String,
+) -> Result<(), String> {
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
         e.spoken = spoken;

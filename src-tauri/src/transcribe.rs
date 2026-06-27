@@ -2,9 +2,9 @@
 // Sends recorded WAV audio to any OpenAI-compatible /v1/audio/transcriptions endpoint.
 // Supports Groq, OpenAI, and custom providers.
 
+use crate::dictionary;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use crate::dictionary;
 
 #[derive(Debug, Deserialize)]
 struct TranscriptionResponse {
@@ -63,6 +63,7 @@ pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> 
     Ok(corrected)
 }
 
+#[allow(dead_code)]
 pub async fn transcribe_audio_bytes(
     base_url: &str,
     api_key: &str,
@@ -112,7 +113,6 @@ pub async fn transcribe_audio_bytes(
     if is_mistral {
         request = request.header("x-api-key", api_key);
     }
-
 
     let resp = request
         .send()

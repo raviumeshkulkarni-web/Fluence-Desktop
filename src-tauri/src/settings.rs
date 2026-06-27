@@ -78,6 +78,8 @@ pub struct AppSettings {
     pub ai_polish_style: String,
     #[serde(default = "default_true")]
     pub auto_grab_highlight: bool,
+    #[serde(default = "default_true")]
+    pub auto_learn_enabled: bool,
 }
 
 fn default_hotkey() -> String {
@@ -150,6 +152,7 @@ impl Default for AppSettings {
             agent_recording_mode: default_agent_recording_mode(),
             ai_polish_style: default_ai_polish_style(),
             auto_grab_highlight: default_true(),
+            auto_learn_enabled: default_true(),
         }
     }
 }

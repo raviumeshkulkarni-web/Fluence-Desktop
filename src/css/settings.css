@@ -596,5 +596,11 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .dict-table tr:hover td { background: rgba(255,255,255,0.02); }
 .dict-table .spoken-word { color: var(--color-on-surface-variant); font-style: italic; }
 .dict-table .corrected-word { color: var(--color-primary); font-weight: 500; }
-.dict-table .actions { width: 80px; text-align: right; }
+.dict-table .actions { width: 120px; text-align: right; }
+
+/* Suggestions table frequency column */
+#suggestions-table .frequency { 
+  color: var(--color-outline); 
+  font-size: 12px; 
+}
 

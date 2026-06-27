@@ -12,6 +12,7 @@
 mod agent;
 mod audio;
 mod autostart;
+mod auto_learn;
 mod clipboard;
 mod credentials;
 mod dictionary;
@@ -22,6 +23,7 @@ mod offline_downloader;
 mod offline_transcribe;
 mod overlay;
 mod settings;
+mod suggestion;
 mod transcribe;
 mod tray;
 mod workflow;
@@ -78,6 +80,19 @@ pub fn run() {
 
             // Load settings
             let app_settings = settings::load_settings().unwrap_or_default();
+
+            // Expire stale suggestions at startup
+            if app_settings.auto_learn_enabled {
+                match suggestion::expire_stale_suggestions() {
+                    Ok(count) if count > 0 => {
+                        log::info!("Expired {} stale suggestions at startup", count);
+                    }
+                    Err(e) => {
+                        log::warn!("Failed to expire stale suggestions: {}", e);
+                    }
+                    _ => {}
+                }
+            }
 
             // Register global hotkeys
             if let Err(e) = hotkey::register_hotkeys(
@@ -165,6 +180,11 @@ pub fn run() {
             offline_downloader::get_offline_model_status,
             offline_downloader::cancel_offline_download,
             offline_downloader::delete_offline_model,
+            // Suggestions (auto-learn)
+            suggestion::get_suggestions,
+            suggestion::accept_suggestion_command,
+            suggestion::dismiss_suggestion_command,
+            suggestion::clear_dismissed_suggestions_command,
             // Misc
             get_app_version,
         ])

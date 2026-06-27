@@ -8,6 +8,7 @@
 pub mod agent;
 pub mod audio;
 pub mod autostart;
+pub mod auto_learn;
 pub mod clipboard;
 pub mod credentials;
 pub mod dictionary;
@@ -18,6 +19,7 @@ pub mod offline_downloader;
 pub mod offline_transcribe;
 pub mod overlay;
 pub mod settings;
+pub mod suggestion;
 pub mod transcribe;
 pub mod tray;
 pub mod workflow;

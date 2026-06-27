@@ -236,6 +236,18 @@
             </label>
           </div>
         </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Learn Corrections</div>
+            <div class="setting-desc">Suggest transcription corrections based on detected patterns</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-learn-toggle">
+              <input type="checkbox" id="auto-learn-cb" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
       </div>
 
       <div style="display:flex;justify-content:flex-end;padding-top:8px;">
@@ -471,6 +483,34 @@
             <tr id="dict-empty-row">
               <td colspan="3" style="text-align:center;color:var(--color-outline);padding:var(--spacing-xl);font-style:italic;">
                 No entries yet. Add corrections for words that are often misheard.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Suggestions Section -->
+      <div class="settings-section" style="margin-top:var(--spacing-lg);">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Suggested Corrections</span>
+          <button class="btn-ghost" id="clear-dismissed-btn" style="font-size:12px;">Clear Dismissed</button>
+        </div>
+        <p style="font-size:12px;color:var(--color-outline);margin:0 0 var(--spacing-md) 0;">
+          Corrections detected from your transcriptions. Accept to add to dictionary, dismiss to ignore.
+        </p>
+        <table class="dict-table" id="suggestions-table">
+          <thead>
+            <tr>
+              <th>Detected</th>
+              <th>Should Be</th>
+              <th>Seen</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="suggestions-table-body">
+            <tr id="suggestions-empty-row">
+              <td colspan="4" style="text-align:center;color:var(--color-outline);padding:var(--spacing-xl);font-style:italic;">
+                No suggestions yet. Corrections will appear here as you use dictation.
               </td>
             </tr>
           </tbody>

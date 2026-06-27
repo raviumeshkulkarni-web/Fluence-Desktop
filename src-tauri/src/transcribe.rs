@@ -250,6 +250,130 @@ pub async fn transcribe_mp3_bytes(
     Ok(corrected)
 }
 
+/// Result of transcription with both raw and corrected text.
+/// Used by the suggestion engine to detect corrections.
+#[derive(Debug, Clone)]
+pub struct TranscriptionWithRaw {
+    /// Raw STT output before dictionary corrections
+    pub raw_text: String,
+    /// Text after dictionary corrections
+    pub corrected_text: String,
+}
+
+/// Transcribe audio and return both raw and corrected text.
+/// This is used by the suggestion engine to compare raw vs corrected.
+/// Does NOT modify the existing `transcribe_mp3_bytes` function.
+pub async fn transcribe_mp3_bytes_with_raw(
+    base_url: &str,
+    api_key: &str,
+    model: &str,
+    mp3_bytes: Vec<u8>,
+    language: Option<&str>,
+) -> Result<TranscriptionWithRaw, String> {
+    let start_time = std::time::Instant::now();
+
+    let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
+
+    let file_part = reqwest::multipart::Part::bytes(mp3_bytes)
+        .file_name("audio.mp3")
+        .mime_str("audio/mpeg")
+        .map_err(|e| e.to_string())?;
+
+    let multipart_start = std::time::Instant::now();
+    let mut form = reqwest::multipart::Form::new()
+        .part("file", file_part)
+        .text("model", model.to_string())
+        .text("response_format", "json")
+        .text("temperature", "0.0");
+
+    if let Some(lang) = language {
+        if !lang.is_empty() && lang != "auto" {
+            form = form.text("language", lang.to_string());
+        }
+    }
+
+    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint.
+    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    if let Ok(entries) = crate::dictionary::get_dictionary() {
+        if !entries.is_empty() {
+            let mut prompt_words = Vec::new();
+            for entry in entries {
+                if !entry.corrected.trim().is_empty() {
+                    prompt_words.push(entry.corrected.clone());
+                }
+                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
+                    prompt_words.push(entry.spoken.clone());
+                }
+            }
+            if !prompt_words.is_empty() {
+                let mut prompt = prompt_words.join(", ");
+                if prompt.len() > 890 {
+                    let truncated = &prompt[..890];
+                    if let Some(last_comma) = truncated.rfind(',') {
+                        prompt = truncated[..last_comma].to_string();
+                    } else {
+                        prompt = truncated.to_string();
+                    }
+                    log::debug!(
+                        "Prompt truncated to {} characters for Groq compatibility",
+                        prompt.len()
+                    );
+                }
+                form = form.text("prompt", prompt);
+            }
+        }
+    }
+
+    let network_start = std::time::Instant::now();
+    let is_mistral = base_url.contains("mistral.ai");
+    let mut request = crate::http_client::CLIENT
+        .post(&url)
+        .bearer_auth(api_key)
+        .multipart(form);
+
+    if is_mistral {
+        request = request.header("x-api-key", api_key);
+    }
+
+    let resp = request
+        .send()
+        .await
+        .map_err(|e| format!("Network error: {}", e))?;
+
+    let network_duration = network_start.elapsed();
+
+    if !resp.status().is_success() {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        return Err(format!("API error {}: {}", status, body));
+    }
+
+    let parse_start = std::time::Instant::now();
+    let result: TranscriptionResponse = resp
+        .json()
+        .await
+        .map_err(|e| format!("JSON parse error: {}", e))?;
+
+    // Capture raw text before dictionary corrections
+    let raw_text = result.text.clone();
+
+    // Apply custom dictionary corrections
+    let corrected_text = dictionary::apply_corrections(&result.text);
+
+    log::info!(
+        "transcribe_mp3_bytes_with_raw performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
+        start_time.elapsed(),
+        network_duration,
+        parse_start.elapsed(),
+        multipart_start.elapsed()
+    );
+
+    Ok(TranscriptionWithRaw {
+        raw_text,
+        corrected_text,
+    })
+}
+
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {

@@ -51,6 +51,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupSystemToggles();
   setupSaveButtons();
   setupDictionary();
+  setupSuggestions();
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
@@ -100,6 +101,7 @@ function populateUI(s) {
   setChecked('autostart-cb', s.auto_start || false);
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
+  setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
 
   // Providers tab
   const sttPreset = s.stt_provider?.preset || 'groq';
@@ -178,7 +180,10 @@ function _performNavigation(page) {
 
   // Lazy load data for specific pages
   if (page === 'history') loadHistory(true);
-  if (page === 'dictionary') loadDictionary();
+  if (page === 'dictionary') {
+    loadDictionary();
+    loadSuggestions();
+  }
 }
 
 // ── Hotkey Recorder ──────────────────────────────────────────────
@@ -576,6 +581,7 @@ async function saveGeneral() {
   currentSettings.sound_on_complete = document.getElementById('sound-on-complete-cb')?.checked ?? false;
   currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
+  currentSettings.auto_learn_enabled = document.getElementById('auto-learn-cb')?.checked ?? true;
 
   try {
     await invoke('update_settings', { settings: currentSettings });
@@ -998,5 +1004,82 @@ async function exportDictionary() {
     URL.revokeObjectURL(url);
   } catch (err) {
     showToast('Export failed: ' + err, 'error');
+  }
+}
+
+// ── Suggestions (Auto-Learn) ────────────────────────────────────
+
+function setupSuggestions() {
+  document.getElementById('clear-dismissed-btn')?.addEventListener('click', clearDismissedSuggestions);
+}
+
+async function loadSuggestions() {
+  try {
+    const suggestions = await invoke('get_suggestions');
+    renderSuggestionsTable(suggestions);
+  } catch (err) {
+    console.error('Failed to load suggestions:', err);
+  }
+}
+
+function renderSuggestionsTable(suggestions) {
+  const tbody = document.getElementById('suggestions-table-body');
+  const emptyRow = document.getElementById('suggestions-empty-row');
+  if (!tbody) return;
+
+  // Remove all non-empty rows
+  tbody.querySelectorAll('tr[data-suggestion-id]').forEach(r => r.remove());
+
+  if (suggestions.length === 0) {
+    if (emptyRow) emptyRow.style.display = '';
+  } else {
+    if (emptyRow) emptyRow.style.display = 'none';
+    suggestions.forEach(s => {
+      const tr = document.createElement('tr');
+      tr.dataset.suggestionId = s.id;
+      tr.innerHTML = `
+        <td class="spoken-word">${escapeHtml(s.spoken)}</td>
+        <td class="corrected-word">${escapeHtml(s.corrected)}</td>
+        <td style="color:var(--color-outline);font-size:12px;">${s.frequency}x</td>
+        <td class="actions">
+          <button class="btn-ghost" onclick="acceptSuggestion('${s.id}')" 
+            style="padding:4px 8px;font-size:12px;color:var(--color-success)">Accept</button>
+          <button class="btn-ghost" onclick="dismissSuggestion('${s.id}')" 
+            style="padding:4px 8px;font-size:12px;color:var(--color-error)">Dismiss</button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+window.acceptSuggestion = async (id) => {
+  try {
+    await invoke('accept_suggestion_command', { id });
+    showToast('Added to dictionary ✓', 'success');
+    loadSuggestions();
+    loadDictionary();  // Refresh dictionary table too
+  } catch (err) {
+    showToast('Failed to accept: ' + err, 'error');
+  }
+};
+
+window.dismissSuggestion = async (id) => {
+  try {
+    await invoke('dismiss_suggestion_command', { id });
+    showToast('Suggestion dismissed', 'success');
+    loadSuggestions();
+  } catch (err) {
+    showToast('Failed to dismiss: ' + err, 'error');
+  }
+};
+
+async function clearDismissedSuggestions() {
+  try {
+    await invoke('clear_dismissed_suggestions_command');
+    showToast('Cleared dismissed suggestions', 'success');
+    loadSuggestions();
+  } catch (err) {
+    showToast('Failed to clear: ' + err, 'error');
   }
 }

@@ -1376,7 +1376,7 @@ dependencies = [
 
 [[package]]
 name = "fluence-windows"
-version = "1.2.1"
+version = "1.2.2"
 dependencies = [
  "anyhow",
  "audio_thread_priority",

@@ -61,6 +61,7 @@ windows = { version = "0.58", features = [
   "Win32_UI_WindowsAndMessaging",
 ] }
 cpal = "0.15"
+audio_thread_priority = "0.28"
 
 
 [features]

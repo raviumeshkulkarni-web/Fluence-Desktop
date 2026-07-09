@@ -4,6 +4,7 @@ use flacenc::component::BitRepr;
 use flacenc::error::Verify;
 use once_cell::sync::Lazy;
 use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode};
+use std::cell::Cell;
 use std::sync::{
     atomic::{AtomicBool, AtomicU16, AtomicU32, Ordering},
     Arc, Mutex,
@@ -24,6 +25,11 @@ static TIMING_STOP_REQUESTED: Lazy<Mutex<Option<std::time::Instant>>> =
     Lazy::new(|| Mutex::new(None));
 static TIMING_LAST_CALLBACK: Lazy<Mutex<Option<std::time::Instant>>> =
     Lazy::new(|| Mutex::new(None));
+
+// Per-thread flag: tracks whether the current audio callback thread has been promoted to MMCSS priority
+thread_local! {
+    static THREAD_PROMOTED: Cell<bool> = const { Cell::new(false) };
+}
 
 // Global completion channels
 static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
@@ -145,6 +151,17 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 let app_clone = app_clone.clone();
                 let last_emit = last_emit.clone();
                 move |data: &[f32]| {
+                    // Per-thread MMCSS real-time priority promotion (first thing)
+                    if !THREAD_PROMOTED.with(|p| p.replace(true)) {
+                        let sr = NATIVE_SAMPLE_RATE.load(Ordering::Relaxed);
+                        if sr > 0 {
+                            match audio_thread_priority::promote_current_thread_to_real_time(0, sr) {
+                                Ok(_) => log::info!("Audio thread promoted to MMCSS real-time priority"),
+                                Err(e) => log::warn!("Failed to promote audio thread: {e}"),
+                            }
+                        }
+                    }
+
                     if !is_recording_clone.load(Ordering::SeqCst) {
                         return;
                     }

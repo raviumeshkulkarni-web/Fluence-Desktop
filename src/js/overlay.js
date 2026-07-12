@@ -4,25 +4,33 @@
  * Controls the floating recording overlay states and connects to
  * Tauri IPC events from the Rust backend.
  * 
- * Design: Stitch-generated Fluence Aura Dark glassmorphic pill.
+ * Design: Precision Ink status card — three luminance zones,
+ * waveform hero, duration timer, mode badge.
  */
 
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
 // DOM refs
-const overlayRoot  = document.getElementById('overlay-root');
+const overlayRoot = document.getElementById('overlay-root');
+const recLabel    = document.getElementById('rec-label');
+const modeBadge   = document.getElementById('mode-badge');
+const cardTimer   = document.getElementById('card-timer');
+const cardDiscard = document.getElementById('card-discard');
 
 // State
 let currentState = 'idle';
 let aura = null;
 let cachedSettings = null;
+let timerInterval = null;
+let recordingStartTime = 0;
 
 // ── Initialization ──────────────────────────────────────────────
 
 window.addEventListener('DOMContentLoaded', () => {
   aura = new AuraVisualizer('waveform-canvas');
   setupEventListeners();
+  setupDiscardButton();
   setState('idle');
 });
 
@@ -34,6 +42,7 @@ async function setupEventListeners() {
   await listen('hotkey-start-recording', async () => {
     console.log('hotkey-start-recording event received');
     setState('recording');
+    setMode('stt');
     if (overlayRoot) overlayRoot.classList.remove('active');
     try {
       const prefs = await getRecordingPreferences();
@@ -42,6 +51,7 @@ async function setupEventListeners() {
       
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
+      startTimer();
     } catch (err) {
       console.error('Failed to start/show recording:', err);
       setState('idle');
@@ -49,6 +59,7 @@ async function setupEventListeners() {
   });
 
   await listen('hotkey-stop-recording', async () => {
+    stopTimer();
     await stopAndTranscribe(false);
   });
 
@@ -56,6 +67,7 @@ async function setupEventListeners() {
   await listen('hotkey-start-agent-recording', async () => {
     console.log('hotkey-start-agent-recording event received');
     setState('agent');
+    setMode('agent');
     if (overlayRoot) overlayRoot.classList.remove('active');
     try {
       const prefs = await getRecordingPreferences();
@@ -64,6 +76,7 @@ async function setupEventListeners() {
       
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
+      startTimer();
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
       setState('idle');
@@ -71,6 +84,7 @@ async function setupEventListeners() {
   });
 
   await listen('hotkey-stop-agent-recording', async () => {
+    stopTimer();
     await stopAndTranscribe(true);
   });
 
@@ -91,7 +105,55 @@ async function setupEventListeners() {
   });
 }
 
+// ── Timer ───────────────────────────────────────────────────────
+
+function startTimer() {
+  stopTimer();
+  recordingStartTime = Date.now();
+  updateTimerDisplay();
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function updateTimerDisplay() {
+  const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  if (cardTimer) {
+    cardTimer.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+}
+
+// ── Mode Badge ──────────────────────────────────────────────────
+
+function setMode(mode) {
+  if (modeBadge) {
+    modeBadge.textContent = mode === 'agent' ? 'Agent Mode' : 'Transcribe';
+  }
+}
+
 // ── Recording Flow ──────────────────────────────────────────────
+
+function setupDiscardButton() {
+  if (cardDiscard) {
+    cardDiscard.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      stopTimer();
+      try {
+        await invoke('stop_recording');
+      } catch (err) {
+        console.error('Stop recording failed:', err);
+      }
+      await fadeAndHide();
+    });
+  }
+}
 
 async function getRecordingPreferences() {
   try {
@@ -107,6 +169,7 @@ async function getRecordingPreferences() {
 }
 
 async function fadeAndHide() {
+  stopTimer();
   if (overlayRoot) {
     overlayRoot.classList.remove('active');
   }
@@ -118,12 +181,14 @@ async function fadeAndHide() {
 async function stopAndTranscribe(agentMode) {
   setState(agentMode ? 'agent_transcribing' : 'transcribing');
 
+  // Update label for transcribing state
+  if (recLabel) recLabel.textContent = 'PROCESSING';
+
   let startTs = Date.now();
 
   try {
     if (agentMode) {
       console.time('StopAndTranscribeAgent');
-      // Grab the active text selection immediately, before ASR starts, to prevent losing focus/highlight context
       const selectionPromise = invoke('grab_active_selection').catch((err) => {
         console.warn('Failed to grab active selection early:', err);
         return null;
@@ -149,7 +214,6 @@ async function stopAndTranscribe(agentMode) {
         return;
       }
 
-      // Save history entry in database asynchronously (non-blocking)
       invoke('save_history_entry', {
         text: result.text,
         mode: 'transcription',
@@ -157,10 +221,7 @@ async function stopAndTranscribe(agentMode) {
         provider: result.provider,
       }).catch(err => console.error('Failed to save history entry:', err));
 
-      // Start fading out the overlay concurrently
       fadeAndHide();
-
-      // Inject text immediately while fade transition is occurring
       await invoke('inject_text', { text: result.text });
     }
   } catch (err) {
@@ -179,7 +240,6 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       target: llmTarget
     }).catch(() => '');
 
-    // Get clipboard context or grab selection
     let clipboardCtx = '';
     let grabbed = false;
     if (settings.auto_grab_highlight !== false) {
@@ -218,10 +278,8 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       await new Promise(r => setTimeout(r, 1000));
       await fadeAndHide();
     } else {
-      // Start fading out overlay in parallel
       fadeAndHide();
 
-      // Execute the action immediately while fade transition is occurring
       if (action.action === 'insert' || action.action === 'rewrite') {
         const textToInsert = action.content || '';
         await invoke('inject_text', { text: textToInsert });
@@ -237,7 +295,6 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       }
     }
 
-    // Save history entry asynchronously (non-blocking)
     invoke('save_history_entry', {
       text: `[Agent] ${voiceCommand}`,
       mode: 'agent',
@@ -265,6 +322,22 @@ function setState(state) {
       overlayRoot.classList.add('active');
     } else {
       overlayRoot.classList.remove('active');
+    }
+  }
+
+  // Update rec label based on state
+  if (recLabel) {
+    switch (state) {
+      case 'recording':
+      case 'agent':
+        recLabel.textContent = 'REC';
+        break;
+      case 'transcribing':
+      case 'agent_transcribing':
+        recLabel.textContent = 'PROCESSING';
+        break;
+      default:
+        recLabel.textContent = 'REC';
     }
   }
 }

@@ -1,81 +1,81 @@
 /* ====================================================
    Fluence Windows — Design Tokens
-   Source of truth: Android Fluence theme (exact match)
+   "Precision Ink" — Monochrome-first, layered surfaces
+   Source of truth: fluence-notes/src/index.css (web)
    ==================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Hanken+Grotesk:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
-  /* --- Color Palette (Dark Mode — Default) --- */
-  --color-primary:                 #d18cff;
-  --color-primary-container:       #6b21a8;
-  --color-primary-fixed-dim:       #b166ff;
-  --color-surface-tint:            #b166ff;
+  /* ── Surface Hierarchy ─────────────────────────────────────────── */
+  --color-canvas:                #0C0C0C;
+  --color-surface:               #111111;
+  --color-surface-secondary:     #161616;
+  --color-surface-elevated:      #1B1B1B;
+  --color-surface-menu:          #202020;
+  --color-surface-dialog:        #252525;
 
-  --color-background:              #0d0c11;
-  --color-surface:                 #0d0c11;
-  --color-surface-container:       #121117;
-  --color-surface-container-high:  #16151a;
-  --color-surface-container-highest: #1c1b1f;
-  --color-surface-container-lowest: #060508;
-  --color-surface-variant:         #1c1b1f;
-  --color-surface-bright:          #222129;
-  --color-secondary-container:     #2a2438;
+  /* Backward compat aliases */
+  --color-background:            var(--color-canvas);
+  --color-surface-container:     var(--color-surface);
+  --color-surface-container-high: var(--color-surface-elevated);
+  --color-surface-container-highest: var(--color-surface-menu);
+  --color-surface-container-lowest: var(--color-canvas);
+  --color-surface-variant:       var(--color-surface-secondary);
+  --color-surface-bright:        var(--color-surface-menu);
+  --color-secondary-container:   var(--color-surface-elevated);
 
-  --color-on-surface:              #e3e2e7;
-  --color-on-surface-variant:      #b9cacb;
-  --color-on-background:           #e3e2e7;
-  --color-on-primary:              #ffffff;
+  /* ── Borders (structural only — near-invisible) ────────────────── */
+  --color-border:                rgba(255, 255, 255, 0.06);
+  --color-border-structural:     rgba(255, 255, 255, 0.08);
+  --color-border-muted:          rgba(255, 255, 255, 0.03);
+  --color-border-focus:          rgba(255, 255, 255, 0.20);
 
-  --color-outline:                 #849495;
-  --color-outline-variant:         #3b494b;
+  /* Backward compat */
+  --color-outline:               rgba(255, 255, 255, 0.30);
+  --color-outline-variant:       rgba(255, 255, 255, 0.06);
 
-  --color-error:                   #ffb4ab;
-  --color-error-container:         #93000a;
-  --color-success:                 #6fcf97;
-  --color-success-container:       #0a3d20;
+  /* ── Text / Ink Hierarchy ──────────────────────────────────────── */
+  --color-on-surface:            #EDEDED;
+  --color-on-surface-variant:    #B8B8B8;
+  --color-on-background:         #EDEDED;
+  --color-on-primary:            #FFFFFF;
+  --color-ink-muted:             #707070;
+  --color-ink-disabled:          #454545;
 
-  /* --- Gradients --- */
-  --gradient-mic:   linear-gradient(135deg, #a855f7 0%, #7e22ce 100%);
-  --gradient-agent: linear-gradient(135deg, #f59e0b 0%, #ef4444 100%);
-  --gradient-bg:    radial-gradient(circle at 50% 100%, #1a1625 0%, #0d0c11 100%);
-  --gradient-card:  linear-gradient(135deg, rgba(209,140,255,0.06) 0%, rgba(107,33,168,0.03) 100%);
+  /* ── Semantic ──────────────────────────────────────────────────── */
+  --color-error:                 #D94444;
+  --color-error-container:       rgba(217, 68, 68, 0.15);
+  --color-success:               #34A753;
+  --color-success-container:     rgba(52, 167, 83, 0.15);
+  --color-warning:               #D4A017;
+  --color-info:                  #4A90D9;
 
-  /* --- Glassmorphism --- */
-  --glass-bg:         rgba(13, 12, 17, 0.92);
-  --glass-blur:       blur(40px);
-  --glass-border:     1px solid rgba(209, 140, 255, 0.10);
-  --glass-border-mid: 1px solid rgba(209, 140, 255, 0.18);
+  /* ── State Modifiers ───────────────────────────────────────────── */
+  --color-hover:                 rgba(255, 255, 255, 0.04);
+  --color-active:                rgba(255, 255, 255, 0.07);
+  --color-selected:              rgba(255, 255, 255, 0.10);
+  --color-placeholder:           rgba(112, 112, 112, 0.7);
 
-  /* --- Mic Glow --- */
-  --mic-glow:         0 0 35px rgba(168, 85, 247, 0.50);
-  --mic-glow-active:  0 0 60px rgba(168, 85, 247, 0.80);
+  /* ── Typography Scale ──────────────────────────────────────────── */
+  --font-display:  'Sora', system-ui, sans-serif;
+  --font-body:     'Hanken Grotesk', system-ui, sans-serif;
+  --font-label:    'Geist Mono', 'JetBrains Mono', monospace;
 
-  /* --- Aura Colors --- */
-  --aura-ring-1: rgba(209, 140, 255, 0.20);
-  --aura-ring-2: rgba(236, 72,  153, 0.10);
-  --aura-ring-3: rgba(209, 140, 255, 0.05);
-  --aura-core:   rgba(168, 85,  247, 0.40);
+  --text-display-lg:    1.75rem;
+  --text-headline-md:   1.3rem;
+  --text-body-lg:       1.125rem;
+  --text-body-md:       1rem;
+  --text-label-lg:      0.875rem;
+  --text-label-sm:      0.75rem;
 
-  /* --- Typography Scale --- */
-  --font-display:  'Inter', system-ui, sans-serif;
-  --font-body:     'Inter', system-ui, sans-serif;
-  --font-label:    'Geist Mono', 'Geist', monospace;
+  --leading-display:    1.3;
+  --leading-headline:   1.3;
+  --leading-body-lg:    1.75;
+  --leading-body-md:    1.5;
+  --leading-label:      1.5;
 
-  --text-display-lg:    2rem;    /* 32px */
-  --text-headline-md:   1.5rem;  /* 24px */
-  --text-body-lg:       1.125rem;/* 18px */
-  --text-body-md:       1rem;    /* 16px */
-  --text-label-lg:      0.875rem;/* 14px */
-  --text-label-sm:      0.75rem; /* 12px */
-
-  --leading-display:    2.5rem;
-  --leading-headline:   2rem;
-  --leading-body-lg:    1.75rem;
-  --leading-body-md:    1.5rem;
-  --leading-label:      1.25rem;
-
-  /* --- Spacing --- */
+  /* ── Spacing (base-4) ─────────────────────────────────────────── */
   --spacing-xs:   4px;
   --spacing-sm:   8px;
   --spacing-md:   16px;
@@ -84,39 +84,38 @@
   --spacing-2xl:  48px;
   --spacing-3xl:  64px;
 
-  /* --- Radius --- */
-  --radius-sm:    8px;
-  --radius-md:    12px;
-  --radius-lg:    16px;
-  --radius-xl:    24px;
+  /* ── Corner Radius ─────────────────────────────────────────────── */
+  --radius-xs:    3px;
+  --radius-sm:    5px;
+  --radius-md:    7px;
+  --radius-lg:    10px;
+  --radius-xl:    14px;
   --radius-full:  9999px;
 
-  /* --- Elevation / Shadow --- */
-  --shadow-sm:  0 2px 8px rgba(0,0,0,0.25);
-  --shadow-md:  0 8px 24px rgba(0,0,0,0.35);
-  --shadow-lg:  0 16px 48px rgba(0,0,0,0.5);
-  --shadow-glow: 0 0 24px rgba(168, 85, 247, 0.3);
+  /* Backward compat */
+  --radius-sm-8:  8px;
+  --radius-md-12: 12px;
+  --radius-lg-16: 16px;
 
-  /* --- Transitions --- */
-  --transition-fast:   all 0.12s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-base:   all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-slow:   all 0.6s cubic-bezier(0.16, 1, 0.3, 1);
-  --transition-spring: all 0.45s cubic-bezier(0.34, 1.56, 0.64, 1);
+  /* ── Elevation / Shadow ────────────────────────────────────────── */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.35);
+  --shadow-md:  0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.25);
+  --shadow-lg:  0 12px 56px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.35);
+  --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.04);
 
+  /* ── Motion ────────────────────────────────────────────────────── */
+  --transition-fast:   all 0.12s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-base:   all 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-slow:   all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-spring: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
 
-  /* --- Z-index --- */
+  --ease-standard:     cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-exit:         cubic-bezier(0.4, 0.0, 1, 1);
+  --ease-structural:   cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:       cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ── Z-index ───────────────────────────────────────────────────── */
   --z-overlay:  100;
   --z-modal:    200;
   --z-toast:    300;
-}
-
-/* Light mode overrides (future use) */
-[data-theme="light"] {
-  --color-background:  #faf8ff;
-  --color-surface:     #faf8ff;
-  --color-on-surface:  #1c1b1f;
-  --color-on-background: #1c1b1f;
-  --color-surface-container: #f0edf7;
-  --color-surface-container-high: #ebe7f5;
-  --glass-bg: rgba(250, 248, 255, 0.92);
 }

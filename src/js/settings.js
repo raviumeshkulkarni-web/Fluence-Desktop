@@ -8,7 +8,7 @@
  * - Transcription history
  * - Auto-start and system toggles
  * 
- * Design: Stitch Fluence Aura Dark (glassmorphic sidebar layout)
+ * Design: Precision Ink — Clean, matte, monochrome-first
  */
 
 const { invoke } = window.__TAURI__.core;

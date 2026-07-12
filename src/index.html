@@ -9,8 +9,6 @@
   <link rel="stylesheet" href="css/settings.css" />
 </head>
 <body>
-  <canvas id="background-canvas"></canvas>
-  <div class="film-grain"></div>
   <!-- Custom Titlebar -->
   <div data-tauri-drag-region class="titlebar">
     <div class="titlebar-title" data-tauri-drag-region>Fluence Settings</div>
@@ -305,18 +303,16 @@
             <span class="provider-name">Local Offline</span>
           </button>
         </div>
-        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:12px;">
-          <div id="stt-credentials-wrapper" style="display:flex;flex-direction:column;gap:12px;">
+        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-md);">
+          <div id="stt-credentials-wrapper" style="display:flex;flex-direction:column;gap:var(--spacing-md);">
           <div class="form-row">
             <label>API Endpoint</label>
             <input type="url" id="stt-base-url" placeholder="https://api.groq.com/openai" />
           </div>
           <div class="form-row">
             <label>API Key</label>
-            <div class="input-with-btn">
-              <input type="password" id="stt-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
-              <button class="btn-secondary" id="stt-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);">Save Key</button>
-            </div>
+            <input type="password" id="stt-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+            <button class="btn-secondary" id="stt-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);margin-top:var(--spacing-sm);">Save Key</button>
           </div>
           <div class="form-row">
             <label>Model</label>
@@ -327,7 +323,7 @@
               </button>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
             <button class="btn-secondary" id="stt-test-btn">Test Connection</button>
             <div class="connection-status" id="stt-status">
               <div class="dot dot-idle"></div>
@@ -337,35 +333,36 @@
         </div> <!-- Closes stt-credentials-wrapper -->
 
         <!-- Offline Model Downloader -->
-        <div id="stt-offline-downloader" class="hidden" style="display:flex;flex-direction:column;gap:12px;margin-top:4px;padding-top:8px;">
-          <div style="font-weight:600;font-size:14px;color:#00f2fe;display:flex;align-items:center;gap:6px;">
+        <div id="stt-offline-downloader" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-md);margin-top:4px;padding-top:8px;">
+          <div style="font-weight:600;font-size:14px;color:var(--color-on-surface);display:flex;align-items:center;gap:6px;">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Offline Model Manager
           </div>
-          <div style="display:flex;justify-content:space-between;align-items:center;background:rgba(255,255,255,0.01);padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-outline-variant);">
+          <div style="display:flex;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
             <div style="display:flex;flex-direction:column;gap:4px;">
               <span class="text-body-md" style="font-weight:600;">SenseVoice-Small ASR Model</span>
-              <span class="text-muted text-label-md" style="font-size:12px;color:var(--color-outline);">Includes model.int8.onnx & tokens.txt (~240 MB)</span>
+              <span class="text-muted text-label-md" style="font-size:12px;">Includes model.int8.onnx & tokens.txt (~240 MB)</span>
             </div>
-            <div style="display:flex;gap:8px;">
+            <div style="display:flex;gap:var(--spacing-sm);">
               <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
-              <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;background:#ef4444;">Delete Model</button>
+              <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
             </div>
           </div>
-          <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:8px;background:rgba(255,255,255,0.02);padding:14px;border-radius:var(--radius-md);border:1px solid var(--color-outline-variant);">
+          <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-sm);background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
             <div style="display:flex;justify-content:space-between;font-size:12px;">
               <span id="offline-progress-status" style="font-weight:500;">Downloading ASR engine...</span>
-              <span id="offline-progress-percentage" style="font-weight:600;color:#00f2fe;">0%</span>
+              <span id="offline-progress-percentage" style="font-weight:600;color:var(--color-on-surface);">0%</span>
             </div>
-            <div style="width:100%;height:8px;background:rgba(255,255,255,0.06);border-radius:4px;overflow:hidden;">
-              <div id="offline-progress-fill" style="width:0%;height:100%;background:linear-gradient(90deg, #A855F7, #00f2fe);border-radius:4px;transition:width 0.2s ease;"></div>
+            <div style="width:100%;height:8px;background:var(--color-border-structural);border-radius:4px;overflow:hidden;">
+              <div id="offline-progress-fill" style="width:0%;height:100%;background:rgba(255,255,255,0.30);border-radius:4px;transition:width 0.2s ease;"></div>
             </div>
-            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-outline);">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-ink-muted);">
               <span id="offline-progress-bytes">0 / 0 MB</span>
-              <button class="btn-ghost" id="offline-cancel-btn" style="padding:4px 10px;font-size:11px;height:auto;background:rgba(255,255,255,0.04);">Cancel</button>
+              <button class="btn-ghost" id="offline-cancel-btn" style="padding:4px 10px;font-size:11px;height:auto;">Cancel</button>
             </div>
           </div>
         </div>
+      </div>
       </div>
 
       <!-- LLM Provider -->
@@ -405,17 +402,15 @@
             <span class="provider-name">Custom</span>
           </button>
         </div>
-        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:12px;">
+        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-md);">
           <div class="form-row">
             <label>API Endpoint</label>
             <input type="url" id="llm-base-url" placeholder="https://api.groq.com/openai" />
           </div>
           <div class="form-row">
             <label>API Key</label>
-            <div class="input-with-btn">
-              <input type="password" id="llm-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
-              <button class="btn-secondary" id="llm-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);">Save Key</button>
-            </div>
+            <input type="password" id="llm-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+            <button class="btn-secondary" id="llm-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);margin-top:var(--spacing-sm);">Save Key</button>
           </div>
           <div class="form-row">
             <label>Model</label>
@@ -426,7 +421,7 @@
               </button>
             </div>
           </div>
-          <div style="display:flex;align-items:center;gap:12px;">
+          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
             <button class="btn-secondary" id="llm-test-btn">Test Connection</button>
             <div class="connection-status" id="llm-status">
               <div class="dot dot-idle"></div>
@@ -436,7 +431,7 @@
         </div>
       </div>
 
-      <div style="display:flex;justify-content:flex-end;padding-top:8px;">
+      <div style="display:flex;justify-content:flex-end;padding-top:var(--spacing-md);">
         <button class="btn-primary" id="save-providers-btn" style="min-width:120px;">Save Changes</button>
       </div>
     </section>
@@ -451,13 +446,13 @@
       <div class="settings-section">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <span>Word Corrections</span>
-          <div style="display:flex;gap:8px;">
+          <div style="display:flex;gap:var(--spacing-sm);">
             <button class="btn-ghost" id="import-dict-btn" style="font-size:12px;">Import</button>
             <button class="btn-ghost" id="export-dict-btn" style="font-size:12px;">Export</button>
             <button class="btn-primary" id="add-dict-btn" style="padding:6px 14px;font-size:13px;">+ Add Entry</button>
           </div>
         </div>
-        <div id="dict-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:12px;align-items:flex-end;border-bottom:1px solid var(--color-outline-variant);">
+        <div id="dict-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
           <div class="form-row" style="flex:1;">
             <label>Spoken word/phrase</label>
             <input type="text" id="dict-spoken-input" placeholder="e.g. fluence" />
@@ -466,7 +461,7 @@
             <label>Corrected form</label>
             <input type="text" id="dict-corrected-input" placeholder="e.g. Fluence" />
           </div>
-          <div style="display:flex;gap:8px;padding-bottom:1px;">
+          <div style="display:flex;gap:var(--spacing-sm);padding-bottom:1px;">
             <button class="btn-primary" id="dict-save-btn" style="padding:10px 16px;">Save</button>
             <button class="btn-ghost" id="dict-cancel-btn">Cancel</button>
           </div>
@@ -554,7 +549,7 @@
 
       <div class="settings-section">
         <div style="padding:var(--spacing-xl);display:flex;flex-direction:column;align-items:center;gap:var(--spacing-lg);text-align:center;">
-          <div style="width:80px;height:80px;border-radius:20px;background:rgba(26,26,32,0.6);border:1px solid rgba(255,255,255,0.06);display:flex;align-items:center;justify-content:center;box-shadow:0 8px 32px 0 rgba(0, 0, 0, 0.4);">
+          <div style="width:80px;height:80px;border-radius:20px;background:var(--color-surface-secondary);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center;">
             <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="1.8 3" stroke-linecap="round"/>
               <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="2 3" stroke-linecap="round"/>
@@ -589,7 +584,6 @@
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="js/background-particles.js"></script>
 <script src="js/settings.js"></script>
 </body>
 </html>

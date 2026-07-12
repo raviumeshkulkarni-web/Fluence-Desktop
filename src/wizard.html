@@ -9,8 +9,6 @@
   <link rel="stylesheet" href="css/wizard.css" />
 </head>
 <body>
-  <canvas id="background-canvas"></canvas>
-  <div class="film-grain"></div>
   <!-- Custom Titlebar -->
   <div data-tauri-drag-region class="titlebar">
     <div class="titlebar-title" data-tauri-drag-region>Welcome to Fluence</div>
@@ -54,7 +52,6 @@
               <feMerge>
                 <feMergeNode in="blur2" />
                 <feMergeNode in="blur1" />
-                <feMergeNode in="SourceGraphic" />
               </feMerge>
             </filter>
           </defs>
@@ -62,23 +59,23 @@
       </div>
       <h1 class="step-title" style="font-weight:700;letter-spacing:-0.03em;">Welcome to flu<span style="color:#00f2fe;">ence</span></h1>
       <p class="step-desc">Your AI-powered voice typing assistant for Windows. Speak naturally, and Fluence transcribes your voice into any application — instantly.</p>
-      <div style="display:flex;flex-direction:column;gap:12px;width:100%;max-width:340px;">
-        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: var(--color-primary); flex-shrink: 0;">
+      <div style="display:flex;flex-direction:column;gap:var(--spacing-md);width:100%;max-width:340px;">
+        <div style="display:flex;align-items:center;gap:var(--spacing-md);padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: var(--color-on-surface-variant); flex-shrink: 0;">
               <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
               <path d="M19 10v1a7 7 0 0 1-14 0v-1"></path>
               <line x1="12" x2="12" y1="19" y2="22"></line>
           </svg>
           <div><div style="font-weight:600;font-size:14px;">Universal Voice Typing</div><div style="font-size:12px;color:var(--color-on-surface-variant);">Works in any app — VS Code, Chrome, Word</div></div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: #00f2fe; flex-shrink: 0;">
+        <div style="display:flex;align-items:center;gap:var(--spacing-md);padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: var(--color-on-surface-variant); flex-shrink: 0;">
               <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path>
           </svg>
           <div><div style="font-weight:600;font-size:14px;">AI Agent Mode</div><div style="font-size:12px;color:var(--color-on-surface-variant);">Long press to edit, rewrite, or command</div></div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;padding:12px;background:rgba(209,140,255,0.06);border:1px solid rgba(209,140,255,0.15);border-radius:12px;">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: #6fcf97; flex-shrink: 0;">
+        <div style="display:flex;align-items:center;gap:var(--spacing-md);padding:12px;background:var(--color-surface);border:1px solid var(--color-border);border-radius:12px;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width: 20px; height: 20px; color: var(--color-success); flex-shrink: 0;">
               <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
               <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
           </svg>
@@ -97,7 +94,7 @@
       <div class="step-content">
         <div class="form-row">
           <label>Provider</label>
-          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:var(--spacing-sm);">
             <button class="provider-card selected" data-provider="groq" id="wiz-groq">
               <svg class="provider-icon groq-icon" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="100" height="100" rx="16" fill="#F55036"/>
@@ -130,7 +127,7 @@
             <input type="password" id="wiz-api-key" placeholder="gsk_••••••••••••••••" autocomplete="off" />
           </div>
         </div>
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:var(--spacing-md);">
           <div class="form-row">
             <label>Transcription Model</label>
             <div class="input-with-btn">
@@ -150,7 +147,7 @@
             </div>
           </div>
         </div>
-        <div style="display:flex;align-items:center;gap:12px;">
+        <div style="display:flex;align-items:center;gap:var(--spacing-md);">
           <button class="btn-secondary" id="wiz-test-btn" style="padding:8px 16px;">Test Connection</button>
           <div style="display:flex;align-items:center;gap:6px;" id="wiz-test-status">
             <div class="dot dot-idle"></div>
@@ -241,8 +238,8 @@
         <span style="font-size:44px;">✓</span>
       </div>
       <h1 class="step-title">You're All Set!</h1>
-      <p class="step-desc">Fluence is running in your system tray. Press <span style="color:var(--color-primary);font-weight:600;" id="done-hotkey">Ctrl+Shift+Space</span> anywhere to start voice typing.</p>
-      <div style="display:flex;flex-direction:column;align-items:center;gap:12px;width:100%;max-width:340px;">
+      <p class="step-desc">Fluence is running in your system tray. Press <span style="color:var(--color-on-surface);font-weight:600;" id="done-hotkey">Ctrl+Shift+Space</span> anywhere to start voice typing.</p>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:var(--spacing-md);width:100%;max-width:340px;">
         <button class="btn-primary" id="wiz-open-settings-btn" style="width:100%;padding:14px;">Open Settings</button>
         <button class="btn-ghost" id="wiz-close-btn" style="width:100%;">Close Wizard</button>
       </div>
@@ -269,7 +266,6 @@
 </div><!-- .wizard-shell -->
 </div><!-- .wizard-page -->
 
-<script src="js/background-particles.js"></script>
 <script src="js/wizard.js"></script>
 </body>
 </html>

@@ -31,3 +31,15 @@ Desktop.ini
 # Env files
 .env
 .env.*
+
+# Local dev logs
+.tauri-dev.log
+.tauri-dev.err.log
+
+# Local debug recordings
+src-tauri/debug_recordings/
+
+# Local/extraneous artifacts
+compose-rich-editor/
+diagnostics-runner.mjs
+vs_buildtools.exe

@@ -4,16 +4,16 @@
    Source of truth: fluence-notes/src/index.css (web)
    ==================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600&family=Hanken+Grotesk:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Allura&family=Sora:wght@400;500;600&family=Hanken+Grotesk:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
 
 :root {
   /* ── Surface Hierarchy ─────────────────────────────────────────── */
-  --color-canvas:                #0C0C0C;
-  --color-surface:               #111111;
-  --color-surface-secondary:     #161616;
-  --color-surface-elevated:      #1B1B1B;
-  --color-surface-menu:          #202020;
-  --color-surface-dialog:        #252525;
+  --color-canvas:                #0D0D0D;
+  --color-surface:               #141414;
+  --color-surface-secondary:     #1E1E1E;
+  --color-surface-elevated:      #262626;
+  --color-surface-menu:          #2E2E2E;
+  --color-surface-dialog:        #2E2E2E;
 
   /* Backward compat aliases */
   --color-background:            var(--color-canvas);
@@ -25,36 +25,42 @@
   --color-surface-bright:        var(--color-surface-menu);
   --color-secondary-container:   var(--color-surface-elevated);
 
-  /* ── Borders (structural only — near-invisible) ────────────────── */
-  --color-border:                rgba(255, 255, 255, 0.06);
-  --color-border-structural:     rgba(255, 255, 255, 0.08);
+  /* ── Borders / Divider ──────────────────────────────────────────── */
+  --color-border:                rgba(255, 255, 255, 0.05);
+  --color-divider:               #2A2A2A;
+  --color-border-structural:     #2A2A2A;
   --color-border-muted:          rgba(255, 255, 255, 0.03);
   --color-border-focus:          rgba(255, 255, 255, 0.20);
 
   /* Backward compat */
-  --color-outline:               rgba(255, 255, 255, 0.30);
-  --color-outline-variant:       rgba(255, 255, 255, 0.06);
+  --color-outline:               #808080;
+  --color-outline-variant:       rgba(255, 255, 255, 0.05);
 
   /* ── Text / Ink Hierarchy ──────────────────────────────────────── */
-  --color-on-surface:            #EDEDED;
-  --color-on-surface-variant:    #B8B8B8;
-  --color-on-background:         #EDEDED;
+  --color-on-surface:            #E2E2E2;
+  --color-on-surface-variant:    #A0A0A0;
+  --color-on-background:         #E2E2E2;
   --color-on-primary:            #FFFFFF;
-  --color-ink-muted:             #707070;
-  --color-ink-disabled:          #454545;
+  --color-ink-muted:             #808080;
+  --color-ink-disabled:          #4A4A4A;
 
   /* ── Semantic ──────────────────────────────────────────────────── */
-  --color-error:                 #D94444;
-  --color-error-container:       rgba(217, 68, 68, 0.15);
-  --color-success:               #34A753;
-  --color-success-container:     rgba(52, 167, 83, 0.15);
-  --color-warning:               #D4A017;
-  --color-info:                  #4A90D9;
+  --color-error:                 #EF4444;
+  --color-error-container:       rgba(239, 68, 68, 0.15);
+  --color-success:               #22C55E;
+  --color-success-container:     rgba(34, 197, 94, 0.15);
+
+  /* ── Brand / Accent ────────────────────────────────────────────── */
+  --color-brand-amethyst:        #8B45D8;
+  --color-brand-cyan:            #0BD6E3;
 
   /* ── State Modifiers ───────────────────────────────────────────── */
   --color-hover:                 rgba(255, 255, 255, 0.04);
-  --color-active:                rgba(255, 255, 255, 0.07);
+  --color-active:                rgba(255, 255, 255, 0.08);
   --color-selected:              rgba(255, 255, 255, 0.10);
+  --color-interactive:           rgba(255, 255, 255, 0.08);
+  --color-interactive-hover:     rgba(255, 255, 255, 0.12);
+  --color-interactive-active:    rgba(255, 255, 255, 0.16);
   --color-placeholder:           rgba(112, 112, 112, 0.7);
 
   /* ── Typography Scale ──────────────────────────────────────────── */
@@ -86,22 +92,16 @@
 
   /* ── Corner Radius ─────────────────────────────────────────────── */
   --radius-xs:    3px;
-  --radius-sm:    5px;
-  --radius-md:    7px;
-  --radius-lg:    10px;
-  --radius-xl:    14px;
-  --radius-full:  9999px;
-
-  /* Backward compat */
-  --radius-sm-8:  8px;
-  --radius-md-12: 12px;
-  --radius-lg-16: 16px;
+  --radius-sm:    8px;
+  --radius-md:    12px;
+  --radius-lg:    16px;
+  --radius-xl:    20px;
+  --radius-full:  999px;
 
   /* ── Elevation / Shadow ────────────────────────────────────────── */
   --shadow-sm:  0 1px 3px rgba(0,0,0,0.35);
   --shadow-md:  0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.25);
   --shadow-lg:  0 12px 56px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.35);
-  --shadow-glow: 0 0 20px rgba(255, 255, 255, 0.04);
 
   /* ── Motion ────────────────────────────────────────────────────── */
   --transition-fast:   all 0.12s cubic-bezier(0.25, 0.1, 0.25, 1);

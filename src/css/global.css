@@ -39,7 +39,7 @@ body {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-interactive);
   border-radius: var(--radius-full);
 }
 ::-webkit-scrollbar-thumb:hover {
@@ -144,7 +144,7 @@ button:focus-visible {
   justify-content: center;
   gap: var(--spacing-sm);
   padding: 10px 20px;
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--color-interactive);
   color: var(--color-on-surface);
   font-size: var(--text-label-lg);
   font-weight: 500;
@@ -153,12 +153,12 @@ button:focus-visible {
 }
 
 .btn-primary:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--color-interactive-hover);
 }
 
 .btn-primary:active {
   transform: scale(0.98);
-  background: rgba(255, 255, 255, 0.16);
+  background: var(--color-interactive-active);
 }
 
 /* Secondary — surface elevation + ultra-thin border */
@@ -209,7 +209,7 @@ button:focus-visible {
 }
 
 .btn-danger:hover {
-  background: rgba(217, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.25);
 }
 
 /* ── Input Base — ultra-thin border ────────────────────────────── */
@@ -228,7 +228,7 @@ input, select, textarea {
 
 input:focus, select:focus, textarea:focus {
   background: var(--color-surface-menu);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-interactive-hover);
 }
 
 input::placeholder {
@@ -239,7 +239,7 @@ select {
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23707070' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23808080' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 36px;
@@ -287,12 +287,12 @@ select {
 }
 
 .toggle-switch input:checked ~ .toggle-track {
-  background: rgba(255, 255, 255, 0.10);
+  background: var(--color-selected);
 }
 
 .toggle-switch input:checked ~ .toggle-track .toggle-thumb {
   transform: translateX(20px);
-  background: #EDEDED;
+  background: #E2E2E2;
 }
 
 .toggle-switch input:checked:active ~ .toggle-track .toggle-thumb {
@@ -312,7 +312,7 @@ select {
   text-transform: uppercase;
 }
 
-.badge-primary { background: rgba(255, 255, 255, 0.08); color: var(--color-on-surface-variant); }
+.badge-primary { background: var(--color-interactive); color: var(--color-on-surface-variant); }
 .badge-success { background: var(--color-success-container); color: var(--color-success); }
 .badge-error   { background: var(--color-error-container); color: var(--color-error); }
 
@@ -391,8 +391,8 @@ select {
   max-width: 360px;
 }
 
-.toast.success { background: rgba(52, 167, 83, 0.12); }
-.toast.error   { background: rgba(217, 68, 68, 0.12); }
+.toast.success { background: rgba(34, 197, 94, 0.12); }
+.toast.error   { background: rgba(239, 68, 68, 0.12); }
 
 /* ── Custom Titlebar — ultra-thin bottom border ────────────────── */
 .titlebar {
@@ -451,7 +451,7 @@ select {
 
 .titlebar-close:hover {
   background: #E81123 !important;
-  color: #fff !important;
+  color: var(--color-on-primary) !important;
 }
 
 /* ── Reduced Motion ────────────────────────────────────────────── */

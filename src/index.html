@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
     content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self';" />
-  <title>Fluence Settings</title>
+  <title>Fluence Transcribe</title>
   <link rel="stylesheet" href="css/settings.css" />
 </head>
 <body>
@@ -39,7 +39,7 @@
           </linearGradient>
         </defs>
       </svg>
-      <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;">flu<span style="color:#0BD6E3;">ence</span></span>
+      <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:20px;margin-left:6px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></span>
     </div>
 
     <span class="nav-section-label">Configuration</span>
@@ -354,8 +354,8 @@
               <span id="offline-progress-status" style="font-weight:500;">Downloading ASR engine...</span>
               <span id="offline-progress-percentage" style="font-weight:600;color:var(--color-on-surface);">0%</span>
             </div>
-            <div style="width:100%;height:8px;background:var(--color-border-structural);border-radius:4px;overflow:hidden;">
-              <div id="offline-progress-fill" style="width:0%;height:100%;background:rgba(255,255,255,0.30);border-radius:4px;transition:width 0.2s ease;"></div>
+            <div style="width:100%;height:8px;background:var(--color-border-structural);border-radius:var(--radius-xs);overflow:hidden;">
+              <div id="offline-progress-fill" style="width:0%;height:100%;background:rgba(255,255,255,0.30);border-radius:var(--radius-xs);transition:width 0.2s ease;"></div>
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-ink-muted);">
               <span id="offline-progress-bytes">0 / 0 MB</span>
@@ -550,7 +550,7 @@
 
       <div class="settings-section">
         <div style="padding:var(--spacing-xl);display:flex;flex-direction:column;align-items:center;gap:var(--spacing-lg);text-align:center;">
-          <div style="width:80px;height:80px;border-radius:20px;background:var(--color-surface-secondary);border:1px solid var(--color-border);display:flex;align-items:center;justify-content:center;">
+          <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
             <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="1.8 3" stroke-linecap="round"/>
               <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="2 3" stroke-linecap="round"/>
@@ -564,13 +564,11 @@
                 </linearGradient>
               </defs>
             </svg>
+            <div class="text-headline-md" style="font-weight:700;font-size:24px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:22px;margin-left:7px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></div>
           </div>
-          <div>
-            <div class="text-headline-md" style="font-weight:700;font-size:24px;letter-spacing:-0.03em;">flu<span style="color:#0BD6E3;">ence</span></div>
-            <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
-          </div>
+          <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
-            Fluence brings AI-powered voice typing to your Windows desktop. Press your hotkey anywhere, speak naturally, and Fluence transcribes your voice directly into any focused application.
+            Why type when you can simply speak? Fluence Transcribe turns your voice into precise, beautifully formatted text the instant the words leave your lips, anywhere on Windows, in any application, with zero friction and absolute privacy. This is not dictation. This is Fluence Transcribe.
           </div>
 
           <div class="text-label-sm text-muted">Powered by Tauri v2 · Rust · WebView2</div>

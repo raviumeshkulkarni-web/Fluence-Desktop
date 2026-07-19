@@ -280,7 +280,7 @@ body {
 
 .provider-card.selected {
   background: var(--color-active);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-interactive-hover);
   color: var(--color-on-surface);
 }
 
@@ -379,7 +379,7 @@ body {
   padding: 4px 0;
 }
 
-.dot { width: 8px; height: 8px; border-radius: 50%; }
+.dot { width: 8px; height: 8px; border-radius: var(--radius-full); }
 .dot-success { background: var(--color-success); }
 .dot-error   { background: var(--color-error); }
 .dot-idle    { background: var(--color-ink-muted); }

@@ -43,7 +43,7 @@ body {
 /* ── Progress Bar ──────────────────────────────────────────────── */
 .progress-bar-track {
   height: 2px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-border-muted);
   flex-shrink: 0;
   transition: opacity 0.3s ease;
 }
@@ -65,8 +65,8 @@ body {
   width: 4px;
   height: 4px;
   background: rgba(255, 255, 255, 0.35);
-  border-radius: 50%;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+  box-shadow: 0 0 6px var(--color-interactive-hover);
 }
 
 /* ── Wizard Steps Container ────────────────────────────────────── */
@@ -204,7 +204,7 @@ body {
 
 .position-option.selected {
   background: var(--color-active);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-interactive-hover);
   color: var(--color-on-surface);
 }
 
@@ -220,7 +220,7 @@ body {
   position: absolute;
   width: 14px; height: 10px;
   background: rgba(255, 255, 255, 0.50);
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 .pos-center    .position-dot { bottom: 4px; left: 50%; transform: translateX(-50%); }
@@ -256,7 +256,7 @@ body {
 }
 
 .mode-option:hover { background: var(--color-hover); }
-.mode-option.selected { background: var(--color-active); border-color: rgba(255, 255, 255, 0.12); }
+.mode-option.selected { background: var(--color-active); border-color: var(--color-interactive-hover); }
 
 .mode-option .mode-title { font-weight: 600; color: var(--color-on-surface); font-size: var(--text-body-md); }
 .mode-option .mode-desc  { font-size: var(--text-label-sm); color: var(--color-on-surface-variant); }
@@ -306,14 +306,14 @@ body {
 
 .step-dot {
   width: 6px; height: 6px;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.12);
+  border-radius: var(--radius-full);
+  background: var(--color-interactive-hover);
   transition: width 0.35s var(--ease-spring), background-color 0.25s ease;
 }
 
 .step-dot.active {
   width: 22px;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
   background: rgba(255, 255, 255, 0.50);
 }
 
@@ -325,7 +325,7 @@ body {
 .fluence-logo-hero {
   width: 88px;
   height: 88px;
-  border-radius: 20px;
+  border-radius: var(--radius-xl);
 }
 
 /* ── Titlebar Override ─────────────────────────────────────────── */
@@ -370,7 +370,7 @@ body {
 
 .provider-card.selected {
   background: var(--color-active);
-  border-color: rgba(255, 255, 255, 0.12);
+  border-color: var(--color-interactive-hover);
   color: var(--color-on-surface);
 }
 
@@ -390,7 +390,7 @@ body {
   transition: transform 0.25s var(--ease-spring), color 0.2s ease;
 }
 
-.groq-icon { border-radius: 4px; }
+.groq-icon { border-radius: var(--radius-xs); }
 .openai-icon { color: #849495; }
 .custom-icon { color: #849495; }
 

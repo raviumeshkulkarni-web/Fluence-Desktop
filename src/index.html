@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost http://127.0.0.1:1430 https://api.groq.com https://api.openai.com https://api.mistral.ai https://*; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self' 'unsafe-inline';" />
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self';" />
   <title>Fluence Settings</title>
   <link rel="stylesheet" href="css/settings.css" />
 </head>
@@ -33,12 +33,13 @@
         <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-sidebar)"/>
         <defs>
           <linearGradient id="logo-grad-sidebar" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-            <stop offset="0%" stop-color="#A855F7"/>
-            <stop offset="100%" stop-color="#00f2fe"/>
+              <stop offset="0%" stop-color="#8B45D8"/>
+              <stop offset="50%" stop-color="#8B45D8"/>
+              <stop offset="100%" stop-color="#0BD6E3"/>
           </linearGradient>
         </defs>
       </svg>
-      <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;">flu<span style="color:#00f2fe;">ence</span></span>
+      <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;">flu<span style="color:#0BD6E3;">ence</span></span>
     </div>
 
     <span class="nav-section-label">Configuration</span>
@@ -557,14 +558,15 @@
               <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-about)"/>
               <defs>
                 <linearGradient id="logo-grad-about" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#A855F7"/>
-                  <stop offset="100%" stop-color="#00f2fe"/>
+                  <stop offset="0%" stop-color="#8B45D8"/>
+                  <stop offset="50%" stop-color="#8B45D8"/>
+                  <stop offset="100%" stop-color="#0BD6E3"/>
                 </linearGradient>
               </defs>
             </svg>
           </div>
           <div>
-            <div class="text-headline-md" style="font-weight:700;font-size:24px;letter-spacing:-0.03em;">flu<span style="color:#00f2fe;">ence</span></div>
+            <div class="text-headline-md" style="font-weight:700;font-size:24px;letter-spacing:-0.03em;">flu<span style="color:#0BD6E3;">ence</span></div>
             <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
           </div>
           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">

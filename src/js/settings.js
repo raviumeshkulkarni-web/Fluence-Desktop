@@ -408,9 +408,14 @@ async function fetchModels(type, silent = false) {
     const select = document.getElementById(`${type}-model-select`);
     if (select) {
       const current = select.value;
-      select.innerHTML = models
-        .map(m => `<option value="${m}" ${m === current ? 'selected' : ''}>${m}</option>`)
-        .join('');
+      select.textContent = '';
+      models.forEach(m => {
+        const opt = document.createElement('option');
+        opt.value = m;
+        opt.textContent = m;
+        if (m === current) opt.selected = true;
+        select.appendChild(opt);
+      });
     }
     if (!silent) showToast(`Loaded ${models.length} models ✓`, 'success');
   } catch (err) {
@@ -520,15 +525,16 @@ function renderHistoryItem(entry, container) {
     <div class="history-item-header">
       <span class="history-item-time">${timeStr}</span>
       <div style="display:flex;gap:6px;align-items:center;">
-        <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${entry.mode}</span>
+        <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        <button class="btn-ghost" onclick="deleteHistoryItem('${entry.id}')" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
+        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
       </div>
     </div>
     <div class="history-item-text">${escapeHtml(entry.text)}</div>
   `;
 
   div.querySelector('.history-copy-btn').addEventListener('click', () => copyHistoryItem(entry.text));
+  div.querySelector('.history-delete-btn')?.addEventListener('click', () => deleteHistoryItem(entry.id));
 
   container?.appendChild(div);
 }
@@ -938,9 +944,10 @@ function renderDictTable() {
         <td class="spoken-word">${escapeHtml(entry.spoken)}</td>
         <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
         <td class="actions">
-          <button class="btn-ghost" onclick="deleteDictEntry('${entry.id}')" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+          <button class="btn-ghost dict-delete-btn" data-dict-id="${entry.id}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
         </td>
       `;
+      tr.querySelector('.dict-delete-btn')?.addEventListener('click', () => deleteDictEntry(entry.id));
       tbody.appendChild(tr);
     });
   }
@@ -1042,12 +1049,14 @@ function renderSuggestionsTable(suggestions) {
         <td class="corrected-word">${escapeHtml(s.corrected)}</td>
         <td style="color:var(--color-outline);font-size:12px;">${s.frequency}x</td>
         <td class="actions">
-          <button class="btn-ghost" onclick="acceptSuggestion('${s.id}')" 
+          <button class="btn-ghost suggestion-accept-btn" data-suggestion-id="${s.id}" 
             style="padding:4px 8px;font-size:12px;color:var(--color-success)">Accept</button>
-          <button class="btn-ghost" onclick="dismissSuggestion('${s.id}')" 
+          <button class="btn-ghost suggestion-dismiss-btn" data-suggestion-id="${s.id}" 
             style="padding:4px 8px;font-size:12px;color:var(--color-error)">Dismiss</button>
         </td>
       `;
+      tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
+      tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
       tbody.appendChild(tr);
     });
   }

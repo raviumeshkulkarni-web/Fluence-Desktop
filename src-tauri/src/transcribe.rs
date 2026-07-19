@@ -35,9 +35,19 @@ fn default_filename() -> String {
     "audio.wav".to_string()
 }
 
+/// Maximum base64-encoded audio size (~25MB decoded, ~5 minutes at 16kHz mono)
+const MAX_AUDIO_B64_LEN: usize = 35_000_000;
+
 /// Transcribe audio via an OpenAI-compatible API.
 #[tauri::command]
 pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
+    if req.wav_b64.len() > MAX_AUDIO_B64_LEN {
+        return Err(format!(
+            "Audio payload too large ({} bytes). Maximum supported size is ~25MB decoded.",
+            req.wav_b64.len()
+        ));
+    }
+    crate::http_client::validate_api_url(&req.base_url)?;
     let start_time = std::time::Instant::now();
     let mp3_bytes =
         base64::Engine::decode(&base64::engine::general_purpose::STANDARD, &req.wav_b64)
@@ -377,6 +387,7 @@ pub async fn transcribe_mp3_bytes_with_raw(
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
+    crate::http_client::validate_api_url(&base_url)?;
     let url = crate::http_client::build_api_url(&base_url, "models");
 
     let resp = crate::http_client::CLIENT
@@ -412,6 +423,7 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 /// Test connectivity to an STT provider.
 #[tauri::command]
 pub async fn test_stt_connection(base_url: String, api_key: String) -> Result<String, String> {
+    crate::http_client::validate_api_url(&base_url)?;
     let url = crate::http_client::build_api_url(&base_url, "models");
 
     let resp = crate::http_client::CLIENT
@@ -489,5 +501,123 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn reject_oversized_audio() {
+        let req = TranscribeRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "a".repeat(MAX_AUDIO_B64_LEN + 1),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too large"));
+    }
+
+    #[test]
+    fn reject_oversized_audio_exact_boundary() {
+        let req = TranscribeRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "a".repeat(MAX_AUDIO_B64_LEN + 100),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("too large"));
+    }
+
+    #[test]
+    fn accept_audio_at_limit() {
+        let req = TranscribeRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "a".repeat(MAX_AUDIO_B64_LEN),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(
+            !err.contains("too large"),
+            "At exactly MAX_AUDIO_B64_LEN the size check should pass, got: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn reject_invalid_url_in_transcribe() {
+        let req = TranscribeRequest {
+            base_url: "not-a-url".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "dGVzdA==".into(),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid URL"));
+    }
+
+    #[test]
+    fn reject_http_non_localhost_in_transcribe() {
+        let req = TranscribeRequest {
+            base_url: "http://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "dGVzdA==".into(),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("HTTPS"));
+    }
+
+    #[test]
+    fn allow_localhost_http_in_transcribe() {
+        let req = TranscribeRequest {
+            base_url: "http://localhost:1430".into(),
+            api_key: "test".into(),
+            model: "whisper".into(),
+            wav_b64: "dGVzdA==".into(),
+            language: None,
+            prompt: None,
+            mime_type: "audio/wav".into(),
+            filename: "audio.wav".into(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(transcribe_audio(req));
+        assert!(result.is_err());
+        assert!(!result.unwrap_err().contains("HTTPS"));
+    }
+
+    #[test]
+    fn max_audio_b64_len_is_reasonable() {
+        assert_eq!(MAX_AUDIO_B64_LEN, 35_000_000);
     }
 }

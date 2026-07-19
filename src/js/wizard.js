@@ -228,13 +228,25 @@ function setupStep2() {
       
       const selectSTT = document.getElementById('wiz-model-select');
       if (selectSTT) {
-        selectSTT.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+        selectSTT.textContent = '';
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          selectSTT.appendChild(opt);
+        });
         if (wizardData.model && models.includes(wizardData.model)) selectSTT.value = wizardData.model;
       }
 
       const selectLLM = document.getElementById('wiz-llm-model-select');
       if (selectLLM) {
-        selectLLM.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('');
+        selectLLM.textContent = '';
+        models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m;
+          opt.textContent = m;
+          selectLLM.appendChild(opt);
+        });
         if (wizardData.llmModel && models.includes(wizardData.llmModel)) selectLLM.value = wizardData.llmModel;
       }
     } catch (err) {

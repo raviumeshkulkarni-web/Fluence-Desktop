@@ -83,6 +83,17 @@ pub async fn ensure_server_running() -> Result<u16> {
         ));
     }
 
+    // Verify binary integrity before execution
+    let exe_hash = crate::offline_downloader::manifest_binary_hash(
+        "sherpa-onnx-offline-websocket-server.exe",
+    )?;
+    crate::offline_downloader::verify_sha256(&exe_path, exe_hash).map_err(|e| {
+        anyhow!(
+            "Binary integrity check failed: {}. Please re-download the model in Settings.",
+            e
+        )
+    })?;
+
     // Find free port
     let mut port = 6006;
     for p in 6006..=6029 {

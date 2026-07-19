@@ -12,6 +12,19 @@ use windows::{
     },
 };
 
+const CREDENTIAL_NAMESPACE: &str = "Fluence/";
+
+/// Validate that a credential target belongs to the Fluence namespace.
+fn validate_credential_target(target: &str) -> Result<()> {
+    if !target.starts_with(CREDENTIAL_NAMESPACE) {
+        return Err(anyhow!("Access denied: only Fluence credentials can be accessed"));
+    }
+    if target.contains("..") {
+        return Err(anyhow!("Invalid credential target"));
+    }
+    Ok(())
+}
+
 fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     std::ffi::OsStr::new(s)
@@ -128,11 +141,89 @@ pub fn get_llm_target(preset: &str) -> String {
 // Tauri commands
 #[tauri::command]
 pub fn save_api_key(target: String, key: String) -> Result<(), String> {
+    validate_credential_target(&target).map_err(|e| e.to_string())?;
     store_credential(&target, "fluence", &key).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn valid_stt_target() {
+        assert!(validate_credential_target("Fluence/STT_ApiKey").is_ok());
+    }
+
+    #[test]
+    fn valid_llm_target() {
+        assert!(validate_credential_target("Fluence/LLM_ApiKey").is_ok());
+    }
+
+    #[test]
+    fn valid_provider_specific() {
+        assert!(validate_credential_target("Fluence/STT_ApiKey/groq").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/openai").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/my_provider").is_ok());
+    }
+
+    #[test]
+    fn reject_empty_target() {
+        assert!(validate_credential_target("").is_err());
+    }
+
+    #[test]
+    fn reject_non_fluence_namespace() {
+        assert!(validate_credential_target("OtherApp/Apikey").is_err());
+        assert!(validate_credential_target("Mozilla/").is_err());
+        assert!(validate_credential_target("Google/Chrome/Login").is_err());
+    }
+
+    #[test]
+    fn reject_path_traversal() {
+        assert!(validate_credential_target("Fluence/../etc/passwd").is_err());
+        assert!(validate_credential_target("Fluence/STT_ApiKey/../../../secret").is_err());
+    }
+
+    #[test]
+    fn reject_no_namespace_prefix() {
+        assert!(validate_credential_target("STT_ApiKey").is_err());
+        assert!(validate_credential_target("api_key").is_err());
+    }
+
+    #[test]
+    fn reject_prefix_spoof() {
+        assert!(validate_credential_target("FluenceX/Apikey").is_err());
+        assert!(validate_credential_target("fluence/Apikey").is_err());
+    }
+
+    #[test]
+    fn valid_target_with_subpath() {
+        assert!(validate_credential_target("Fluence/any/sub/path").is_ok());
+    }
+
+    #[test]
+    fn get_stt_target_format() {
+        let t = get_stt_target("groq");
+        assert_eq!(t, "Fluence/STT_ApiKey/groq");
+    }
+
+    #[test]
+    fn get_llm_target_format() {
+        let t = get_llm_target("openai");
+        assert_eq!(t, "Fluence/LLM_ApiKey/openai");
+    }
+
+    #[test]
+    fn get_stt_target_spaces_to_underscores() {
+        let t = get_stt_target("My Provider");
+        assert_eq!(t, "Fluence/STT_ApiKey/my_provider");
+    }
 }
 
 #[tauri::command]
 pub fn get_api_key(target: String) -> Result<String, String> {
+    validate_credential_target(&target).map_err(|e| e.to_string())?;
+
     // 1. Try the specific target requested
     if let Ok(key) = read_credential(&target) {
         return Ok(key);
@@ -164,5 +255,6 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 
 #[tauri::command]
 pub fn delete_api_key(target: String) -> Result<(), String> {
+    validate_credential_target(&target).map_err(|e| e.to_string())?;
     delete_credential(&target).map_err(|e| e.to_string())
 }

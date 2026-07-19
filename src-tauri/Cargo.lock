@@ -1387,6 +1387,7 @@ dependencies = [
  "env_logger",
  "flacenc",
  "futures-util",
+ "hex",
  "log",
  "once_cell",
  "regex",
@@ -1394,6 +1395,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "shine-rs",
  "similar",
  "strsim",
@@ -1406,6 +1408,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tokio",
  "tokio-tungstenite",
+ "url",
  "uuid",
  "windows 0.58.0",
 ]

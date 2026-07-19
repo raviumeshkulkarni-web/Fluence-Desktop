@@ -21,6 +21,10 @@ pub struct AgentAction {
     pub char_count: Option<usize>,
 }
 
+const MAX_VOICE_COMMAND_LEN: usize = 10_000;
+const MAX_CLIPBOARD_CONTEXT_LEN: usize = 50_000;
+const MAX_API_KEY_LEN: usize = 1_000;
+
 const AGENT_SYSTEM_PROMPT: &str = r#"You are an AI writing assistant integrated into a voice typing tool.
 The user will speak a command. You must interpret it and return a JSON action.
 
@@ -46,6 +50,17 @@ Current clipboard/editor context:
 
 #[tauri::command]
 pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, String> {
+    if req.voice_command.len() > MAX_VOICE_COMMAND_LEN {
+        return Err("Voice command exceeds maximum length".into());
+    }
+    if req.clipboard_context.len() > MAX_CLIPBOARD_CONTEXT_LEN {
+        return Err("Clipboard context exceeds maximum length".into());
+    }
+    if req.api_key.len() > MAX_API_KEY_LEN {
+        return Err("API key exceeds maximum length".into());
+    }
+    crate::http_client::validate_api_url(&req.base_url)?;
+
     let system_prompt = AGENT_SYSTEM_PROMPT.replace("{CONTEXT}", &req.clipboard_context);
 
     let url = crate::http_client::build_api_url(&req.base_url, "chat/completions");
@@ -113,6 +128,8 @@ pub async fn test_llm_connection(
     api_key: String,
     model: String,
 ) -> Result<String, String> {
+    crate::http_client::validate_api_url(&base_url)?;
+
     // Smart URL parsing: handle both trailing slashes and missing/extra /v1
     let base = base_url.trim_end_matches('/');
     let url = if base.to_lowercase().ends_with("/v1") {
@@ -140,5 +157,107 @@ pub async fn test_llm_connection(
         Ok("LLM connection successful".to_string())
     } else {
         Err(format!("LLM auth failed ({})", resp.status()))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reject_oversized_voice_command() {
+        let req = AgentRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "llama".into(),
+            voice_command: "a".repeat(MAX_VOICE_COMMAND_LEN + 1),
+            clipboard_context: String::new(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Voice command"));
+    }
+
+    #[test]
+    fn reject_oversized_clipboard_context() {
+        let req = AgentRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "llama".into(),
+            voice_command: "hello".into(),
+            clipboard_context: "a".repeat(MAX_CLIPBOARD_CONTEXT_LEN + 1),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Clipboard context"));
+    }
+
+    #[test]
+    fn reject_oversized_api_key() {
+        let req = AgentRequest {
+            base_url: "https://api.groq.com/openai".into(),
+            api_key: "k".repeat(MAX_API_KEY_LEN + 1),
+            model: "llama".into(),
+            voice_command: "hello".into(),
+            clipboard_context: String::new(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("API key"));
+    }
+
+    #[test]
+    fn reject_invalid_url_in_agent() {
+        let req = AgentRequest {
+            base_url: "not-a-url".into(),
+            api_key: "test".into(),
+            model: "llama".into(),
+            voice_command: "hello".into(),
+            clipboard_context: String::new(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("Invalid URL"));
+    }
+
+    #[test]
+    fn reject_http_non_localhost_in_agent() {
+        let req = AgentRequest {
+            base_url: "http://api.groq.com/openai".into(),
+            api_key: "test".into(),
+            model: "llama".into(),
+            voice_command: "hello".into(),
+            clipboard_context: String::new(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("HTTPS"));
+    }
+
+    #[test]
+    fn allow_localhost_http_in_agent() {
+        let req = AgentRequest {
+            base_url: "http://localhost:1430".into(),
+            api_key: "test".into(),
+            model: "llama".into(),
+            voice_command: "hello".into(),
+            clipboard_context: String::new(),
+        };
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(execute_agent_command(req));
+        assert!(result.is_err());
+        assert!(!result.unwrap_err().contains("HTTPS"));
+    }
+
+    #[test]
+    fn size_limit_constants_are_reasonable() {
+        assert_eq!(MAX_VOICE_COMMAND_LEN, 10_000);
+        assert_eq!(MAX_CLIPBOARD_CONTEXT_LEN, 50_000);
+        assert_eq!(MAX_API_KEY_LEN, 1_000);
     }
 }

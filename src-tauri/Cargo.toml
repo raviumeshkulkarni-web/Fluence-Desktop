@@ -45,8 +45,11 @@ futures-util = { version = "0.3", default-features = false, features = ["std", "
 flacenc = "0.5.1"
 shine-rs = "0.1"
 regex = "1"
+url = "2"
 similar = { version = "3", features = ["text"] }
 strsim = "0.11"
+sha2 = "0.10"
+hex = "0.4"
 
 
 

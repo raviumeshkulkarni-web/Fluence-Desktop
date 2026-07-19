@@ -72,7 +72,7 @@ body {
 .overlay-root.active {
   width: 360px;
   height: 88px;
-  opacity: 1;
+  opacity: 0.97;
   scale: 1;
   border-radius: 16px;
 }
@@ -114,7 +114,7 @@ body {
     scale: 0.95;
   }
   100% {
-    opacity: 1;
+    opacity: 0.97;
     scale: 1;
   }
 }
@@ -127,7 +127,7 @@ body {
 
 @keyframes palette-exit {
   0% {
-    opacity: 1;
+    opacity: 0.97;
     scale: 1;
   }
   100% {

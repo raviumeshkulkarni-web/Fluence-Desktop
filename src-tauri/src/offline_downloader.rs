@@ -1,9 +1,11 @@
 // Fluence Windows — Offline Asset Downloader
 // Downloads and extracts sherpa-onnx binaries and SenseVoice model files.
 
-use anyhow::{anyhow, Result};
+use anyhow::{anyhow, Context, Result};
 use once_cell::sync::Lazy;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -15,9 +17,60 @@ static DOWNLOAD_CANCELLED: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false
 // Global downloading flag to prevent concurrent downloads
 static IS_DOWNLOADING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 
-const SHERPA_ONNX_URL: &str = "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.23/sherpa-onnx-v1.12.23-win-x64-shared.tar.bz2";
-const SENSEVOICE_MODEL_URL: &str = "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx";
-const SENSEVOICE_TOKENS_URL: &str = "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt";
+// ── Sherpa manifest ──────────────────────────────────────────────
+// Pinned release version, download URLs, and expected SHA-256 hashes.
+// Update this file (src-tauri/sherpa-manifest.json) when bumping Sherpa.
+
+#[derive(Deserialize)]
+pub(crate) struct ManifestDownload {
+    pub url: String,
+    pub filename: String,
+    pub sha256: String,
+}
+
+#[derive(Deserialize)]
+pub(crate) struct SherpaManifest {
+    #[allow(dead_code)]
+    pub sherpa_version: String,
+    pub downloads: Vec<ManifestDownload>,
+    pub expected_binaries: HashMap<String, String>,
+}
+
+pub(crate) static MANIFEST: Lazy<SherpaManifest> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../sherpa-manifest.json"))
+        .expect("Failed to parse sherpa-manifest.json — this file must exist at src-tauri/sherpa-manifest.json")
+});
+
+/// Look up a download entry by filename. Fails fast if missing.
+pub(crate) fn manifest_download(filename: &str) -> Result<&'static ManifestDownload> {
+    MANIFEST.downloads.iter().find(|d| d.filename == filename)
+        .with_context(|| format!("Missing manifest download entry for '{}'", filename))
+}
+
+/// Look up expected hash for an extracted binary. Fails fast if missing.
+pub(crate) fn manifest_binary_hash(name: &str) -> Result<&'static str> {
+    MANIFEST.expected_binaries.get(name)
+        .map(|s| s.as_str())
+        .with_context(|| format!("Missing expected binary hash for '{}'", name))
+}
+
+/// Verify SHA-256 hash of a file against expected hex digest.
+pub fn verify_sha256(path: &Path, expected_hex: &str) -> Result<()> {
+    let data = fs::read(path)
+        .with_context(|| format!("Failed to read {} for integrity check", path.display()))?;
+    let mut hasher = Sha256::new();
+    hasher.update(&data);
+    let actual_hex = hex::encode(hasher.finalize());
+    if actual_hex != expected_hex {
+        return Err(anyhow!(
+            "Integrity check failed for {}: expected {}…, got {}…",
+            path.display(),
+            &expected_hex[..16.min(expected_hex.len())],
+            &actual_hex[..16]
+        ));
+    }
+    Ok(())
+}
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -52,8 +105,10 @@ pub fn check_model_files_exist() -> bool {
         && model_file.metadata().map(|m| m.len()).unwrap_or(0) > 100_000_000
 }
 
-fn emit_progress(app: &AppHandle, payload: DownloadProgressPayload) {
-    let _ = app.emit("offline-download-progress", payload);
+fn emit_progress(app: Option<&AppHandle>, payload: DownloadProgressPayload) {
+    if let Some(app) = app {
+        let _ = app.emit("offline-download-progress", payload);
+    }
 }
 
 pub fn cancel_download() {
@@ -93,11 +148,11 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
 
     let app_clone = app.clone();
     tokio::spawn(async move {
-        match perform_download(&app_clone).await {
+        match perform_download(Some(&app_clone)).await {
             Ok(_) => {
                 IS_DOWNLOADING.store(false, Ordering::SeqCst);
                 emit_progress(
-                    &app_clone,
+                    Some(&app_clone),
                     DownloadProgressPayload {
                         status: "completed".to_string(),
                         progress: 100.0,
@@ -120,7 +175,7 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
                 };
 
                 emit_progress(
-                    &app_clone,
+                    Some(&app_clone),
                     DownloadProgressPayload {
                         status,
                         progress: 0.0,
@@ -141,7 +196,7 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
     Ok(())
 }
 
-async fn perform_download(app: &AppHandle) -> Result<()> {
+async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
     let dest_dir = get_offline_dir();
     fs::create_dir_all(&dest_dir)?;
 
@@ -157,10 +212,11 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
     let client = &crate::http_client::CLIENT;
 
     // 1. Download sherpa-onnx archive
+    let archive_info = manifest_download("sherpa-onnx-win-x64.tar.bz2")?;
     let archive_path = dest_dir.join("sherpa-onnx-win-x64.tar.bz2");
     download_file_to_path(
         &client,
-        SHERPA_ONNX_URL,
+        &archive_info.url,
         &archive_path,
         "sherpa-onnx binaries",
         &mut bytes_downloaded,
@@ -168,6 +224,9 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
         app,
     )
     .await?;
+
+    // Verify archive integrity before extraction
+    verify_sha256(&archive_path, &archive_info.sha256)?;
 
     // 2. Extract sherpa-onnx archive using Windows built-in tar
     emit_progress(
@@ -205,15 +264,20 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
     // Copy binary and DLLs recursively
     copy_extracted_files(&temp_extract_dir, &dest_dir)?;
 
+    // Verify extracted executable integrity
+    let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe")?;
+    verify_sha256(&dest_dir.join("sherpa-onnx-offline-websocket-server.exe"), exe_hash)?;
+
     // Clean up extraction temp directory and tar archive
     let _ = fs::remove_dir_all(&temp_extract_dir);
     let _ = fs::remove_file(&archive_path);
 
     // 3. Download SenseVoice model.int8.onnx
+    let model_info = manifest_download("model.int8.onnx")?;
     let model_path = dest_dir.join("model.int8.onnx");
     download_file_to_path(
         &client,
-        SENSEVOICE_MODEL_URL,
+        &model_info.url,
         &model_path,
         "SenseVoice model",
         &mut bytes_downloaded,
@@ -221,12 +285,14 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
         app,
     )
     .await?;
+    verify_sha256(&model_path, &model_info.sha256)?;
 
     // 4. Download SenseVoice tokens.txt
+    let tokens_info = manifest_download("tokens.txt")?;
     let tokens_path = dest_dir.join("tokens.txt");
     download_file_to_path(
         &client,
-        SENSEVOICE_TOKENS_URL,
+        &tokens_info.url,
         &tokens_path,
         "SenseVoice tokens",
         &mut bytes_downloaded,
@@ -234,6 +300,7 @@ async fn perform_download(app: &AppHandle) -> Result<()> {
         app,
     )
     .await?;
+    verify_sha256(&tokens_path, &tokens_info.sha256)?;
 
     Ok(())
 }
@@ -245,7 +312,7 @@ async fn download_file_to_path(
     file_label: &str,
     bytes_downloaded: &mut u64,
     total_bytes: u64,
-    app: &AppHandle,
+    app: Option<&AppHandle>,
 ) -> Result<()> {
     if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
         return Err(anyhow!("Download cancelled by user"));
@@ -253,7 +320,13 @@ async fn download_file_to_path(
 
     log::info!("Downloading {} from {}", file_label, url);
     let tmp_path = dest_path.with_extension("tmp");
-    let mut response = client.get(url).send().await?;
+    // Large asset downloads (model ~239MB) need a generous per-request timeout
+    // independent of the shared client's 30s API-response timeout.
+    let mut response = client
+        .get(url)
+        .timeout(std::time::Duration::from_secs(600))
+        .send()
+        .await?;
 
     if !response.status().is_success() {
         return Err(anyhow!(
@@ -366,3 +439,172 @@ pub fn cancel_offline_download() {
 pub fn delete_offline_model() -> Result<u64, String> {
     delete_model_files().map_err(|e| e.to_string())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use sha2::{Digest, Sha256};
+    use std::io::Write;
+
+    #[test]
+    fn manifest_loads_successfully() {
+        let m = &*MANIFEST;
+        assert!(!m.sherpa_version.is_empty());
+        assert!(!m.downloads.is_empty());
+        assert!(!m.expected_binaries.is_empty());
+    }
+
+    #[test]
+    fn manifest_has_all_required_downloads() {
+        let filenames: Vec<&str> = MANIFEST.downloads.iter().map(|d| d.filename.as_str()).collect();
+        assert!(filenames.contains(&"sherpa-onnx-win-x64.tar.bz2"));
+        assert!(filenames.contains(&"model.int8.onnx"));
+        assert!(filenames.contains(&"tokens.txt"));
+    }
+
+    #[test]
+    fn manifest_download_lookup() {
+        let dl = manifest_download("sherpa-onnx-win-x64.tar.bz2").unwrap();
+        assert!(dl.url.starts_with("https://"));
+        assert!(!dl.sha256.is_empty());
+    }
+
+    #[test]
+    fn manifest_download_lookup_missing() {
+        assert!(manifest_download("nonexistent.zip").is_err());
+    }
+
+    #[test]
+    fn manifest_binary_hash_lookup() {
+        let hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe").unwrap();
+        assert_eq!(hash.len(), 64);
+    }
+
+    #[test]
+    fn manifest_binary_hash_lookup_missing() {
+        assert!(manifest_binary_hash("nonexistent.exe").is_err());
+    }
+
+    #[test]
+    fn verify_sha256_correct_hash() {
+        let dir = std::env::temp_dir().join("fluence_test_verify");
+        let _ = fs::create_dir_all(&dir);
+        let file_path = dir.join("test_input.bin");
+        let content = b"hello world fluence security test";
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.write_all(content).unwrap();
+        f.flush().unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(content);
+        let expected = hex::encode(hasher.finalize());
+
+        assert!(verify_sha256(&file_path, &expected).is_ok());
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn verify_sha256_wrong_hash() {
+        let dir = std::env::temp_dir().join("fluence_test_verify_fail");
+        let _ = fs::create_dir_all(&dir);
+        let file_path = dir.join("test_input.bin");
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.write_all(b"some data").unwrap();
+        f.flush().unwrap();
+
+        let wrong_hash = "0000000000000000000000000000000000000000000000000000000000000000";
+        assert!(verify_sha256(&file_path, wrong_hash).is_err());
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    #[test]
+    fn verify_sha256_missing_file() {
+        let fake = Path::new("C:\\nonexistent\\file\\that\\does\\not\\exist.bin");
+        assert!(verify_sha256(fake, "abcd").is_err());
+    }
+
+    #[test]
+    fn verify_sha256_empty_file() {
+        let dir = std::env::temp_dir().join("fluence_test_verify_empty");
+        let _ = fs::create_dir_all(&dir);
+        let file_path = dir.join("empty.bin");
+        let mut f = fs::File::create(&file_path).unwrap();
+        f.flush().unwrap();
+
+        let mut hasher = Sha256::new();
+        hasher.update(b"");
+        let expected = hex::encode(hasher.finalize());
+
+        assert!(verify_sha256(&file_path, &expected).is_ok());
+        let _ = fs::remove_file(&file_path);
+        let _ = fs::remove_dir(&dir);
+    }
+
+    /// END-TO-END: delete the offline model directory, then run the FULL
+    /// download + SHA-256 verification flow against the real network and the
+    /// pinned manifest. After success, confirm files exist and re-verify hashes.
+    #[tokio::test]
+    async fn e2e_delete_and_redownload_with_integrity() {
+        // 1. Delete any existing model files
+        let _ = delete_model_files();
+        assert!(
+            !get_offline_dir().exists()
+                || get_offline_dir()
+                    .read_dir()
+                    .map(|mut d| d.next().is_none())
+                    .unwrap_or(true),
+            "offline dir should be empty after delete"
+        );
+
+        // 2. Run the full download + verification flow (no GUI handle needed)
+        let result = perform_download(None).await;
+        assert!(result.is_ok(), "full download+verify failed: {:?}", result.err());
+
+        // 3. Confirm files exist and pass integrity checks
+        assert!(check_model_files_exist(), "model files missing after download");
+
+        let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("sherpa-onnx-offline-websocket-server.exe"), exe_hash).is_ok());
+
+        let model_info = manifest_download("model.int8.onnx").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("model.int8.onnx"), &model_info.sha256).is_ok());
+
+        let tokens_info = manifest_download("tokens.txt").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("tokens.txt"), &tokens_info.sha256).is_ok());
+    }
+}
+
+    /// END-TO-END: delete the offline model directory, then run the FULL
+    /// download + SHA-256 verification flow against the real network and the
+    /// pinned manifest. After success, confirm files exist and re-verify hashes.
+    #[tokio::test]
+    async fn e2e_delete_and_redownload_with_integrity() {
+        // 1. Delete any existing model files
+        let _ = delete_model_files();
+        assert!(
+            !get_offline_dir().exists()
+                || get_offline_dir()
+                    .read_dir()
+                    .map(|mut d| d.next().is_none())
+                    .unwrap_or(true),
+            "offline dir should be empty after delete"
+        );
+
+        // 2. Run the full download + verification flow (no GUI handle needed)
+        let result = perform_download(None).await;
+        assert!(result.is_ok(), "full download+verify failed: {:?}", result.err());
+
+        // 3. Confirm files exist and pass integrity checks
+        assert!(check_model_files_exist(), "model files missing after download");
+
+        let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("sherpa-onnx-offline-websocket-server.exe"), exe_hash).is_ok());
+
+        let model_info = manifest_download("model.int8.onnx").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("model.int8.onnx"), &model_info.sha256).is_ok());
+
+        let tokens_info = manifest_download("tokens.txt").unwrap();
+        assert!(verify_sha256(&get_offline_dir().join("tokens.txt"), &tokens_info.sha256).is_ok());
+    }

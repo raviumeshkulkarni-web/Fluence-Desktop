@@ -101,6 +101,7 @@ function populateUI(s) {
   setSelectValue('overlay-position-select', s.overlay_position || 'bottom_right');
   setSelectValue('language-select', s.language || 'en');
   setChecked('autostart-cb', s.auto_start || false);
+  setChecked('duck-cb', s.duck_enabled || false);
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
   setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
@@ -694,6 +695,7 @@ async function saveGeneral() {
   currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
   currentSettings.auto_learn_enabled = document.getElementById('auto-learn-cb')?.checked ?? true;
+  currentSettings.duck_enabled = document.getElementById('duck-cb')?.checked ?? false;
 
   try {
     await invoke('update_settings', { settings: currentSettings });

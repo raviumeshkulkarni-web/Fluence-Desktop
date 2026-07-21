@@ -16,6 +16,7 @@ mod auto_learn;
 mod clipboard;
 mod credentials;
 mod dictionary;
+mod ducking;
 mod history;
 mod hotkey;
 mod http_client;
@@ -80,6 +81,9 @@ pub fn run() {
 
             // Load settings
             let app_settings = settings::load_settings().unwrap_or_default();
+
+            // Recover any background-app audio left ducked by a prior crash.
+            ducking::replay_on_launch();
 
             // Expire stale suggestions at startup
             if app_settings.auto_learn_enabled {
@@ -191,7 +195,13 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Fluence");
 
-    app.run(|_app, _event| {});
+    app.run(|_app, event| {
+        // Tray Quit calls app.exit(0), which fires ExitRequested. Window close only hides
+        // to tray, so this is the only real exit — un-duck before the process leaves.
+        if let tauri::RunEvent::ExitRequested { .. } = event {
+            ducking::restore();
+        }
+    });
 }
 
 fn main() {

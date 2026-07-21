@@ -12,6 +12,7 @@ pub mod auto_learn;
 pub mod clipboard;
 pub mod credentials;
 pub mod dictionary;
+pub mod ducking;
 pub mod history;
 pub mod hotkey;
 pub mod http_client;

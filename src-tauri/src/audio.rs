@@ -329,7 +329,14 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
         // Wait up to 3s for stream to be ready
         match tokio::time::timeout(std::time::Duration::from_secs(3), ready_rx).await {
-            Ok(Ok(())) => Ok(()),
+            Ok(Ok(())) => {
+                // Stream is live and capturing — duck background apps if enabled.
+                let s = crate::settings::load_settings().unwrap_or_default();
+                if s.duck_enabled {
+                    crate::ducking::duck(s.duck_level);
+                }
+                Ok(())
+            }
             Ok(Err(_)) => {
                 RECORDING.store(false, Ordering::SeqCst);
                 Err("Audio stream closed unexpectedly".to_string())
@@ -614,6 +621,8 @@ fn encode_flac_samples(
 }
 
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
+    // Un-duck background apps on every exit path (errors, early returns) via RAII.
+    let _restore_guard = crate::ducking::restore_guard();
     let stop_request_time = std::time::Instant::now();
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
@@ -907,6 +916,8 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 }
 
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
+    // Un-duck background apps on every exit path (errors, early returns) via RAII.
+    let _restore_guard = crate::ducking::restore_guard();
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
     // the final syllable lands in the buffer while the stream is still fully active.

@@ -80,6 +80,10 @@ pub struct AppSettings {
     pub auto_grab_highlight: bool,
     #[serde(default = "default_true")]
     pub auto_learn_enabled: bool,
+    #[serde(default = "default_false")]
+    pub duck_enabled: bool,
+    #[serde(default = "default_duck_level")]
+    pub duck_level: f32,
 }
 
 fn default_hotkey() -> String {
@@ -114,6 +118,9 @@ fn default_agent_recording_mode() -> String {
 }
 fn default_ai_polish_style() -> String {
     "none".to_string()
+}
+fn default_duck_level() -> f32 {
+    0.0
 }
 
 fn default_stt_provider() -> ProviderConfig {
@@ -153,6 +160,8 @@ impl Default for AppSettings {
             ai_polish_style: default_ai_polish_style(),
             auto_grab_highlight: default_true(),
             auto_learn_enabled: default_true(),
+            duck_enabled: default_false(),
+            duck_level: default_duck_level(),
         }
     }
 }

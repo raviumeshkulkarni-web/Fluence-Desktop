@@ -656,6 +656,15 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
         }
     }
 
+    let rms = rms_amplitude(&samples);
+    if rms < SILENCE_RMS_THRESHOLD {
+        log::info!(
+            "Recording is silence (RMS {:.5}). Discarding to avoid STT hallucination.",
+            rms
+        );
+        return Ok(Vec::new());
+    }
+
     let process_start = std::time::Instant::now();
 
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
@@ -747,6 +756,15 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
             );
             return Ok(Vec::new());
         }
+    }
+
+    let rms = rms_amplitude(&samples);
+    if rms < SILENCE_RMS_THRESHOLD {
+        log::info!(
+            "Recording is silence (RMS {:.5}). Discarding to avoid STT hallucination.",
+            rms
+        );
+        return Ok(Vec::new());
     }
 
     let process_start = std::time::Instant::now();
@@ -859,6 +877,15 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
         }
     }
 
+    let rms = rms_amplitude(&samples);
+    if rms < SILENCE_RMS_THRESHOLD {
+        log::info!(
+            "Recording is silence (RMS {:.5}). Discarding to avoid STT hallucination.",
+            rms
+        );
+        return Ok(Vec::new());
+    }
+
     let process_start = std::time::Instant::now();
 
     // Preserve native sample rate and use lossless FLAC encode for the online path.
@@ -954,6 +981,15 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
             );
             return Ok(Vec::new());
         }
+    }
+
+    let rms = rms_amplitude(&samples);
+    if rms < SILENCE_RMS_THRESHOLD {
+        log::info!(
+            "Recording is silence (RMS {:.5}). Discarding to avoid STT hallucination.",
+            rms
+        );
+        return Ok(Vec::new());
     }
 
     let process_start = std::time::Instant::now();
@@ -1090,6 +1126,20 @@ pub async fn stop_recording() -> Result<String, String> {
     Ok(b64)
 }
 
+/// RMS below this (~-46 dBFS) means no speech was captured — only the mic noise
+/// floor. Without this gate, peak normalization amplifies that noise to near full
+/// scale and Whisper-style models hallucinate stock phrases on silent input
+/// ("Gracias.", "Thank you.").
+const SILENCE_RMS_THRESHOLD: f32 = 0.005;
+
+fn rms_amplitude(samples: &[f32]) -> f32 {
+    if samples.is_empty() {
+        return 0.0;
+    }
+    let sum_squares: f64 = samples.iter().map(|&s| (s as f64) * (s as f64)).sum();
+    (sum_squares / samples.len() as f64).sqrt() as f32
+}
+
 /// Check if currently recording
 #[tauri::command]
 pub fn is_recording() -> bool {
@@ -1103,6 +1153,29 @@ mod tests {
     use std::sync::atomic::Ordering;
 
     static TEST_LOCK: Lazy<Mutex<()>> = Lazy::new(|| Mutex::new(()));
+
+    #[test]
+    fn test_rms_separates_silence_from_speech() {
+        assert!(rms_amplitude(&vec![0.001f32; 1000]) < SILENCE_RMS_THRESHOLD);
+        assert!(rms_amplitude(&vec![0.1f32; 1000]) > SILENCE_RMS_THRESHOLD);
+        assert_eq!(rms_amplitude(&[]), 0.0);
+    }
+
+    #[tokio::test]
+    async fn test_silent_recording_discarded() {
+        let _guard = TEST_LOCK.lock().unwrap();
+        NATIVE_SAMPLE_RATE.store(48000, Ordering::SeqCst);
+        NATIVE_CHANNELS.store(2, Ordering::SeqCst);
+
+        // 1 second of mic noise floor — a quick hotkey tap with no speech
+        *AUDIO_BUFFER.lock().unwrap() = vec![0.001f32; 48000 * 2];
+
+        let bytes = stop_recording_wav_bytes().await.unwrap();
+        assert!(
+            bytes.is_empty(),
+            "silent audio must be discarded, not sent to STT"
+        );
+    }
 
     #[tokio::test]
     async fn test_resample_perf() {

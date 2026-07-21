@@ -81,6 +81,8 @@ pub fn run() {
             // Load settings
             let app_settings = settings::load_settings().unwrap_or_default();
 
+            autostart::sync_autostart_on_launch(&app_settings);
+
             // Expire stale suggestions at startup
             if app_settings.auto_learn_enabled {
                 match suggestion::expire_stale_suggestions() {

@@ -176,13 +176,9 @@ pub async fn transcribe_samples(samples: Vec<f32>) -> Result<String> {
         .await
         .map_err(|e| anyhow!("Failed to send audio to ASR server: {}", e))?;
 
-    // Send "Done" text immediately to instruct server to finalize ASR context
-    ws_stream
-        .send(tokio_tungstenite::tungstenite::Message::Text(
-            "Done".to_string(),
-        ))
-        .await
-        .map_err(|e| anyhow!("Failed to send Done signal to ASR server: {}", e))?;
+    // Per sherpa-onnx protocol: server decodes after receiving all bytes,
+    // sends text result, THEN client sends "Done" to close.
+    // Do NOT send "Done" before receiving the result — it closes the connection.
 
     let mut result_text = String::new();
     while let Some(msg) = ws_stream.next().await {
@@ -190,6 +186,7 @@ pub async fn transcribe_samples(samples: Vec<f32>) -> Result<String> {
         match msg {
             tokio_tungstenite::tungstenite::Message::Text(text) => {
                 result_text = text;
+                break;
             }
             tokio_tungstenite::tungstenite::Message::Close(_) => {
                 break;
@@ -197,6 +194,14 @@ pub async fn transcribe_samples(samples: Vec<f32>) -> Result<String> {
             _ => {}
         }
     }
+
+    // Now send "Done" to cleanly close the connection
+    let _ = ws_stream
+        .send(tokio_tungstenite::tungstenite::Message::Text(
+            "Done".to_string(),
+        ))
+        .await;
+    let _ = ws_stream.close(None).await;
 
     #[derive(serde::Deserialize)]
     struct AsrResponse {

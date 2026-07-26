@@ -457,13 +457,12 @@ pub fn process_audio_samples(
     native_sample_rate: u32,
     native_channels: usize,
 ) -> (Vec<f32>, u32) {
-    // 1. Downmix multi-channel stream to mono by taking the first channel.
-    // This avoids phase cancellation issues that occur when averaging
-    // inverted channels in professional hardware.
+    // 1. Downmix multi-channel stream to mono by averaging all channels.
     let mono_samples = if native_channels > 1 {
         let mut v = Vec::with_capacity(samples.len() / native_channels);
         for chunk in samples.chunks_exact(native_channels) {
-            v.push(chunk[0]);
+            let sum: f32 = chunk.iter().sum();
+            v.push(sum / native_channels as f32);
         }
         v
     } else {
@@ -489,10 +488,20 @@ pub fn process_audio_samples(
     };
     let dc_removed: Vec<f32> = resampled.iter().map(|&s| s - avg).collect();
 
+    // 4. Peak Normalization (match online pipeline)
+    // Boosts quiet microphone inputs so sherpa-onnx can detect speech.
+    let peak = dc_removed.iter().map(|&s| s.abs()).fold(0.0f32, f32::max);
+    let normalized = if peak > 0.005 && peak < 0.98 {
+        let scale = 0.9 / peak;
+        dc_removed.iter().map(|&s| s * scale).collect::<Vec<f32>>()
+    } else {
+        dc_removed
+    };
+
     // Note: Silence padding removed to prevent artificial tail clipping by VAD.
     // The OS buffer sleep in the stop logic already captures trailing syllables.
 
-    (dc_removed, final_sample_rate)
+    (normalized, final_sample_rate)
 }
 
 pub fn process_audio_samples_online(

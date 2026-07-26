@@ -28,9 +28,9 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 16px;
-  background: rgba(13, 17, 23, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35), inset 0 1px 0 rgba(255, 255, 255, 0.04);
+  background: rgba(13, 17, 23, 0.97);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  box-shadow: none;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   overflow: hidden;
@@ -56,11 +56,11 @@ body {
 @keyframes breathe {
   0%, 100% {
     scale: 1;
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
+    box-shadow: none;
   }
   50% {
     scale: 1.008;
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.40);
+    box-shadow: none;
   }
 }
 
@@ -70,29 +70,36 @@ body {
 
 /* ── Active (Expanded) State ───────────────────────────────────── */
 .overlay-root.active {
-  width: 268px;
-  height: 72px;
-  opacity: 0.98;
+  width: 360px;
+  height: 88px;
+  opacity: 0.97;
   scale: 1;
-  border-radius: 28px;
-  padding: 8px 14px;
+  border-radius: 16px;
 }
 
-/* Transcribe mode surface — 98% opaque dark matte with ultra-subtle top border highlight */
+/* Transcribe mode surface — purple tint */
 .overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
-  background: rgba(13, 17, 23, 0.98);
-  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.02) 0%,
+    rgba(13, 17, 23, 0.90) 40%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
 }
 
-/* Agent mode surface — 98% opaque dark matte with ultra-subtle teal top border highlight */
+/* Agent mode surface — teal tint */
 .overlay-root.state-agent.active,
 .overlay-root.state-agent_transcribing.active {
-  background: rgba(13, 17, 23, 0.98);
-  border: 1px solid rgba(34, 211, 238, 0.15);
+  background: linear-gradient(
+    180deg,
+    rgba(34, 211, 238, 0.05) 0%,
+    rgba(13, 17, 23, 0.90) 40%,
+    rgba(0, 0, 0, 0.45) 100%
+  );
 }
 
 .overlay-root.active:hover {
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  box-shadow: none;
 }
 
 /* ── Entry / Exit Animations ──────────────────────────────────── */
@@ -107,7 +114,7 @@ body {
     scale: 0.95;
   }
   100% {
-    opacity: 0.98;
+    opacity: 0.97;
     scale: 1;
   }
 }
@@ -120,7 +127,7 @@ body {
 
 @keyframes palette-exit {
   0% {
-    opacity: 0.98;
+    opacity: 0.97;
     scale: 1;
   }
   100% {
@@ -136,8 +143,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px;
-  height: 20px;
+  padding: 0 16px;
+  height: 32px;
   flex-shrink: 0;
   background: transparent;
   opacity: 0;
@@ -150,14 +157,12 @@ body {
 
 /* Row 2: Waveform */
 .card-waveform {
-  height: 22px;
-  flex: none;
+  flex: 1;
   position: relative;
   background: transparent;
   opacity: 0;
   transition: opacity 150ms ease;
-  margin: 3px 0;
-  overflow: hidden;
+  min-height: 0;
 }
 
 .overlay-root.active .card-waveform {
@@ -178,8 +183,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 2px;
-  height: 18px;
+  padding: 0 16px;
+  height: 28px;
   flex-shrink: 0;
   background: transparent;
   opacity: 0;
@@ -195,15 +200,15 @@ body {
 .card-rec {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
 }
 
 .rec-dot {
-  width: 8px;
-  height: 8px;
+  width: 10px;
+  height: 10px;
   border-radius: 50%;
   background: #A855F7;
-  box-shadow: 0 0 4px rgba(168, 85, 247, 0.25);
+  box-shadow: 0 0 8px rgba(168, 85, 247, 0.35);
   animation: rec-pulse 1.2s ease-in-out infinite;
 }
 
@@ -214,8 +219,8 @@ body {
 
 .rec-label {
   font-family: 'Inter', var(--font-body), system-ui, sans-serif;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 13px;
+  font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: #E6E6E6;
@@ -224,12 +229,12 @@ body {
 /* ── Mode Badge ────────────────────────────────────────────────── */
 .mode-badge {
   font-family: 'Inter', var(--font-body), system-ui, sans-serif;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.03em;
   text-transform: uppercase;
-  padding: 2px 8px;
-  border-radius: 4px;
+  padding: 4px 10px;
+  border-radius: 6px;
   background: rgba(168, 85, 247, 0.15);
   color: #A855F7;
 }
@@ -244,7 +249,7 @@ body {
 /* ── Timer ─────────────────────────────────────────────────────── */
 .card-timer {
   font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 12px;
+  font-size: 14px;
   font-weight: 500;
   color: #A1A1AA;
   letter-spacing: 0.02em;

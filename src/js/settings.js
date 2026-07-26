@@ -16,7 +16,7 @@ const { listen } = window.__TAURI__.event;
 
 // ── State ───────────────────────────────────────────────────────
 let currentSettings = null;
-let currentPage = 'general';
+let currentPage = 'history';
 let historyPage = 0;
 let activeRecorder = null;
 let pendingHotkey = '';
@@ -55,11 +55,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
+  loadDashboardStats();
 
   // Refresh data when window is focused
   window.addEventListener('focus', () => {
     if (currentPage === 'history') {
       loadHistory(true);
+      loadDashboardStats();
     }
   });
 });
@@ -129,7 +131,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['general', 'providers', 'dictionary', 'history', 'about'];
+const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -179,7 +181,10 @@ function _performNavigation(page) {
   });
 
   // Lazy load data for specific pages
-  if (page === 'history') loadHistory(true);
+  if (page === 'history') {
+    loadHistory(true);
+    loadDashboardStats();
+  }
   if (page === 'dictionary') {
     loadDictionary();
     loadSuggestions();
@@ -488,10 +493,6 @@ async function loadHistory(reset, search = '') {
       searchQuery: search || null,
     });
 
-    const stats = await invoke('get_history_stats');
-    const label = document.getElementById('history-count-label');
-    if (label) label.textContent = `${stats.total_entries} transcriptions · ${stats.total_chars.toLocaleString()} chars`;
-
     const list = document.getElementById('history-list');
     const emptyEl = document.getElementById('history-empty');
 
@@ -510,6 +511,111 @@ async function loadHistory(reset, search = '') {
     if (loadMore) loadMore.classList.toggle('hidden', entries.length < 50);
   } catch (err) {
     showToast('Failed to load history: ' + err, 'error');
+  }
+}
+
+async function loadDashboardStats() {
+  try {
+    // Fetch all history entries (loop pages of 50) to compute stats
+    let allEntries = [];
+    let page = 0;
+    while (true) {
+      const batch = await invoke('get_history', { page, searchQuery: null });
+      allEntries = allEntries.concat(batch);
+      if (batch.length < 50) break;
+      page++;
+    }
+
+    // Total words
+    let totalWords = 0;
+    let weeklyCount = 0;
+    let monthlyCount = 0;
+    let weeklyDurationMs = 0;
+    let weeklyWords = 0;
+    let monthlyWords = 0;
+    const now = Date.now();
+    const sevenDaysAgo = now - 7 * 86400000;
+    const thirtyDaysAgo = now - 30 * 86400000;
+
+    for (const e of allEntries) {
+      const words = e.text.split(/\s+/).filter(Boolean).length;
+      totalWords += words;
+      const ts = new Date(e.timestamp).getTime();
+      if (ts >= sevenDaysAgo) { weeklyCount++; weeklyDurationMs += e.duration_ms; weeklyWords += words; }
+      if (ts >= thirtyDaysAgo) { monthlyCount++; monthlyWords += words; }
+    }
+
+    if (totalWords >= 1000000) {
+      setText('stat-total-words', (totalWords / 1000000).toFixed(1) + 'M');
+    } else if (totalWords >= 1000) {
+      setText('stat-total-words', (totalWords / 1000).toFixed(1) + 'K');
+    } else {
+      setText('stat-total-words', totalWords.toLocaleString());
+    }
+
+    // Time saved from backend stats (estimated typing time: ~40 WPM average)
+    const bStats = await invoke('get_history_stats');
+    const typingMinutesSaved = totalWords / 40;
+    const savedHours = typingMinutesSaved / 60;
+    if (savedHours >= 1) {
+      setText('stat-time-saved', savedHours.toFixed(1) + 'h');
+    } else {
+      setText('stat-time-saved', Math.round(typingMinutesSaved) + 'm');
+    }
+
+    // Dictation time (actual recording duration)
+    const dictationHours = bStats.total_duration_ms / 3600000;
+    if (dictationHours >= 1) {
+      setText('stat-dictation-time', dictationHours.toFixed(1) + 'h');
+    } else {
+      setText('stat-dictation-time', Math.round(bStats.total_duration_ms / 60000) + 'm');
+    }
+
+    const monthlyHoursSaved = (monthlyWords / 40 / 60);
+    if (monthlyHoursSaved >= 1) {
+      setText('stat-monthly-saved', monthlyHoursSaved.toFixed(1) + 'h');
+    } else {
+      setText('stat-monthly-saved', Math.round(monthlyWords / 40) + 'm');
+    }
+
+    // Weekly activity bar chart
+    const now2 = new Date();
+    const dayOfWeek = now2.getDay();
+    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+    const monday = new Date(now2);
+    monday.setDate(now2.getDate() - mondayOffset);
+    monday.setHours(0, 0, 0, 0);
+
+    const timestamps = await invoke('get_weekly_activity', { startOfWeekUtc: monday.toISOString() });
+
+    const dayCounts = [0, 0, 0, 0, 0, 0, 0];
+    timestamps.forEach(ts => {
+      const d = new Date(ts);
+      const dow = d.getDay();
+      dayCounts[dow === 0 ? 6 : dow - 1]++;
+    });
+
+    const maxCount = Math.max(...dayCounts, 1);
+    let chartTotal = 0;
+    for (let i = 0; i < 7; i++) {
+      const bar = document.getElementById(`chart-bar-${i}`);
+      const countEl = document.getElementById(`chart-count-${i}`);
+      if (bar) {
+        const pct = (dayCounts[i] / maxCount) * 100;
+        bar.style.setProperty('--bar-val', pct + '%');
+        bar.classList.toggle('animated', dayCounts[i] > 0);
+      }
+      if (countEl) countEl.textContent = dayCounts[i];
+      chartTotal += dayCounts[i];
+    }
+    const weeklyHoursSaved = (weeklyWords / 40 / 60);
+    const weeklyDictationHours = (weeklyDurationMs / 3600000);
+    const weeklyWordsLabel = weeklyWords >= 1000 ? (weeklyWords / 1000).toFixed(1) + 'K' : weeklyWords.toLocaleString();
+    const weeklySavedLabel = weeklyHoursSaved >= 1 ? weeklyHoursSaved.toFixed(1) + 'h saved' : Math.round(weeklyHoursSaved * 60) + 'm saved';
+    const weeklyDictLabel = weeklyDictationHours >= 1 ? weeklyDictationHours.toFixed(1) + 'h spoken' : Math.round(weeklyDictationHours * 60) + 'm spoken';
+    setText('chart-header-count', weeklyWordsLabel + ' words · ' + weeklySavedLabel + ' · ' + weeklyDictLabel);
+  } catch (err) {
+    console.error('Failed to load dashboard stats:', err);
   }
 }
 
@@ -675,6 +781,7 @@ async function listenForTauriEvents() {
   await listen('history-updated', () => {
     if (currentPage === 'history') {
       loadHistory(true);
+      loadDashboardStats();
     }
   });
 }

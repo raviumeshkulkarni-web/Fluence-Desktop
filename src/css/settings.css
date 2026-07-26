@@ -443,23 +443,21 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 /* ── Stats KPI Cards ───────────────────────────────────────────── */
 .stats-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: var(--spacing-lg);
-  margin-top: var(--spacing-lg);
-  margin-bottom: var(--spacing-lg);
+  grid-template-columns: repeat(4, 1fr);
+  gap: var(--spacing-md);
 }
 
 .stat-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-xl);
-  padding: var(--spacing-xl) var(--spacing-lg);
+  padding: var(--spacing-lg) var(--spacing-md);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
   text-align: center;
-  min-height: 200px;
+  min-height: 140px;
   transition: var(--transition-fast);
 }
 
@@ -469,10 +467,10 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 
 .stat-value {
   font-family: var(--font-display);
-  font-size: 48px;
+  font-size: 36px;
   font-weight: 600;
   color: var(--color-on-surface);
-  margin-bottom: var(--spacing-sm);
+  margin-bottom: var(--spacing-xs);
   letter-spacing: -0.02em;
 }
 
@@ -495,25 +493,29 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  height: 140px;
-  padding: var(--spacing-md) var(--spacing-sm);
+  height: 160px;
+  padding: var(--spacing-lg) var(--spacing-xl);
   background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-border-muted);
   border-radius: var(--radius-lg);
+  margin: var(--spacing-md);
 }
 
 .chart-bar-col {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: var(--spacing-sm);
+  gap: 6px;
   flex-grow: 1;
+  height: 100%;
+  justify-content: flex-end;
 }
 
 .chart-bar {
-  width: 28px;
+  width: 100%;
+  max-width: 40px;
   height: 0;
-  background: rgba(255, 255, 255, 0.18);
+  background: linear-gradient(180deg, rgba(139, 69, 216, 0.55), rgba(139, 69, 216, 0.12));
   border-radius: var(--radius-xs);
   transition: height 0.6s var(--ease-standard);
   opacity: 0.7;
@@ -524,10 +526,22 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   opacity: 1;
 }
 
+.chart-bar-count {
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-on-surface-variant);
+  min-height: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .chart-bar-col span {
   font-family: var(--font-label);
   font-size: 10px;
   color: var(--color-ink-muted);
+  flex-shrink: 0;
 }
 
 /* ── Dictionary Table ──────────────────────────────────────────── */

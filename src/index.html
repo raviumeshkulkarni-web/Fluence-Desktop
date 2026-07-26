@@ -42,8 +42,13 @@
       <span class="logo-text" style="font-weight:700;font-size:22px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:20px;margin-left:6px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></span>
     </div>
 
-    <span class="nav-section-label">Configuration</span>
-    <div class="nav-item active" data-page="general" id="nav-general">
+    <span class="nav-section-label">Home</span>
+    <div class="nav-item active" data-page="history" id="nav-history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+      Dashboard
+    </div>
+    <span class="nav-section-label" style="margin-top:8px;">Configuration</span>
+    <div class="nav-item" data-page="general" id="nav-general">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
       General
     </div>
@@ -54,11 +59,6 @@
     <div class="nav-item" data-page="dictionary" id="nav-dictionary">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       Dictionary
-    </div>
-    <span class="nav-section-label" style="margin-top:8px;">Data</span>
-    <div class="nav-item" data-page="history" id="nav-history">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="9"/></svg>
-      History
     </div>
     <div class="nav-item" data-page="about" id="nav-about">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -74,7 +74,7 @@
   <main class="content-area" role="main">
 
     <!-- ===== GENERAL PAGE ===== -->
-    <section class="page active" id="page-general">
+    <section class="page" id="page-general">
       <div class="page-header">
         <h1 class="page-title">General</h1>
         <p class="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
@@ -515,15 +515,57 @@
     </section>
 
     <!-- ===== HISTORY PAGE ===== -->
-    <section class="page" id="page-history">
+    <section class="page active" id="page-history">
       <div class="page-header">
-        <h1 class="page-title">Transcription History</h1>
-        <p class="page-subtitle">Browse, search, and copy past voice transcriptions</p>
+        <h1 class="page-title">Dashboard</h1>
+        <p class="page-subtitle">Your transcription activity at a glance</p>
       </div>
 
+      <!-- Hero Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-value" id="stat-total-words">0</div>
+          <div class="stat-label">Words Brought to Life</div>
+          <div class="stat-sub">till today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-time-saved">0h</div>
+          <div class="stat-label">Typing Time Saved</div>
+          <div class="stat-sub">till today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-dictation-time">0h</div>
+          <div class="stat-label">Dictation Time</div>
+          <div class="stat-sub">till today</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-value" id="stat-monthly-saved">0h</div>
+          <div class="stat-label">Typing Time Saved</div>
+          <div class="stat-sub">in last 30 days</div>
+        </div>
+      </div>
+
+      <!-- Weekly Activity Chart -->
+      <div class="settings-section">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <span>Weekly Activity</span>
+          <span id="chart-header-count" style="font-size:12px;font-weight:400;text-transform:none;letter-spacing:0;">Loading...</span>
+        </div>
+        <div class="bar-chart-container" id="weekly-chart">
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-0">0</div><div class="chart-bar" id="chart-bar-0"></div><span>Mon</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-1">0</div><div class="chart-bar" id="chart-bar-1"></div><span>Tue</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-2">0</div><div class="chart-bar" id="chart-bar-2"></div><span>Wed</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-3">0</div><div class="chart-bar" id="chart-bar-3"></div><span>Thu</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-4">0</div><div class="chart-bar" id="chart-bar-4"></div><span>Fri</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-5">0</div><div class="chart-bar" id="chart-bar-5"></div><span>Sat</span></div>
+          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-6">0</div><div class="chart-bar" id="chart-bar-6"></div><span>Sun</span></div>
+        </div>
+      </div>
+
+      <!-- Recent History -->
       <div class="settings-section" style="overflow:hidden;">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <span id="history-count-label">Loading...</span>
+          <span>Recent Transcriptions</span>
           <button class="btn-danger" id="clear-history-btn" style="padding:4px 12px;font-size:12px;">Clear All</button>
         </div>
         <div class="search-wrapper">
@@ -532,7 +574,7 @@
         </div>
         <div id="history-list" style="max-height:400px;overflow-y:auto;">
           <div style="padding:var(--spacing-xl);text-align:center;color:var(--color-outline);font-style:italic;" id="history-empty">
-            No transcription history yet.
+            No transcription history yet. Start speaking to see your transcriptions here.
           </div>
         </div>
         <div style="padding:var(--spacing-md);display:flex;justify-content:center;" id="history-load-more" class="hidden">

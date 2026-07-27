@@ -184,6 +184,10 @@ pub fn run() {
             offline_downloader::get_offline_model_status,
             offline_downloader::cancel_offline_download,
             offline_downloader::delete_offline_model,
+            // Moonshine offline ASR
+            offline_downloader::download_moonshine_model,
+            offline_downloader::get_moonshine_model_status,
+            offline_downloader::delete_moonshine_model,
             // Suggestions (auto-learn)
             suggestion::get_suggestions,
             suggestion::accept_suggestion_command,

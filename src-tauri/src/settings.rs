@@ -84,6 +84,8 @@ pub struct AppSettings {
     pub duck_enabled: bool,
     #[serde(default = "default_duck_level")]
     pub duck_level: f32,
+    #[serde(default = "default_offline_engine")]
+    pub offline_engine: String, // "sensevoice" | "moonshine_base"
 }
 
 fn default_hotkey() -> String {
@@ -121,6 +123,9 @@ fn default_ai_polish_style() -> String {
 }
 fn default_duck_level() -> f32 {
     0.0
+}
+fn default_offline_engine() -> String {
+    "sensevoice".to_string()
 }
 
 fn default_stt_provider() -> ProviderConfig {
@@ -162,6 +167,7 @@ impl Default for AppSettings {
             auto_learn_enabled: default_true(),
             duck_enabled: default_false(),
             duck_level: default_duck_level(),
+            offline_engine: default_offline_engine(),
         }
     }
 }

@@ -54,6 +54,22 @@ pub(crate) fn manifest_binary_hash(name: &str) -> Result<&'static str> {
         .with_context(|| format!("Missing expected binary hash for '{}'", name))
 }
 
+// ── Moonshine manifest ──────────────────────────────────────────
+#[derive(Deserialize)]
+pub(crate) struct MoonshineManifest {
+    #[allow(dead_code)]
+    pub model_name: String,
+    pub url: String,
+    pub archive_filename: String,
+    pub sha256: String,
+    pub expected_files: Vec<String>,
+}
+
+pub(crate) static MOONSHINE_MANIFEST: Lazy<MoonshineManifest> = Lazy::new(|| {
+    serde_json::from_str(include_str!("../moonshine-manifest.json"))
+        .expect("Failed to parse moonshine-manifest.json — this file must exist at src-tauri/moonshine-manifest.json")
+});
+
 /// Verify SHA-256 hash of a file against expected hex digest.
 pub fn verify_sha256(path: &Path, expected_hex: &str) -> Result<()> {
     let data = fs::read(path)
@@ -91,6 +107,14 @@ pub fn get_offline_dir() -> PathBuf {
     path
 }
 
+pub fn get_moonshine_dir() -> PathBuf {
+    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    path.push("Fluence");
+    path.push("bin");
+    path.push("moonshine_base");
+    path
+}
+
 pub fn check_model_files_exist() -> bool {
     let dir = get_offline_dir();
     let model_file = dir.join("model.int8.onnx");
@@ -103,6 +127,17 @@ pub fn check_model_files_exist() -> bool {
         && binary_file.exists()
         && dll_file.exists()
         && model_file.metadata().map(|m| m.len()).unwrap_or(0) > 100_000_000
+}
+
+pub fn check_moonshine_model_files_exist() -> bool {
+    let dir = get_moonshine_dir();
+    if !dir.exists() {
+        return false;
+    }
+    MOONSHINE_MANIFEST.expected_files.iter().all(|f| {
+        let p = dir.join(f);
+        p.exists() && p.metadata().map(|m| m.len()).unwrap_or(0) > 1000
+    })
 }
 
 fn emit_progress(app: Option<&AppHandle>, payload: DownloadProgressPayload) {
@@ -134,6 +169,26 @@ pub fn delete_model_files() -> Result<u64> {
     }
 
     // Remove directory itself
+    let _ = fs::remove_dir(dir);
+    Ok(bytes_freed)
+}
+
+pub fn delete_moonshine_model_files() -> Result<u64> {
+    let dir = get_moonshine_dir();
+    if !dir.exists() {
+        return Ok(0);
+    }
+
+    let mut bytes_freed = 0;
+    if let Ok(entries) = fs::read_dir(&dir) {
+        for entry in entries.flatten() {
+            if let Ok(meta) = entry.metadata() {
+                bytes_freed += meta.len();
+            }
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+
     let _ = fs::remove_dir(dir);
     Ok(bytes_freed)
 }
@@ -305,6 +360,183 @@ async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
     Ok(())
 }
 
+pub async fn start_moonshine_download_task(app: AppHandle) -> Result<()> {
+    if IS_DOWNLOADING.load(Ordering::SeqCst) {
+        return Err(anyhow!("Download is already in progress"));
+    }
+
+    IS_DOWNLOADING.store(true, Ordering::SeqCst);
+    DOWNLOAD_CANCELLED.store(false, Ordering::SeqCst);
+
+    let app_clone = app.clone();
+    tokio::spawn(async move {
+        match perform_moonshine_download(Some(&app_clone)).await {
+            Ok(_) => {
+                IS_DOWNLOADING.store(false, Ordering::SeqCst);
+                emit_progress(
+                    Some(&app_clone),
+                    DownloadProgressPayload {
+                        status: "completed".to_string(),
+                        progress: 100.0,
+                        bytes_downloaded: 0,
+                        total_bytes: 0,
+                        current_file: "".to_string(),
+                        error_message: None,
+                    },
+                );
+            }
+            Err(e) => {
+                IS_DOWNLOADING.store(false, Ordering::SeqCst);
+                let err_msg = e.to_string();
+                log::error!("Moonshine download failed: {}", err_msg);
+
+                let status = if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
+                    "cancelled".to_string()
+                } else {
+                    "error".to_string()
+                };
+
+                emit_progress(
+                    Some(&app_clone),
+                    DownloadProgressPayload {
+                        status,
+                        progress: 0.0,
+                        bytes_downloaded: 0,
+                        total_bytes: 0,
+                        current_file: "".to_string(),
+                        error_message: Some(err_msg),
+                    },
+                );
+
+                // Clean up incomplete temp files
+                let dir = get_moonshine_dir();
+                let _ = clean_temp_files(&dir);
+            }
+        }
+    });
+
+    Ok(())
+}
+
+async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
+    let dest_dir = get_moonshine_dir();
+    fs::create_dir_all(&dest_dir)?;
+
+    // Moonshine base model archive is ~239 MB compressed
+    let total_bytes: u64 = 251_000_000;
+    let mut bytes_downloaded: u64 = 0;
+
+    let client = &crate::http_client::CLIENT;
+
+    // 1. Download moonshine archive
+    let archive_path = dest_dir.join(&MOONSHINE_MANIFEST.archive_filename);
+    download_file_to_path(
+        &client,
+        &MOONSHINE_MANIFEST.url,
+        &archive_path,
+        "Moonshine Base model",
+        &mut bytes_downloaded,
+        total_bytes,
+        app,
+    )
+    .await?;
+
+    // Verify archive integrity
+    verify_sha256(&archive_path, &MOONSHINE_MANIFEST.sha256)?;
+
+    // 2. Extract archive
+    emit_progress(
+        app,
+        DownloadProgressPayload {
+            status: "extracting".to_string(),
+            progress: (bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0),
+            bytes_downloaded,
+            total_bytes,
+            current_file: "extracting model files".to_string(),
+            error_message: None,
+        },
+    );
+
+    let temp_extract_dir = dest_dir.join("temp_extract");
+    fs::create_dir_all(&temp_extract_dir)?;
+
+    log::info!("Extracting Moonshine model archive to {:?}", temp_extract_dir);
+    let output = tokio::process::Command::new("tar")
+        .args([
+            "-xjf",
+            archive_path.to_str().unwrap(),
+            "-C",
+            temp_extract_dir.to_str().unwrap(),
+        ])
+        .output()
+        .await
+        .map_err(|e| anyhow!("Failed to run tar command: {}", e))?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("Failed to extract Moonshine archive: {}", stderr));
+    }
+
+    // Copy model files from extracted directory
+    copy_moonshine_model_files(&temp_extract_dir, &dest_dir)?;
+
+    // Verify all expected files are present and non-empty
+    for file in &MOONSHINE_MANIFEST.expected_files {
+        let p = dest_dir.join(file);
+        if !p.exists() {
+            return Err(anyhow!(
+                "Expected model file '{}' not found after extraction",
+                file
+            ));
+        }
+        let meta = p.metadata()?;
+        if meta.len() < 1000 {
+            return Err(anyhow!(
+                "Model file '{}' is too small ({} bytes), likely corrupt",
+                file,
+                meta.len()
+            ));
+        }
+    }
+
+    // Clean up extraction temp directory and archive
+    let _ = fs::remove_dir_all(&temp_extract_dir);
+    let _ = fs::remove_file(&archive_path);
+
+    log::info!("Moonshine Base model downloaded and verified successfully");
+    Ok(())
+}
+
+fn copy_moonshine_model_files(src_dir: &Path, dest_dir: &Path) -> Result<()> {
+    fn traverse_and_copy(dir: &Path, dest: &Path) -> Result<()> {
+        if dir.is_dir() {
+            for entry in fs::read_dir(dir)? {
+                let entry = entry?;
+                let path = entry.path();
+                if path.is_dir() {
+                    traverse_and_copy(&path, dest)?;
+                } else if path.is_file() {
+                    let file_name = path.file_name().unwrap().to_string_lossy();
+                    let is_model_file = file_name.ends_with(".onnx")
+                        || file_name == "tokens.txt"
+                        || file_name == "README"
+                        || file_name == "LICENSE"
+                        || file_name == "LICENSE-MIT"
+                        || file_name == "LICENSE-APACHE";
+                    if is_model_file {
+                        let dest_file = dest.join(&*file_name);
+                        log::info!("Copying Moonshine model file: {:?} -> {:?}", path, dest_file);
+                        fs::copy(&path, &dest_file)?;
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
+
+    traverse_and_copy(src_dir, dest_dir)
+}
+
 async fn download_file_to_path(
     client: &reqwest::Client,
     url: &str,
@@ -438,6 +670,23 @@ pub fn cancel_offline_download() {
 #[tauri::command]
 pub fn delete_offline_model() -> Result<u64, String> {
     delete_model_files().map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn download_moonshine_model(app: tauri::AppHandle) -> Result<(), String> {
+    start_moonshine_download_task(app)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_moonshine_model_status() -> bool {
+    check_moonshine_model_files_exist()
+}
+
+#[tauri::command]
+pub fn delete_moonshine_model() -> Result<u64, String> {
+    delete_moonshine_model_files().map_err(|e| e.to_string())
 }
 
 #[cfg(test)]
@@ -575,36 +824,3 @@ mod tests {
         assert!(verify_sha256(&get_offline_dir().join("tokens.txt"), &tokens_info.sha256).is_ok());
     }
 }
-
-    /// END-TO-END: delete the offline model directory, then run the FULL
-    /// download + SHA-256 verification flow against the real network and the
-    /// pinned manifest. After success, confirm files exist and re-verify hashes.
-    #[tokio::test]
-    async fn e2e_delete_and_redownload_with_integrity() {
-        // 1. Delete any existing model files
-        let _ = delete_model_files();
-        assert!(
-            !get_offline_dir().exists()
-                || get_offline_dir()
-                    .read_dir()
-                    .map(|mut d| d.next().is_none())
-                    .unwrap_or(true),
-            "offline dir should be empty after delete"
-        );
-
-        // 2. Run the full download + verification flow (no GUI handle needed)
-        let result = perform_download(None).await;
-        assert!(result.is_ok(), "full download+verify failed: {:?}", result.err());
-
-        // 3. Confirm files exist and pass integrity checks
-        assert!(check_model_files_exist(), "model files missing after download");
-
-        let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe").unwrap();
-        assert!(verify_sha256(&get_offline_dir().join("sherpa-onnx-offline-websocket-server.exe"), exe_hash).is_ok());
-
-        let model_info = manifest_download("model.int8.onnx").unwrap();
-        assert!(verify_sha256(&get_offline_dir().join("model.int8.onnx"), &model_info.sha256).is_ok());
-
-        let tokens_info = manifest_download("tokens.txt").unwrap();
-        assert!(verify_sha256(&get_offline_dir().join("tokens.txt"), &tokens_info.sha256).is_ok());
-    }

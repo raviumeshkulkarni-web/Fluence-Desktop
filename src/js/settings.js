@@ -105,6 +105,7 @@ function populateUI(s) {
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
   setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
+  setSelectValue('offline-engine-select', s.offline_engine || 'sensevoice');
 
   // Providers tab
   const sttPreset = s.stt_provider?.preset || 'groq';
@@ -696,6 +697,7 @@ async function saveGeneral() {
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
   currentSettings.auto_learn_enabled = document.getElementById('auto-learn-cb')?.checked ?? true;
   currentSettings.duck_enabled = document.getElementById('duck-cb')?.checked ?? false;
+  currentSettings.offline_engine = document.getElementById('offline-engine-select')?.value || 'sensevoice';
 
   try {
     await invoke('update_settings', { settings: currentSettings });
@@ -888,25 +890,42 @@ function updateSttUiVisibility(preset) {
 }
 
 async function updateOfflineStatus() {
+  const engine = document.getElementById('offline-engine-select')?.value || 'sensevoice';
+  const svCard = document.getElementById('sensevoice-model-card');
+  const msCard = document.getElementById('moonshine-model-card');
+  const progressWrapper = document.getElementById('offline-progress-wrapper');
+
+  // Show/hide engine-specific cards
+  if (svCard) svCard.style.display = engine === 'sensevoice' ? 'flex' : 'none';
+  if (msCard) msCard.style.display = engine === 'moonshine_base' ? 'flex' : 'none';
+
   try {
-    const isInstalled = await invoke('get_offline_model_status');
-    const downloadBtn = document.getElementById('offline-download-btn');
-    const deleteBtn = document.getElementById('offline-delete-btn');
-    const progressWrapper = document.getElementById('offline-progress-wrapper');
-    
-    if (isInstalled) {
-      if (downloadBtn) {
-        downloadBtn.textContent = 'Installed';
-        downloadBtn.disabled = true;
+    if (engine === 'sensevoice') {
+      const isInstalled = await invoke('get_offline_model_status');
+      const downloadBtn = document.getElementById('offline-download-btn');
+      const deleteBtn = document.getElementById('offline-delete-btn');
+      
+      if (isInstalled) {
+        if (downloadBtn) { downloadBtn.textContent = 'Installed'; downloadBtn.disabled = true; }
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+        if (progressWrapper) progressWrapper.classList.add('hidden');
+      } else {
+        if (downloadBtn) { downloadBtn.textContent = 'Download Model'; downloadBtn.disabled = false; }
+        if (deleteBtn) deleteBtn.classList.add('hidden');
       }
-      if (deleteBtn) deleteBtn.classList.remove('hidden');
-      if (progressWrapper) progressWrapper.classList.add('hidden');
     } else {
-      if (downloadBtn) {
-        downloadBtn.textContent = 'Download Model';
-        downloadBtn.disabled = false;
+      const isInstalled = await invoke('get_moonshine_model_status');
+      const downloadBtn = document.getElementById('moonshine-download-btn');
+      const deleteBtn = document.getElementById('moonshine-delete-btn');
+      
+      if (isInstalled) {
+        if (downloadBtn) { downloadBtn.textContent = 'Installed'; downloadBtn.disabled = true; }
+        if (deleteBtn) deleteBtn.classList.remove('hidden');
+        if (progressWrapper) progressWrapper.classList.add('hidden');
+      } else {
+        if (downloadBtn) { downloadBtn.textContent = 'Download Model'; downloadBtn.disabled = false; }
+        if (deleteBtn) deleteBtn.classList.add('hidden');
       }
-      if (deleteBtn) deleteBtn.classList.add('hidden');
     }
   } catch (err) {
     console.error('Failed to get offline model status:', err);
@@ -916,9 +935,20 @@ async function updateOfflineStatus() {
 async function setupOfflineDownloader() {
   const downloadBtn = document.getElementById('offline-download-btn');
   const deleteBtn = document.getElementById('offline-delete-btn');
+  const moonshineDownloadBtn = document.getElementById('moonshine-download-btn');
+  const moonshineDeleteBtn = document.getElementById('moonshine-delete-btn');
   const cancelBtn = document.getElementById('offline-cancel-btn');
   const progressWrapper = document.getElementById('offline-progress-wrapper');
+  const engineSelect = document.getElementById('offline-engine-select');
   
+  // Engine selector change
+  if (engineSelect) {
+    engineSelect.addEventListener('change', () => {
+      updateOfflineStatus();
+    });
+  }
+
+  // SenseVoice download button
   if (downloadBtn) {
     downloadBtn.addEventListener('click', async () => {
       try {
@@ -933,13 +963,14 @@ async function setupOfflineDownloader() {
     });
   }
 
+  // SenseVoice delete button
   if (deleteBtn) {
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Are you sure you want to delete the offline model files to free space (~240 MB)?')) return;
+      if (!confirm('Are you sure you want to delete the SenseVoice model files to free space (~240 MB)?')) return;
       try {
         const bytesFreed = await invoke('delete_offline_model');
         const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
-        showToast(`Offline model files deleted. Freed ${mbFreed} MB ✓`, 'success');
+        showToast(`SenseVoice model files deleted. Freed ${mbFreed} MB ✓`, 'success');
         updateOfflineStatus();
       } catch (err) {
         showToast('Failed to delete model files: ' + err, 'error');
@@ -947,6 +978,37 @@ async function setupOfflineDownloader() {
     });
   }
 
+  // Moonshine download button
+  if (moonshineDownloadBtn) {
+    moonshineDownloadBtn.addEventListener('click', async () => {
+      try {
+        moonshineDownloadBtn.disabled = true;
+        moonshineDownloadBtn.textContent = 'Connecting...';
+        if (progressWrapper) progressWrapper.classList.remove('hidden');
+        await invoke('download_moonshine_model');
+      } catch (err) {
+        showToast('Failed to start download: ' + err, 'error');
+        updateOfflineStatus();
+      }
+    });
+  }
+
+  // Moonshine delete button
+  if (moonshineDeleteBtn) {
+    moonshineDeleteBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to delete the Moonshine Base model files to free space (~287 MB)?')) return;
+      try {
+        const bytesFreed = await invoke('delete_moonshine_model');
+        const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
+        showToast(`Moonshine Base model files deleted. Freed ${mbFreed} MB ✓`, 'success');
+        updateOfflineStatus();
+      } catch (err) {
+        showToast('Failed to delete model files: ' + err, 'error');
+      }
+    });
+  }
+
+  // Cancel button (shared)
   if (cancelBtn) {
     cancelBtn.addEventListener('click', async () => {
       try {
@@ -980,7 +1042,7 @@ async function setupOfflineDownloader() {
         const totalMb = (payload.totalBytes / (1024 * 1024)).toFixed(1);
         if (bytesText) bytesText.textContent = `${downloadedMb} / ${totalMb} MB`;
       } else if (status === 'extracting') {
-        if (statusText) statusText.textContent = 'Extracting binaries...';
+        if (statusText) statusText.textContent = 'Extracting model files...';
         if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
         if (progressFill) progressFill.style.width = `${progress}%`;
       } else if (status === 'completed') {

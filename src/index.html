@@ -351,14 +351,37 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Offline Model Manager
           </div>
+          <!-- Engine Selector -->
           <div style="display:flex;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
             <div style="display:flex;flex-direction:column;gap:4px;">
+              <span class="text-body-md" style="font-weight:600;">Offline Engine</span>
+              <span class="text-muted text-label-md" style="font-size:12px;">Choose the speech recognition model to use offline</span>
+            </div>
+            <select id="offline-engine-select" style="width:200px;">
+              <option value="sensevoice">SenseVoice (Multilingual)</option>
+              <option value="moonshine_base">Moonshine Base (English)</option>
+            </select>
+          </div>
+          <!-- SenseVoice Model Card -->
+          <div id="sensevoice-model-card" style="display:flex;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
+            <div style="display:flex;flex-direction:column;gap:4px;">
               <span class="text-body-md" style="font-weight:600;">SenseVoice-Small ASR Model</span>
-              <span class="text-muted text-label-md" style="font-size:12px;">Includes model.int8.onnx & tokens.txt (~240 MB)</span>
+              <span class="text-muted text-label-md" style="font-size:12px;">Multilingual model — includes model.int8.onnx & tokens.txt (~240 MB)</span>
             </div>
             <div style="display:flex;gap:var(--spacing-sm);">
               <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
               <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
+            </div>
+          </div>
+          <!-- Moonshine Model Card -->
+          <div id="moonshine-model-card" style="display:none;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
+            <div style="display:flex;flex-direction:column;gap:4px;">
+              <span class="text-body-md" style="font-weight:600;">Moonshine Base ASR Model</span>
+              <span class="text-muted text-label-md" style="font-size:12px;">English-only model — 4 ONNX files + tokens (~287 MB)</span>
+            </div>
+            <div style="display:flex;gap:var(--spacing-sm);">
+              <button class="btn-primary" id="moonshine-download-btn" style="min-width:140px;">Download Model</button>
+              <button class="btn-danger hidden" id="moonshine-delete-btn" style="min-width:140px;">Delete Model</button>
             </div>
           </div>
           <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-sm);background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">

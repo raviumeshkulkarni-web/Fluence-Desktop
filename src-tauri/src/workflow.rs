@@ -22,7 +22,11 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         if samples.is_empty() {
             ("".to_string(), "".to_string(), std::time::Duration::from_secs(0))
         } else {
-            let result = crate::offline_transcribe::transcribe_samples(samples)
+            let engine: crate::offline_transcribe::OfflineEngine = settings
+                .offline_engine
+                .parse()
+                .unwrap_or(crate::offline_transcribe::OfflineEngine::SenseVoice);
+            let result = crate::offline_transcribe::transcribe_samples(samples, engine)
                 .await
                 .map_err(|e| format!("Offline transcription error: {}", e))?;
 

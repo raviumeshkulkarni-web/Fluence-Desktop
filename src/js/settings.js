@@ -793,9 +793,13 @@ async function listenForTauriEvents() {
 
 // ── App Version ──────────────────────────────────────────────────
 
+let currentAppVersion = '1.6.0';
+
 async function loadAppVersion() {
   try {
     const version = await invoke('get_app_version');
+    currentAppVersion = version;
+    setText('sidebar-version-label', `v${version}`);
     setText('version-badge', `v${version}`);
     setText('about-version', version);
   } catch {}
@@ -1371,7 +1375,7 @@ function setupUpdaterUI() {
 
       switch (info.state) {
         case 'idle':
-          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.textContent = `v${currentAppVersion}`;
           sidebarVersionLabel.className = 'sidebar-version-label';
           if (btnText) btnText.textContent = 'Check for Updates';
           sidebarBtn.disabled = false;
@@ -1392,7 +1396,7 @@ function setupUpdaterUI() {
 
         case 'checking':
           if (statusTimeout) clearTimeout(statusTimeout);
-          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.textContent = `v${currentAppVersion}`;
           sidebarVersionLabel.className = 'sidebar-version-label';
           if (btnText) btnText.textContent = 'Checking...';
           sidebarBtn.disabled = true;
@@ -1453,7 +1457,7 @@ function setupUpdaterUI() {
 
         case 'failed':
           if (statusTimeout) clearTimeout(statusTimeout);
-          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.textContent = `v${currentAppVersion}`;
           sidebarVersionLabel.className = 'sidebar-version-label';
           if (btnText) btnText.textContent = 'Try Again';
           sidebarBtn.disabled = false;

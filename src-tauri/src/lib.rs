@@ -7,8 +7,8 @@
 
 pub mod agent;
 pub mod audio;
-pub mod autostart;
 pub mod auto_learn;
+pub mod autostart;
 pub mod clipboard;
 pub mod credentials;
 pub mod dictionary;

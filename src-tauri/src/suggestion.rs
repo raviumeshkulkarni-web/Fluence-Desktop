@@ -101,10 +101,7 @@ fn load_from_disk() -> Result<SuggestionDatabase> {
             // Rename corrupted file
             let corrupt_path = path.with_extension("json.corrupt.json");
             if let Err(rename_err) = fs::rename(&path, &corrupt_path) {
-                log::error!(
-                    "Failed to rename corrupt suggestions file: {}",
-                    rename_err
-                );
+                log::error!("Failed to rename corrupt suggestions file: {}", rename_err);
             }
 
             log::warn!(
@@ -226,11 +223,7 @@ pub fn accept_suggestion(id: &str) -> Result<(), String> {
         .map_err(|e| format!("Failed to add to dictionary: {}", e))?;
 
     // Mark as accepted (don't delete — keep for future analytics/undo)
-    if let Some(suggestion) = database
-        .suggestions
-        .iter_mut()
-        .find(|s| s.id == id)
-    {
+    if let Some(suggestion) = database.suggestions.iter_mut().find(|s| s.id == id) {
         suggestion.status = SuggestionStatus::Accepted;
     }
 
@@ -270,10 +263,7 @@ pub fn clear_dismissed_suggestions() -> Result<(), String> {
 
     if before != after {
         save_to_disk(&database).map_err(|e| e.to_string())?;
-        log::info!(
-            "Cleared {} dismissed suggestions",
-            before - after
-        );
+        log::info!("Cleared {} dismissed suggestions", before - after);
     }
 
     Ok(())

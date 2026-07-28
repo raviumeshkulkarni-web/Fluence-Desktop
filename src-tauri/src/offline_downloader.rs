@@ -43,13 +43,18 @@ pub(crate) static MANIFEST: Lazy<SherpaManifest> = Lazy::new(|| {
 
 /// Look up a download entry by filename. Fails fast if missing.
 pub(crate) fn manifest_download(filename: &str) -> Result<&'static ManifestDownload> {
-    MANIFEST.downloads.iter().find(|d| d.filename == filename)
+    MANIFEST
+        .downloads
+        .iter()
+        .find(|d| d.filename == filename)
         .with_context(|| format!("Missing manifest download entry for '{}'", filename))
 }
 
 /// Look up expected hash for an extracted binary. Fails fast if missing.
 pub(crate) fn manifest_binary_hash(name: &str) -> Result<&'static str> {
-    MANIFEST.expected_binaries.get(name)
+    MANIFEST
+        .expected_binaries
+        .get(name)
         .map(|s| s.as_str())
         .with_context(|| format!("Missing expected binary hash for '{}'", name))
 }
@@ -321,7 +326,10 @@ async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
 
     // Verify extracted executable integrity
     let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe")?;
-    verify_sha256(&dest_dir.join("sherpa-onnx-offline-websocket-server.exe"), exe_hash)?;
+    verify_sha256(
+        &dest_dir.join("sherpa-onnx-offline-websocket-server.exe"),
+        exe_hash,
+    )?;
 
     // Clean up extraction temp directory and tar archive
     let _ = fs::remove_dir_all(&temp_extract_dir);
@@ -460,7 +468,10 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
     let temp_extract_dir = dest_dir.join("temp_extract");
     fs::create_dir_all(&temp_extract_dir)?;
 
-    log::info!("Extracting Moonshine model archive to {:?}", temp_extract_dir);
+    log::info!(
+        "Extracting Moonshine model archive to {:?}",
+        temp_extract_dir
+    );
     let output = tokio::process::Command::new("tar")
         .args([
             "-xjf",
@@ -525,7 +536,11 @@ fn copy_moonshine_model_files(src_dir: &Path, dest_dir: &Path) -> Result<()> {
                         || file_name == "LICENSE-APACHE";
                     if is_model_file {
                         let dest_file = dest.join(&*file_name);
-                        log::info!("Copying Moonshine model file: {:?} -> {:?}", path, dest_file);
+                        log::info!(
+                            "Copying Moonshine model file: {:?} -> {:?}",
+                            path,
+                            dest_file
+                        );
                         fs::copy(&path, &dest_file)?;
                     }
                 }
@@ -705,7 +720,11 @@ mod tests {
 
     #[test]
     fn manifest_has_all_required_downloads() {
-        let filenames: Vec<&str> = MANIFEST.downloads.iter().map(|d| d.filename.as_str()).collect();
+        let filenames: Vec<&str> = MANIFEST
+            .downloads
+            .iter()
+            .map(|d| d.filename.as_str())
+            .collect();
         assert!(filenames.contains(&"sherpa-onnx-win-x64.tar.bz2"));
         assert!(filenames.contains(&"model.int8.onnx"));
         assert!(filenames.contains(&"tokens.txt"));
@@ -809,16 +828,31 @@ mod tests {
 
         // 2. Run the full download + verification flow (no GUI handle needed)
         let result = perform_download(None).await;
-        assert!(result.is_ok(), "full download+verify failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "full download+verify failed: {:?}",
+            result.err()
+        );
 
         // 3. Confirm files exist and pass integrity checks
-        assert!(check_model_files_exist(), "model files missing after download");
+        assert!(
+            check_model_files_exist(),
+            "model files missing after download"
+        );
 
         let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe").unwrap();
-        assert!(verify_sha256(&get_offline_dir().join("sherpa-onnx-offline-websocket-server.exe"), exe_hash).is_ok());
+        assert!(verify_sha256(
+            &get_offline_dir().join("sherpa-onnx-offline-websocket-server.exe"),
+            exe_hash
+        )
+        .is_ok());
 
         let model_info = manifest_download("model.int8.onnx").unwrap();
-        assert!(verify_sha256(&get_offline_dir().join("model.int8.onnx"), &model_info.sha256).is_ok());
+        assert!(verify_sha256(
+            &get_offline_dir().join("model.int8.onnx"),
+            &model_info.sha256
+        )
+        .is_ok());
 
         let tokens_info = manifest_download("tokens.txt").unwrap();
         assert!(verify_sha256(&get_offline_dir().join("tokens.txt"), &tokens_info.sha256).is_ok());

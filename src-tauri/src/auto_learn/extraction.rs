@@ -140,11 +140,7 @@ pub fn extract_candidates(ctx: &ExtractionContext) -> Vec<Candidate> {
 }
 
 /// Process a substitution pair (deletes → inserts) and add valid candidates.
-fn process_substitution(
-    deletes: &[String],
-    inserts: &[String],
-    candidates: &mut Vec<Candidate>,
-) {
+fn process_substitution(deletes: &[String], inserts: &[String], candidates: &mut Vec<Candidate>) {
     // Rule: Only one-word → one-word substitutions
     if deletes.len() != 1 || inserts.len() != 1 {
         return;
@@ -174,10 +170,8 @@ fn process_substitution(
     // Compare lowercase to avoid case sensitivity inflating the distance.
     // Threshold tuned for real-world corrections: catches phonetic mishearings
     // while filtering completely unrelated words.
-    let similarity = strsim::normalized_levenshtein(
-        &spoken.to_lowercase(),
-        &corrected.to_lowercase(),
-    );
+    let similarity =
+        strsim::normalized_levenshtein(&spoken.to_lowercase(), &corrected.to_lowercase());
     if similarity < 0.40 {
         log::debug!(
             "Skipping candidate '{}' → '{}': similarity {:.2} < 0.40",
@@ -217,7 +211,7 @@ fn count_changed_words(diff: &TextDiff<str>) -> usize {
 }
 
 /// Strip punctuation from the edges of a word.
-fn strip_punctuation(word: &str) -> String {
+pub(crate) fn strip_punctuation(word: &str) -> String {
     word.trim_matches(|c: char| !c.is_alphanumeric())
         .to_lowercase()
 }
@@ -335,5 +329,133 @@ mod tests {
         assert_eq!(strip_punctuation("dr."), "dr");
         assert_eq!(strip_punctuation("'hello'"), "hello");
         assert_eq!(strip_punctuation("C++"), "c");
+    }
+
+    // ── Edge cases ───────────────────────────────────────────────
+
+    #[test]
+    fn test_extract_empty_original() {
+        let ctx = make_ctx("", "something");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_empty_transformed() {
+        let ctx = make_ctx("something", "");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_both_empty() {
+        let ctx = make_ctx("", "");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_whitespace_only_original() {
+        let ctx = make_ctx("   ", "hello world");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_whitespace_only_transformed() {
+        let ctx = make_ctx("hello world", "   ");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_rejects_over_50_percent_change() {
+        // 3 of 4 words changed = 75% change
+        let ctx = make_ctx("the cat sat there", "a dog ran here now");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_exactly_50_percent_change_ok() {
+        // 5 words, 1 sub = 2 changed / 5 total = 40% (NOT > 50%)
+        // "shunade" → "Sinead" passes Levenshtein (~0.46)
+        let ctx = make_ctx("I went to the shunade", "I went to the Sinead");
+        let candidates = extract_candidates(&ctx);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].spoken, "shunade");
+        assert_eq!(candidates[0].corrected, "Sinead");
+    }
+
+    #[test]
+    fn test_extract_multiple_substitutions() {
+        let ctx = make_ctx("I went to the shunade park", "I went to the Sinead park");
+        // Only "shunade" → "Sinead" should be extracted
+        let candidates = extract_candidates(&ctx);
+        assert_eq!(candidates.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_levenshtein_boundary_040() {
+        // 5 words, 1 sub = 2 changed / 5 total = 40% (NOT > 50%)
+        // "shunade" → "Sinead" has similarity ~0.46 >= 0.40
+        let ctx = make_ctx("I went to the shunade", "I went to the Sinead");
+        let candidates = extract_candidates(&ctx);
+        assert_eq!(candidates.len(), 1);
+    }
+
+    #[test]
+    fn test_extract_levenshtein_below_040() {
+        // 5 words, 1 sub. "abc" → "xyz" has very low similarity (~0.0 < 0.40)
+        let ctx = make_ctx("I went to the abc", "I went to the xyz");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_extract_preserves_original_case() {
+        let ctx = make_ctx("I saw Johnatan there", "I saw Jonathan there");
+        let candidates = extract_candidates(&ctx);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].spoken, "Johnatan");
+        assert_eq!(candidates[0].corrected, "Jonathan");
+    }
+
+    #[test]
+    fn test_extract_single_word_identical() {
+        let ctx = make_ctx("hello", "hello");
+        assert!(extract_candidates(&ctx).is_empty());
+    }
+
+    #[test]
+    fn test_count_words_basic() {
+        assert_eq!(count_words("hello world"), 2);
+        assert_eq!(count_words("one"), 1);
+        assert_eq!(count_words(""), 0);
+        assert_eq!(count_words("  spaced  out  "), 2);
+    }
+
+    #[test]
+    fn test_process_substitution_single_pair() {
+        let mut candidates = Vec::new();
+        process_substitution(
+            &["shunade".to_string()],
+            &["Sinead".to_string()],
+            &mut candidates,
+        );
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].spoken, "shunade");
+        assert_eq!(candidates[0].corrected, "Sinead");
+    }
+
+    #[test]
+    fn test_process_substitution_multi_word_rejected() {
+        let mut candidates = Vec::new();
+        process_substitution(
+            &["gonna".to_string()],
+            &["going".to_string(), "to".to_string()],
+            &mut candidates,
+        );
+        assert!(candidates.is_empty());
+    }
+
+    #[test]
+    fn test_process_substitution_empty_pair() {
+        let mut candidates = Vec::new();
+        process_substitution(&[], &[], &mut candidates);
+        assert!(candidates.is_empty());
     }
 }

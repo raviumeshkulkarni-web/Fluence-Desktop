@@ -20,7 +20,11 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         let transcribe_start = std::time::Instant::now();
         let samples = crate::audio::stop_recording_f32_samples().await?;
         if samples.is_empty() {
-            ("".to_string(), "".to_string(), std::time::Duration::from_secs(0))
+            (
+                "".to_string(),
+                "".to_string(),
+                std::time::Duration::from_secs(0),
+            )
         } else {
             let engine: crate::offline_transcribe::OfflineEngine = settings
                 .offline_engine
@@ -37,7 +41,11 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
 
         if mp3_bytes.is_empty() {
-            ("".to_string(), "".to_string(), std::time::Duration::from_secs(0))
+            (
+                "".to_string(),
+                "".to_string(),
+                std::time::Duration::from_secs(0),
+            )
         } else {
             let transcribe_start = std::time::Instant::now();
 
@@ -57,7 +65,11 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
                 Some(settings.language.as_str()),
             )
             .await?;
-            (result.corrected_text, result.raw_text, transcribe_start.elapsed())
+            (
+                result.corrected_text,
+                result.raw_text,
+                transcribe_start.elapsed(),
+            )
         }
     };
 
@@ -77,7 +89,34 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
 
 #[tauri::command]
 pub async fn stop_and_transcribe_recording() -> Result<TranscriptionFlowResult, String> {
-    stop_and_transcribe().await
+    let result = stop_and_transcribe().await?;
+
+    if !result.text.is_empty() {
+        let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
+        if settings.auto_learn_enabled {
+            let ctx = crate::auto_learn::ExtractionContext {
+                original: result.raw_text.clone(),
+                transformed: result.text.clone(),
+                transformation_type: crate::auto_learn::TransformationType::from_ai_polish_style(
+                    &settings.ai_polish_style,
+                ),
+                language: settings.language.clone(),
+                provider: settings.stt_provider.preset.clone(),
+            };
+            let candidates = crate::auto_learn::extract_candidates(&ctx);
+            if !candidates.is_empty() {
+                log::info!(
+                    "Agent mode: extracted {} candidate corrections",
+                    candidates.len()
+                );
+                if let Err(e) = crate::suggestion::upsert_suggestions(candidates) {
+                    log::warn!("Failed to upsert suggestions (agent mode): {}", e);
+                }
+            }
+        }
+    }
+
+    Ok(result)
 }
 
 async fn polish_transcribed_text(

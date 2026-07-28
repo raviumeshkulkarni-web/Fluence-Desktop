@@ -155,8 +155,11 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                     if !THREAD_PROMOTED.with(|p| p.replace(true)) {
                         let sr = NATIVE_SAMPLE_RATE.load(Ordering::Relaxed);
                         if sr > 0 {
-                            match audio_thread_priority::promote_current_thread_to_real_time(0, sr) {
-                                Ok(_) => log::info!("Audio thread promoted to MMCSS real-time priority"),
+                            match audio_thread_priority::promote_current_thread_to_real_time(0, sr)
+                            {
+                                Ok(_) => {
+                                    log::info!("Audio thread promoted to MMCSS real-time priority")
+                                }
                                 Err(e) => log::warn!("Failed to promote audio thread: {e}"),
                             }
                         }

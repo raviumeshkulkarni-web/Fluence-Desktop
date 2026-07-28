@@ -17,7 +17,9 @@ const CREDENTIAL_NAMESPACE: &str = "Fluence/";
 /// Validate that a credential target belongs to the Fluence namespace.
 fn validate_credential_target(target: &str) -> Result<()> {
     if !target.starts_with(CREDENTIAL_NAMESPACE) {
-        return Err(anyhow!("Access denied: only Fluence credentials can be accessed"));
+        return Err(anyhow!(
+            "Access denied: only Fluence credentials can be accessed"
+        ));
     }
     if target.contains("..") {
         return Err(anyhow!("Invalid credential target"));

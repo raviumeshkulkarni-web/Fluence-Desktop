@@ -330,6 +330,11 @@ pub async fn inject_text(text: String) -> Result<(), String> {
             ctrlv_duration
         );
 
+        // Start auto-learn monitor (isolated background subsystem).
+        // Monitors the focused text field for user edits via UI Automation.
+        // Runs on a dedicated OS thread; never blocks this function.
+        crate::auto_learn::start_post_injection_monitor(text.clone());
+
         // Restore original clipboard after a delay
         let saved_clone = saved.clone();
         tokio::spawn(async move {

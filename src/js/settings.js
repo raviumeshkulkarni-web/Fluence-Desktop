@@ -55,8 +55,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
-  loadDashboardStats();
+  setupSkeletonLoading();
+  loadDashboardStats().finally(removeSkeletonLoading);
   setupUpdaterUI();
+  setupUnsavedChanges();
+  setupKeyboardShortcuts();
+  setupSkeletonLoading();
 
   // Refresh data when window is focused
   window.addEventListener('focus', () => {
@@ -1162,11 +1166,15 @@ window.deleteDictEntry = async (id) => {
 
 async function importDictionary() {
   try {
-    const { open } = window.__TAURI__.dialog;
-    const path = await open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
+    const dialog = window.__TAURI_PLUGIN_DIALOG__;
+    const fs = window.__TAURI_PLUGIN_FS__;
+    if (!dialog || !fs) {
+      showToast('File dialog plugin not available', 'error');
+      return;
+    }
+    const path = await dialog.open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
     if (!path) return;
-    const { readTextFile } = window.__TAURI__.fs;
-    const json = await readTextFile(path);
+    const json = await fs.readTextFile(path);
     const count = await invoke('import_dictionary', { jsonData: json });
     showToast(`Imported ${count} entries ✓`, 'success');
     loadDictionary();
@@ -1293,6 +1301,10 @@ function setupUpdaterUI() {
   let statusTimeout = null;
 
   window.updateManager.subscribe((info) => {
+    // Toggle downloading class on update card for progress bar animation
+    const updateCard = document.getElementById('update-card');
+    if (updateCard) updateCard.classList.toggle('downloading', info.state === 'downloading');
+
     // Render last checked timestamp
     if (lastCheckedEl) {
       lastCheckedEl.textContent = info.lastCheckedText ? `Last checked: ${info.lastCheckedText}` : '';
@@ -1471,5 +1483,171 @@ function setupUpdaterUI() {
           break;
       }
     }
+  });
+}
+
+// ── Unsaved Changes Tracking ────────────────────────────────────
+
+let isDirty = false;
+let dirtyPages = new Set();
+
+function setupUnsavedChanges() {
+  const generalInputs = ['recording-mode-select', 'overlay-position-select', 'language-select',
+    'ai-polish-select', 'agent-recording-mode-select', 'offline-engine-select'];
+  const generalCheckboxes = ['autostart-cb', 'duck-cb', 'auto-grab-cb', 'auto-learn-cb'];
+
+  generalInputs.forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => markDirty('general'));
+  });
+  generalCheckboxes.forEach(id => {
+    document.getElementById(id)?.addEventListener('change', () => markDirty('general'));
+  });
+  document.getElementById('hotkey-display')?.addEventListener('click', () => markDirty('general'));
+
+  const providerInputs = ['stt-base-url', 'stt-api-key', 'llm-base-url', 'llm-api-key'];
+  providerInputs.forEach(id => {
+    document.getElementById(id)?.addEventListener('input', () => markDirty('providers'));
+  });
+  document.querySelectorAll('.provider-card').forEach(card => {
+    card.addEventListener('click', () => markDirty('providers'));
+  });
+}
+
+function markDirty(page) {
+  if (dirtyPages.has(page)) return;
+  dirtyPages.add(page);
+  isDirty = true;
+  updateDirtyIndicators();
+}
+
+function clearDirty(page) {
+  dirtyPages.delete(page);
+  if (dirtyPages.size === 0) isDirty = false;
+  updateDirtyIndicators();
+}
+
+function updateDirtyIndicators() {
+  ['general', 'providers'].forEach(page => {
+    const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
+    if (!navItem) return;
+    let dot = navItem.querySelector('.unsaved-dot');
+    if (dirtyPages.has(page)) {
+      if (!dot) {
+        dot = document.createElement('span');
+        dot.className = 'unsaved-dot';
+        navItem.appendChild(dot);
+      }
+    } else {
+      dot?.remove();
+    }
+  });
+}
+
+// Patch saveGeneral and saveProviders to clear dirty state after save
+const _originalSaveGeneral = saveGeneral;
+saveGeneral = async function() {
+  await _originalSaveGeneral();
+  clearDirty('general');
+};
+
+const _originalSaveProviders = saveProviders;
+saveProviders = async function() {
+  await _originalSaveProviders();
+  clearDirty('providers');
+};
+
+// ── Keyboard Shortcuts ──────────────────────────────────────────
+
+function setupKeyboardShortcuts() {
+  document.addEventListener('keydown', (e) => {
+    const target = e.target;
+    const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
+
+    // Escape — close window
+    if (e.key === 'Escape' && !isInput) {
+      e.preventDefault();
+      invoke('hide_main_window').catch(() => {});
+      return;
+    }
+
+    // Ctrl+F / Ctrl+K — focus history search
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'k')) {
+      e.preventDefault();
+      if (currentPage !== 'history') navigateTo('history');
+      const searchInput = document.getElementById('history-search');
+      if (searchInput) { searchInput.focus(); searchInput.select(); }
+      return;
+    }
+
+    // Ctrl+S — save current page
+    if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+      e.preventDefault();
+      if (currentPage === 'general') saveGeneral();
+      else if (currentPage === 'providers') saveProviders();
+      return;
+    }
+  });
+}
+
+// ── Click-to-Copy History Items ─────────────────────────────────
+
+function renderHistoryItem(entry, container) {
+  const div = document.createElement('div');
+  div.className = 'history-item';
+  div.dataset.historyId = entry.id;
+
+  const date = new Date(entry.timestamp);
+  const timeStr = date.toLocaleString();
+
+  div.innerHTML = `
+    <div class="history-item-header">
+      <span class="history-item-time">${timeStr}</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
+        <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
+        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
+      </div>
+    </div>
+    <div class="history-item-text">${escapeHtml(entry.text)}</div>
+  `;
+
+  div.querySelector('.history-copy-btn').addEventListener('click', (e) => {
+    e.stopPropagation();
+    copyHistoryItem(entry.text, div);
+  });
+  div.querySelector('.history-delete-btn')?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    deleteHistoryItem(entry.id);
+  });
+
+  div.addEventListener('click', () => copyHistoryItem(entry.text, div));
+
+  container?.appendChild(div);
+}
+
+window.copyHistoryItem = (text, element) => {
+  navigator.clipboard.writeText(text).then(() => {
+    showToast('Copied to clipboard', 'success');
+    if (element) {
+      element.classList.add('copy-flash');
+      setTimeout(() => element.classList.remove('copy-flash'), 400);
+    }
+  });
+};
+
+// ── Skeleton Loading ────────────────────────────────────────────
+
+function setupSkeletonLoading() {
+  const statsGrid = document.querySelector('.stats-grid');
+  if (statsGrid) {
+    statsGrid.querySelectorAll('.stat-card').forEach(card => {
+      card.classList.add('skeleton');
+    });
+  }
+}
+
+function removeSkeletonLoading() {
+  document.querySelectorAll('.stat-card.skeleton').forEach(card => {
+    card.classList.remove('skeleton');
   });
 }

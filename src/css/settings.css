@@ -710,3 +710,162 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   color: var(--color-ink-muted);
   font-size: 12px;
 }
+
+/* ── Skeleton Loading Shimmer ─────────────────────────────────── */
+@keyframes shimmer {
+  0%   { background-position: -200% 0; }
+  100% { background-position: 200% 0; }
+}
+
+.stat-card.skeleton .stat-value,
+.stat-card.skeleton .stat-label,
+.stat-card.skeleton .stat-sub {
+  color: transparent;
+  border-radius: var(--radius-sm);
+  background: linear-gradient(90deg, var(--color-surface-secondary) 25%, var(--color-surface-elevated) 50%, var(--color-surface-secondary) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.5s ease-in-out infinite;
+  user-select: none;
+}
+
+.stat-card.skeleton .stat-value {
+  width: 80px;
+  height: 36px;
+  margin: 0 auto var(--spacing-xs);
+}
+
+.stat-card.skeleton .stat-label {
+  width: 120px;
+  height: 14px;
+  margin: 0 auto var(--spacing-xs);
+}
+
+.stat-card.skeleton .stat-sub {
+  width: 80px;
+  height: 12px;
+  margin: 0 auto;
+}
+
+/* ── Content Area Entrance ────────────────────────────────────── */
+.content-area {
+  animation: content-entrance 0.3s var(--ease-standard) both;
+}
+
+@keyframes content-entrance {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+/* ── Unsaved Changes Indicator ────────────────────────────────── */
+.nav-item .unsaved-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-brand-cyan);
+  margin-left: auto;
+  flex-shrink: 0;
+  animation: unsaved-pulse 2s ease-in-out infinite;
+}
+
+@keyframes unsaved-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+
+/* ── History Item Copy Flash ──────────────────────────────────── */
+.history-item.copy-flash {
+  background: rgba(34, 197, 94, 0.10) !important;
+  transition: background 0.1s ease;
+}
+
+/* ── Sidebar Version Tooltip ──────────────────────────────────── */
+.sidebar-version-label {
+  position: relative;
+}
+
+.sidebar-version-label[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  background: var(--color-surface-menu);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-on-surface-variant);
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 50;
+  animation: tooltip-in 0.12s ease;
+}
+
+@keyframes tooltip-in {
+  from { opacity: 0; transform: translateX(-50%) translateY(2px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── Update Progress Bar Pulse ────────────────────────────────── */
+.update-card.downloading #update-progress-fill {
+  background: linear-gradient(90deg, var(--color-brand-cyan), rgba(139, 69, 216, 0.8), var(--color-brand-cyan));
+  background-size: 200% 100%;
+  animation: progress-pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes progress-pulse {
+  0%   { background-position: 0% 0; }
+  100% { background-position: 200% 0; }
+}
+
+/* ── Empty State Enhancements ─────────────────────────────────── */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-2xl) var(--spacing-lg);
+  text-align: center;
+}
+
+#dict-empty-row td,
+#suggestions-empty-row td {
+  overflow: visible;
+  height: auto !important;
+  min-height: 120px;
+}
+
+.empty-state-icon {
+  width: 40px;
+  height: 40px;
+  color: var(--color-ink-disabled);
+  margin-bottom: var(--spacing-xs);
+  flex-shrink: 0;
+  display: block;
+}
+
+.empty-state-title {
+  font-size: var(--text-body-md);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+}
+
+.empty-state-hint {
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  max-width: 280px;
+  line-height: 1.5;
+}
+
+.empty-state-hint kbd {
+  display: inline-block;
+  padding: 1px 5px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-variant);
+}

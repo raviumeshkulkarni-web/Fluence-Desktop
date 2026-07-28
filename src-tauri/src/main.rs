@@ -11,8 +11,8 @@
 
 mod agent;
 mod audio;
-mod autostart;
 mod auto_learn;
+mod autostart;
 mod clipboard;
 mod credentials;
 mod dictionary;
@@ -55,6 +55,8 @@ pub fn run() {
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_fs::init())
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {

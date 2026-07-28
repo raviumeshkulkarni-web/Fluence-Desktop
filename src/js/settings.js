@@ -56,6 +56,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   listenForTauriEvents();
   loadAppVersion();
   loadDashboardStats();
+  setupUpdaterUI();
 
   // Refresh data when window is focused
   window.addEventListener('focus', () => {
@@ -1262,4 +1263,209 @@ async function clearDismissedSuggestions() {
   } catch (err) {
     showToast('Failed to clear: ' + err, 'error');
   }
+}
+
+function setupUpdaterUI() {
+  if (!window.updateManager) return;
+
+  const titleEl = document.getElementById('update-status-title');
+  const descEl = document.getElementById('update-status-desc');
+  const btnEl = document.getElementById('update-action-btn');
+  const badgeEl = document.getElementById('version-badge');
+  const lastCheckedEl = document.getElementById('update-last-checked');
+  const progressContainer = document.getElementById('update-progress-container');
+  const progressFill = document.getElementById('update-progress-fill');
+  const progressText = document.getElementById('update-progress-text');
+
+  const sidebarBtn = document.getElementById('sidebar-update-btn');
+  const sidebarStatus = document.getElementById('sidebar-update-status');
+  const sidebarProgressBar = document.getElementById('sidebar-update-progress-bar');
+  const sidebarProgressFill = document.getElementById('sidebar-update-progress-fill');
+
+  if (badgeEl) {
+    badgeEl.onclick = () => window.updateManager.checkForUpdates(true);
+  }
+
+  let statusTimeout = null;
+
+  window.updateManager.subscribe((info) => {
+    // Render last checked timestamp
+    if (lastCheckedEl) {
+      lastCheckedEl.textContent = info.lastCheckedText ? `Last checked: ${info.lastCheckedText}` : '';
+    }
+
+    // 1. Update About Page Card (5-State Model)
+    if (titleEl && btnEl) {
+      switch (info.state) {
+        case 'idle':
+          titleEl.textContent = "You're up to date";
+          descEl.style.display = 'none';
+          if (progressContainer) progressContainer.style.display = 'none';
+          btnEl.textContent = 'Check for Updates';
+          btnEl.disabled = false;
+          btnEl.className = 'btn-secondary';
+          btnEl.onclick = () => window.updateManager.checkForUpdates(true);
+          break;
+
+        case 'checking':
+          titleEl.textContent = 'Checking for updates...';
+          descEl.style.display = 'none';
+          if (progressContainer) progressContainer.style.display = 'none';
+          btnEl.textContent = 'Checking...';
+          btnEl.disabled = true;
+          btnEl.className = 'btn-secondary';
+          break;
+
+        case 'available':
+          titleEl.textContent = `New Version Available (v${info.version})`;
+          descEl.textContent = info.body ? info.body.slice(0, 140) + (info.body.length > 140 ? '...' : '') : 'Bug fixes and performance improvements.';
+          descEl.style.display = 'block';
+          if (progressContainer) progressContainer.style.display = 'none';
+          btnEl.textContent = 'Download Update';
+          btnEl.disabled = false;
+          btnEl.className = 'btn-primary';
+          btnEl.onclick = () => window.updateManager.startDownloadAndInstall();
+          break;
+
+        case 'downloading':
+          titleEl.textContent = 'Downloading Update...';
+          descEl.style.display = 'none';
+          if (progressContainer) {
+            progressContainer.style.display = 'block';
+            if (progressFill) progressFill.style.width = `${info.downloadProgress}%`;
+            if (progressText) progressText.textContent = `${info.downloadProgress}%`;
+          }
+          btnEl.textContent = `Downloading ${info.downloadProgress}%`;
+          btnEl.disabled = true;
+          btnEl.className = 'btn-primary';
+          break;
+
+        case 'ready':
+          titleEl.textContent = 'Update Downloaded & Staged!';
+          descEl.textContent = 'Restart Fluence to apply the update.';
+          descEl.style.display = 'block';
+          if (progressContainer) progressContainer.style.display = 'none';
+          btnEl.textContent = 'Restart Fluence';
+          btnEl.disabled = false;
+          btnEl.className = 'btn-primary';
+          btnEl.onclick = () => window.updateManager.restartApp();
+          break;
+
+        case 'failed':
+          titleEl.textContent = "Couldn't check for updates";
+          descEl.textContent = info.errorMessage || 'Please check your internet connection or try again later.';
+          descEl.style.display = 'block';
+          if (progressContainer) progressContainer.style.display = 'none';
+          btnEl.textContent = 'Try Again';
+          btnEl.disabled = false;
+          btnEl.className = 'btn-secondary';
+          btnEl.onclick = () => window.updateManager.checkForUpdates(true);
+          break;
+      }
+    }
+
+    // 2. Update Sidebar Widget (Self-explanatory single control)
+    const sidebarVersionLabel = document.getElementById('sidebar-version-label');
+    if (sidebarBtn && sidebarVersionLabel) {
+      const btnText = document.getElementById('sidebar-update-btn-text');
+
+      switch (info.state) {
+        case 'idle':
+          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.className = 'sidebar-version-label';
+          if (btnText) btnText.textContent = 'Check for Updates';
+          sidebarBtn.disabled = false;
+          sidebarBtn.className = 'sidebar-update-btn';
+          sidebarBtn.onclick = () => window.updateManager.checkForUpdates(true);
+          
+          if (sidebarStatus && sidebarStatus.style.display === 'block') {
+            sidebarStatus.textContent = '✓ Up to date';
+            if (statusTimeout) clearTimeout(statusTimeout);
+            statusTimeout = setTimeout(() => {
+              if (sidebarStatus) sidebarStatus.style.display = 'none';
+            }, 3000);
+          } else if (sidebarStatus) {
+            sidebarStatus.style.display = 'none';
+          }
+          if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';
+          break;
+
+        case 'checking':
+          if (statusTimeout) clearTimeout(statusTimeout);
+          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.className = 'sidebar-version-label';
+          if (btnText) btnText.textContent = 'Checking...';
+          sidebarBtn.disabled = true;
+          sidebarBtn.className = 'sidebar-update-btn';
+          if (sidebarStatus) {
+            sidebarStatus.textContent = 'Checking for updates...';
+            sidebarStatus.style.display = 'block';
+          }
+          if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';
+          break;
+
+        case 'available':
+          if (statusTimeout) clearTimeout(statusTimeout);
+          sidebarVersionLabel.textContent = 'Update Available';
+          sidebarVersionLabel.className = 'sidebar-version-label highlight-update';
+          if (btnText) btnText.textContent = `Download v${info.version}`;
+          sidebarBtn.disabled = false;
+          sidebarBtn.className = 'sidebar-update-btn btn-has-update';
+          sidebarBtn.onclick = () => window.updateManager.startDownloadAndInstall();
+          if (sidebarStatus) {
+            sidebarStatus.textContent = `v${info.version} ready to download`;
+            sidebarStatus.style.display = 'block';
+          }
+          if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';
+          break;
+
+        case 'downloading':
+          if (statusTimeout) clearTimeout(statusTimeout);
+          sidebarVersionLabel.textContent = 'Downloading Update';
+          sidebarVersionLabel.className = 'sidebar-version-label highlight-update';
+          if (btnText) btnText.textContent = `Downloading ${info.downloadProgress}%`;
+          sidebarBtn.disabled = true;
+          sidebarBtn.className = 'sidebar-update-btn';
+          if (sidebarStatus) {
+            sidebarStatus.textContent = `Downloading ${info.downloadProgress}%`;
+            sidebarStatus.style.display = 'block';
+          }
+          if (sidebarProgressBar) {
+            sidebarProgressBar.style.display = 'block';
+            if (sidebarProgressFill) sidebarProgressFill.style.width = `${info.downloadProgress}%`;
+          }
+          break;
+
+        case 'ready':
+          if (statusTimeout) clearTimeout(statusTimeout);
+          sidebarVersionLabel.textContent = 'Update Ready';
+          sidebarVersionLabel.className = 'sidebar-version-label highlight-ready';
+          if (btnText) btnText.textContent = 'Restart Fluence';
+          sidebarBtn.disabled = false;
+          sidebarBtn.className = 'sidebar-update-btn btn-ready';
+          sidebarBtn.onclick = () => window.updateManager.restartApp();
+          if (sidebarStatus) {
+            sidebarStatus.textContent = 'Restart to apply update';
+            sidebarStatus.style.display = 'block';
+          }
+          if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';
+          break;
+
+        case 'failed':
+          if (statusTimeout) clearTimeout(statusTimeout);
+          sidebarVersionLabel.textContent = `v${currentSettings?.app_version || '1.5.0'}`;
+          sidebarVersionLabel.className = 'sidebar-version-label';
+          if (btnText) btnText.textContent = 'Try Again';
+          sidebarBtn.disabled = false;
+          sidebarBtn.className = 'sidebar-update-btn';
+          sidebarBtn.onclick = () => window.updateManager.checkForUpdates(true);
+          if (sidebarStatus) {
+            sidebarStatus.textContent = "Couldn't check updates";
+            sidebarStatus.style.display = 'block';
+          }
+          if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';
+          break;
+      }
+    }
+  });
 }

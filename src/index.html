@@ -66,7 +66,23 @@
     </div>
 
     <div class="sidebar-footer">
-      <div class="version-badge" id="version-badge">v1.0.0</div>
+      <div class="sidebar-update-widget" id="sidebar-update-widget">
+        <!-- Version Label Header (v1.5.0 / Update Available / Update Ready) -->
+        <div class="sidebar-version-label" id="sidebar-version-label">v1.5.0</div>
+
+        <!-- Optional Status Subtitle -->
+        <div id="sidebar-update-status" class="sidebar-update-status"></div>
+
+        <!-- Progress bar container -->
+        <div id="sidebar-update-progress-bar" class="sidebar-update-progress-bar">
+          <div id="sidebar-update-progress-fill" class="sidebar-update-progress-fill"></div>
+        </div>
+
+        <!-- Single Control Button always present -->
+        <button id="sidebar-update-btn" class="sidebar-update-btn">
+          <span id="sidebar-update-btn-text">Check for Updates</span>
+        </button>
+      </div>
     </div>
   </nav>
 
@@ -648,6 +664,26 @@
             Why type when you can simply speak? Fluence Transcribe turns your voice into precise, beautifully formatted text the instant the words leave your lips, anywhere on Windows, in any application, with zero friction and absolute privacy. This is not dictation. This is Fluence Transcribe.
           </div>
 
+          <!-- Update Status Card -->
+          <div class="update-card" id="update-card" style="width:100%;max-width:420px;margin-top:12px;padding:16px;border-radius:12px;background:var(--color-surface-container);border:1px solid var(--color-outline-variant);display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <div style="font-size:14px;font-weight:600;color:var(--color-on-surface);" id="update-status-title">You're up to date</div>
+              <div style="font-size:11px;color:var(--color-outline);" id="update-last-checked"></div>
+            </div>
+            <div style="font-size:13px;color:var(--color-on-surface-variant);display:none;text-align:center;line-height:1.4;" id="update-status-desc"></div>
+            
+            <div id="update-progress-container" style="display:none;width:100%;max-width:280px;margin-top:4px;">
+              <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;">
+                <div id="update-progress-fill" style="width:0%;height:100%;background:var(--color-brand-cyan);transition:width 0.2s ease;"></div>
+              </div>
+              <div style="font-size:11px;color:var(--color-outline);text-align:center;margin-top:4px;" id="update-progress-text">0%</div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:4px;" id="update-status-actions">
+              <button class="btn-primary" id="update-action-btn" style="font-size:13px;padding:6px 16px;">Check for Updates</button>
+            </div>
+          </div>
+
           <div class="text-label-sm text-muted">Powered by Tauri v2 · Rust · WebView2</div>
         </div>
       </div>
@@ -661,6 +697,7 @@
 <!-- Toast container -->
 <div class="toast-container" id="toast-container"></div>
 
+<script src="js/update-manager.js"></script>
 <script src="js/settings.js"></script>
 </body>
 </html>

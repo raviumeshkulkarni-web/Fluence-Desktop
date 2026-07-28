@@ -1,6 +1,6 @@
 [package]
 name = "fluence-windows"
-version = "1.5.0"
+version = "1.6.0"
 description = "Fluence — AI Voice Typing for Windows"
 authors = ["Fluence Team"]
 license = "GPL-3.0-only"
@@ -25,6 +25,8 @@ tauri-plugin-notification = "2"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
 
 
 serde = { version = "1", features = ["derive"] }

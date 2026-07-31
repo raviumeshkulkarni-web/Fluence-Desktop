@@ -43,11 +43,10 @@ body {
 .sidebar-logo {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 0 var(--spacing-md) var(--spacing-lg);
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md) var(--spacing-md);
   margin-bottom: var(--spacing-md);
   border-bottom: 1px solid var(--color-border-muted);
-  padding-bottom: var(--spacing-md);
 }
 
 .sidebar-logo img {
@@ -78,7 +77,7 @@ body {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 9px var(--spacing-md);
+  padding: 8px var(--spacing-md);
   cursor: pointer;
   border-radius: var(--radius-md);
   background: transparent;
@@ -87,7 +86,7 @@ body {
   color: var(--color-on-surface-variant);
   font-size: var(--text-body-md);
   font-weight: 400;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), color 0.12s var(--ease-standard);
   position: relative;
   margin: 1px var(--spacing-sm);
 }
@@ -114,7 +113,7 @@ body {
 
 .sidebar-footer {
   margin-top: auto;
-  padding: 12px 14px;
+  padding: var(--spacing-sm) var(--spacing-md);
   border-top: 1px solid var(--color-border-muted);
 }
 
@@ -241,14 +240,14 @@ body {
   letter-spacing: 0.02em;
   cursor: pointer;
   padding: 4px 8px;
-  border-radius: 6px;
-  transition: all 0.2s ease;
+  border-radius: var(--radius-sm);
+  transition: background-color 0.2s var(--ease-standard), color 0.2s var(--ease-standard);
   user-select: none;
 }
 
 .version-badge:hover {
   color: var(--color-on-surface);
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--color-hover);
 }
 
 /* ── Main Content ──────────────────────────────────────────────── */
@@ -305,7 +304,7 @@ body {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
   font-weight: 500;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-on-surface-variant);
 }
@@ -324,9 +323,9 @@ body {
   align-items: center;
   justify-content: space-between;
   gap: var(--spacing-md);
-  padding: 14px var(--spacing-md);
+  padding: 12px var(--spacing-md);
   border-bottom: 1px solid var(--color-border-muted);
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard);
 }
 
 .setting-row:last-child {
@@ -378,11 +377,12 @@ body {
   cursor: pointer;
   min-width: 140px;
   justify-content: center;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard);
 }
 
 .hotkey-display:hover {
   background: var(--color-hover);
+  border-color: var(--color-border-focus);
 }
 
 .hotkey-display.recording {
@@ -403,17 +403,23 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 6px;
-  padding: 14px 10px;
+  padding: 12px var(--spacing-sm);
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard), color 0.12s var(--ease-standard), transform 0.12s var(--ease-standard);
   background: transparent;
   color: var(--color-on-surface-variant);
 }
 
 .provider-card:hover {
   background: var(--color-hover);
+  border-color: var(--color-border-focus);
+  transform: translateY(-1px);
+}
+
+.provider-card:active {
+  transform: translateY(0);
 }
 
 .provider-card.selected {
@@ -427,7 +433,7 @@ body {
   font-size: 12px;
   font-weight: 500;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.08em;
 }
 
 /* ── History Items ─────────────────────────────────────────────── */
@@ -435,10 +441,10 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px var(--spacing-md);
+  padding: 12px var(--spacing-md);
   border-bottom: 1px solid var(--color-border-muted);
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard);
 }
 
 .history-item:last-child {
@@ -446,6 +452,7 @@ body {
 }
 
 .history-item:hover { background: var(--color-hover); }
+.history-item:active { background: var(--color-active); }
 
 .history-item-header {
   display: flex;
@@ -596,11 +603,6 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   align-items: center;
   text-align: center;
   min-height: 140px;
-  transition: var(--transition-fast);
-}
-
-.stat-card:hover {
-  background: var(--color-surface-elevated);
 }
 
 .stat-value {
@@ -610,20 +612,20 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   color: var(--color-on-surface);
   margin-bottom: var(--spacing-xs);
   letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
 }
 
 .stat-label {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 500;
   color: var(--color-on-surface);
   letter-spacing: 0.01em;
-  margin-bottom: var(--spacing-xs);
+  margin-bottom: 2px;
 }
 
 .stat-sub {
-  font-size: 13px;
+  font-size: var(--text-label-sm);
   color: var(--color-on-surface-variant);
-  margin-top: 2px;
 }
 
 /* ── Bar Chart ─────────────────────────────────────────────────── */
@@ -673,6 +675,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   display: flex;
   align-items: center;
   justify-content: center;
+  font-variant-numeric: tabular-nums;
 }
 
 .chart-bar-col span {
@@ -694,7 +697,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
   font-weight: 500;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-on-surface-variant);
   background: var(--color-surface-secondary);

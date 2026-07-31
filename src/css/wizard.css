@@ -45,13 +45,14 @@ body {
   height: 2px;
   background: var(--color-border-muted);
   flex-shrink: 0;
+  border-radius: var(--radius-full);
   transition: opacity 0.3s ease;
 }
 
 .progress-bar-fill {
   height: 100%;
   background: rgba(255, 255, 255, 0.30);
-  border-radius: 1px;
+  border-radius: var(--radius-full);
   transition: width 0.4s var(--ease-spring);
   position: relative;
 }
@@ -193,14 +194,18 @@ body {
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard), color 0.12s var(--ease-standard), transform 0.12s var(--ease-standard);
   background: transparent;
   color: var(--color-on-surface-variant);
 }
 
 .position-option:hover {
   background: var(--color-hover);
+  border-color: var(--color-border-focus);
+  transform: translateY(-1px);
 }
+
+.position-option:active { transform: translateY(0); }
 
 .position-option.selected {
   background: var(--color-active);
@@ -232,7 +237,7 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
 }
 
 /* ── Recording Mode Selector ───────────────────────────────────── */
@@ -250,12 +255,13 @@ body {
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard), transform 0.12s var(--ease-standard);
   background: transparent;
   text-align: left;
 }
 
-.mode-option:hover { background: var(--color-hover); }
+.mode-option:hover { background: var(--color-hover); border-color: var(--color-border-focus); transform: translateY(-1px); }
+.mode-option:active { transform: translateY(0); }
 .mode-option.selected { background: var(--color-active); border-color: var(--color-interactive-hover); }
 
 .mode-option .mode-title { font-weight: 600; color: var(--color-on-surface); font-size: var(--text-body-md); }
@@ -359,13 +365,19 @@ body {
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-lg);
   cursor: pointer;
-  transition: var(--transition-fast);
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard), color 0.12s var(--ease-standard), transform 0.12s var(--ease-standard);
   background: transparent;
   color: var(--color-on-surface-variant);
 }
 
 .provider-card:hover {
   background: var(--color-hover);
+  border-color: var(--color-border-focus);
+  transform: translateY(-1px);
+}
+
+.provider-card:active {
+  transform: translateY(0);
 }
 
 .provider-card.selected {
@@ -379,7 +391,7 @@ body {
   font-size: 11px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.05em;
+  letter-spacing: 0.08em;
   transition: color 0.2s ease;
 }
 

@@ -180,6 +180,10 @@ button:focus-visible {
   background: var(--color-surface-menu);
 }
 
+.btn-secondary:active {
+  transform: scale(0.98);
+}
+
 /* Ghost — transparent */
 .btn-ghost {
   display: inline-flex;
@@ -198,6 +202,10 @@ button:focus-visible {
   color: var(--color-on-surface);
 }
 
+.btn-ghost:active {
+  transform: scale(0.98);
+}
+
 /* Danger — semantic red */
 .btn-danger {
   background: var(--color-error-container);
@@ -210,6 +218,10 @@ button:focus-visible {
 
 .btn-danger:hover {
   background: rgba(239, 68, 68, 0.25);
+}
+
+.btn-danger:active {
+  transform: scale(0.98);
 }
 
 /* ── Input Base — ultra-thin border ────────────────────────────── */

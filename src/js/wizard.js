@@ -125,6 +125,7 @@ function updateStep(step) {
   const track = document.querySelector('.progress-bar-track');
   if (track) {
     track.style.opacity = (step === 1) ? '0' : '1';
+    track.setAttribute('aria-valuenow', Math.round(progress));
   }
 
   // Update dots
@@ -191,8 +192,12 @@ function setupStep2() {
   // Provider cards
   document.querySelectorAll('[data-provider]').forEach(card => {
     card.addEventListener('click', () => {
-      document.querySelectorAll('[data-provider]').forEach(c => c.classList.remove('selected'));
+      document.querySelectorAll('[data-provider]').forEach(c => {
+        c.classList.remove('selected');
+        c.setAttribute('aria-pressed', 'false');
+      });
       card.classList.add('selected');
+      card.setAttribute('aria-pressed', 'true');
 
       const preset = card.dataset.provider;
       wizardData.provider = preset;
@@ -308,6 +313,17 @@ function setupStep3() {
     document.getElementById('wiz-hotkey-text').textContent = 'Press your shortcut...';
   });
 
+  // Keyboard activation (Enter/Space) — capture starts from keyup so the
+  // activating key isn't recorded as part of the shortcut
+  display?.addEventListener('keydown', (e) => {
+    if (isRecordingHotkey) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      display.click();
+    }
+  });
+
   document.addEventListener('keydown', (e) => {
     if (!isRecordingHotkey || currentStep !== 3) return;
     e.preventDefault();
@@ -345,8 +361,12 @@ function setupStep3() {
   // Mode selector
   document.querySelectorAll('.mode-option').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.mode-option').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.mode-option').forEach(b => {
+        b.classList.remove('selected');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       wizardData.recordingMode = btn.dataset.mode;
     });
   });
@@ -357,8 +377,12 @@ function setupStep3() {
 function setupStep4() {
   document.querySelectorAll('.position-option').forEach(btn => {
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.position-option').forEach(b => b.classList.remove('selected'));
+      document.querySelectorAll('.position-option').forEach(b => {
+        b.classList.remove('selected');
+        b.setAttribute('aria-pressed', 'false');
+      });
       btn.classList.add('selected');
+      btn.setAttribute('aria-pressed', 'true');
       wizardData.overlayPosition = btn.dataset.pos;
     });
   });

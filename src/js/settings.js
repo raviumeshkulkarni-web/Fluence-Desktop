@@ -181,7 +181,10 @@ function _performNavigation(page) {
   currentPage = page;
 
   document.querySelectorAll('.nav-item').forEach(item => {
-    item.classList.toggle('active', item.dataset.page === page);
+    const isActive = item.dataset.page === page;
+    item.classList.toggle('active', isActive);
+    if (isActive) item.setAttribute('aria-current', 'page');
+    else item.removeAttribute('aria-current');
   });
   document.querySelectorAll('.page').forEach(p => {
     p.classList.toggle('active', p.id === `page-${page}`);
@@ -239,6 +242,17 @@ function wireHotkeyRecorder(displayId, textId, clearBtnId, settingsKey, defaultS
         stopHotkeyRecording(false);
       }
       startHotkeyRecording(displayId, textId, settingsKey);
+    }
+  });
+
+  // Keyboard activation (Enter/Space) — while capturing, the document
+  // recorder owns all keys, so only start recording from here
+  display?.addEventListener('keydown', (e) => {
+    if (activeRecorder) return;
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      e.stopPropagation();
+      display.click();
     }
   });
 
@@ -390,7 +404,9 @@ function setupProviderCards() {
 
 function selectProviderCard(type, preset) {
   document.querySelectorAll(`#${type}-provider-grid .provider-card`).forEach(c => {
-    c.classList.toggle('selected', c.dataset.provider === preset);
+    const isSelected = c.dataset.provider === preset;
+    c.classList.toggle('selected', isSelected);
+    c.setAttribute('aria-pressed', String(isSelected));
   });
 }
 
@@ -625,36 +641,6 @@ async function loadDashboardStats() {
     console.error('Failed to load dashboard stats:', err);
   }
 }
-
-function renderHistoryItem(entry, container) {
-  const div = document.createElement('div');
-  div.className = 'history-item';
-  div.dataset.historyId = entry.id;
-
-  const date = new Date(entry.timestamp);
-  const timeStr = date.toLocaleString();
-
-  div.innerHTML = `
-    <div class="history-item-header">
-      <span class="history-item-time">${timeStr}</span>
-      <div style="display:flex;gap:6px;align-items:center;">
-        <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
-        <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
-      </div>
-    </div>
-    <div class="history-item-text">${escapeHtml(entry.text)}</div>
-  `;
-
-  div.querySelector('.history-copy-btn').addEventListener('click', () => copyHistoryItem(entry.text));
-  div.querySelector('.history-delete-btn')?.addEventListener('click', () => deleteHistoryItem(entry.id));
-
-  container?.appendChild(div);
-}
-
-window.copyHistoryItem = (text) => {
-  navigator.clipboard.writeText(text).then(() => showToast('Copied ✓', 'success'));
-};
 
 window.deleteHistoryItem = async (id) => {
   try {
@@ -1036,6 +1022,7 @@ async function setupOfflineDownloader() {
       const statusText = document.getElementById('offline-progress-status');
       const percentageText = document.getElementById('offline-progress-percentage');
       const progressFill = document.getElementById('offline-progress-fill');
+      const progressTrack = document.getElementById('offline-progress-track');
       const bytesText = document.getElementById('offline-progress-bytes');
       
       const progress = payload.progress;
@@ -1046,6 +1033,7 @@ async function setupOfflineDownloader() {
         if (statusText) statusText.textContent = `Downloading: ${currentFile}`;
         if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
         if (progressFill) progressFill.style.width = `${progress}%`;
+        if (progressTrack) progressTrack.setAttribute('aria-valuenow', Math.round(progress));
         
         const downloadedMb = (payload.bytesDownloaded / (1024 * 1024)).toFixed(1);
         const totalMb = (payload.totalBytes / (1024 * 1024)).toFixed(1);
@@ -1054,6 +1042,7 @@ async function setupOfflineDownloader() {
         if (statusText) statusText.textContent = 'Extracting model files...';
         if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
         if (progressFill) progressFill.style.width = `${progress}%`;
+        if (progressTrack) progressTrack.setAttribute('aria-valuenow', Math.round(progress));
       } else if (status === 'completed') {
         showToast('Offline model downloaded and installed successfully ✓', 'success');
         updateOfflineStatus();
@@ -1350,6 +1339,7 @@ function setupUpdaterUI() {
             progressContainer.style.display = 'block';
             if (progressFill) progressFill.style.width = `${info.downloadProgress}%`;
             if (progressText) progressText.textContent = `${info.downloadProgress}%`;
+            document.getElementById('update-progress-track')?.setAttribute('aria-valuenow', Math.round(info.downloadProgress));
           }
           btnEl.textContent = `Downloading ${info.downloadProgress}%`;
           btnEl.disabled = true;
@@ -1448,6 +1438,7 @@ function setupUpdaterUI() {
           }
           if (sidebarProgressBar) {
             sidebarProgressBar.style.display = 'block';
+            sidebarProgressBar.setAttribute('aria-valuenow', Math.round(info.downloadProgress));
             if (sidebarProgressFill) sidebarProgressFill.style.width = `${info.downloadProgress}%`;
           }
           break;
@@ -1605,7 +1596,7 @@ function renderHistoryItem(entry, container) {
       <div style="display:flex;gap:6px;align-items:center;">
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
+        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
       </div>
     </div>
     <div class="history-item-text">${escapeHtml(entry.text)}</div>

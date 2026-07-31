@@ -231,6 +231,11 @@ input:focus, select:focus, textarea:focus {
   border-color: var(--color-interactive-hover);
 }
 
+input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
 input::placeholder {
   color: var(--color-ink-muted);
 }
@@ -297,6 +302,11 @@ select {
 
 .toggle-switch input:checked:active ~ .toggle-track .toggle-thumb {
   transform: translateX(14px);
+}
+
+.toggle-switch input:focus-visible ~ .toggle-track {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 2px;
 }
 
 /* ── Badge ─────────────────────────────────────────────────────── */
@@ -439,6 +449,8 @@ select {
   display: flex;
   justify-content: center;
   align-items: center;
+  background: transparent;
+  padding: 0;
   color: var(--color-on-surface-variant);
   transition: background 0.1s;
   cursor: default;
@@ -458,6 +470,11 @@ select {
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+  }
+  /* Loading indicators stay perceivable — slower, gentler spin */
+  .animate-spin {
+    animation: spin 1.5s linear infinite !important;
   }
 }

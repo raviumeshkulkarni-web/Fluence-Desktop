@@ -15,7 +15,7 @@ html, body {
 }
 
 body {
-  font-family: 'Inter', var(--font-body), system-ui, -apple-system, sans-serif;
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   display: flex;
   align-items: flex-start;
   justify-content: center;
@@ -207,8 +207,8 @@ body {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: #A855F7;
-  box-shadow: 0 0 8px rgba(168, 85, 247, 0.35);
+  background: var(--color-brand-amethyst);
+  box-shadow: 0 0 8px rgba(139, 69, 216, 0.35);
   animation: rec-pulse 1.2s ease-in-out infinite;
 }
 
@@ -218,40 +218,40 @@ body {
 }
 
 .rec-label {
-  font-family: 'Inter', var(--font-body), system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   font-size: 13px;
   font-weight: 500;
   letter-spacing: 0.04em;
   text-transform: uppercase;
-  color: #E6E6E6;
+  color: var(--color-on-surface);
 }
 
 /* ── Mode Badge ────────────────────────────────────────────────── */
 .mode-badge {
-  font-family: 'Inter', var(--font-body), system-ui, sans-serif;
+  font-family: var(--font-body), system-ui, sans-serif;
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.03em;
   text-transform: uppercase;
   padding: 4px 10px;
   border-radius: 6px;
-  background: rgba(168, 85, 247, 0.15);
-  color: #A855F7;
+  background: rgba(139, 69, 216, 0.15);
+  color: var(--color-brand-amethyst);
 }
 
 /* Agent mode badge — teal */
 .overlay-root.state-agent .mode-badge,
 .overlay-root.state-agent_transcribing .mode-badge {
-  background: rgba(34, 211, 238, 0.15);
-  color: #22D3EE;
+  background: rgba(11, 214, 227, 0.15);
+  color: var(--color-brand-cyan);
 }
 
 /* ── Timer ─────────────────────────────────────────────────────── */
 .card-timer {
-  font-family: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+  font-family: var(--font-label), 'SF Mono', 'Cascadia Code', monospace;
   font-size: 14px;
   font-weight: 500;
-  color: #A1A1AA;
+  color: var(--color-on-surface-variant);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
 }
@@ -263,7 +263,7 @@ body {
   border-radius: 6px;
   border: none;
   background: transparent;
-  color: #71717A;
+  color: var(--color-ink-muted);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -276,7 +276,12 @@ body {
 
 .card-discard:hover {
   background: rgba(255, 255, 255, 0.06);
-  color: #A1A1AA;
+  color: var(--color-on-surface-variant);
+}
+
+.card-discard:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 1px;
 }
 
 .card-discard:active {
@@ -303,14 +308,14 @@ body {
 .overlay-root.state-success .status-icon.success-icon {
   opacity: 1;
   scale: 1;
-  color: #22C55E;
+  color: var(--color-success);
   animation: status-pop 350ms cubic-bezier(0.34, 1.1, 0.64, 1);
 }
 
 .overlay-root.state-error .status-icon.error-icon {
   opacity: 1;
   scale: 1;
-  color: #EF4444;
+  color: var(--color-error);
   animation: status-pop 350ms cubic-bezier(0.34, 1.1, 0.64, 1);
 }
 
@@ -335,8 +340,8 @@ body {
 .overlay-root.state-transcribing .rec-dot,
 .overlay-root.state-agent_transcribing .rec-dot {
   background: transparent;
-  border: 2px solid rgba(168, 85, 247, 0.3);
-  border-top-color: #A855F7;
+  border: 2px solid rgba(139, 69, 216, 0.3);
+  border-top-color: var(--color-brand-amethyst);
   border-radius: 50%;
   width: 10px;
   height: 10px;
@@ -351,14 +356,14 @@ body {
 /* ── Agent rec-dot color ──────────────────────────────────────── */
 .overlay-root.state-agent .rec-dot,
 .overlay-root.state-agent_transcribing .rec-dot {
-  background: #22D3EE;
-  box-shadow: 0 0 8px rgba(34, 211, 238, 0.35);
+  background: var(--color-brand-cyan);
+  box-shadow: 0 0 8px rgba(11, 214, 227, 0.35);
 }
 
 .overlay-root.state-agent_transcribing .rec-dot {
   background: transparent;
-  border: 2px solid rgba(34, 211, 238, 0.3);
-  border-top-color: #22D3EE;
+  border: 2px solid rgba(11, 214, 227, 0.3);
+  border-top-color: var(--color-brand-cyan);
   border-radius: 50%;
   width: 10px;
   height: 10px;
@@ -371,4 +376,12 @@ body {
 .overlay-root.state-error .card-waveform {
   opacity: 0;
   transition: opacity 100ms ease;
+}
+
+/* ── Reduced motion — keep the processing spinner perceivable ──── */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-root.state-transcribing .rec-dot,
+  .overlay-root.state-agent_transcribing .rec-dot {
+    animation: spin 1.5s linear infinite !important;
+  }
 }

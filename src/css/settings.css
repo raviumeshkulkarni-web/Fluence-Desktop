@@ -81,6 +81,9 @@ body {
   padding: 9px var(--spacing-md);
   cursor: pointer;
   border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  text-align: left;
   color: var(--color-on-surface-variant);
   font-size: var(--text-body-md);
   font-weight: 400;
@@ -209,23 +212,23 @@ body {
   background: var(--color-brand-cyan);
   color: #000;
   border-color: var(--color-brand-cyan);
-  box-shadow: 0 0 12px rgba(11, 214, 227, 0.3);
+  box-shadow: 0 2px 8px rgba(11, 214, 227, 0.25);
 }
 
 .sidebar-update-btn.btn-has-update:hover {
-  box-shadow: 0 0 16px rgba(11, 214, 227, 0.5);
+  box-shadow: 0 3px 12px rgba(11, 214, 227, 0.35);
   transform: translateY(-1px);
 }
 
 .sidebar-update-btn.btn-ready {
-  background: #10B981;
+  background: var(--color-success);
   color: #fff;
-  border-color: #10B981;
-  box-shadow: 0 0 12px rgba(16, 185, 129, 0.4);
+  border-color: var(--color-success);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
 }
 
 .sidebar-update-btn.btn-ready:hover {
-  box-shadow: 0 0 16px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 3px 12px rgba(34, 197, 94, 0.35);
   transform: translateY(-1px);
 }
 
@@ -305,6 +308,15 @@ body {
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-on-surface-variant);
+}
+
+/* Semantic headings inside section headers inherit the header's styling */
+.settings-section-header h2 {
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  margin: 0;
 }
 
 .setting-row {
@@ -666,7 +678,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .chart-bar-col span {
   font-family: var(--font-label);
   font-size: 10px;
-  color: var(--color-ink-muted);
+  color: var(--color-on-surface-variant);
   flex-shrink: 0;
 }
 
@@ -778,34 +790,9 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   transition: background 0.1s ease;
 }
 
-/* ── Sidebar Version Tooltip ──────────────────────────────────── */
+/* ── Sidebar Version Label ────────────────────────────────────── */
 .sidebar-version-label {
   position: relative;
-}
-
-.sidebar-version-label[data-tooltip]:hover::after {
-  content: attr(data-tooltip);
-  position: absolute;
-  bottom: calc(100% + 6px);
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 4px 8px;
-  background: var(--color-surface-menu);
-  border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-sm);
-  font-family: var(--font-body);
-  font-size: 11px;
-  font-weight: 400;
-  color: var(--color-on-surface-variant);
-  white-space: nowrap;
-  pointer-events: none;
-  z-index: 50;
-  animation: tooltip-in 0.12s ease;
-}
-
-@keyframes tooltip-in {
-  from { opacity: 0; transform: translateX(-50%) translateY(2px); }
-  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
 }
 
 /* ── Update Progress Bar Pulse ────────────────────────────────── */

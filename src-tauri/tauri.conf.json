@@ -31,7 +31,7 @@
         "label": "overlay",
         "title": "Fluence Overlay",
         "width": 260,
-        "height": 120,
+        "height": 146,
         "resizable": false,
         "decorations": false,
         "transparent": true,

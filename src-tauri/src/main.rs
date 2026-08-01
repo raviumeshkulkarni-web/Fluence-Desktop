@@ -10,6 +10,7 @@
 )]
 
 mod agent;
+mod app_icon;
 mod audio;
 mod auto_learn;
 mod autostart;
@@ -166,6 +167,8 @@ pub fn run() {
             history::clear_history,
             history::get_history_stats,
             history::get_weekly_activity,
+            // Foreground app icon (overlay chip)
+            app_icon::get_foreground_app_icon,
             // Overlay
             overlay::show_overlay,
             overlay::hide_overlay,

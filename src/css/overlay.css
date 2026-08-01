@@ -19,7 +19,8 @@ body {
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 20px;
+  padding-top: 46px;
+  position: relative;
   -webkit-app-region: drag;
 }
 
@@ -28,11 +29,9 @@ body {
   width: 36px;
   height: 36px;
   border-radius: 16px;
-  background: rgba(13, 17, 23, 0.97);
+  background: #0d1117;
   border: 1px solid rgba(255, 255, 255, 0.06);
   box-shadow: none;
-  backdrop-filter: blur(20px);
-  -webkit-backdrop-filter: blur(20px);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -52,69 +51,82 @@ body {
     border-radius 120ms ease-out;
 }
 
-/* ── Idle Breathing ─────────────────────────────────────────────── */
-@keyframes breathe {
-  0%, 100% {
-    scale: 1;
-    box-shadow: none;
-  }
-  50% {
-    scale: 1.008;
-    box-shadow: none;
-  }
-}
-
-.overlay-root:not(.active):not(.state-transcribing):not(.state-agent_transcribing):not(.state-success):not(.state-error) {
-  animation: breathe 4s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
 /* ── Active (Expanded) State ───────────────────────────────────── */
 .overlay-root.active {
   width: 360px;
   height: 88px;
-  opacity: 0.97;
+  opacity: 1;
   scale: 1;
   border-radius: 16px;
 }
 
-/* Transcribe mode surface — purple tint */
+/* Docked-corner treatment — sharpen the corner that hugs the edge */
+.overlay-root.corner-bottom-left {
+  transform-origin: 0% 100%;
+  border-radius: 16px 16px 16px 6px;
+}
+
+.overlay-root.corner-bottom-right {
+  transform-origin: 100% 100%;
+  border-radius: 16px 16px 6px 16px;
+}
+
+.overlay-root.corner-bottom-center {
+  transform-origin: 50% 100%;
+}
+
+/* Transcribe mode surface — opaque, amethyst-tinted top */
 .overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
   background: linear-gradient(
     180deg,
-    rgba(255, 255, 255, 0.02) 0%,
-    rgba(13, 17, 23, 0.90) 40%,
-    rgba(0, 0, 0, 0.45) 100%
+    #1c1526 0%,
+    #11151c 40%,
+    #0a0e14 100%
   );
+  box-shadow: none;
 }
 
-/* Agent mode surface — teal tint */
+/* Agent mode surface — opaque, teal-tinted top */
 .overlay-root.state-agent.active,
 .overlay-root.state-agent_transcribing.active {
   background: linear-gradient(
     180deg,
-    rgba(34, 211, 238, 0.05) 0%,
-    rgba(13, 17, 23, 0.90) 40%,
-    rgba(0, 0, 0, 0.45) 100%
+    #0e1c20 0%,
+    #11151c 40%,
+    #0a0e14 100%
   );
-}
-
-.overlay-root.active:hover {
   box-shadow: none;
 }
 
+/* Glass edge highlight */
+.overlay-root.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  z-index: 3;
+}
+
 /* ── Entry / Exit Animations ──────────────────────────────────── */
-/* Entry: scale 95%→100%, 120ms ease-out, fade 0→100%, 150ms */
+/* Entry: springy scale from the docked corner, fade 0→100%, 180ms */
 .overlay-root.active {
-  animation: palette-enter 150ms ease-out forwards;
+  animation: palette-enter 180ms cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
 }
 
 @keyframes palette-enter {
   0% {
     opacity: 0;
-    scale: 0.95;
+    scale: 0.92;
+  }
+  65% {
+    opacity: 0.97;
+    scale: 1.015;
   }
   100% {
-    opacity: 0.97;
+    opacity: 1;
     scale: 1;
   }
 }
@@ -226,6 +238,64 @@ body {
   color: var(--color-on-surface);
 }
 
+/* ── Separate App Pill (foreground app icon + name, floats on top edge) ─── */
+.app-pill {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 28px;
+  padding: 0 12px;
+  border-radius: 999px;
+  background: #0d1117;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: none;
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
+  transition: opacity 160ms ease, transform 160ms ease;
+  pointer-events: none;
+}
+
+.app-pill[hidden] {
+  display: none;
+}
+
+.app-pill.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.app-pill .app-pill-icon {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-pill .app-pill-name {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+  color: var(--color-on-surface-variant);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+/* ── Metadata Left Group (REC) ─────────────────────────────────── */
+.card-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
 /* ── Mode Badge ────────────────────────────────────────────────── */
 .mode-badge {
   font-family: var(--font-body), system-ui, sans-serif;
@@ -325,6 +395,70 @@ body {
   100% { scale: 1; }
 }
 
+/* ── Status Message (end-of-flow confirmation) ─────────────────── */
+.status-msg {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  translate: -50% -50%;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface-variant);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease;
+}
+
+.overlay-root.state-success .status-msg {
+  opacity: 1;
+  color: var(--color-success);
+}
+
+.overlay-root.state-error .status-msg {
+  opacity: 1;
+  color: var(--color-error);
+}
+
+/* ── Retry Button (error state) ────────────────────────────────── */
+.status-retry {
+  position: absolute;
+  left: 50%;
+  top: 84%;
+  translate: -50% -50%;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, background 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.status-retry:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.status-retry:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.overlay-root.state-error .status-retry:not([hidden]) {
+  opacity: 1;
+  pointer-events: all;
+}
+
 /* ── Processing Pulse ──────────────────────────────────────────── */
 @keyframes pulse-processing {
   0%, 100% { opacity: 1; }
@@ -380,6 +514,10 @@ body {
 
 /* ── Reduced motion — keep the processing spinner perceivable ──── */
 @media (prefers-reduced-motion: reduce) {
+  .overlay-root.active {
+    animation: palette-enter 120ms ease-out forwards;
+  }
+
   .overlay-root.state-transcribing .rec-dot,
   .overlay-root.state-agent_transcribing .rec-dot {
     animation: spin 1.5s linear infinite !important;

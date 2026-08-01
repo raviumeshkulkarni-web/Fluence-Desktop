@@ -154,13 +154,21 @@ function updateStep(step) {
 
 async function validateCurrentStep() {
   if (currentStep === 2) {
+    if (wizardData.skipApiKey) return true;
+
     const key = document.getElementById('wiz-api-key')?.value?.trim();
+    const baseUrl = document.getElementById('wiz-base-url')?.value?.trim();
+
+    if (wizardData.provider === 'custom' && !baseUrl) {
+      showStepError('Please enter your API endpoint URL');
+      return false;
+    }
     if (!key) {
-      showStepError('Please enter your API key to continue');
+      showStepError('Enter your API key to continue — or skip to offline transcription below.');
       return false;
     }
     wizardData.apiKey = key;
-    wizardData.baseUrl = document.getElementById('wiz-base-url')?.value?.trim() || wizardData.baseUrl;
+    wizardData.baseUrl = baseUrl || wizardData.baseUrl;
     wizardData.model = document.getElementById('wiz-model-select')?.value || wizardData.model;
     wizardData.llmModel = document.getElementById('wiz-llm-model-select')?.value || wizardData.llmModel;
     // Save key
@@ -176,13 +184,17 @@ async function validateCurrentStep() {
 }
 
 function showStepError(message) {
-  // Briefly shake the next button and show inline message
+  const err = document.getElementById('wiz-api-error');
+  if (err) {
+    err.textContent = message;
+    err.hidden = false;
+  }
+  // Briefly shake the next button as a secondary cue
   const nextBtn = document.getElementById('next-btn');
   if (nextBtn) {
     nextBtn.style.boxShadow = '0 0 0 3px rgba(255,100,100,0.4)';
     setTimeout(() => nextBtn.style.boxShadow = '', 1000);
   }
-  // Could also show inline error — simple alert for now
   console.warn(message);
 }
 
@@ -269,6 +281,18 @@ function setupStep2() {
   document.getElementById('wiz-api-key')?.addEventListener('input', () => {
     clearTimeout(fetchTimeout);
     fetchTimeout = setTimeout(doFetchModels, 800);
+    const err = document.getElementById('wiz-api-error');
+    if (err) err.hidden = true;
+  });
+
+  // Skip to offline transcription — no API key required
+  document.getElementById('wiz-skip-offline')?.addEventListener('click', () => {
+    wizardData.skipApiKey = true;
+    wizardData.provider = 'Local Offline';
+    wizardData.baseUrl = '';
+    const err = document.getElementById('wiz-api-error');
+    if (err) err.hidden = true;
+    updateStep(currentStep + 1);
   });
 
   // Test connection
@@ -394,26 +418,33 @@ function setupStep5() {
   let isTestRecording = false;
   const testBtn = document.getElementById('wiz-test-record-btn');
   const testResult = document.getElementById('wiz-test-result');
+  const label = document.getElementById('wiz-test-record-label');
+
+  const setRecordState = (text, state) => {
+    if (label) label.textContent = text;
+    if (testBtn) {
+      testBtn.classList.remove('recording', 'transcribing');
+      if (state) testBtn.classList.add(state);
+    }
+  };
 
   testBtn?.addEventListener('click', async () => {
     if (!isTestRecording) {
       isTestRecording = true;
-      testBtn.textContent = '⏹ Stop Recording';
-      testBtn.style.background = 'linear-gradient(135deg, #ef4444, #c0392b)';
+      setRecordState('Stop Recording', 'recording');
       if (testResult) { testResult.className = 'test-result'; testResult.textContent = 'Recording... speak now'; }
 
       try {
         await invoke('start_recording', { deviceId: null });
       } catch (err) {
         isTestRecording = false;
-        testBtn.textContent = '🎙 Start Recording';
-        testBtn.style.background = '';
+        setRecordState('Start Recording', null);
         if (testResult) { testResult.textContent = 'Failed to start: ' + err; }
       }
     } else {
       isTestRecording = false;
-      testBtn.textContent = '⏳ Transcribing...';
-      testBtn.disabled = true;
+      setRecordState('Transcribing...', 'transcribing');
+      if (testBtn) testBtn.disabled = true;
 
       try {
         const wavB64 = await invoke('stop_recording');
@@ -436,9 +467,8 @@ function setupStep5() {
           testResult.textContent = 'Error: ' + err;
         }
       } finally {
-        testBtn.textContent = '🎙 Try Again';
-        testBtn.style.background = '';
-        testBtn.disabled = false;
+        setRecordState('Try Again', null);
+        if (testBtn) testBtn.disabled = false;
       }
     }
   });
@@ -461,21 +491,22 @@ function setupStep6() {
 
 async function saveWizardSettings() {
   try {
+    const usingOffline = !!wizardData.skipApiKey || wizardData.provider === 'Local Offline';
     const settings = {
       hotkey: wizardData.hotkey,
       recording_mode: wizardData.recordingMode,
       overlay_position: wizardData.overlayPosition,
       stt_provider: {
-        preset: wizardData.provider,
-        base_url: wizardData.baseUrl,
-        model: wizardData.model,
-        api_key_saved: true,
+        preset: usingOffline ? 'Local Offline' : wizardData.provider,
+        base_url: usingOffline ? '' : wizardData.baseUrl,
+        model: usingOffline ? 'sensevoice' : wizardData.model,
+        api_key_saved: !usingOffline,
       },
       llm_provider: {
-        preset: wizardData.provider,
-        base_url: wizardData.baseUrl,
-        model: wizardData.llmModel,
-        api_key_saved: true,
+        preset: wizardData.provider === 'Local Offline' ? 'groq' : wizardData.provider,
+        base_url: wizardData.provider === 'Local Offline' ? '' : wizardData.baseUrl,
+        model: wizardData.provider === 'Local Offline' ? '' : wizardData.llmModel,
+        api_key_saved: !usingOffline,
       },
       auto_start: false,
       sound_on_complete: true,

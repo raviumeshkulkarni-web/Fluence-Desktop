@@ -43,3 +43,7 @@ src-tauri/debug_recordings/
 compose-rich-editor/
 diagnostics-runner.mjs
 vs_buildtools.exe
+
+# Local agent/design tooling
+.claude/
+.impeccable/

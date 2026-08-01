@@ -178,6 +178,31 @@ body {
 .input-with-btn input { flex: 1; }
 .input-with-btn button { flex-shrink: 0; }
 
+/* ── Inline Form Errors ───────────────────────────────────────── */
+.form-error {
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  color: var(--color-error);
+  line-height: 1.4;
+}
+
+/* ── Skip-to-Offline Link ─────────────────────────────────────── */
+.skip-offline {
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.skip-offline:hover { color: var(--color-on-surface); }
+
 /* ── Overlay Position Selector ─────────────────────────────────── */
 .position-selector {
   display: grid;
@@ -294,6 +319,61 @@ body {
 }
 
 .test-result.placeholder { color: var(--color-ink-muted); font-style: italic; }
+
+/* ── Test Record Button (icon orb over the pill) ──────────────── */
+.test-record-btn {
+  position: relative;
+  margin-top: 26px;
+  padding-top: 16px;
+  padding-bottom: 10px;
+  gap: var(--spacing-sm);
+}
+
+.test-record-orb {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  translate: -50% -50%;
+  width: 46px;
+  height: 46px;
+  border-radius: var(--radius-full);
+  background: var(--color-interactive);
+  color: var(--color-on-surface);
+  border: 3px solid var(--color-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  transition: background 0.2s ease, box-shadow 0.2s ease;
+}
+
+.test-record-btn:hover .test-record-orb {
+  background: var(--color-interactive-hover);
+}
+
+.test-record-btn:active .test-record-orb {
+  transform: translateY(1px);
+}
+
+/* Icon swap per state */
+.test-record-btn:not(.recording):not(.transcribing) .icon-stop { display: none; }
+.test-record-btn.recording .icon-mic,
+.test-record-btn.transcribing .icon-mic { display: none; }
+
+.test-record-btn.recording .test-record-orb {
+  background: var(--color-error);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
+}
+
+.test-record-btn.transcribing .test-record-orb {
+  background: var(--color-interactive-active);
+  animation: orb-pulse 1s ease-in-out infinite;
+}
+
+@keyframes orb-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 
 /* ── Navigation Footer ─────────────────────────────────────────── */
 .wizard-nav {

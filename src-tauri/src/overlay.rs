@@ -29,7 +29,7 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     let scale = monitor.scale_factor();
 
     let win_width = 260.0;
-    let win_height = 120.0;
+    let win_height = 146.0;
     let margin = 20.0;
 
     let (x, y) = match position.as_str() {

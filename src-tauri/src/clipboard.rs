@@ -2,8 +2,14 @@
 // Saves clipboard, sets new text, simulates Ctrl+V, then restores original clipboard.
 
 use anyhow::{anyhow, Result};
+use once_cell::sync::Lazy;
 use std::time::Duration;
 use tokio::time::sleep;
+
+// Serializes save → set → paste → restore so a delayed restore from one
+// injection cannot overwrite the clipboard while another injection is pasting.
+static CLIPBOARD_INJECTION_LOCK: Lazy<tokio::sync::Mutex<()>> =
+    Lazy::new(|| tokio::sync::Mutex::new(()));
 
 #[cfg(target_os = "windows")]
 use windows::Win32::{
@@ -301,6 +307,7 @@ pub fn send_select_all() {
 pub async fn inject_text(text: String) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
         let start_time = std::time::Instant::now();
         // Save current clipboard
         let saved = get_clipboard_text();
@@ -335,14 +342,11 @@ pub async fn inject_text(text: String) -> Result<(), String> {
         // Runs on a dedicated OS thread; never blocks this function.
         crate::auto_learn::start_post_injection_monitor(text.clone());
 
-        // Restore original clipboard after a delay
-        let saved_clone = saved.clone();
-        tokio::spawn(async move {
-            sleep(Duration::from_millis(200)).await;
-            if let Some(original) = saved_clone {
-                let _ = set_clipboard_text(&original);
-            }
-        });
+        // Restore original clipboard before releasing the transaction lock.
+        sleep(Duration::from_millis(200)).await;
+        if let Some(original) = saved {
+            let _ = set_clipboard_text(&original);
+        }
 
         Ok(())
     }

@@ -17,7 +17,7 @@ use windows::Win32::{
     System::{
         DataExchange::{
             CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
-            OpenClipboard, SetClipboardData,
+            GetClipboardSequenceNumber, OpenClipboard, SetClipboardData,
         },
         Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE},
     },
@@ -239,10 +239,15 @@ fn send_ctrl_v() {
 #[cfg(target_os = "windows")]
 pub fn send_backspaces(count: usize) {
     use windows::Win32::UI::Input::KeyboardAndMouse::VK_BACK;
+    const MAX_DELETE_CHARS: usize = 10_000;
     if count == 0 {
         return;
     }
-    let mut inputs: Vec<INPUT> = Vec::with_capacity(count * 2);
+    if count > MAX_DELETE_CHARS {
+        log::warn!("Ignoring oversized backspace request: {}", count);
+        return;
+    }
+    let mut inputs: Vec<INPUT> = Vec::with_capacity(count.saturating_mul(2));
     for _ in 0..count {
         inputs.push(make_key_input(VK_BACK, KEYBD_EVENT_FLAGS(0)));
         inputs.push(make_key_input(VK_BACK, KEYEVENTF_KEYUP));
@@ -304,7 +309,7 @@ pub fn send_select_all() {
 /// Main Tauri command: inject text into the focused application
 /// Saves clipboard → sets text → Ctrl+V → restores clipboard after delay
 #[tauri::command]
-pub async fn inject_text(text: String) -> Result<(), String> {
+pub async fn inject_text(text: String, monitor_auto_learn: Option<bool>) -> Result<(), String> {
     #[cfg(target_os = "windows")]
     {
         let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
@@ -316,6 +321,7 @@ pub async fn inject_text(text: String) -> Result<(), String> {
         let set_start = std::time::Instant::now();
         // Set clipboard to our transcribed text
         set_clipboard_text(&text).map_err(|e| e.to_string())?;
+        let fluence_clipboard_sequence = clipboard_sequence_number();
         let set_duration = set_start.elapsed();
 
         let ctrlv_start = std::time::Instant::now();
@@ -337,21 +343,51 @@ pub async fn inject_text(text: String) -> Result<(), String> {
             ctrlv_duration
         );
 
-        // Start auto-learn monitor (isolated background subsystem).
-        // Monitors the focused text field for user edits via UI Automation.
-        // Runs on a dedicated OS thread; never blocks this function.
-        crate::auto_learn::start_post_injection_monitor(text.clone());
+        // Only the normal transcription flow opts into post-injection
+        // learning. Agent-generated inserts use the same clipboard command
+        // but are not transcription evidence.
+        let should_monitor = monitor_auto_learn.unwrap_or(false)
+            && crate::settings::load_settings()
+                .map(|settings| settings.auto_learn_enabled)
+                .unwrap_or(false);
+        if should_monitor {
+            crate::auto_learn::start_post_injection_monitor(text.clone());
+        }
 
-        // Restore original clipboard before releasing the transaction lock.
+        // Restore only if Fluence still owns the clipboard. If the user or
+        // another application copied something during the paste window, do
+        // not overwrite that newer clipboard content.
         sleep(Duration::from_millis(200)).await;
-        if let Some(original) = saved {
-            let _ = set_clipboard_text(&original);
+        if clipboard_sequence_number() == fluence_clipboard_sequence
+            && get_clipboard_text().as_deref() == Some(text.as_str())
+        {
+            if let Some(original) = saved {
+                let _ = set_clipboard_text(&original);
+            }
         }
 
         Ok(())
     }
     #[cfg(not(target_os = "windows"))]
     Err("Text injection not supported on this platform".to_string())
+}
+
+#[cfg(target_os = "windows")]
+fn clipboard_sequence_number() -> u32 {
+    unsafe { GetClipboardSequenceNumber() }
+}
+
+/// Copy text while participating in the same clipboard transaction lock as
+/// text injection and active-selection capture.
+#[tauri::command]
+pub async fn copy_text(text: String) -> Result<(), String> {
+    #[cfg(target_os = "windows")]
+    {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+        set_clipboard_text(&text).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Clipboard operations are not supported on this platform".to_string())
 }
 
 /// Execute a keyboard action from agent mode
@@ -366,6 +402,9 @@ pub async fn execute_keyboard_action(
         match action.as_str() {
             "delete_chars" => {
                 if let Some(n) = char_count {
+                    if n > 10_000 {
+                        return Err("Delete action exceeds maximum length".to_string());
+                    }
                     send_backspaces(n);
                 }
             }
@@ -406,6 +445,8 @@ fn send_ctrl_c() {
 pub async fn grab_active_selection() -> Result<Option<String>, String> {
     #[cfg(target_os = "windows")]
     {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+
         // 1. Save original clipboard text
         let saved_text = get_clipboard_text();
 
@@ -429,12 +470,18 @@ pub async fn grab_active_selection() -> Result<Option<String>, String> {
         // 6. Wait for target app to write to clipboard
         sleep(Duration::from_millis(120)).await;
 
-        // 7. Read newly copied selection
+        // 7. Snapshot ownership before reading the copied selection. If an
+        // external clipboard writer changes it during the read, restoration
+        // must not overwrite that newer content.
+        let selection_clipboard_sequence = clipboard_sequence_number();
         let selection = get_clipboard_text();
 
-        // 8. Restore the original clipboard text
-        if let Some(original) = saved_text {
-            let _ = set_clipboard_text(&original);
+        // 8. Restore only if nothing else changed the clipboard after the
+        // selection copy. Do not overwrite a newer user/application copy.
+        if clipboard_sequence_number() == selection_clipboard_sequence {
+            if let Some(original) = saved_text {
+                let _ = set_clipboard_text(&original);
+            }
         }
 
         Ok(selection)

@@ -139,7 +139,13 @@ pub fn check_moonshine_model_files_exist() -> bool {
     if !dir.exists() {
         return false;
     }
-    MOONSHINE_MANIFEST.expected_files.iter().all(|f| {
+    let runtime_ready = [
+        "sherpa-onnx-offline-websocket-server.exe",
+        "onnxruntime.dll",
+    ]
+    .iter()
+    .all(|f| dir.join(f).exists());
+    runtime_ready && MOONSHINE_MANIFEST.expected_files.iter().all(|f| {
         let p = dir.join(f);
         p.exists() && p.metadata().map(|m| m.len()).unwrap_or(0) > 1000
     })
@@ -164,17 +170,21 @@ pub fn delete_model_files() -> Result<u64> {
     }
 
     let mut bytes_freed = 0;
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                bytes_freed += meta.len();
-            }
-            let _ = fs::remove_file(entry.path());
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Ok(meta) = entry.metadata() {
+            bytes_freed += meta.len();
+        }
+        if path.is_dir() {
+            fs::remove_dir_all(path)?;
+        } else {
+            fs::remove_file(path)?;
         }
     }
 
     // Remove directory itself
-    let _ = fs::remove_dir(dir);
+    fs::remove_dir(dir)?;
     Ok(bytes_freed)
 }
 
@@ -185,16 +195,20 @@ pub fn delete_moonshine_model_files() -> Result<u64> {
     }
 
     let mut bytes_freed = 0;
-    if let Ok(entries) = fs::read_dir(&dir) {
-        for entry in entries.flatten() {
-            if let Ok(meta) = entry.metadata() {
-                bytes_freed += meta.len();
-            }
-            let _ = fs::remove_file(entry.path());
+    for entry in fs::read_dir(&dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        if let Ok(meta) = entry.metadata() {
+            bytes_freed += meta.len();
+        }
+        if path.is_dir() {
+            fs::remove_dir_all(path)?;
+        } else {
+            fs::remove_file(path)?;
         }
     }
 
-    let _ = fs::remove_dir(dir);
+    fs::remove_dir(dir)?;
     Ok(bytes_freed)
 }
 
@@ -271,69 +285,7 @@ async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
     // Use the shared HTTP client (reuses the global connection pool)
     let client = &crate::http_client::CLIENT;
 
-    // 1. Download sherpa-onnx archive
-    let archive_info = manifest_download("sherpa-onnx-win-x64.tar.bz2")?;
-    let archive_path = dest_dir.join("sherpa-onnx-win-x64.tar.bz2");
-    download_file_to_path(
-        &client,
-        &archive_info.url,
-        &archive_path,
-        "sherpa-onnx binaries",
-        &mut bytes_downloaded,
-        total_bytes,
-        app,
-    )
-    .await?;
-
-    // Verify archive integrity before extraction
-    verify_sha256(&archive_path, &archive_info.sha256)?;
-
-    // 2. Extract sherpa-onnx archive using Windows built-in tar
-    emit_progress(
-        app,
-        DownloadProgressPayload {
-            status: "extracting".to_string(),
-            progress: (bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0),
-            bytes_downloaded,
-            total_bytes,
-            current_file: "extracting binaries".to_string(),
-            error_message: None,
-        },
-    );
-
-    let temp_extract_dir = dest_dir.join("temp_extract");
-    fs::create_dir_all(&temp_extract_dir)?;
-
-    log::info!("Extracting ASR binary archive to {:?}", temp_extract_dir);
-    let output = tokio::process::Command::new("tar")
-        .args([
-            "-xjf",
-            archive_path.to_str().unwrap(),
-            "-C",
-            temp_extract_dir.to_str().unwrap(),
-        ])
-        .output()
-        .await
-        .map_err(|e| anyhow!("Failed to run tar command: {}", e))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Failed to extract archive: {}", stderr));
-    }
-
-    // Copy binary and DLLs recursively
-    copy_extracted_files(&temp_extract_dir, &dest_dir)?;
-
-    // Verify extracted executable integrity
-    let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe")?;
-    verify_sha256(
-        &dest_dir.join("sherpa-onnx-offline-websocket-server.exe"),
-        exe_hash,
-    )?;
-
-    // Clean up extraction temp directory and tar archive
-    let _ = fs::remove_dir_all(&temp_extract_dir);
-    let _ = fs::remove_file(&archive_path);
+    ensure_server_runtime(&client, &dest_dir, &mut bytes_downloaded, total_bytes, app).await?;
 
     // 3. Download SenseVoice model.int8.onnx
     let model_info = manifest_download("model.int8.onnx")?;
@@ -348,7 +300,7 @@ async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
         app,
     )
     .await?;
-    verify_sha256(&model_path, &model_info.sha256)?;
+    verify_sha256_and_remove(&model_path, &model_info.sha256)?;
 
     // 4. Download SenseVoice tokens.txt
     let tokens_info = manifest_download("tokens.txt")?;
@@ -363,7 +315,7 @@ async fn perform_download(app: Option<&AppHandle>) -> Result<()> {
         app,
     )
     .await?;
-    verify_sha256(&tokens_path, &tokens_info.sha256)?;
+    verify_sha256_and_remove(&tokens_path, &tokens_info.sha256)?;
 
     Ok(())
 }
@@ -431,10 +383,15 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
     fs::create_dir_all(&dest_dir)?;
 
     // Moonshine base model archive is ~239 MB compressed
-    let total_bytes: u64 = 251_000_000;
+    let total_bytes: u64 = 275_000_000;
     let mut bytes_downloaded: u64 = 0;
 
     let client = &crate::http_client::CLIENT;
+
+    // Moonshine has its own model directory, so install the shared server
+    // runtime there as well. This keeps the installed status and runtime path
+    // consistent when Moonshine is installed without SenseVoice.
+    ensure_server_runtime(&client, &dest_dir, &mut bytes_downloaded, total_bytes, app).await?;
 
     // 1. Download moonshine archive
     let archive_path = dest_dir.join(&MOONSHINE_MANIFEST.archive_filename);
@@ -450,7 +407,7 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
     .await?;
 
     // Verify archive integrity
-    verify_sha256(&archive_path, &MOONSHINE_MANIFEST.sha256)?;
+    verify_sha256_and_remove(&archive_path, &MOONSHINE_MANIFEST.sha256)?;
 
     // 2. Extract archive
     emit_progress(
@@ -481,20 +438,36 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
         ])
         .output()
         .await
-        .map_err(|e| anyhow!("Failed to run tar command: {}", e))?;
+        .map_err(|e| {
+            let _ = fs::remove_dir_all(&temp_extract_dir);
+            let _ = fs::remove_file(&archive_path);
+            anyhow!("Failed to run tar command: {}", e)
+        })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
         return Err(anyhow!("Failed to extract Moonshine archive: {}", stderr));
     }
 
     // Copy model files from extracted directory
-    copy_moonshine_model_files(&temp_extract_dir, &dest_dir)?;
+    if let Err(error) = copy_moonshine_model_files(&temp_extract_dir, &dest_dir) {
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
+        for expected in &MOONSHINE_MANIFEST.expected_files {
+            let _ = fs::remove_file(dest_dir.join(expected));
+        }
+        return Err(error);
+    }
 
     // Verify all expected files are present and non-empty
     for file in &MOONSHINE_MANIFEST.expected_files {
         let p = dest_dir.join(file);
         if !p.exists() {
+            for expected in &MOONSHINE_MANIFEST.expected_files {
+                let _ = fs::remove_file(dest_dir.join(expected));
+            }
             return Err(anyhow!(
                 "Expected model file '{}' not found after extraction",
                 file
@@ -502,6 +475,9 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
         }
         let meta = p.metadata()?;
         if meta.len() < 1000 {
+            for expected in &MOONSHINE_MANIFEST.expected_files {
+                let _ = fs::remove_file(dest_dir.join(expected));
+            }
             return Err(anyhow!(
                 "Model file '{}' is too small ({} bytes), likely corrupt",
                 file,
@@ -515,6 +491,101 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
     let _ = fs::remove_file(&archive_path);
 
     log::info!("Moonshine Base model downloaded and verified successfully");
+    Ok(())
+}
+
+fn verify_sha256_and_remove(path: &Path, expected_hex: &str) -> Result<()> {
+    match verify_sha256(path, expected_hex) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            let _ = fs::remove_file(path);
+            Err(error)
+        }
+    }
+}
+
+async fn ensure_server_runtime(
+    client: &reqwest::Client,
+    dest_dir: &Path,
+    bytes_downloaded: &mut u64,
+    total_bytes: u64,
+    app: Option<&AppHandle>,
+) -> Result<()> {
+    let exe_path = dest_dir.join("sherpa-onnx-offline-websocket-server.exe");
+    let dll_path = dest_dir.join("onnxruntime.dll");
+    let exe_hash = manifest_binary_hash("sherpa-onnx-offline-websocket-server.exe")?;
+    if exe_path.exists() && dll_path.exists() && verify_sha256(&exe_path, exe_hash).is_ok() {
+        return Ok(());
+    }
+
+    let archive_info = manifest_download("sherpa-onnx-win-x64.tar.bz2")?;
+    let archive_path = dest_dir.join("sherpa-onnx-win-x64.tar.bz2");
+    download_file_to_path(
+        client,
+        &archive_info.url,
+        &archive_path,
+        "sherpa-onnx binaries",
+        bytes_downloaded,
+        total_bytes,
+        app,
+    )
+    .await?;
+    verify_sha256_and_remove(&archive_path, &archive_info.sha256)?;
+
+    let temp_extract_dir = dest_dir.join("temp_extract");
+    fs::create_dir_all(&temp_extract_dir)?;
+    emit_progress(
+        app,
+        DownloadProgressPayload {
+            status: "extracting".to_string(),
+            progress: (*bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0),
+            bytes_downloaded: *bytes_downloaded,
+            total_bytes,
+            current_file: "extracting binaries".to_string(),
+            error_message: None,
+        },
+    );
+
+    let output = tokio::process::Command::new("tar")
+        .args([
+            "-xjf",
+            archive_path.to_str().unwrap(),
+            "-C",
+            temp_extract_dir.to_str().unwrap(),
+        ])
+        .output()
+        .await
+        .map_err(|e| {
+            let _ = fs::remove_dir_all(&temp_extract_dir);
+            let _ = fs::remove_file(&archive_path);
+            anyhow!("Failed to run tar command: {}", e)
+        })?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
+        return Err(anyhow!("Failed to extract archive: {}", stderr));
+    }
+
+    if let Err(error) = copy_extracted_files(&temp_extract_dir, dest_dir) {
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
+        return Err(error);
+    }
+    if let Err(error) = verify_sha256_and_remove(&exe_path, exe_hash) {
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
+        return Err(error);
+    }
+    if !dll_path.exists() {
+        let _ = fs::remove_file(&exe_path);
+        let _ = fs::remove_dir_all(&temp_extract_dir);
+        let _ = fs::remove_file(&archive_path);
+        return Err(anyhow!("Offline runtime is missing onnxruntime.dll"));
+    }
+
+    let _ = fs::remove_dir_all(&temp_extract_dir);
+    let _ = fs::remove_file(&archive_path);
     Ok(())
 }
 

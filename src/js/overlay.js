@@ -27,6 +27,28 @@ let cachedSettings = null;
 let timerInterval = null;
 let recordingStartTime = 0;
 let retryTimer = null;
+let nextSessionId = 0;
+let activeSessionId = 0;
+
+function beginSession() {
+  activeSessionId = ++nextSessionId;
+  return activeSessionId;
+}
+
+function isSessionActive(sessionId) {
+  return sessionId !== 0 && sessionId === activeSessionId;
+}
+
+function completeSession(sessionId) {
+  if (isSessionActive(sessionId)) activeSessionId = 0;
+}
+
+function resetTransientUi() {
+  clearAutoDismiss();
+  hideRetry();
+  setStatusMessage('');
+  hideAppPill();
+}
 
 // ── Initialization ──────────────────────────────────────────────
 
@@ -45,61 +67,105 @@ async function setupEventListeners() {
   // Hotkey events from Rust (Transcription Mode)
   await listen('hotkey-start-recording', async () => {
     console.log('hotkey-start-recording event received');
+    const sessionId = beginSession();
+    resetTransientUi();
     setState('recording');
     setMode('stt');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
     // target app owns focus (timing-sensitive).
-    const appIcon = loadAppIcon();
+    const appIcon = loadAppIcon(sessionId);
+    let recordingStarted = false;
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
-      await appIcon;
+      recordingStarted = true;
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
       setOverlayCorner(prefs.overlayPosition);
       await invoke('show_overlay', { position: prefs.overlayPosition });
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
 
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
       startTimer();
+      void appIcon;
     } catch (err) {
       console.error('Failed to start/show recording:', err);
-      setState('idle');
+      if (recordingStarted) {
+        await invoke('stop_recording').catch(stopErr =>
+          console.error('Failed to clean up recording start:', stopErr)
+        );
+      }
+      if (isSessionActive(sessionId)) {
+        setState('idle');
+        completeSession(sessionId);
+      }
     }
   });
 
   await listen('hotkey-stop-recording', async () => {
+    const sessionId = activeSessionId;
+    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
     stopTimer();
-    await stopAndTranscribe(false);
+    await stopAndTranscribe(false, sessionId);
   });
 
   // Hotkey events from Rust (Agent Mode)
   await listen('hotkey-start-agent-recording', async () => {
     console.log('hotkey-start-agent-recording event received');
+    const sessionId = beginSession();
+    resetTransientUi();
     setState('agent');
     setMode('agent');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
     // target app owns focus (timing-sensitive).
-    const appIcon = loadAppIcon();
+    const appIcon = loadAppIcon(sessionId);
+    let recordingStarted = false;
     try {
       const prefs = await getRecordingPreferences();
       await invoke('start_recording', { deviceId: prefs.audioDeviceId });
-      await appIcon;
+      recordingStarted = true;
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
       setOverlayCorner(prefs.overlayPosition);
       await invoke('show_overlay', { position: prefs.overlayPosition });
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
 
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
       startTimer();
+      void appIcon;
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
-      setState('idle');
+      if (recordingStarted) {
+        await invoke('stop_recording').catch(stopErr =>
+          console.error('Failed to clean up agent recording start:', stopErr)
+        );
+      }
+      if (isSessionActive(sessionId)) {
+        setState('idle');
+        completeSession(sessionId);
+      }
     }
   });
 
   await listen('hotkey-stop-agent-recording', async () => {
+    const sessionId = activeSessionId;
+    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
     stopTimer();
-    await stopAndTranscribe(true);
+    await stopAndTranscribe(true, sessionId);
   });
 
   // Live amplitude data from Rust audio stream
@@ -155,8 +221,9 @@ function setMode(mode) {
 // ── Foreground App Pill ──────────────────────────────────────────
 
 let appPollTimer = null;
+let appPollRequestId = 0;
 
-async function loadAppIcon() {
+async function loadAppIcon(sessionId) {
   const pill = document.getElementById('app-pill');
   const pillIcon = document.getElementById('app-pill-icon');
   const pillName = document.getElementById('app-pill-name');
@@ -164,7 +231,7 @@ async function loadAppIcon() {
   pill.hidden = true;
   try {
     const info = await invoke('get_foreground_app_icon');
-    if (info && info.name && info.icon_data_url) {
+    if (isSessionActive(sessionId) && info && info.name && info.icon_data_url) {
       applyAppInfo(info);
     }
   } catch (err) {
@@ -177,10 +244,12 @@ function applyAppInfo(info) {
   const pillIcon = document.getElementById('app-pill-icon');
   const pillName = document.getElementById('app-pill-name');
   if (!pill || !pillIcon || !pillName || !info || !info.name) return;
-  if (pillName.textContent === info.name) return;
-  pillIcon.src = info.icon_data_url || pillIcon.src;
-  pillIcon.alt = `${info.name} icon`;
-  pillName.textContent = info.name;
+  if (currentState !== 'recording' && currentState !== 'agent') return;
+  if (pillName.textContent !== info.name) {
+    pillIcon.src = info.icon_data_url || pillIcon.src;
+    pillIcon.alt = `${info.name} icon`;
+    pillName.textContent = info.name;
+  }
   pill.hidden = false;
   // Apply synchronously — requestAnimationFrame can be dropped while the
   // overlay window is still hidden, which would leave the pill at opacity 0.
@@ -190,10 +259,23 @@ function applyAppInfo(info) {
 // Poll the foreground app while recording so the pill tracks app switches.
 function startAppPolling() {
   stopAppPolling();
+  const sessionId = activeSessionId;
   appPollTimer = setInterval(async () => {
+    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) {
+      stopAppPolling();
+      return;
+    }
+    const requestId = ++appPollRequestId;
     try {
       const info = await invoke('get_foreground_app_icon');
-      if (info && info.name) applyAppInfo(info);
+      if (
+        isSessionActive(sessionId) &&
+        requestId === appPollRequestId &&
+        info &&
+        info.name
+      ) {
+        applyAppInfo(info);
+      }
     } catch (err) {
       // Transient — keep showing the current pill.
     }
@@ -201,6 +283,7 @@ function startAppPolling() {
 }
 
 function stopAppPolling() {
+  appPollRequestId += 1;
   if (appPollTimer) {
     clearInterval(appPollTimer);
     appPollTimer = null;
@@ -213,6 +296,8 @@ function hideAppPill() {
   if (pill) {
     pill.classList.remove('visible');
     pill.hidden = true;
+    const pillName = document.getElementById('app-pill-name');
+    if (pillName) pillName.textContent = '';
   }
 }
 
@@ -250,8 +335,11 @@ function clearAutoDismiss() {
 }
 
 function scheduleAutoDismiss(ms) {
+  const sessionId = activeSessionId;
   clearAutoDismiss();
-  retryTimer = setTimeout(() => { fadeAndHide(); }, ms);
+  retryTimer = setTimeout(() => {
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+  }, ms);
 }
 
 function setupRetryButton() {
@@ -260,9 +348,11 @@ function setupRetryButton() {
       clearAutoDismiss();
       hideRetry();
       setStatusMessage('');
+      const sessionId = activeSessionId;
+      if (!isSessionActive(sessionId)) return;
       setState('transcribing');
       if (recLabel) recLabel.textContent = 'PROCESSING';
-      await runSttFlow();
+       await runSttFlow(sessionId, true);
     });
   }
 }
@@ -274,12 +364,14 @@ function setupDiscardButton() {
     cardDiscard.addEventListener('click', async (e) => {
       e.stopPropagation();
       stopTimer();
+      const sessionId = beginSession();
+      resetTransientUi();
       try {
         await invoke('stop_recording');
       } catch (err) {
         console.error('Stop recording failed:', err);
       }
-      await fadeAndHide();
+      await fadeAndHide(sessionId);
     });
   }
 }
@@ -297,7 +389,8 @@ async function getRecordingPreferences() {
   };
 }
 
-async function fadeAndHide() {
+async function fadeAndHide(sessionId = activeSessionId) {
+  if (!isSessionActive(sessionId)) return;
   stopTimer();
   clearAutoDismiss();
   hideRetry();
@@ -307,11 +400,15 @@ async function fadeAndHide() {
     overlayRoot.classList.remove('active');
   }
   await new Promise(r => setTimeout(r, 200)); // let CSS exit transition finish
+  if (!isSessionActive(sessionId)) return;
   await invoke('hide_overlay');
+  if (!isSessionActive(sessionId)) return;
   setState('idle');
+  completeSession(sessionId);
 }
 
-async function stopAndTranscribe(agentMode) {
+async function stopAndTranscribe(agentMode, sessionId) {
+  if (!isSessionActive(sessionId)) return;
   setState(agentMode ? 'agent_transcribing' : 'transcribing');
 
   // Update label for transcribing state
@@ -332,17 +429,20 @@ async function stopAndTranscribe(agentMode) {
         invoke('get_settings'),
       ]);
       if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
-        await fadeAndHide();
+        await fadeAndHide(sessionId);
         return;
       }
 
       const selection = await selectionPromise;
-      await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection);
+      if (isSessionActive(sessionId)) {
+        await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection, sessionId);
+      }
     } else {
-      await runSttFlow();
+      await runSttFlow(sessionId);
     }
   } catch (err) {
     console.error('Transcription error:', err);
+    if (!isSessionActive(sessionId)) return;
     setState('error');
     if (agentMode) {
       setStatusMessage('Failed');
@@ -355,16 +455,19 @@ async function stopAndTranscribe(agentMode) {
   }
 }
 
-async function runSttFlow() {
+async function runSttFlow(sessionId, retry = false) {
+  if (!isSessionActive(sessionId)) return;
   const startTs = Date.now();
   try {
-    const result = await invoke('finish_transcription_flow');
+    const result = await invoke(retry ? 'retry_transcription_flow' : 'finish_transcription_flow');
 
     const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
     if (!result.text || !result.text.trim() || !hasAlphanumeric) {
-      await fadeAndHide();
+      await fadeAndHide(sessionId);
       return;
     }
+
+    if (!isSessionActive(sessionId)) return;
 
     invoke('save_history_entry', {
       text: result.text,
@@ -374,20 +477,22 @@ async function runSttFlow() {
     }).catch(err => console.error('Failed to save history entry:', err));
 
     try {
-      await invoke('inject_text', { text: result.text });
+      await invoke('inject_text', { text: result.text, monitorAutoLearn: true });
+      if (!isSessionActive(sessionId)) return;
       setState('success');
       setStatusMessage('Inserted');
       await new Promise(r => setTimeout(r, 1000));
-      await fadeAndHide();
+      await fadeAndHide(sessionId);
     } catch (err) {
       console.error('Inject failed:', err);
+      if (!isSessionActive(sessionId)) return;
       setState('error');
       setStatusMessage('Insert failed');
-      showRetry();
-      scheduleAutoDismiss(4000);
+       scheduleAutoDismiss(4000);
     }
   } catch (err) {
     console.error('Transcription error:', err);
+    if (!isSessionActive(sessionId)) return;
     setState('error');
     setStatusMessage('Transcription failed');
     showRetry();
@@ -395,13 +500,15 @@ async function runSttFlow() {
   }
 }
 
-async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection) {
+async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId) {
+  if (!isSessionActive(sessionId)) return;
   try {
     const llmPreset = settings.llm_provider.preset || 'groq';
     const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
     const llmKey = await invoke('get_api_key', {
       target: llmTarget
     }).catch(() => '');
+    if (!isSessionActive(sessionId)) return;
 
     let clipboardCtx = '';
     let grabbed = false;
@@ -431,21 +538,24 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       }
     });
 
+    if (!isSessionActive(sessionId)) return;
+
     if (action.action === 'copy') {
       try {
-        await navigator.clipboard.writeText(action.content || '');
+        await invoke('copy_text', { text: action.content || '' });
       } catch (err) {
         console.error('Failed to copy to clipboard:', err);
       }
+      if (!isSessionActive(sessionId)) return;
       setState('success');
       setStatusMessage('Copied');
       await new Promise(r => setTimeout(r, 900));
-      await fadeAndHide();
+      await fadeAndHide(sessionId);
     } else {
       let executed = false;
       if (action.action === 'insert' || action.action === 'rewrite') {
         const textToInsert = action.content || '';
-        await invoke('inject_text', { text: textToInsert });
+        await invoke('inject_text', { text: textToInsert, monitorAutoLearn: false });
         executed = true;
       } else if (action.action === 'delete_chars') {
         await invoke('execute_keyboard_action', {
@@ -461,10 +571,12 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
         executed = true;
       }
 
+      if (!isSessionActive(sessionId)) return;
+
       setState('success');
       setStatusMessage(executed ? 'Executed' : 'Done');
       await new Promise(r => setTimeout(r, 800));
-      await fadeAndHide();
+      await fadeAndHide(sessionId);
     }
 
     invoke('save_history_entry', {
@@ -476,6 +588,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 
   } catch (err) {
     console.error('Agent Error:', err);
+    if (!isSessionActive(sessionId)) return;
     setState('error');
     setStatusMessage('Failed');
     scheduleAutoDismiss(2000);
@@ -510,14 +623,14 @@ function setState(state) {
     switch (state) {
       case 'recording':
       case 'agent':
-        recLabel.textContent = 'REC';
+        recLabel.textContent = 'LISTENING';
         break;
       case 'transcribing':
       case 'agent_transcribing':
         recLabel.textContent = 'PROCESSING';
         break;
       default:
-        recLabel.textContent = 'REC';
+        recLabel.textContent = 'LISTENING';
     }
   }
 }

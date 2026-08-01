@@ -6,11 +6,8 @@
 // Requires COM STA initialization on the calling thread.
 // Must be called from the dedicated auto-learn OS thread.
 //
-// Focus change detection: Instead of comparing SAFEARRAY runtime IDs
-// (which requires complex VARIANT handling), we detect focus changes
-// by checking if the focused element still supports text patterns.
-// If the user clicks away from a text field to a button/label/etc.,
-// ValuePattern and TextPattern will no longer be available, and we stop.
+// Focus change detection uses UIA's element comparison so edits are only
+// attributed to the field that received the injection.
 
 use windows::core::{Result as WinResult, BSTR};
 use windows::Win32::Foundation::BOOL;
@@ -69,9 +66,9 @@ pub enum ReadResult {
 pub struct FocusedTextReader {
     _com: ComGuard,
     automation: IUIAutomation,
-    /// Track whether the initial element was using ValuePattern or TextPattern.
-    /// Used to detect if focus moved to a non-text element.
-    _initial_uses_value_pattern: bool,
+    /// The field that was focused when this monitoring session started.
+    /// The monitor must never read a different focused text control.
+    initial_element: IUIAutomationElement,
 }
 
 impl FocusedTextReader {
@@ -156,7 +153,7 @@ impl FocusedTextReader {
         Some(FocusedTextReader {
             _com: com,
             automation,
-            _initial_uses_value_pattern: uses_value,
+            initial_element: focused,
         })
     }
 
@@ -169,6 +166,20 @@ impl FocusedTextReader {
                 return ReadResult::NoElement;
             }
         };
+
+        // UIA focus can move to another text field while the monitor is
+        // active. Compare the actual element identity, not just its pattern
+        // support, before reading any content.
+        let same_element = unsafe {
+            self.automation
+                .CompareElements(Some(&self.initial_element), Some(&focused))
+                .map(|same| same.0 != 0)
+                .unwrap_or(false)
+        };
+        if !same_element {
+            log::debug!("[AutoLearn] Focus moved to a different text element");
+            return ReadResult::FocusChanged;
+        }
 
         // Reject password fields if user tabs into one during monitoring
         let is_password = unsafe { focused.CurrentIsPassword().unwrap_or(BOOL(1)) };

@@ -14,6 +14,7 @@ use tauri::{AppHandle, Emitter};
 // Shared recording state
 static RECORDING: AtomicBool = AtomicBool::new(false);
 static STOP_REQUESTED: AtomicBool = AtomicBool::new(false);
+static STARTUP_CANCELLED: AtomicBool = AtomicBool::new(false);
 static CALLBACKS_POST_STOP: AtomicU32 = AtomicU32::new(0);
 static NATIVE_SAMPLE_RATE: AtomicU32 = AtomicU32::new(44100);
 static NATIVE_CHANNELS: AtomicU16 = AtomicU16::new(2);
@@ -36,6 +37,12 @@ static STREAM_READY_TX: Lazy<Mutex<Option<tokio::sync::oneshot::Sender<()>>>> =
     Lazy::new(|| Mutex::new(None));
 static STREAM_DONE_RX: Lazy<Mutex<Option<tokio::sync::oneshot::Receiver<()>>>> =
     Lazy::new(|| Mutex::new(None));
+
+fn clear_cancelled_startup_owner() {
+    if STARTUP_CANCELLED.swap(false, Ordering::SeqCst) {
+        crate::hotkey::clear_active_recording_owner();
+    }
+}
 
 /// List available audio input devices
 #[tauri::command]
@@ -67,6 +74,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
     RECORDING.store(true, Ordering::SeqCst);
     STOP_REQUESTED.store(false, Ordering::SeqCst);
+    STARTUP_CANCELLED.store(false, Ordering::SeqCst);
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
 
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
@@ -113,10 +121,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Some(d) => d,
                 None => {
                     log::error!("No audio input device found");
+                    RECORDING.store(false, Ordering::SeqCst);
+                    clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
                         .ok()
                         .and_then(|mut guard| guard.take());
+                    let _ = done_tx.send(());
                     return;
                 }
             };
@@ -126,10 +137,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Ok(c) => c,
                 Err(e) => {
                     log::error!("Failed to get default input config: {}", e);
+                    RECORDING.store(false, Ordering::SeqCst);
+                    clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
                         .ok()
                         .and_then(|mut guard| guard.take());
+                    let _ = done_tx.send(());
                     return;
                 }
             };
@@ -262,10 +276,12 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 _ => {
                     log::error!("Unsupported sample format: {:?}", sample_format);
                     RECORDING.store(false, Ordering::SeqCst);
+                    clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
                         .ok()
                         .and_then(|mut guard| guard.take());
+                    let _ = done_tx.send(());
                     return;
                 }
             };
@@ -309,23 +325,28 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         // Set RECORDING to false and notify stop commands
                         RECORDING.store(false, Ordering::SeqCst);
+                        clear_cancelled_startup_owner();
                         let _ = done_tx.send(());
                     } else {
                         log::error!("Failed to play stream");
                         RECORDING.store(false, Ordering::SeqCst);
+                        clear_cancelled_startup_owner();
                         let _ = STREAM_READY_TX
                             .lock()
                             .ok()
                             .and_then(|mut guard| guard.take());
+                        let _ = done_tx.send(());
                     }
                 }
                 Err(e) => {
                     log::error!("Failed to build audio stream: {}", e);
                     RECORDING.store(false, Ordering::SeqCst);
+                    clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
                         .ok()
                         .and_then(|mut guard| guard.take());
+                    let _ = done_tx.send(());
                 }
             }
         });
@@ -341,11 +362,49 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Ok(())
             }
             Ok(Err(_)) => {
-                RECORDING.store(false, Ordering::SeqCst);
+                STARTUP_CANCELLED.store(true, Ordering::SeqCst);
+                STOP_REQUESTED.store(true, Ordering::SeqCst);
+                let done_rx = STREAM_DONE_RX
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .take();
+                let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
+                if let Some(done_rx) = done_rx {
+                    stop_completed = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        done_rx,
+                    )
+                    .await
+                    .is_ok();
+                    if stop_completed {
+                        clear_cancelled_startup_owner();
+                    }
+                } else if stop_completed {
+                    clear_cancelled_startup_owner();
+                }
                 Err("Audio stream closed unexpectedly".to_string())
             }
             Err(_) => {
-                RECORDING.store(false, Ordering::SeqCst);
+                STARTUP_CANCELLED.store(true, Ordering::SeqCst);
+                STOP_REQUESTED.store(true, Ordering::SeqCst);
+                let done_rx = STREAM_DONE_RX
+                    .lock()
+                    .map_err(|e| e.to_string())?
+                    .take();
+                let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
+                if let Some(done_rx) = done_rx {
+                    stop_completed = tokio::time::timeout(
+                        std::time::Duration::from_secs(2),
+                        done_rx,
+                    )
+                    .await
+                    .is_ok();
+                    if stop_completed {
+                        clear_cancelled_startup_owner();
+                    }
+                } else if stop_completed {
+                    clear_cancelled_startup_owner();
+                }
                 Err("Audio device timed out (3s)".to_string())
             }
         }
@@ -635,6 +694,9 @@ fn encode_flac_samples(
 pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     // Un-duck background apps on every exit path (errors, early returns) via RAII.
     let _restore_guard = crate::ducking::restore_guard();
+    let _recording_owner_guard = crate::hotkey::RecordingStopGuard;
+    // Match the online paths so the final syllable is present before shutdown.
+    tokio::time::sleep(std::time::Duration::from_millis(100)).await;
     let stop_request_time = std::time::Instant::now();
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
@@ -721,6 +783,7 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
 
 #[allow(dead_code)]
 pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
+    let _recording_owner_guard = crate::hotkey::RecordingStopGuard;
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
     // the final syllable lands in the buffer while the stream is still fully active.
@@ -831,6 +894,7 @@ pub struct AudioPayload {
 
 #[allow(dead_code)]
 pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
+    let _recording_owner_guard = crate::hotkey::RecordingStopGuard;
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
     // the final syllable lands in the buffer while the stream is still fully active.
@@ -930,6 +994,7 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
 pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     // Un-duck background apps on every exit path (errors, early returns) via RAII.
     let _restore_guard = crate::ducking::restore_guard();
+    let _recording_owner_guard = crate::hotkey::RecordingStopGuard;
     // Give the microphone stream 100ms of continued recording after the hotkey release
     // before signalling stop. This matches v1.1.20's approach that eliminated truncation:
     // the final syllable lands in the buffer while the stream is still fully active.

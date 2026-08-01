@@ -26,12 +26,20 @@ body {
 
 /* ── Card Root ─────────────────────────────────────────────────── */
 .overlay-root {
+  --overlay-amethyst: #b08ac8;
+  --overlay-amethyst-rgb: 176, 138, 200;
   width: 36px;
   height: 36px;
   border-radius: 16px;
-  background: #0d1117;
-  border: 1px solid rgba(255, 255, 255, 0.06);
-  box-shadow: none;
+  background: rgba(11, 15, 22, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    0 16px 46px rgba(0, 0, 0, 0.48),
+    0 3px 12px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  isolation: isolate;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -75,27 +83,23 @@ body {
   transform-origin: 50% 100%;
 }
 
-/* Transcribe mode surface — opaque, amethyst-tinted top */
+/* Transcribe mode surface — monochrome ink */
 .overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
-  background: linear-gradient(
-    180deg,
-    #1c1526 0%,
-    #11151c 40%,
-    #0a0e14 100%
-  );
-  box-shadow: none;
+  background: #0d1117;
+  box-shadow:
+    0 16px 46px rgba(0, 0, 0, 0.50),
+    0 3px 12px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
-/* Agent mode surface — opaque, teal-tinted top */
+/* Agent mode surface — the same monochrome ink */
 .overlay-root.state-agent.active,
 .overlay-root.state-agent_transcribing.active {
-  background: linear-gradient(
-    180deg,
-    #0e1c20 0%,
-    #11151c 40%,
-    #0a0e14 100%
-  );
-  box-shadow: none;
+  background: #0d1117;
+  box-shadow:
+    0 16px 46px rgba(0, 0, 0, 0.50),
+    0 3px 12px rgba(0, 0, 0, 0.28),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
 /* Glass edge highlight */
@@ -216,11 +220,11 @@ body {
 }
 
 .rec-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
-  background: var(--color-brand-amethyst);
-  box-shadow: 0 0 8px rgba(139, 69, 216, 0.35);
+  background: var(--overlay-amethyst);
+  box-shadow: 0 0 8px rgba(var(--overlay-amethyst-rgb), 0.26);
   animation: rec-pulse 1.2s ease-in-out infinite;
 }
 
@@ -231,9 +235,9 @@ body {
 
 .rec-label {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 13px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--color-on-surface);
 }
@@ -246,16 +250,20 @@ body {
   z-index: 5;
   display: flex;
   align-items: center;
-  gap: 8px;
-  height: 28px;
-  padding: 0 12px;
+  gap: 7px;
+  height: 24px;
+  padding: 0 10px;
   border-radius: 999px;
   background: #0d1117;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: none;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(16px) saturate(125%);
+  -webkit-backdrop-filter: blur(16px) saturate(125%);
   opacity: 0;
   transform: translateX(-50%) translateY(-4px);
-  transition: opacity 160ms ease, transform 160ms ease;
+  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
   pointer-events: none;
 }
 
@@ -269,8 +277,8 @@ body {
 }
 
 .app-pill .app-pill-icon {
-  width: 18px;
-  height: 18px;
+  width: 16px;
+  height: 16px;
   border-radius: 4px;
   flex-shrink: 0;
   background: rgba(255, 255, 255, 0.06);
@@ -278,10 +286,10 @@ body {
 
 .app-pill .app-pill-name {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.01em;
-  color: var(--color-on-surface-variant);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  color: var(--color-on-surface);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -299,28 +307,29 @@ body {
 /* ── Mode Badge ────────────────────────────────────────────────── */
 .mode-badge {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: 0.03em;
-  text-transform: uppercase;
-  padding: 4px 10px;
-  border-radius: 6px;
-  background: rgba(139, 69, 216, 0.15);
-  color: var(--color-brand-amethyst);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  padding: 4px 9px;
+  border-radius: 7px;
+  background: rgba(var(--overlay-amethyst-rgb), 0.12);
+  border: 1px solid rgba(var(--overlay-amethyst-rgb), 0.22);
+  color: var(--overlay-amethyst);
 }
 
 /* Agent mode badge — teal */
 .overlay-root.state-agent .mode-badge,
 .overlay-root.state-agent_transcribing .mode-badge {
-  background: rgba(11, 214, 227, 0.15);
+  background: rgba(11, 214, 227, 0.10);
+  border-color: rgba(11, 214, 227, 0.18);
   color: var(--color-brand-cyan);
 }
 
 /* ── Timer ─────────────────────────────────────────────────────── */
 .card-timer {
   font-family: var(--font-label), 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 12px;
+  font-weight: 600;
   color: var(--color-on-surface-variant);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;
@@ -328,8 +337,8 @@ body {
 
 /* ── Close Button ──────────────────────────────────────────────── */
 .card-discard {
-  width: 24px;
-  height: 24px;
+  width: 28px;
+  height: 28px;
   border-radius: 6px;
   border: none;
   background: transparent;
@@ -345,8 +354,8 @@ body {
 }
 
 .card-discard:hover {
-  background: rgba(255, 255, 255, 0.06);
-  color: var(--color-on-surface-variant);
+  background: rgba(239, 68, 68, 0.12);
+  color: #fca5a5;
 }
 
 .card-discard:focus-visible {
@@ -474,8 +483,8 @@ body {
 .overlay-root.state-transcribing .rec-dot,
 .overlay-root.state-agent_transcribing .rec-dot {
   background: transparent;
-  border: 2px solid rgba(139, 69, 216, 0.3);
-  border-top-color: var(--color-brand-amethyst);
+  border: 2px solid rgba(var(--overlay-amethyst-rgb), 0.28);
+  border-top-color: var(--overlay-amethyst);
   border-radius: 50%;
   width: 10px;
   height: 10px;
@@ -515,7 +524,16 @@ body {
 /* ── Reduced motion — keep the processing spinner perceivable ──── */
 @media (prefers-reduced-motion: reduce) {
   .overlay-root.active {
-    animation: palette-enter 120ms ease-out forwards;
+    animation: none;
+    transition-duration: 1ms;
+  }
+
+  .app-pill,
+  .rec-dot,
+  .overlay-root.state-transcribing .rec-label,
+  .overlay-root.state-agent_transcribing .rec-label {
+    animation: none !important;
+    transition-duration: 1ms;
   }
 
   .overlay-root.state-transcribing .rec-dot,

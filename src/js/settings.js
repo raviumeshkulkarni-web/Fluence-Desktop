@@ -22,6 +22,7 @@ let activeRecorder = null;
 let pendingHotkey = '';
 let pendingHotkeyKeys = new Set();
 let dictEntries = [];
+let suggestionsLoading = false;
 
 // Provider presets
 const STT_PRESETS = {
@@ -67,6 +68,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     if (currentPage === 'history') {
       loadHistory(true);
       loadDashboardStats();
+    } else if (currentPage === 'dictionary') {
+      loadDictionary();
+      loadSuggestions();
     }
   });
 });
@@ -1191,14 +1195,26 @@ async function exportDictionary() {
 
 function setupSuggestions() {
   document.getElementById('clear-dismissed-btn')?.addEventListener('click', clearDismissedSuggestions);
+
+  // Background UIA monitoring can save a suggestion while this page is open.
+  // Refresh only while the dictionary page is visible, avoiding a global poll.
+  window.setInterval(() => {
+    if (currentPage === 'dictionary' && document.visibilityState === 'visible') {
+      loadSuggestions();
+    }
+  }, 2500);
 }
 
 async function loadSuggestions() {
+  if (suggestionsLoading) return;
+  suggestionsLoading = true;
   try {
     const suggestions = await invoke('get_suggestions');
     renderSuggestionsTable(suggestions);
   } catch (err) {
     console.error('Failed to load suggestions:', err);
+  } finally {
+    suggestionsLoading = false;
   }
 }
 
@@ -1617,7 +1633,7 @@ function renderHistoryItem(entry, container) {
 }
 
 window.copyHistoryItem = (text, element) => {
-  navigator.clipboard.writeText(text).then(() => {
+  invoke('copy_text', { text }).then(() => {
     showToast('Copied to clipboard', 'success');
     if (element) {
       element.classList.add('copy-flash');

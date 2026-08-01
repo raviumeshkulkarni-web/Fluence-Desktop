@@ -11,6 +11,7 @@
 // 5. On change: extract corrections, save to suggestions
 // 6. Stop: timeout, focus change, element gone, or error
 
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::Receiver;
 use std::time::{Duration, Instant};
 
@@ -19,6 +20,7 @@ use serde::Serialize;
 use super::correction_extractor::extract_user_corrections;
 use super::learner;
 use super::ui_automation::{FocusedTextReader, ReadResult};
+use super::MonitorRequest;
 
 /// How long to wait after paste before starting to monitor.
 const POST_PASTE_DELAY_MS: u64 = 500;
@@ -43,6 +45,8 @@ const MAX_FIELD_CHARS: usize = 50_000;
 /// Why a monitoring session ended.
 #[derive(Debug, Clone, Serialize)]
 pub enum ExitReason {
+    /// A newer injection superseded this monitoring session.
+    Superseded,
     /// Session timed out (30s reached) without detecting a change.
     Timeout,
     /// Focused element lost text patterns (user clicked away).
@@ -81,7 +85,7 @@ pub struct SessionResult {
 
 /// Entry point for the dedicated auto-learn OS thread.
 /// Blocks on the channel receiver, processing one injection at a time.
-pub fn monitoring_thread(rx: Receiver<String>) {
+pub fn monitoring_thread(rx: Receiver<MonitorRequest>, active_generation: &AtomicU64) {
     log::debug!("[AutoLearn] Monitor thread started");
 
     // This thread needs COM STA for UIA
@@ -99,18 +103,26 @@ pub fn monitoring_thread(rx: Receiver<String>) {
 
     loop {
         match rx.recv() {
-            Ok(injected_text) => {
-                if injected_text.trim().is_empty() {
+            Ok(request) => {
+                if request.generation != active_generation.load(Ordering::Acquire) {
+                    continue;
+                }
+
+                if request.injected_text.trim().is_empty() {
                     log::debug!("[AutoLearn] Received empty text, skipping");
                     continue;
                 }
 
                 log::info!(
                     "[AutoLearn] Starting monitoring session ({} chars)",
-                    injected_text.len()
+                    request.injected_text.len()
                 );
 
-                let result = run_monitoring_session(&injected_text);
+                let result = run_monitoring_session(
+                    &request.injected_text,
+                    request.generation,
+                    active_generation,
+                );
 
                 log_session_result(&result);
             }
@@ -127,14 +139,38 @@ pub fn monitoring_thread(rx: Receiver<String>) {
 /// Run a single monitoring session for one injection.
 /// Creates a fresh UIA reader and polls until done.
 /// Returns a structured `SessionResult` with exit reason and diagnostics.
-fn run_monitoring_session(injected_text: &str) -> SessionResult {
+fn run_monitoring_session(
+    injected_text: &str,
+    generation: u64,
+    active_generation: &AtomicU64,
+) -> SessionResult {
     let session_start = Instant::now();
     let mut poll_count: u32 = 0;
     let mut value_changed = false;
     let mut corrections_count: u32 = 0;
 
+    if generation != active_generation.load(Ordering::Acquire) {
+        return SessionResult {
+            exit_reason: ExitReason::Superseded,
+            duration_ms: 0,
+            poll_count: 0,
+            value_changed: false,
+            corrections_count: 0,
+        };
+    }
+
     // Wait for paste to settle in target app
     std::thread::sleep(Duration::from_millis(POST_PASTE_DELAY_MS));
+
+    if generation != active_generation.load(Ordering::Acquire) {
+        return SessionResult {
+            exit_reason: ExitReason::Superseded,
+            duration_ms: session_start.elapsed().as_millis() as u64,
+            poll_count: 0,
+            value_changed: false,
+            corrections_count: 0,
+        };
+    }
 
     // Create UIA reader for this session
     let reader = match FocusedTextReader::new() {
@@ -231,6 +267,11 @@ fn run_monitoring_session(injected_text: &str) -> SessionResult {
 
     // Adaptive polling loop
     loop {
+        if generation != active_generation.load(Ordering::Acquire) {
+            exit_reason = ExitReason::Superseded;
+            break;
+        }
+
         let elapsed = session_start.elapsed().as_millis() as u64;
         if elapsed >= MONITOR_TIMEOUT_MS {
             log::debug!("[AutoLearn] Timeout reached ({}ms), stopping", elapsed);
@@ -366,6 +407,7 @@ mod tests {
     #[test]
     fn test_exit_reason_serialization() {
         let reasons = vec![
+            ExitReason::Superseded,
             ExitReason::Timeout,
             ExitReason::FocusChanged,
             ExitReason::SecureFieldDetected,
@@ -422,6 +464,7 @@ mod tests {
     #[test]
     fn test_all_exit_reasons_are_distinct() {
         let reasons = vec![
+            ExitReason::Superseded,
             ExitReason::Timeout,
             ExitReason::FocusChanged,
             ExitReason::SecureFieldDetected,

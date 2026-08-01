@@ -9,7 +9,7 @@ use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
@@ -67,6 +67,8 @@ struct ServerInstance {
 static SERVER_INSTANCE: Lazy<Mutex<Option<ServerInstance>>> = Lazy::new(|| Mutex::new(None));
 static LAST_USED: Lazy<Mutex<Instant>> = Lazy::new(|| Mutex::new(Instant::now()));
 static IDLE_MONITOR_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
+static SERVER_START_LOCK: Lazy<tokio::sync::Mutex<()>> =
+    Lazy::new(|| tokio::sync::Mutex::new(()));
 
 fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
@@ -101,6 +103,7 @@ fn start_idle_monitor() {
 }
 
 pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
+    let _start_lock = SERVER_START_LOCK.lock().await;
     // Check if an existing server is running with the same engine
     {
         let mut lock = SERVER_INSTANCE.lock().unwrap();
@@ -138,14 +141,9 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         .join("bin")
         .join(engine.dir_name());
 
-    let exe_path = dirs::data_local_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join("Fluence")
-        .join("bin")
-        .join("sensevoice_v2")
-        .join("sherpa-onnx-offline-websocket-server.exe");
+    let exe_path = offline_dir.join("sherpa-onnx-offline-websocket-server.exe");
 
-    if !exe_path.exists() {
+    if !exe_path.exists() || !offline_dir.join("onnxruntime.dll").exists() {
         return Err(anyhow!(
             "Offline transcription engine is not installed. Please download it in Settings."
         ));
@@ -303,13 +301,17 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     Ok(port)
 }
 
-pub async fn transcribe_samples(samples: Vec<f32>, engine: OfflineEngine) -> Result<String> {
+pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Result<String> {
     let port = ensure_server_running(engine).await?;
     *LAST_USED.lock().unwrap() = Instant::now();
 
     let url = format!("ws://127.0.0.1:{}", port);
-    let (mut ws_stream, _) = tokio_tungstenite::connect_async(&url)
+    let (mut ws_stream, _) = tokio::time::timeout(
+        Duration::from_secs(10),
+        tokio_tungstenite::connect_async(&url),
+    )
         .await
+        .map_err(|_| anyhow!("Timed out connecting to local ASR server"))?
         .map_err(|e| anyhow!("Failed to connect to local ASR server: {}", e))?;
 
     // Build the custom sherpa-onnx binary payload
@@ -319,34 +321,49 @@ pub async fn transcribe_samples(samples: Vec<f32>, engine: OfflineEngine) -> Res
     let mut payload = Vec::with_capacity(8 + samples.len() * 4);
     payload.extend_from_slice(&sample_rate.to_le_bytes());
     payload.extend_from_slice(&byte_len.to_le_bytes());
-    for &sample in &samples {
+    for &sample in samples {
         payload.extend_from_slice(&sample.to_le_bytes());
     }
 
     // Send audio payload
-    ws_stream
-        .send(tokio_tungstenite::tungstenite::Message::Binary(payload))
+    tokio::time::timeout(
+        Duration::from_secs(10),
+        ws_stream.send(tokio_tungstenite::tungstenite::Message::Binary(payload)),
+    )
         .await
+        .map_err(|_| anyhow!("Timed out sending audio to local ASR server"))?
         .map_err(|e| anyhow!("Failed to send audio to ASR server: {}", e))?;
 
     // Per sherpa-onnx protocol: server decodes after receiving all bytes,
     // sends text result, THEN client sends "Done" to close.
     // Do NOT send "Done" before receiving the result — it closes the connection.
 
-    let mut result_text = String::new();
-    while let Some(msg) = ws_stream.next().await {
-        let msg = msg.map_err(|e| anyhow!("Error receiving from ASR server: {}", e))?;
-        match msg {
-            tokio_tungstenite::tungstenite::Message::Text(text) => {
-                result_text = text;
-                break;
+    let receive_result = tokio::time::timeout(Duration::from_secs(120), async {
+        let mut result_text = String::new();
+        while let Some(msg) = ws_stream.next().await {
+            let msg = msg.map_err(|e| anyhow!("Error receiving from ASR server: {}", e))?;
+            match msg {
+                tokio_tungstenite::tungstenite::Message::Text(text) => {
+                    result_text = text;
+                    break;
+                }
+                tokio_tungstenite::tungstenite::Message::Close(_) => {
+                    break;
+                }
+                _ => {}
             }
-            tokio_tungstenite::tungstenite::Message::Close(_) => {
-                break;
-            }
-            _ => {}
         }
-    }
+        Ok::<String, anyhow::Error>(result_text)
+    })
+    .await;
+
+    let result_text = match receive_result {
+        Ok(result) => result?,
+        Err(_) => {
+            let _ = ws_stream.close(None).await;
+            return Err(anyhow!("Timed out waiting for local ASR server response"));
+        }
+    };
 
     // Now send "Done" to cleanly close the connection
     let _ = ws_stream

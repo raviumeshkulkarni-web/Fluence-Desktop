@@ -225,8 +225,8 @@ class AuraVisualizer {
     const isActive = this.currentState === 'recording' || this.currentState === 'agent' || this.currentState === 'agent_transcribing';
 
     // Color palette (matches Android exactly)
-    const primaryColor = isAgent ? '#00F5D4' : '#A855F7';
-    const forefrontColor = isAgent ? '#E6FFFA' : '#F3E8FF';
+    const primaryColor = isAgent ? '#00F5D4' : '#B08AC8';
+    const forefrontColor = isAgent ? '#E6FFFA' : '#F1EAF5';
     const primaryAlpha = isAgent ? 0.4 : 0.4;
 
     const centerY = H / 2;

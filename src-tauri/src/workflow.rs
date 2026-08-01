@@ -1,4 +1,7 @@
+use once_cell::sync::Lazy;
 use serde::Serialize;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::Mutex;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -11,67 +14,121 @@ pub struct TranscriptionFlowResult {
     pub provider: String,
 }
 
+enum PendingAudio {
+    Offline {
+        samples: Vec<f32>,
+        engine: crate::offline_transcribe::OfflineEngine,
+    },
+    Online {
+        mp3_bytes: Vec<u8>,
+    },
+}
+
+static PENDING_AUDIO: Lazy<Mutex<Option<PendingAudio>>> = Lazy::new(|| Mutex::new(None));
+static PENDING_AUDIO_GENERATION: AtomicU64 = AtomicU64::new(0);
+
+async fn transcribe_pending_audio(
+    settings: &crate::settings::AppSettings,
+) -> Result<(String, String, std::time::Duration), String> {
+    let (pending, generation) = {
+        let mut guard = PENDING_AUDIO.lock().map_err(|e| e.to_string())?;
+        let pending = guard
+            .take()
+            .ok_or_else(|| "No captured audio is available to retry".to_string())?;
+        (pending, PENDING_AUDIO_GENERATION.load(Ordering::SeqCst))
+    };
+    let transcribe_start = std::time::Instant::now();
+
+    let result: Result<(String, String), String> = match &pending {
+        PendingAudio::Offline { samples, engine } => {
+            crate::offline_transcribe::transcribe_samples(samples, *engine)
+                .await
+                .map(|text| (text.clone(), text))
+                .map_err(|e| format!("Offline transcription error: {}", e))
+        }
+        PendingAudio::Online { mp3_bytes } => {
+            let target = crate::credentials::get_stt_target(&settings.stt_provider.preset);
+            match crate::credentials::get_api_key(target) {
+                Ok(api_key) => crate::transcribe::transcribe_mp3_bytes_with_raw(
+                    &settings.stt_provider.base_url,
+                    &api_key,
+                    &settings.stt_provider.model,
+                    mp3_bytes,
+                    Some(settings.language.as_str()),
+                )
+                .await
+                .map(|result| (result.corrected_text, result.raw_text)),
+                Err(_) => Err(format!(
+                    "No API key found for {}. Please configure it in Providers settings.",
+                    settings.stt_provider.preset
+                )),
+            }
+        }
+    };
+
+    match result {
+        Ok((text, raw_text)) => Ok((text, raw_text, transcribe_start.elapsed())),
+        Err(error) => {
+            if PENDING_AUDIO_GENERATION.load(Ordering::SeqCst) == generation {
+                if let Ok(mut guard) = PENDING_AUDIO.lock() {
+                    if guard.is_none() {
+                        *guard = Some(pending);
+                    }
+                }
+            }
+            Err(error)
+        }
+    }
+}
+
 async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
 
-    let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
+    let settings = match crate::settings::load_settings() {
+        Ok(settings) => settings,
+        Err(error) => {
+            // The recorder must still be stopped if settings become unreadable.
+            let _ = crate::audio::stop_recording_mp3_bytes().await;
+            return Err(error.to_string());
+        }
+    };
 
-    let (text, raw_text, transcribe_duration) = if settings.stt_provider.preset == "Local Offline" {
-        let transcribe_start = std::time::Instant::now();
+    let pending = if settings.stt_provider.preset == "Local Offline" {
         let samples = crate::audio::stop_recording_f32_samples().await?;
         if samples.is_empty() {
-            (
-                "".to_string(),
-                "".to_string(),
-                std::time::Duration::from_secs(0),
-            )
+            None
         } else {
             let engine: crate::offline_transcribe::OfflineEngine = settings
                 .offline_engine
                 .parse()
                 .unwrap_or(crate::offline_transcribe::OfflineEngine::SenseVoice);
-            let result = crate::offline_transcribe::transcribe_samples(samples, engine)
-                .await
-                .map_err(|e| format!("Offline transcription error: {}", e))?;
-
-            // Offline transcription doesn't apply dictionary corrections
-            (result.clone(), result, transcribe_start.elapsed())
+            Some(PendingAudio::Offline { samples, engine })
         }
     } else {
         let mp3_bytes = crate::audio::stop_recording_mp3_bytes().await?;
 
         if mp3_bytes.is_empty() {
-            (
-                "".to_string(),
-                "".to_string(),
-                std::time::Duration::from_secs(0),
-            )
+            None
         } else {
-            let transcribe_start = std::time::Instant::now();
-
-            let target = crate::credentials::get_stt_target(&settings.stt_provider.preset);
-            let api_key = crate::credentials::get_api_key(target).map_err(|_| {
-                format!(
-                    "No API key found for {}. Please configure it in Providers settings.",
-                    settings.stt_provider.preset
-                )
-            })?;
-
-            let result = crate::transcribe::transcribe_mp3_bytes_with_raw(
-                &settings.stt_provider.base_url,
-                &api_key,
-                &settings.stt_provider.model,
-                mp3_bytes,
-                Some(settings.language.as_str()),
-            )
-            .await?;
-            (
-                result.corrected_text,
-                result.raw_text,
-                transcribe_start.elapsed(),
-            )
+            Some(PendingAudio::Online { mp3_bytes })
         }
     };
+
+    let Some(pending) = pending else {
+        return Ok(TranscriptionFlowResult {
+            text: String::new(),
+            raw_text: String::new(),
+            duration_ms: start_time.elapsed().as_millis() as u64,
+            provider: settings.stt_provider.preset,
+        });
+    };
+
+    if let Ok(mut guard) = PENDING_AUDIO.lock() {
+        PENDING_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst);
+        *guard = Some(pending);
+    }
+
+    let (text, raw_text, transcribe_duration) = transcribe_pending_audio(&settings).await?;
 
     log::info!(
         "stop_and_transcribe workflow: total = {:?}, ASR duration = {:?}",
@@ -260,4 +317,53 @@ pub async fn finish_transcription_flow(
     result.duration_ms = start_time.elapsed().as_millis() as u64;
 
     Ok(result)
+}
+
+/// Retry the last failed transcription using the retained captured audio.
+#[tauri::command]
+pub async fn retry_transcription_flow(
+    _app: tauri::AppHandle,
+) -> Result<TranscriptionFlowResult, String> {
+    let start_time = std::time::Instant::now();
+    let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
+    let (mut text, raw_text, _transcribe_duration) = transcribe_pending_audio(&settings).await?;
+
+    if settings.ai_polish_style != "none" {
+        let target = crate::credentials::get_llm_target(&settings.llm_provider.preset);
+        let llm_key = crate::credentials::get_api_key(target).unwrap_or_default();
+        if let Ok(polished) = polish_transcribed_text(
+            &settings.llm_provider.base_url,
+            &llm_key,
+            &settings.llm_provider.model,
+            &text,
+            &settings.ai_polish_style,
+        )
+        .await
+        {
+            text = polished;
+        }
+    }
+
+    if settings.auto_learn_enabled && !text.is_empty() {
+        let ctx = crate::auto_learn::ExtractionContext {
+            original: raw_text.clone(),
+            transformed: text.clone(),
+            transformation_type: crate::auto_learn::TransformationType::from_ai_polish_style(
+                &settings.ai_polish_style,
+            ),
+            language: settings.language.clone(),
+            provider: settings.stt_provider.preset.clone(),
+        };
+        let candidates = crate::auto_learn::extract_candidates(&ctx);
+        if !candidates.is_empty() {
+            let _ = crate::suggestion::upsert_suggestions(candidates);
+        }
+    }
+
+    Ok(TranscriptionFlowResult {
+        text,
+        raw_text,
+        duration_ms: start_time.elapsed().as_millis() as u64,
+        provider: settings.stt_provider.preset,
+    })
 }

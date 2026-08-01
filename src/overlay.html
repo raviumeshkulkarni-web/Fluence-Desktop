@@ -11,7 +11,8 @@
 <body>
   <!-- Separate small pill floating on the top edge: app icon + name -->
   <div class="app-pill" id="app-pill" hidden>
-    <img class="app-pill-icon" id="app-pill-icon" alt="" width="18" height="18" />
+    <img class="app-pill-icon" id="app-pill-icon" alt="" width="16" height="16"
+      src="data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=" />
     <span class="app-pill-name" id="app-pill-name"></span>
   </div>
 
@@ -20,9 +21,9 @@
     <!-- Row 1: Metadata — REC indicator + mode badge -->
     <div class="card-meta">
       <div class="card-meta-left">
-        <div class="card-rec">
+        <div class="card-rec" aria-label="Listening">
           <span class="rec-dot"></span>
-          <span class="rec-label" id="rec-label" aria-live="polite">REC</span>
+          <span class="rec-label" id="rec-label" aria-live="polite">LISTENING</span>
         </div>
       </div>
       <span class="mode-badge" id="mode-badge">Transcribe</span>

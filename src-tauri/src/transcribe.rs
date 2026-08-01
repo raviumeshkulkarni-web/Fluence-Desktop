@@ -277,14 +277,14 @@ pub async fn transcribe_mp3_bytes_with_raw(
     base_url: &str,
     api_key: &str,
     model: &str,
-    mp3_bytes: Vec<u8>,
+    mp3_bytes: &[u8],
     language: Option<&str>,
 ) -> Result<TranscriptionWithRaw, String> {
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
 
-    let file_part = reqwest::multipart::Part::bytes(mp3_bytes)
+    let file_part = reqwest::multipart::Part::bytes(mp3_bytes.to_vec())
         .file_name("audio.mp3")
         .mime_str("audio/mpeg")
         .map_err(|e| e.to_string())?;

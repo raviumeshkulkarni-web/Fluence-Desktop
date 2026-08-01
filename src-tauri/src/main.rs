@@ -158,6 +158,7 @@ pub fn run() {
             agent::test_llm_connection,
             // Clipboard
             clipboard::inject_text,
+            clipboard::copy_text,
             clipboard::execute_keyboard_action,
             clipboard::grab_active_selection,
             // History
@@ -184,6 +185,7 @@ pub fn run() {
             // End-to-end workflows
             workflow::stop_and_transcribe_recording,
             workflow::finish_transcription_flow,
+            workflow::retry_transcription_flow,
             // Autostart
             autostart::set_autostart,
             // Offline ASR manager

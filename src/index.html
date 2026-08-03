@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta http-equiv="Content-Security-Policy"
-    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; script-src 'self';" />
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self';" />
   <title>Fluence Settings</title>
   <link rel="stylesheet" href="css/settings.css" />
 </head>
@@ -16,8 +16,11 @@
       <button type="button" class="titlebar-button" id="titlebar-minimize" aria-label="Minimize window">
         <svg width="11" height="1" viewBox="0 0 11 1" aria-hidden="true"><rect width="11" height="1" fill="currentColor"/></svg>
       </button>
-      <button type="button" class="titlebar-button titlebar-close" id="titlebar-close" aria-label="Close window">
-        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.2" stroke-linecap="round"/></svg>
+      <button type="button" class="titlebar-button" id="titlebar-maximize" aria-label="Maximize window" title="Maximize window">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.75" y="0.75" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button type="button" class="titlebar-button titlebar-close" id="titlebar-close" aria-label="Hide to tray" title="Hide to tray">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1v5M2 4.5L5 7.5l3-3M1 9h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
   </div>
@@ -68,7 +71,7 @@
     <div class="sidebar-footer">
       <div class="sidebar-update-widget" id="sidebar-update-widget">
         <!-- Version Label Header (v1.6.0 / Update Available / Update Ready) -->
-        <div class="sidebar-version-label" id="sidebar-version-label">v1.6.0</div>
+        <div class="sidebar-version-label" id="sidebar-version-label">v—</div>
 
         <!-- Optional Status Subtitle -->
         <div id="sidebar-update-status" class="sidebar-update-status" role="status"></div>
@@ -92,7 +95,7 @@
     <!-- ===== GENERAL PAGE ===== -->
     <section class="page" id="page-general">
       <div class="page-header">
-        <h1 class="page-title">General</h1>
+        <h1 class="page-title" tabindex="-1">General</h1>
         <p class="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
       </div>
 
@@ -109,7 +112,7 @@
               <div class="hotkey-display" id="hotkey-display" tabindex="0" role="button" aria-labelledby="hotkey-label hotkey-display-text">
                 <span id="hotkey-display-text">Ctrl+Shift+Space</span>
               </div>
-              <button class="btn-ghost" id="hotkey-clear-btn" style="font-size:12px;">Reset</button>
+              <button class="btn-ghost btn-small" id="hotkey-clear-btn">Reset</button>
             </div>
           </div>
         </div>
@@ -119,7 +122,7 @@
             <div class="setting-desc">How the hotkey controls recording</div>
           </div>
           <div class="setting-control">
-            <select id="recording-mode-select" aria-label="Transcription mode behavior" style="width:180px;">
+            <select id="recording-mode-select" class="select-md" aria-label="Transcription mode behavior">
               <option value="push_to_toggle">Push-to-Toggle</option>
               <option value="hold_to_record">Hold-to-Record</option>
             </select>
@@ -136,7 +139,7 @@
               <div class="hotkey-display" id="agent-hotkey-display" tabindex="0" role="button" aria-labelledby="agent-hotkey-label agent-hotkey-display-text">
                 <span id="agent-hotkey-display-text">Ctrl+Shift+A</span>
               </div>
-              <button class="btn-ghost" id="agent-hotkey-clear-btn" style="font-size:12px;">Reset</button>
+              <button class="btn-ghost btn-small" id="agent-hotkey-clear-btn">Reset</button>
             </div>
           </div>
         </div>
@@ -147,7 +150,7 @@
             <div class="setting-desc">How the agent hotkey controls recording</div>
           </div>
           <div class="setting-control">
-            <select id="agent-recording-mode-select" aria-label="Agent mode behavior" style="width:180px;">
+            <select id="agent-recording-mode-select" class="select-md" aria-label="Agent mode behavior">
               <option value="push_to_toggle">Push-to-Toggle</option>
               <option value="hold_to_record">Hold-to-Record</option>
             </select>
@@ -164,7 +167,7 @@
             <div class="setting-desc">Where the floating overlay appears on screen during recording</div>
           </div>
           <div class="setting-control">
-            <select id="overlay-position-select" aria-label="Overlay position" style="width:180px;">
+            <select id="overlay-position-select" class="select-md" aria-label="Overlay position">
               <option value="bottom_right">Bottom Right</option>
               <option value="bottom_left">Bottom Left</option>
               <option value="center">Center Bottom</option>
@@ -182,7 +185,7 @@
             <div class="setting-desc">Select the audio input device for voice recording</div>
           </div>
           <div class="setting-control">
-            <select id="audio-device-select" aria-label="Microphone input device" style="width:220px;">
+            <select id="audio-device-select" class="select-lg" aria-label="Microphone input device">
               <option value="">System Default</option>
             </select>
           </div>
@@ -193,7 +196,7 @@
             <div class="setting-desc">Hint to the STT model about the spoken language</div>
           </div>
           <div class="setting-control">
-            <select id="language-select" aria-label="Transcription language" style="width:180px;">
+            <select id="language-select" class="select-md" aria-label="Transcription language">
               <option value="en">English</option>
               <option value="auto">Auto-detect</option>
               <option value="es">Spanish</option>
@@ -213,13 +216,25 @@
             <div class="setting-desc">Automatically rewrite or clean up text before pasting</div>
           </div>
           <div class="setting-control">
-            <select id="ai-polish-select" aria-label="AI polish style" style="width:180px;">
+            <select id="ai-polish-select" class="select-md" aria-label="AI polish style">
               <option value="none">None (Raw)</option>
-              <option value="clean">Clean Fillers & Grammar</option>
+              <option value="clean">Clean Fillers &amp; Grammar</option>
               <option value="professional">Professional Tone</option>
               <option value="bullet_points">Bulleted List</option>
               <option value="translate_en">Translate to English</option>
             </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Play Completion Sound</div>
+            <div class="setting-desc">Play a short chime when a transcription finishes</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="sound-on-complete-toggle">
+              <input type="checkbox" id="sound-on-complete-cb" aria-label="Play a sound when transcription completes" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
           </div>
         </div>
       </div>
@@ -285,7 +300,7 @@
     <!-- ===== PROVIDERS PAGE ===== -->
     <section class="page" id="page-providers">
       <div class="page-header">
-        <h1 class="page-title">AI Providers</h1>
+        <h1 class="page-title" tabindex="-1">AI Providers</h1>
         <p class="page-subtitle">Configure speech-to-text and language model providers</p>
       </div>
 
@@ -491,7 +506,7 @@
     <!-- ===== DICTIONARY PAGE ===== -->
     <section class="page" id="page-dictionary">
       <div class="page-header">
-        <h1 class="page-title">Custom Dictionary</h1>
+        <h1 class="page-title" tabindex="-1">Custom Dictionary</h1>
         <p class="page-subtitle">Correct specific words or phrases automatically after transcription</p>
       </div>
 
@@ -499,8 +514,8 @@
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Word Corrections</h2>
           <div style="display:flex;gap:var(--spacing-sm);">
-            <button class="btn-ghost" id="import-dict-btn" style="font-size:12px;">Import</button>
-            <button class="btn-ghost" id="export-dict-btn" style="font-size:12px;">Export</button>
+            <button class="btn-ghost btn-small" id="import-dict-btn">Import</button>
+            <button class="btn-ghost btn-small" id="export-dict-btn">Export</button>
             <button class="btn-primary" id="add-dict-btn" style="padding:6px 14px;font-size:13px;">+ Add Entry</button>
           </div>
         </div>
@@ -583,7 +598,7 @@
     <!-- ===== HISTORY PAGE ===== -->
     <section class="page active" id="page-history">
       <div class="page-header">
-        <h1 class="page-title">Dashboard</h1>
+        <h1 class="page-title" tabindex="-1">Dashboard</h1>
         <p class="page-subtitle">Your transcription activity at a glance</p>
       </div>
 
@@ -592,17 +607,17 @@
         <div class="stat-card">
           <div class="stat-value" id="stat-total-words">0</div>
           <div class="stat-label">Words Brought to Life</div>
-          <div class="stat-sub">till today</div>
+          <div class="stat-sub">to date</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" id="stat-time-saved">0h</div>
           <div class="stat-label">Typing Time Saved</div>
-          <div class="stat-sub">till today</div>
+          <div class="stat-sub">to date</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" id="stat-dictation-time">0h</div>
           <div class="stat-label">Dictation Time</div>
-          <div class="stat-sub">till today</div>
+          <div class="stat-sub">to date</div>
         </div>
         <div class="stat-card">
           <div class="stat-value" id="stat-monthly-saved">0h</div>
@@ -659,7 +674,7 @@
     <!-- ===== ABOUT PAGE ===== -->
     <section class="page" id="page-about">
       <div class="page-header">
-        <h1 class="page-title">About Fluence</h1>
+        <h1 class="page-title" tabindex="-1">About Fluence</h1>
         <p class="page-subtitle">AI-powered voice typing for Windows</p>
       </div>
 

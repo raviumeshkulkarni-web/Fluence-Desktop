@@ -33,7 +33,9 @@ let testRecording = false;
 const PROVIDER_PRESETS = {
   groq:   { url: 'https://api.groq.com/openai', model: 'whisper-large-v3', llmModel: 'llama-3.3-70b-versatile' },
   openai: { url: 'https://api.openai.com',      model: 'whisper-1',        llmModel: 'gpt-4o' },
+  mistral: { url: 'https://api.mistral.ai',     model: 'mistral-stt',      llmModel: 'mistral-large-latest' },
   custom: { url: '',                             model: '',                 llmModel: '' },
+  'Local Offline': { url: '',                    model: 'sensevoice',       llmModel: '' },
 };
 
 // ── Init ──────────────────────────────────────────────────────────
@@ -42,6 +44,7 @@ window.addEventListener('DOMContentLoaded', () => {
   updateStep(1);
   setupTitlebar();
   setupNavButtons();
+  setupKeyboardNavigation();
   setupStep2();
   setupStep3();
   setupStep4();
@@ -74,6 +77,35 @@ function setupNavButtons() {
       if (currentStep < TOTAL_STEPS) {
         updateStep(currentStep + 1);
       }
+    }
+  });
+}
+
+// ── Keyboard Navigation ─────────────────────────────────────────
+
+function setupKeyboardNavigation() {
+  document.addEventListener('keydown', (e) => {
+    // Never hijack keys while recording a hotkey or outside a valid step
+    if (isRecordingHotkey) return;
+    if (currentStep < 1 || currentStep > TOTAL_STEPS) return;
+
+    // Let interactive elements handle their own keys (buttons, inputs, the hotkey display)
+    const target = e.target;
+    if (target && typeof target.closest === 'function' &&
+        target.closest('button, input, select, textarea, a, #wiz-hotkey-display')) {
+      return;
+    }
+
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      if (currentStep < TOTAL_STEPS) updateStep(currentStep + 1);
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      if (currentStep > 1) updateStep(currentStep - 1);
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      // Reuse the Next button's handler so validation still applies
+      document.getElementById('next-btn')?.click();
     }
   });
 }
@@ -114,8 +146,14 @@ function updateStep(step) {
     setTimeout(() => {
       nextEl.classList.add('active');
       nextEl.classList.remove('enter-left', 'enter-right');
+      announceStep(nextEl, step);
+      nextEl.querySelector('.step-title')?.focus();
     }, 30);
   }
+
+  // Mark the active step for assistive tech, clear the rest
+  document.querySelectorAll('.wizard-step').forEach(s => s.removeAttribute('aria-current'));
+  if (nextEl) nextEl.setAttribute('aria-current', 'step');
 
   // Update progress bar
   const progress = ((step - 1) / (TOTAL_STEPS - 1)) * 100;
@@ -152,9 +190,16 @@ function updateStep(step) {
   }
 }
 
+function announceStep(stepEl, step) {
+  const announcer = document.getElementById('wiz-step-announcer');
+  if (!announcer) return;
+  const title = stepEl.querySelector('.step-title')?.textContent.trim() || '';
+  announcer.textContent = `Step ${step} of ${TOTAL_STEPS}: ${title}`;
+}
+
 async function validateCurrentStep() {
   if (currentStep === 2) {
-    if (wizardData.skipApiKey) return true;
+    if (wizardData.skipApiKey || wizardData.provider === 'Local Offline') return true;
 
     const key = document.getElementById('wiz-api-key')?.value?.trim();
     const baseUrl = document.getElementById('wiz-base-url')?.value?.trim();
@@ -214,6 +259,23 @@ function setupStep2() {
       const preset = card.dataset.provider;
       wizardData.provider = preset;
 
+      const endpointRow = document.getElementById('wiz-endpoint-row');
+      const err = document.getElementById('wiz-api-error');
+
+      // Local Offline — same flow as the skip-to-offline link
+      if (preset === 'Local Offline') {
+        wizardData.skipApiKey = true;
+        wizardData.baseUrl = '';
+        wizardData.model = 'sensevoice';
+        wizardData.llmModel = '';
+        setInputValue('wiz-base-url', '');
+        setSelectOption('wiz-model-select', 'sensevoice');
+        if (endpointRow) endpointRow.style.display = 'none';
+        if (err) err.hidden = true;
+        return;
+      }
+
+      wizardData.skipApiKey = false;
       const p = PROVIDER_PRESETS[preset];
       if (p) {
         setInputValue('wiz-base-url', p.url);
@@ -225,7 +287,6 @@ function setupStep2() {
       }
 
       // Show/hide endpoint for custom
-      const endpointRow = document.getElementById('wiz-endpoint-row');
       if (endpointRow) endpointRow.style.display = (preset === 'custom') ? 'flex' : 'none';
     });
   });
@@ -327,6 +388,13 @@ function setupStep2() {
 
 // ── Step 3: Hotkey ─────────────────────────────────────────────────
 
+function cancelHotkeyRecording() {
+  isRecordingHotkey = false;
+  document.getElementById('wiz-hotkey-display')?.classList.remove('recording');
+  const textEl = document.getElementById('wiz-hotkey-text');
+  if (textEl) textEl.textContent = wizardData.hotkey;
+}
+
 function setupStep3() {
   const display = document.getElementById('wiz-hotkey-display');
 
@@ -335,6 +403,18 @@ function setupStep3() {
     isRecordingHotkey = true;
     display.classList.add('recording');
     document.getElementById('wiz-hotkey-text').textContent = 'Press your shortcut...';
+  });
+
+  // Cancel when the display loses focus (tabbed away, focus moves elsewhere)
+  display?.addEventListener('blur', () => {
+    if (isRecordingHotkey) cancelHotkeyRecording();
+  });
+
+  // Cancel when the user clicks outside the display
+  document.addEventListener('click', (e) => {
+    if (!isRecordingHotkey || currentStep !== 3) return;
+    if (display && e.target instanceof Node && display.contains(e.target)) return;
+    cancelHotkeyRecording();
   });
 
   // Keyboard activation (Enter/Space) — capture starts from keyup so the
@@ -353,9 +433,7 @@ function setupStep3() {
     e.preventDefault();
 
     if (e.key === 'Escape') {
-      isRecordingHotkey = false;
-      display?.classList.remove('recording');
-      document.getElementById('wiz-hotkey-text').textContent = wizardData.hotkey;
+      cancelHotkeyRecording();
       return;
     }
 
@@ -375,6 +453,11 @@ function setupStep3() {
     if (!isRecordingHotkey || currentStep !== 3) return;
     const current = document.getElementById('wiz-hotkey-text')?.textContent;
     if (current && current !== 'Press your shortcut...') {
+      // Require a non-modifier key — modifiers-only shortcuts (e.g. "Ctrl" or
+      // "Ctrl+Shift") keep recording until a real key is pressed
+      const MODIFIER_TOKENS = new Set(['Ctrl','Alt','Shift','Meta']);
+      const isModifiersOnly = current.split('+').every(t => MODIFIER_TOKENS.has(t));
+      if (isModifiersOnly) return;
       wizardData.hotkey = current;
       isRecordingHotkey = false;
       display?.classList.remove('recording');

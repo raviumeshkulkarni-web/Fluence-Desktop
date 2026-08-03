@@ -141,6 +141,8 @@ body {
   letter-spacing: -0.02em;
 }
 
+.step-title:focus { outline: none; }
+
 .step-desc {
   font-size: var(--text-body-md);
   color: var(--color-on-surface-variant);
@@ -192,7 +194,7 @@ body {
   border: none;
   padding: 0;
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 12px;
+  font-size: var(--text-label-sm);
   font-weight: 500;
   color: var(--color-on-surface-variant);
   text-decoration: underline;
@@ -259,7 +261,7 @@ body {
 
 .position-label {
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: var(--text-label-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -468,7 +470,7 @@ body {
 
 .provider-card .provider-name {
   font-family: var(--font-label);
-  font-size: 11px;
+  font-size: var(--text-label-sm);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.08em;
@@ -483,11 +485,11 @@ body {
 }
 
 .groq-icon { border-radius: var(--radius-xs); }
-.openai-icon { color: #849495; }
-.custom-icon { color: #849495; }
+.openai-icon { color: var(--color-on-surface-variant); }
+.custom-icon { color: var(--color-on-surface-variant); }
 
 .provider-card.selected .openai-icon,
-.provider-card:hover .openai-icon { color: #10a37f; }
+.provider-card:hover .openai-icon { color: var(--color-on-surface); }
 
 .provider-card.selected .custom-icon,
 .provider-card:hover .custom-icon { color: var(--color-on-surface-variant); }

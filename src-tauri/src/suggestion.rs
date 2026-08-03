@@ -9,6 +9,7 @@ use anyhow::Result;
 use chrono::{DateTime, Utc};
 use dirs::data_local_dir;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
@@ -139,21 +140,36 @@ fn save_to_disk(database: &SuggestionDatabase) -> Result<()> {
     Ok(())
 }
 
+/// A new suggestion should be skipped when the spoken→corrected pair is
+/// already in the dictionary. The dictionary is the source of truth, so
+/// accepted corrections must never be re-learned as pending suggestions.
+fn should_skip_new_candidate(candidate_key: &str, dictionary_keys: &HashSet<String>) -> bool {
+    dictionary_keys.contains(candidate_key)
+}
+
 /// Upsert suggestions from extracted candidates.
 /// Repeated observations increment frequency and update last_seen.
 /// Dismissed suggestions remain dismissed (user intent is respected).
+/// Pairs already in the dictionary are skipped (never re-learned).
 pub fn upsert_suggestions(candidates: Vec<crate::auto_learn::Candidate>) -> Result<(), String> {
     let _guard = SUGGESTION_LOCK.lock().map_err(|e| e.to_string())?;
 
     let mut database = load_from_disk().map_err(|e| e.to_string())?;
     let now = now_iso8601();
 
+    let dictionary_keys: HashSet<String> = crate::auto_learn::learner::get_current_dictionary()
+        .into_iter()
+        .collect();
+
     for candidate in candidates {
-        // Find existing suggestion for this spoken→corrected pair
-        let existing = database
-            .suggestions
-            .iter_mut()
-            .find(|s| s.spoken == candidate.spoken && s.corrected == candidate.corrected);
+        let candidate_key =
+            crate::dictionary::canonical_entry_key(&candidate.spoken, &candidate.corrected);
+
+        // Find existing suggestion for this spoken→corrected pair,
+        // using the canonical normalization path.
+        let existing = database.suggestions.iter_mut().find(|s| {
+            crate::dictionary::canonical_entry_key(&s.spoken, &s.corrected) == candidate_key
+        });
 
         if let Some(suggestion) = existing {
             // Always update frequency and last_seen
@@ -161,6 +177,12 @@ pub fn upsert_suggestions(candidates: Vec<crate::auto_learn::Candidate>) -> Resu
             suggestion.last_seen = now.clone();
 
             // But do NOT reset Dismissed to Pending (respect user intent)
+        } else if should_skip_new_candidate(&candidate_key, &dictionary_keys) {
+            log::debug!(
+                "Skipping new suggestion '{}' → '{}': already in dictionary",
+                candidate.spoken,
+                candidate.corrected
+            );
         } else {
             // New suggestion
             database.suggestions.push(SuggestionEntry {
@@ -269,6 +291,15 @@ pub fn clear_dismissed_suggestions() -> Result<(), String> {
     Ok(())
 }
 
+/// Pure decision: is a suggestion with this `last_seen` timestamp stale
+/// relative to the given cutoff? Unparseable timestamps are treated as
+/// not expired (safe default).
+fn is_expired(last_seen: &str, cutoff: &DateTime<Utc>) -> bool {
+    DateTime::parse_from_rfc3339(last_seen)
+        .map(|t| t < *cutoff)
+        .unwrap_or(false)
+}
+
 /// Expire stale suggestions that haven't been seen in 30 days.
 /// Run at application startup and when suggestions page is opened.
 pub fn expire_stale_suggestions() -> Result<u32, String> {
@@ -284,11 +315,9 @@ pub fn expire_stale_suggestions() -> Result<u32, String> {
             continue;
         }
 
-        if let Ok(last_seen) = DateTime::parse_from_rfc3339(&suggestion.last_seen) {
-            if last_seen < cutoff {
-                suggestion.status = SuggestionStatus::Dismissed;
-                expired_count += 1;
-            }
+        if is_expired(&suggestion.last_seen, &cutoff) {
+            suggestion.status = SuggestionStatus::Dismissed;
+            expired_count += 1;
         }
     }
 
@@ -322,6 +351,11 @@ pub fn clear_dismissed_suggestions_command() -> Result<(), String> {
     clear_dismissed_suggestions()
 }
 
+#[tauri::command]
+pub fn expire_stale_suggestions_command() -> Result<u32, String> {
+    expire_stale_suggestions()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -353,5 +387,63 @@ mod tests {
         let auto = SuggestionSource::Auto;
         let json = serde_json::to_string(&auto).unwrap();
         assert_eq!(json, "\"auto\"");
+    }
+
+    #[test]
+    fn test_should_skip_new_candidate_skips_dictionary_pairs() {
+        let mut dictionary_keys = HashSet::new();
+        dictionary_keys.insert(crate::dictionary::canonical_entry_key("shunade", "Sinead"));
+
+        // Exact pair already in dictionary → skip
+        assert!(should_skip_new_candidate(
+            &crate::dictionary::canonical_entry_key("shunade", "Sinead"),
+            &dictionary_keys
+        ));
+        // Case difference still matches the canonical key → skip
+        assert!(should_skip_new_candidate(
+            &crate::dictionary::canonical_entry_key("SHUNADE", "sinead"),
+            &dictionary_keys
+        ));
+        // Different corrected word → not in dictionary → do not skip
+        assert!(!should_skip_new_candidate(
+            &crate::dictionary::canonical_entry_key("shunade", "Shanade"),
+            &dictionary_keys
+        ));
+        // Different spoken word → not in dictionary → do not skip
+        assert!(!should_skip_new_candidate(
+            &crate::dictionary::canonical_entry_key("shanade", "Sinead"),
+            &dictionary_keys
+        ));
+    }
+
+    #[test]
+    fn test_is_expired_before_cutoff() {
+        let cutoff: DateTime<Utc> = DateTime::parse_from_rfc3339("2024-01-15T00:00:00Z")
+            .unwrap()
+            .into();
+        assert!(is_expired("2024-01-14T00:00:00Z", &cutoff));
+    }
+
+    #[test]
+    fn test_is_expired_after_cutoff() {
+        let cutoff: DateTime<Utc> = DateTime::parse_from_rfc3339("2024-01-15T00:00:00Z")
+            .unwrap()
+            .into();
+        assert!(!is_expired("2024-01-16T00:00:00Z", &cutoff));
+    }
+
+    #[test]
+    fn test_is_expired_unparseable_treated_as_fresh() {
+        assert!(!is_expired("not-a-timestamp", &Utc::now()));
+    }
+
+    #[test]
+    fn test_is_expired_at_cutoff_boundary_not_strictly_older() {
+        // Exactly at the cutoff is not strictly older → not expired.
+        let cutoff: DateTime<Utc> = DateTime::parse_from_rfc3339("2024-01-15T00:00:00Z")
+            .unwrap()
+            .into();
+        assert!(!is_expired("2024-01-15T00:00:00Z", &cutoff));
+        assert!(is_expired("2024-01-14T23:59:59Z", &cutoff));
     }
 }

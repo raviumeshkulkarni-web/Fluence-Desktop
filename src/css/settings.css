@@ -231,25 +231,6 @@ body {
   transform: translateY(-1px);
 }
 
-.version-badge {
-  font-family: var(--font-label);
-  font-size: 11px;
-  color: var(--color-ink-muted);
-  text-align: center;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  cursor: pointer;
-  padding: 4px 8px;
-  border-radius: var(--radius-sm);
-  transition: background-color 0.2s var(--ease-standard), color 0.2s var(--ease-standard);
-  user-select: none;
-}
-
-.version-badge:hover {
-  color: var(--color-on-surface);
-  background: var(--color-hover);
-}
-
 /* ── Main Content ──────────────────────────────────────────────── */
 .content-area {
   flex: 1;
@@ -278,6 +259,7 @@ body {
   font-weight: 500;
   color: var(--color-on-surface);
   letter-spacing: -0.02em;
+  outline: none;
 }
 
 .page-subtitle {
@@ -654,15 +636,16 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .chart-bar {
   width: 100%;
   max-width: 40px;
-  height: 0;
+  height: 100%;
   background: linear-gradient(180deg, rgba(139, 69, 216, 0.55), rgba(139, 69, 216, 0.12));
   border-radius: var(--radius-xs);
-  transition: height 0.6s var(--ease-standard);
+  transform-origin: bottom;
+  transform: scaleY(0);
+  transition: transform 0.6s var(--ease-standard);
   opacity: 0.7;
 }
 
 .chart-bar.animated {
-  height: var(--bar-val);
   opacity: 1;
 }
 
@@ -858,4 +841,48 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-xs);
   color: var(--color-on-surface-variant);
+}
+
+/* ── Utility Classes ───────────────────────────────────────────── */
+.btn-small {
+  font-size: 12px;
+}
+
+.select-md { width: 180px; }
+.select-lg { width: 220px; }
+
+/* ── History Context Menu ──────────────────────────────────────── */
+.history-context-menu {
+  position: fixed;
+  z-index: 100;
+  min-width: 140px;
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+}
+
+.history-context-menu button {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-family: var(--font-body);
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-on-surface);
+  cursor: pointer;
+}
+
+.history-context-menu button:hover {
+  background: var(--color-hover);
+}
+
+.history-context-menu button[data-action="delete"] {
+  color: var(--color-error);
 }

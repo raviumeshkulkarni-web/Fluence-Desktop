@@ -4,7 +4,20 @@
    Source of truth: fluence-notes/src/index.css (web)
    ==================================================== */
 
-@import url('https://fonts.googleapis.com/css2?family=Allura&family=Sora:wght@400;500;600&family=Hanken+Grotesk:wght@300;400;500;600&family=Geist+Mono:wght@400;500&display=swap');
+/* Bundled fonts — served locally from src/fonts/ (no network at runtime) */
+@font-face { font-family: 'Allura'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/allura-latin-400.woff2') format('woff2'); }
+
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/sora-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/sora-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/sora-latin-600.woff2') format('woff2'); }
+
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 300; font-display: swap; src: url('../fonts/hanken-grotesk-latin-300.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/hanken-grotesk-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/hanken-grotesk-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/hanken-grotesk-latin-600.woff2') format('woff2'); }
+
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/geist-mono-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/geist-mono-latin-500.woff2') format('woff2'); }
 
 :root {
   /* ── Surface Hierarchy ─────────────────────────────────────────── */
@@ -107,12 +120,12 @@
   --transition-fast:   all 0.12s cubic-bezier(0.25, 0.1, 0.25, 1);
   --transition-base:   all 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
   --transition-slow:   all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
-  --transition-spring: all 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  --transition-spring: all 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
 
   --ease-standard:     cubic-bezier(0.25, 0.1, 0.25, 1);
   --ease-exit:         cubic-bezier(0.4, 0.0, 1, 1);
   --ease-structural:   cubic-bezier(0.65, 0, 0.35, 1);
-  --ease-spring:       cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ease-spring:       cubic-bezier(0.34, 1.2, 0.64, 1);
 
   /* ── Z-index ───────────────────────────────────────────────────── */
   --z-overlay:  100;

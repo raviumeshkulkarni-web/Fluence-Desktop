@@ -114,6 +114,20 @@ fn invalidate_cache() {
     *cache = None;
 }
 
+/// Canonical, case-insensitive key for a spoken→corrected pair.
+///
+/// This is the single normalization path used when comparing
+/// dictionary entries across modules (Dictionary, Auto Learn,
+/// Suggestions). Comparisons must go through this function instead
+/// of introducing ad-hoc `to_lowercase()` checks.
+pub fn canonical_entry_key(spoken: &str, corrected: &str) -> String {
+    format!(
+        "{}\u{0}{}",
+        spoken.trim().to_lowercase(),
+        corrected.trim().to_lowercase()
+    )
+}
+
 // Tauri Commands
 
 #[tauri::command]
@@ -179,4 +193,33 @@ pub fn import_dictionary(json_data: String) -> Result<usize, String> {
 pub fn export_dictionary() -> Result<String, String> {
     let entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_canonical_entry_key_case_insensitive() {
+        assert_eq!(
+            canonical_entry_key("Shunade", "SINEAD"),
+            canonical_entry_key("shunade", "sinead")
+        );
+    }
+
+    #[test]
+    fn test_canonical_entry_key_trims_whitespace() {
+        assert_eq!(
+            canonical_entry_key("  shunade ", " Sinead "),
+            canonical_entry_key("shunade", "Sinead")
+        );
+    }
+
+    #[test]
+    fn test_canonical_entry_key_pairs_do_not_collide() {
+        assert_ne!(
+            canonical_entry_key("a b", "c"),
+            canonical_entry_key("a", "b c")
+        );
+    }
 }

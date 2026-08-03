@@ -21,6 +21,7 @@ let historyPage = 0;
 let activeRecorder = null;
 let pendingHotkey = '';
 let pendingHotkeyKeys = new Set();
+const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 let dictEntries = [];
 let suggestionsLoading = false;
 
@@ -30,6 +31,7 @@ const STT_PRESETS = {
   openai:  { base_url: 'https://api.openai.com',        model: 'whisper-1' },
   mistral: { base_url: 'https://api.mistral.ai',        model: 'mistral-stt' },
   custom:  { base_url: '',                              model: '' },
+  'Local Offline': { base_url: '',                      model: '' },
 };
 
 const LLM_PRESETS = {
@@ -71,6 +73,7 @@ window.addEventListener('DOMContentLoaded', async () => {
     } else if (currentPage === 'dictionary') {
       loadDictionary();
       loadSuggestions();
+      expireStaleSuggestions();
     }
   });
 });
@@ -79,16 +82,32 @@ window.addEventListener('DOMContentLoaded', async () => {
 
 function setupTitlebar() {
   const minimizeBtn = document.getElementById('titlebar-minimize');
+  const maximizeBtn = document.getElementById('titlebar-maximize');
   const closeBtn = document.getElementById('titlebar-close');
 
   if (minimizeBtn) minimizeBtn.addEventListener('click', () => {
     invoke('minimize_main_window').catch(err => console.error('Failed to minimize:', err));
+  });
+  if (maximizeBtn) maximizeBtn.addEventListener('click', () => {
+    invoke('toggle_maximize_main_window')
+      .then((maximized) => {
+        const svgEl = maximizeBtn.querySelector('svg');
+        if (svgEl) {
+          svgEl.outerHTML = maximized ? RESTORE_SVG : MAXIMIZE_SVG;
+        }
+        maximizeBtn.setAttribute('aria-label', maximized ? 'Restore window' : 'Maximize window');
+        maximizeBtn.setAttribute('title', maximized ? 'Restore window' : 'Maximize window');
+      })
+      .catch(err => console.error('Failed to toggle maximize:', err));
   });
   if (closeBtn) closeBtn.addEventListener('click', () => {
     // Hide instead of close so app stays in tray
     invoke('hide_main_window').catch(err => console.error('Failed to hide:', err));
   });
 }
+
+const MAXIMIZE_SVG = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.75" y="0.75" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
+const RESTORE_SVG = '<svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="2.25" y="0.75" width="7" height="7" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/><rect x="0.75" y="2.75" width="6.5" height="6.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>';
 
 // ── Settings Loading ─────────────────────────────────────────────
 
@@ -114,6 +133,7 @@ function populateUI(s) {
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
   setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
+  setChecked('sound-on-complete-cb', s.sound_on_complete ?? true);
   setSelectValue('offline-engine-select', s.offline_engine || 'sensevoice');
 
   // Providers tab
@@ -194,6 +214,9 @@ function _performNavigation(page) {
     p.classList.toggle('active', p.id === `page-${page}`);
   });
 
+  // Move focus to the new page's title for assistive technology
+  document.querySelector(`#page-${page} .page-title`)?.focus();
+
   // Lazy load data for specific pages
   if (page === 'history') {
     loadHistory(true);
@@ -202,6 +225,7 @@ function _performNavigation(page) {
   if (page === 'dictionary') {
     loadDictionary();
     loadSuggestions();
+    expireStaleSuggestions();
   }
 }
 
@@ -226,11 +250,22 @@ function setupHotkeyRecorders() {
     pendingHotkey = parts;
   });
 
-  document.addEventListener('keyup', () => {
+  document.addEventListener('keyup', (e) => {
     if (!activeRecorder) return;
+    if (MODIFIER_KEYS.has(e.key)) return;
     if (pendingHotkey && pendingHotkeyKeys.size > 0) {
       stopHotkeyRecording(true);
     }
+  });
+
+  // Cancel recording when the user clicks outside the active recorder
+  document.addEventListener('click', (e) => {
+    if (!activeRecorder) return;
+    const target = e.target instanceof Element ? e.target : null;
+    if (!target) return;
+    const insideActive = activeRecorder.displayEl?.contains(target) ||
+      activeRecorder.clearEl?.contains(target);
+    if (!insideActive) stopHotkeyRecording(false);
   });
 }
 
@@ -245,7 +280,14 @@ function wireHotkeyRecorder(displayId, textId, clearBtnId, settingsKey, defaultS
       if (activeRecorder) {
         stopHotkeyRecording(false);
       }
-      startHotkeyRecording(displayId, textId, settingsKey);
+      startHotkeyRecording(displayId, textId, settingsKey, clearBtn);
+    }
+  });
+
+  // Cancel recording if the active display loses focus
+  display?.addEventListener('blur', () => {
+    if (activeRecorder && activeRecorder.displayId === displayId) {
+      stopHotkeyRecording(false);
     }
   });
 
@@ -266,9 +308,9 @@ function wireHotkeyRecorder(displayId, textId, clearBtnId, settingsKey, defaultS
   });
 }
 
-function startHotkeyRecording(displayId, textId, settingsKey) {
+function startHotkeyRecording(displayId, textId, settingsKey, clearEl) {
   const display = document.getElementById(displayId);
-  activeRecorder = { displayId, textId, settingsKey, displayEl: display };
+  activeRecorder = { displayId, textId, settingsKey, displayEl: display, clearEl: clearEl || null };
   pendingHotkeyKeys = new Set();
   pendingHotkey = '';
   display?.classList.add('recording');
@@ -297,8 +339,7 @@ function buildHotkeyString(e) {
   if (e.shiftKey) parts.push('Shift');
   if (e.metaKey)  parts.push('Meta');
 
-  const modifiers = new Set(['Control', 'Alt', 'Shift', 'Meta']);
-  if (!modifiers.has(e.key)) {
+  if (!MODIFIER_KEYS.has(e.key)) {
     parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
   }
   return parts.join('+');
@@ -509,6 +550,61 @@ function setupHistory() {
       showToast('Failed to clear history: ' + err, 'error');
     }
   });
+
+  // Right-click context menu for history rows (Copy / Delete)
+  const historyList = document.getElementById('history-list');
+  let historyMenuEl = null;
+
+  const hideHistoryMenu = () => {
+    historyMenuEl?.remove();
+    historyMenuEl = null;
+  };
+
+  document.addEventListener('click', hideHistoryMenu);
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && historyMenuEl) {
+      e.stopImmediatePropagation();
+      hideHistoryMenu();
+    }
+  });
+  historyList?.addEventListener('scroll', hideHistoryMenu);
+  document.querySelector('.content-area')?.addEventListener('scroll', hideHistoryMenu);
+
+  historyList?.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('.history-item');
+    if (!row) return;
+    e.preventDefault();
+    hideHistoryMenu();
+
+    historyMenuEl = document.createElement('div');
+    historyMenuEl.className = 'history-context-menu';
+    historyMenuEl.setAttribute('role', 'menu');
+    historyMenuEl.innerHTML = `
+      <button type="button" role="menuitem" data-action="copy">Copy</button>
+      <button type="button" role="menuitem" data-action="delete">Delete</button>
+    `;
+
+    historyMenuEl.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const action = ev.target.dataset.action;
+      if (action === 'copy') {
+        const text = row.querySelector('.history-item-text')?.textContent || '';
+        copyHistoryItem(text, row);
+      } else if (action === 'delete') {
+        deleteHistoryItem(row.dataset.historyId);
+      }
+      hideHistoryMenu();
+    });
+    historyMenuEl.addEventListener('contextmenu', (ev) => ev.preventDefault());
+
+    document.body.appendChild(historyMenuEl);
+
+    const menuRect = historyMenuEl.getBoundingClientRect();
+    const x = Math.min(e.clientX, window.innerWidth - menuRect.width - 8);
+    const y = Math.min(e.clientY, window.innerHeight - menuRect.height - 8);
+    historyMenuEl.style.left = x + 'px';
+    historyMenuEl.style.top = y + 'px';
+  });
 }
 
 async function loadHistory(reset, search = '') {
@@ -628,8 +724,8 @@ async function loadDashboardStats() {
       const bar = document.getElementById(`chart-bar-${i}`);
       const countEl = document.getElementById(`chart-count-${i}`);
       if (bar) {
-        const pct = (dayCounts[i] / maxCount) * 100;
-        bar.style.setProperty('--bar-val', pct + '%');
+        const factor = Math.min(1, Math.max(0, dayCounts[i] / maxCount));
+        bar.style.transform = `scaleY(${factor})`;
         bar.classList.toggle('animated', dayCounts[i] > 0);
       }
       if (countEl) countEl.textContent = dayCounts[i];
@@ -659,14 +755,8 @@ window.deleteHistoryItem = async (id) => {
 // ── System Toggles ───────────────────────────────────────────────
 
 function setupSystemToggles() {
-  document.getElementById('autostart-cb')?.addEventListener('change', async (e) => {
-    try {
-      await invoke('set_autostart', { enabled: e.target.checked });
-      if (currentSettings) currentSettings.auto_start = e.target.checked;
-    } catch (err) {
-      showToast('Failed to set autostart: ' + err, 'error');
-      e.target.checked = !e.target.checked;
-    }
+  document.getElementById('autostart-cb')?.addEventListener('change', (e) => {
+    if (currentSettings) currentSettings.auto_start = e.target.checked;
   });
 }
 
@@ -692,6 +782,7 @@ async function saveGeneral() {
   currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
   currentSettings.auto_learn_enabled = document.getElementById('auto-learn-cb')?.checked ?? true;
   currentSettings.duck_enabled = document.getElementById('duck-cb')?.checked ?? false;
+  currentSettings.auto_start = document.getElementById('autostart-cb')?.checked ?? false;
   currentSettings.offline_engine = document.getElementById('offline-engine-select')?.value || 'sensevoice';
 
   try {
@@ -703,6 +794,10 @@ async function saveGeneral() {
       agentShortcut: currentSettings.agent_hotkey,
       agentMode: currentSettings.agent_recording_mode,
     });
+    // Apply autostart registry entry at save time, matching the on-save model
+    await invoke('set_autostart', { enabled: currentSettings.auto_start }).catch(err =>
+      console.error('Failed to apply autostart:', err)
+    );
     showToast('Settings saved ✓', 'success');
   } catch (err) {
     showToast('Failed to save: ' + err, 'error');
@@ -794,7 +889,6 @@ async function loadAppVersion() {
     const version = await invoke('get_app_version');
     currentAppVersion = version;
     setText('sidebar-version-label', `v${version}`);
-    setText('version-badge', `v${version}`);
     setText('about-version', version);
   } catch {}
 }
@@ -1218,6 +1312,14 @@ async function loadSuggestions() {
   }
 }
 
+async function expireStaleSuggestions() {
+  try {
+    await invoke('expire_stale_suggestions_command');
+  } catch (err) {
+    console.error('Failed to expire stale suggestions:', err);
+  }
+}
+
 function renderSuggestionsTable(suggestions) {
   const tbody = document.getElementById('suggestions-table-body');
   const emptyRow = document.getElementById('suggestions-empty-row');
@@ -1288,7 +1390,6 @@ function setupUpdaterUI() {
   const titleEl = document.getElementById('update-status-title');
   const descEl = document.getElementById('update-status-desc');
   const btnEl = document.getElementById('update-action-btn');
-  const badgeEl = document.getElementById('version-badge');
   const lastCheckedEl = document.getElementById('update-last-checked');
   const progressContainer = document.getElementById('update-progress-container');
   const progressFill = document.getElementById('update-progress-fill');
@@ -1298,10 +1399,6 @@ function setupUpdaterUI() {
   const sidebarStatus = document.getElementById('sidebar-update-status');
   const sidebarProgressBar = document.getElementById('sidebar-update-progress-bar');
   const sidebarProgressFill = document.getElementById('sidebar-update-progress-fill');
-
-  if (badgeEl) {
-    badgeEl.onclick = () => window.updateManager.checkForUpdates(true);
-  }
 
   let statusTimeout = null;
 
@@ -1501,7 +1598,7 @@ let dirtyPages = new Set();
 function setupUnsavedChanges() {
   const generalInputs = ['recording-mode-select', 'overlay-position-select', 'language-select',
     'ai-polish-select', 'agent-recording-mode-select', 'offline-engine-select'];
-  const generalCheckboxes = ['autostart-cb', 'duck-cb', 'auto-grab-cb', 'auto-learn-cb'];
+  const generalCheckboxes = ['autostart-cb', 'duck-cb', 'auto-grab-cb', 'auto-learn-cb', 'sound-on-complete-cb'];
 
   generalInputs.forEach(id => {
     document.getElementById(id)?.addEventListener('change', () => markDirty('general'));

@@ -31,12 +31,17 @@ pub fn save_corrections(candidates: Vec<Candidate>) -> Result<usize, String> {
     Ok(count)
 }
 
-/// Get the current dictionary entries for duplicate checking.
-/// Used by the correction extractor to avoid learning words
-/// that are already in the dictionary.
+/// Get canonical keys for the current dictionary entries.
+/// Used by the suggestion system to avoid re-learning correction
+/// pairs that are already in the dictionary (the source of truth).
 pub fn get_current_dictionary() -> Vec<String> {
     crate::dictionary::get_dictionary()
-        .map(|entries| entries.into_iter().map(|e| e.spoken).collect())
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|e| crate::dictionary::canonical_entry_key(&e.spoken, &e.corrected))
+                .collect()
+        })
         .unwrap_or_default()
 }
 

@@ -73,6 +73,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     }
 
     RECORDING.store(true, Ordering::SeqCst);
+    let _ = crate::tray::refresh_menu(&app);
     STOP_REQUESTED.store(false, Ordering::SeqCst);
     STARTUP_CANCELLED.store(false, Ordering::SeqCst);
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
@@ -122,6 +123,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 None => {
                     log::error!("No audio input device found");
                     RECORDING.store(false, Ordering::SeqCst);
+                    let _ = crate::tray::refresh_menu(&app);
                     clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
@@ -138,6 +140,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Err(e) => {
                     log::error!("Failed to get default input config: {}", e);
                     RECORDING.store(false, Ordering::SeqCst);
+                    let _ = crate::tray::refresh_menu(&app);
                     clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
@@ -276,6 +279,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 _ => {
                     log::error!("Unsupported sample format: {:?}", sample_format);
                     RECORDING.store(false, Ordering::SeqCst);
+                    let _ = crate::tray::refresh_menu(&app);
                     clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
@@ -325,11 +329,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                         // Set RECORDING to false and notify stop commands
                         RECORDING.store(false, Ordering::SeqCst);
+                        let _ = crate::tray::refresh_menu(&app);
                         clear_cancelled_startup_owner();
                         let _ = done_tx.send(());
                     } else {
                         log::error!("Failed to play stream");
                         RECORDING.store(false, Ordering::SeqCst);
+                        let _ = crate::tray::refresh_menu(&app);
                         clear_cancelled_startup_owner();
                         let _ = STREAM_READY_TX
                             .lock()
@@ -341,6 +347,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 Err(e) => {
                     log::error!("Failed to build audio stream: {}", e);
                     RECORDING.store(false, Ordering::SeqCst);
+                    let _ = crate::tray::refresh_menu(&app);
                     clear_cancelled_startup_owner();
                     let _ = STREAM_READY_TX
                         .lock()
@@ -364,18 +371,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
             Ok(Err(_)) => {
                 STARTUP_CANCELLED.store(true, Ordering::SeqCst);
                 STOP_REQUESTED.store(true, Ordering::SeqCst);
-                let done_rx = STREAM_DONE_RX
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .take();
+                let done_rx = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?.take();
                 let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
                 if let Some(done_rx) = done_rx {
-                    stop_completed = tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        done_rx,
-                    )
-                    .await
-                    .is_ok();
+                    stop_completed =
+                        tokio::time::timeout(std::time::Duration::from_secs(2), done_rx)
+                            .await
+                            .is_ok();
                     if stop_completed {
                         clear_cancelled_startup_owner();
                     }
@@ -387,18 +389,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
             Err(_) => {
                 STARTUP_CANCELLED.store(true, Ordering::SeqCst);
                 STOP_REQUESTED.store(true, Ordering::SeqCst);
-                let done_rx = STREAM_DONE_RX
-                    .lock()
-                    .map_err(|e| e.to_string())?
-                    .take();
+                let done_rx = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?.take();
                 let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
                 if let Some(done_rx) = done_rx {
-                    stop_completed = tokio::time::timeout(
-                        std::time::Duration::from_secs(2),
-                        done_rx,
-                    )
-                    .await
-                    .is_ok();
+                    stop_completed =
+                        tokio::time::timeout(std::time::Duration::from_secs(2), done_rx)
+                            .await
+                            .is_ok();
                     if stop_completed {
                         clear_cancelled_startup_owner();
                     }

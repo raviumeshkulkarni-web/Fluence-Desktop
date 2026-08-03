@@ -31,6 +31,7 @@ mod tray;
 mod workflow;
 
 use tauri::{Emitter, Manager};
+use tauri_plugin_notification::NotificationExt;
 
 #[tauri::command]
 fn get_app_version(app: tauri::AppHandle) -> String {
@@ -82,6 +83,28 @@ pub fn run() {
             // Set up system tray
             if let Err(e) = tray::setup_tray(app.handle()) {
                 log::error!("Failed to set up tray: {}", e);
+            }
+
+            // One-time first-run notification that Fluence is running in the tray
+            if let Ok(cfg_dir) = app.path().app_config_dir() {
+                let flag = cfg_dir.join("tray_notified.flag");
+                if !flag.exists() {
+                    if let Err(e) = app
+                        .notification()
+                        .builder()
+                        .title("Fluence is ready")
+                        .body(
+                            "Running in the system tray — press your hotkey to start voice typing.",
+                        )
+                        .show()
+                    {
+                        log::warn!("Failed to show first-run tray notification: {}", e);
+                    } else if let Err(e) =
+                        std::fs::create_dir_all(&cfg_dir).and_then(|_| std::fs::write(&flag, "1"))
+                    {
+                        log::warn!("Failed to write tray notification flag file: {}", e);
+                    }
+                }
             }
 
             // Load settings
@@ -178,6 +201,7 @@ pub fn run() {
             overlay::close_wizard,
             overlay::hide_main_window,
             overlay::minimize_main_window,
+            overlay::toggle_maximize_main_window,
             overlay::minimize_wizard,
             // Hotkey
             hotkey::update_hotkeys,
@@ -202,6 +226,7 @@ pub fn run() {
             suggestion::accept_suggestion_command,
             suggestion::dismiss_suggestion_command,
             suggestion::clear_dismissed_suggestions_command,
+            suggestion::expire_stale_suggestions_command,
             // Misc
             get_app_version,
         ])

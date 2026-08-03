@@ -24,7 +24,13 @@ impl TransformationType {
     /// Unknown styles default to Rewrite (safe behavior).
     pub fn from_ai_polish_style(style: &str) -> Self {
         match style {
-            "clean" | "none" => TransformationType::Cleanup,
+            // "none" means no AI polish ran; the text was only
+            // deterministically cleaned (filler removal, grammar).
+            // Safe for candidate extraction.
+            "none" => TransformationType::Cleanup,
+            // Every other style applies an LLM transform (cleanup,
+            // translation, bullet points, ...). The output is a
+            // semantic rewrite, NOT a deterministic cleanup.
             _ => TransformationType::Rewrite,
         }
     }
@@ -297,12 +303,15 @@ mod tests {
     #[test]
     fn test_transformation_type_from_style() {
         assert_eq!(
-            TransformationType::from_ai_polish_style("clean"),
-            TransformationType::Cleanup
-        );
-        assert_eq!(
             TransformationType::from_ai_polish_style("none"),
             TransformationType::Cleanup
+        );
+        // "clean" is an LLM rewrite (filler removal, grammar fix,
+        // rephrasing) — NOT a deterministic cleanup, so extraction
+        // must be skipped.
+        assert_eq!(
+            TransformationType::from_ai_polish_style("clean"),
+            TransformationType::Rewrite
         );
         assert_eq!(
             TransformationType::from_ai_polish_style("translate_en"),

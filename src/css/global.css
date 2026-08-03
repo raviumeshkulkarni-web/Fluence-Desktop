@@ -32,8 +32,8 @@ body {
 
 /* ── Scrollbar ─────────────────────────────────────────────────── */
 ::-webkit-scrollbar {
-  width: 4px;
-  height: 4px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
@@ -50,6 +50,26 @@ body {
 ::selection {
   background: var(--color-selected);
   color: var(--color-on-surface);
+}
+
+/* ── Text Selection — re-enable in text-bearing regions ────────── */
+#history-list, .dict-table, .page p, .wizard-step p, .test-result,
+input, textarea {
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ── Screen-Reader Only ────────────────────────────────────────── */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ── Typography Utilities ──────────────────────────────────────── */

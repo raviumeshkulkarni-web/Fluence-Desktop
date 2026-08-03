@@ -443,6 +443,47 @@ body {
   gap: var(--spacing-sm);
 }
 
+.history-actions {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.history-item .history-copy-btn,
+.history-item .history-delete-btn {
+  opacity: 0;
+  transition: opacity 0.12s var(--ease-standard);
+}
+
+.history-item:hover .history-copy-btn,
+.history-item:hover .history-delete-btn,
+.history-item:focus-within .history-copy-btn,
+.history-item:focus-within .history-delete-btn {
+  opacity: 1;
+}
+
+.history-group-header {
+  font-family: var(--font-label);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+  padding: 10px var(--spacing-md) 4px;
+  background: var(--color-surface-secondary);
+}
+
+#history-list.single-day .history-group-header {
+  display: none;
+}
+
+.history-item-text mark {
+  background: rgba(11, 214, 227, 0.22);
+  color: var(--color-on-surface);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
 .history-item-time {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
@@ -791,6 +832,20 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 @keyframes progress-pulse {
   0%   { background-position: 0% 0; }
   100% { background-position: 200% 0; }
+}
+
+/* ── Release Notes (scrollable full body) ─────────────────────── */
+#update-status-desc.update-notes {
+  max-height: 180px;
+  overflow-y: auto;
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 12px;
+  text-align: left;
+  white-space: pre-line;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-muted);
+  border-radius: var(--radius-md);
 }
 
 /* ── Empty State Enhancements ─────────────────────────────────── */

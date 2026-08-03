@@ -19,6 +19,7 @@ const cardTimer   = document.getElementById('card-timer');
 const cardDiscard = document.getElementById('card-discard');
 const statusMsg   = document.getElementById('status-msg');
 const statusRetry = document.getElementById('status-retry');
+const recHint     = document.getElementById('rec-hint');
 
 // State
 let currentState = 'idle';
@@ -29,6 +30,7 @@ let recordingStartTime = 0;
 let retryTimer = null;
 let nextSessionId = 0;
 let activeSessionId = 0;
+let chimeCtx = null;
 
 function beginSession() {
   activeSessionId = ++nextSessionId;
@@ -46,6 +48,7 @@ function completeSession(sessionId) {
 function resetTransientUi() {
   clearAutoDismiss();
   hideRetry();
+  hideRecHint();
   setStatusMessage('');
   hideAppPill();
 }
@@ -90,6 +93,7 @@ async function setupEventListeners() {
         await invoke('stop_recording').catch(() => {});
         return;
       }
+      updateRecHint();
 
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
@@ -142,6 +146,7 @@ async function setupEventListeners() {
         await invoke('stop_recording').catch(() => {});
         return;
       }
+      updateRecHint();
 
       // Trigger opening transition immediately
       if (overlayRoot) overlayRoot.classList.add('active');
@@ -357,6 +362,52 @@ function setupRetryButton() {
   }
 }
 
+// ── Hold-to-Record Hint ──────────────────────────────────────────
+
+function updateRecHint() {
+  if (!recHint) return;
+  const isHoldToRecord =
+    (currentState === 'recording' && cachedSettings?.recording_mode === 'hold_to_record') ||
+    (currentState === 'agent' && cachedSettings?.agent_recording_mode === 'hold_to_record');
+  recHint.textContent = isHoldToRecord ? 'RELEASE TO STOP' : '';
+  recHint.hidden = !isHoldToRecord;
+}
+
+function hideRecHint() {
+  if (recHint) recHint.hidden = true;
+}
+
+// ── Completion Chime ─────────────────────────────────────────────
+
+function playCompletionChime() {
+  try {
+    if (cachedSettings && cachedSettings.sound_on_complete === false) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!chimeCtx) chimeCtx = new Ctx();
+    if (chimeCtx.state === 'suspended') {
+      chimeCtx.resume().catch(() => {});
+    }
+    if (chimeCtx.state !== 'running') return;
+    const t0 = chimeCtx.currentTime;
+    const gain = chimeCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+    gain.connect(chimeCtx.destination);
+    [523.25, 659.25].forEach((freq, i) => {
+      const osc = chimeCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t0 + i * 0.11);
+      osc.connect(gain);
+      osc.start(t0 + i * 0.11);
+      osc.stop(t0 + i * 0.11 + 0.3);
+    });
+  } catch (err) {
+    console.warn('Completion chime failed:', err);
+  }
+}
+
 // ── Recording Flow ──────────────────────────────────────────────
 
 function setupDiscardButton() {
@@ -481,6 +532,7 @@ async function runSttFlow(sessionId, retry = false) {
       if (!isSessionActive(sessionId)) return;
       setState('success');
       setStatusMessage('Inserted');
+      playCompletionChime();
       await new Promise(r => setTimeout(r, 1000));
       await fadeAndHide(sessionId);
     } catch (err) {
@@ -488,7 +540,7 @@ async function runSttFlow(sessionId, retry = false) {
       if (!isSessionActive(sessionId)) return;
       setState('error');
       setStatusMessage('Insert failed');
-       scheduleAutoDismiss(4000);
+      scheduleAutoDismiss(4000);
     }
   } catch (err) {
     console.error('Transcription error:', err);
@@ -549,6 +601,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       if (!isSessionActive(sessionId)) return;
       setState('success');
       setStatusMessage('Copied');
+      playCompletionChime();
       await new Promise(r => setTimeout(r, 900));
       await fadeAndHide(sessionId);
     } else {
@@ -575,6 +628,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 
       setState('success');
       setStatusMessage(executed ? 'Executed' : 'Done');
+      playCompletionChime();
       await new Promise(r => setTimeout(r, 800));
       await fadeAndHide(sessionId);
     }
@@ -633,4 +687,6 @@ function setState(state) {
         recLabel.textContent = 'LISTENING';
     }
   }
+
+  updateRecHint();
 }

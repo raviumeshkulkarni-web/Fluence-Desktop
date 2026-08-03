@@ -24,6 +24,8 @@ let pendingHotkeyKeys = new Set();
 const MODIFIER_KEYS = new Set(['Control', 'Alt', 'Shift', 'Meta']);
 let dictEntries = [];
 let suggestionsLoading = false;
+let historyGroupKey = null;
+let historySearchQuery = '';
 
 // Provider presets
 const STT_PRESETS = {
@@ -609,6 +611,7 @@ function setupHistory() {
 
 async function loadHistory(reset, search = '') {
   if (reset) historyPage = 0;
+  historySearchQuery = search || document.getElementById('history-search')?.value || '';
 
   try {
     const entries = await invoke('get_history', {
@@ -620,7 +623,8 @@ async function loadHistory(reset, search = '') {
     const emptyEl = document.getElementById('history-empty');
 
     if (reset && list) {
-      list.querySelectorAll('.history-item').forEach(el => el.remove());
+      list.querySelectorAll('.history-item, .history-group-header').forEach(el => el.remove());
+      historyGroupKey = null;
     }
 
     if (entries.length === 0 && historyPage === 0) {
@@ -628,6 +632,11 @@ async function loadHistory(reset, search = '') {
     } else {
       if (emptyEl) emptyEl.style.display = 'none';
       entries.forEach(entry => renderHistoryItem(entry, list));
+      const distinctDays = new Set();
+      list?.querySelectorAll('.history-group-header')?.forEach(h => {
+        if (h.dataset.dayKey) distinctDays.add(h.dataset.dayKey);
+      });
+      list?.classList.toggle('single-day', distinctDays.size <= 1);
     }
 
     const loadMore = document.getElementById('history-load-more');
@@ -669,11 +678,11 @@ async function loadDashboardStats() {
     }
 
     if (totalWords >= 1000000) {
-      setText('stat-total-words', (totalWords / 1000000).toFixed(1) + 'M');
+      animateStatValue('stat-total-words', (totalWords / 1000000).toFixed(1) + 'M');
     } else if (totalWords >= 1000) {
-      setText('stat-total-words', (totalWords / 1000).toFixed(1) + 'K');
+      animateStatValue('stat-total-words', (totalWords / 1000).toFixed(1) + 'K');
     } else {
-      setText('stat-total-words', totalWords.toLocaleString());
+      animateStatValue('stat-total-words', totalWords.toLocaleString());
     }
 
     // Time saved from backend stats (estimated typing time: ~40 WPM average)
@@ -681,24 +690,24 @@ async function loadDashboardStats() {
     const typingMinutesSaved = totalWords / 40;
     const savedHours = typingMinutesSaved / 60;
     if (savedHours >= 1) {
-      setText('stat-time-saved', savedHours.toFixed(1) + 'h');
+      animateStatValue('stat-time-saved', savedHours.toFixed(1) + 'h');
     } else {
-      setText('stat-time-saved', Math.round(typingMinutesSaved) + 'm');
+      animateStatValue('stat-time-saved', Math.round(typingMinutesSaved) + 'm');
     }
 
     // Dictation time (actual recording duration)
     const dictationHours = bStats.total_duration_ms / 3600000;
     if (dictationHours >= 1) {
-      setText('stat-dictation-time', dictationHours.toFixed(1) + 'h');
+      animateStatValue('stat-dictation-time', dictationHours.toFixed(1) + 'h');
     } else {
-      setText('stat-dictation-time', Math.round(bStats.total_duration_ms / 60000) + 'm');
+      animateStatValue('stat-dictation-time', Math.round(bStats.total_duration_ms / 60000) + 'm');
     }
 
     const monthlyHoursSaved = (monthlyWords / 40 / 60);
     if (monthlyHoursSaved >= 1) {
-      setText('stat-monthly-saved', monthlyHoursSaved.toFixed(1) + 'h');
+      animateStatValue('stat-monthly-saved', monthlyHoursSaved.toFixed(1) + 'h');
     } else {
-      setText('stat-monthly-saved', Math.round(monthlyWords / 40) + 'm');
+      animateStatValue('stat-monthly-saved', Math.round(monthlyWords / 40) + 'm');
     }
 
     // Weekly activity bar chart
@@ -962,6 +971,47 @@ function escapeHtml(str) {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;');
+}
+
+const statAnimFrames = new Map();
+
+function animateStatValue(id, finalText) {
+  const el = document.getElementById(id);
+  if (!el || el.textContent === finalText) return;
+
+  const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+  const match = String(finalText).match(/^([\d.,]+)\s*(.*)$/);
+  if (reduced || !match) {
+    el.textContent = finalText;
+    return;
+  }
+
+  const target = parseFloat(match[1].replace(/,/g, ''));
+  const suffix = match[2];
+  const decimals = match[1].includes('.') ? match[1].split('.')[1].length : 0;
+  if (target === 0) {
+    el.textContent = finalText;
+    return;
+  }
+
+  const frame = statAnimFrames.get(id);
+  if (frame) cancelAnimationFrame(frame);
+
+  const duration = 700;
+  const start = performance.now();
+  const step = (now) => {
+    const t = Math.min(1, (now - start) / duration);
+    const eased = 1 - Math.pow(1 - t, 3);
+    const value = target * eased;
+    el.textContent = (decimals > 0 ? value.toFixed(decimals) : Math.round(value).toLocaleString()) + suffix;
+    if (t < 1) {
+      statAnimFrames.set(id, requestAnimationFrame(step));
+    } else {
+      el.textContent = finalText;
+      statAnimFrames.delete(id);
+    }
+  };
+  statAnimFrames.set(id, requestAnimationFrame(step));
 }
 
 // ── Offline ASR Downloader ────────────────────────────────────────
@@ -1407,6 +1457,10 @@ function setupUpdaterUI() {
     const updateCard = document.getElementById('update-card');
     if (updateCard) updateCard.classList.toggle('downloading', info.state === 'downloading');
 
+    // Reset release-note styling unless we're showing the full body below
+    descEl?.classList.remove('update-notes');
+    if (descEl) descEl.style.textAlign = 'center';
+
     // Render last checked timestamp
     if (lastCheckedEl) {
       lastCheckedEl.textContent = info.lastCheckedText ? `Last checked: ${info.lastCheckedText}` : '';
@@ -1436,8 +1490,10 @@ function setupUpdaterUI() {
 
         case 'available':
           titleEl.textContent = `New Version Available (v${info.version})`;
-          descEl.textContent = info.body ? info.body.slice(0, 140) + (info.body.length > 140 ? '...' : '') : 'Bug fixes and performance improvements.';
+          descEl.textContent = info.body ? info.body.trim() : 'Bug fixes and performance improvements.';
           descEl.style.display = 'block';
+          descEl.style.textAlign = 'left';
+          descEl.classList.add('update-notes');
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Download Update';
           btnEl.disabled = false;
@@ -1701,18 +1757,30 @@ function renderHistoryItem(entry, container) {
   div.dataset.historyId = entry.id;
 
   const date = new Date(entry.timestamp);
-  const timeStr = date.toLocaleString();
+  const dayKey = dayKeyFor(date);
+
+  if (container && historyGroupKey !== dayKey) {
+    const header = document.createElement('div');
+    header.className = 'history-group-header';
+    header.dataset.dayKey = dayKey;
+    header.textContent = historyGroupForDate(date);
+    container.appendChild(header);
+    historyGroupKey = dayKey;
+  }
+
+  const timeStr = formatHistoryTimestamp(entry.timestamp);
+  const titleAttr = escapeHtml(date.toLocaleString());
 
   div.innerHTML = `
     <div class="history-item-header">
-      <span class="history-item-time">${timeStr}</span>
-      <div style="display:flex;gap:6px;align-items:center;">
+      <span class="history-item-time" title="${titleAttr}">${timeStr}</span>
+      <div class="history-actions">
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
         <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
       </div>
     </div>
-    <div class="history-item-text">${escapeHtml(entry.text)}</div>
+    <div class="history-item-text">${highlightMatches(entry.text, historySearchQuery)}</div>
   `;
 
   div.querySelector('.history-copy-btn').addEventListener('click', (e) => {
@@ -1727,6 +1795,56 @@ function renderHistoryItem(entry, container) {
   div.addEventListener('click', () => copyHistoryItem(entry.text, div));
 
   container?.appendChild(div);
+}
+
+function dayKeyFor(date) {
+  return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+function historyGroupForDate(date) {
+  const now = new Date();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const t = date.getTime();
+  if (t >= todayStart) return 'Today';
+  if (t >= todayStart - 86400000) return 'Yesterday';
+  if (t >= todayStart - 6 * 86400000) {
+    return date.toLocaleDateString(undefined, { weekday: 'long' });
+  }
+  if (date.getFullYear() === now.getFullYear()) {
+    return date.toLocaleDateString(undefined, { month: 'long', day: 'numeric' });
+  }
+  return date.toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' });
+}
+
+function formatHistoryTimestamp(ts) {
+  const date = new Date(ts);
+  const now = new Date();
+  const diff = now.getTime() - date.getTime();
+  const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  const clock = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' });
+  if (diff < 60000) return 'Just now';
+  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+  if (date.getTime() >= todayStart) return `${Math.floor(diff / 3600000)}h ago`;
+  if (date.getTime() >= todayStart - 86400000) return `Yesterday, ${clock}`;
+  if (date.getTime() >= todayStart - 6 * 86400000) {
+    return `${date.toLocaleDateString(undefined, { weekday: 'short' })}, ${clock}`;
+  }
+  return date.toLocaleDateString(undefined, {
+    month: 'short',
+    day: 'numeric',
+    year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
+  });
+}
+
+function escapeRegExp(str) {
+  return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightMatches(text, query) {
+  const safe = escapeHtml(text);
+  const q = query ? escapeHtml(query.trim()) : '';
+  if (!q) return safe;
+  return safe.replace(new RegExp(`(${escapeRegExp(q)})`, 'gi'), '<mark>$1</mark>');
 }
 
 window.copyHistoryItem = (text, element) => {

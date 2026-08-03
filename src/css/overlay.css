@@ -211,6 +211,16 @@ body {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-shrink: 0;
+}
+
+.rec-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  line-height: 1.15;
+  min-width: 0;
 }
 
 .rec-dot {
@@ -423,6 +433,21 @@ body {
 .overlay-root.state-error .status-msg {
   opacity: 1;
   color: var(--color-error);
+}
+
+/* ── Hold-to-Record Hint ───────────────────────────────────────── */
+.rec-hint {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 9px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  color: var(--color-on-surface-variant);
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Retry Button (error state) ────────────────────────────────── */

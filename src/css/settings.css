@@ -141,7 +141,7 @@ body {
 }
 
 .sidebar-version-label.highlight-ready {
-  color: #10B981;
+  color: var(--color-success);
 }
 
 .sidebar-update-status {
@@ -221,7 +221,7 @@ body {
 
 .sidebar-update-btn.btn-ready {
   background: var(--color-success);
-  color: #fff;
+  color: #000;
   border-color: var(--color-success);
   box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
 }
@@ -436,6 +436,12 @@ body {
 .history-item:hover { background: var(--color-hover); }
 .history-item:active { background: var(--color-active); }
 
+.history-item:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: -2px;
+  background: var(--color-hover);
+}
+
 .history-item-header {
   display: flex;
   align-items: center;
@@ -478,10 +484,27 @@ body {
 }
 
 .history-item-text mark {
-  background: rgba(11, 214, 227, 0.22);
+  background: var(--color-mark-search);
   color: var(--color-on-surface);
   border-radius: 2px;
   padding: 0 1px;
+}
+
+/* ── Candidate Word Markers ───────────────────────────────────── */
+.history-item-text .candidate-word {
+  background: var(--color-mark-candidate);
+  color: var(--color-on-surface);
+  border-radius: 2px;
+  padding: 0 2px;
+  cursor: pointer;
+  border-bottom: 1px dashed var(--color-mark-candidate-border);
+  transition: background 0.12s ease;
+}
+
+.history-item-text .candidate-word:hover,
+.history-item-text .candidate-word:focus-visible {
+  background: var(--color-mark-candidate-hover);
+  outline: none;
 }
 
 .history-item-time {
@@ -678,7 +701,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   width: 100%;
   max-width: 40px;
   height: 100%;
-  background: linear-gradient(180deg, rgba(139, 69, 216, 0.55), rgba(139, 69, 216, 0.12));
+  background: linear-gradient(180deg, var(--color-chart-bar-a), var(--color-chart-bar-b));
   border-radius: var(--radius-xs);
   transform-origin: bottom;
   transform: scaleY(0);
@@ -795,25 +818,9 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   to   { opacity: 1; }
 }
 
-/* ── Unsaved Changes Indicator ────────────────────────────────── */
-.nav-item .unsaved-dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-brand-cyan);
-  margin-left: auto;
-  flex-shrink: 0;
-  animation: unsaved-pulse 2s ease-in-out infinite;
-}
-
-@keyframes unsaved-pulse {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.4; }
-}
-
 /* ── History Item Copy Flash ──────────────────────────────────── */
 .history-item.copy-flash {
-  background: rgba(34, 197, 94, 0.10) !important;
+  background: var(--color-copy-flash) !important;
   transition: background 0.1s ease;
 }
 
@@ -824,7 +831,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 
 /* ── Update Progress Bar Pulse ────────────────────────────────── */
 .update-card.downloading #update-progress-fill {
-  background: linear-gradient(90deg, var(--color-brand-cyan), rgba(139, 69, 216, 0.8), var(--color-brand-cyan));
+  background: linear-gradient(90deg, var(--color-brand-cyan), var(--color-brand-amethyst-soft), var(--color-brand-cyan));
   background-size: 200% 100%;
   animation: progress-pulse 1.5s ease-in-out infinite;
 }

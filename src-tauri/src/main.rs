@@ -25,6 +25,7 @@ mod offline_downloader;
 mod offline_transcribe;
 mod overlay;
 mod settings;
+mod snippets;
 mod suggestion;
 mod transcribe;
 mod tray;
@@ -167,6 +168,12 @@ pub fn run() {
             dictionary::delete_dictionary_entry,
             dictionary::import_dictionary,
             dictionary::export_dictionary,
+            // Text expansion (snippets)
+            snippets::get_snippets,
+            snippets::set_snippets_enabled,
+            snippets::add_snippet,
+            snippets::update_snippet,
+            snippets::delete_snippet,
             // Audio
             audio::list_audio_devices,
             audio::start_recording,

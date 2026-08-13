@@ -20,6 +20,7 @@ pub mod offline_downloader;
 pub mod offline_transcribe;
 pub mod overlay;
 pub mod settings;
+pub mod snippets;
 pub mod suggestion;
 pub mod transcribe;
 pub mod tray;

@@ -63,6 +63,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
       Dictionary
     </button>
+    <button type="button" class="nav-item" data-page="snippets" id="nav-snippets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3"/><path d="M12 8v8M9 11l3-3 3 3"/></svg>
+      Snippets
+    </button>
     <button type="button" class="nav-item" data-page="about" id="nav-about">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       About
@@ -655,7 +659,7 @@
         </div>
         <div id="history-list" style="max-height:400px;overflow-y:auto;">
           <div class="empty-state" id="history-empty">
-            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
               <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
               <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
               <line x1="12" y1="19" x2="12" y2="23"/>
@@ -668,6 +672,71 @@
         <div style="padding:var(--spacing-md);display:flex;justify-content:center;" id="history-load-more" class="hidden">
           <button class="btn-ghost" id="load-more-btn">Load More</button>
         </div>
+      </div>
+    </section>
+
+    <!-- ===== SNIPPETS PAGE ===== -->
+    <section class="page" id="page-snippets">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Text Expansion</h1>
+        <p class="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="setting-row" style="padding-bottom:var(--spacing-lg);border-bottom:1px solid var(--color-outline-variant);">
+          <div class="setting-info">
+            <div class="setting-label">Enable text expansion</div>
+            <div class="setting-desc">Dictate a short trigger like "my linkedin" and Fluence pastes your expansion text instead</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="snippets-enabled-cb" aria-label="Enable text expansion" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--spacing-lg);">
+          <h2>My Snippets</h2>
+          <button class="btn-primary" id="add-snippet-btn" style="padding:6px 14px;font-size:13px;">+ Add Snippet</button>
+        </div>
+        <div id="snippet-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
+          <div class="form-row" style="flex:1;">
+            <label for="snippet-trigger-input">Spoken trigger</label>
+            <input type="text" id="snippet-trigger-input" maxlength="100" placeholder="e.g. my linkedin" />
+          </div>
+          <div class="form-row" style="flex:2;">
+            <label for="snippet-expansion-input">Expansion text</label>
+            <input type="text" id="snippet-expansion-input" maxlength="500" placeholder="e.g. https://linkedin.com/in/username" />
+          </div>
+          <div style="display:flex;gap:var(--spacing-sm);padding-bottom:1px;">
+            <button class="btn-primary" id="snippet-save-btn" style="padding:10px 16px;">Save</button>
+            <button class="btn-ghost" id="snippet-cancel-btn">Cancel</button>
+          </div>
+        </div>
+        <table class="dict-table">
+          <thead>
+            <tr>
+              <th>Trigger</th>
+              <th>Expansion</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="snippet-table-body">
+            <tr id="snippet-empty-row">
+              <td colspan="3">
+                <div class="empty-state">
+                  <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3"/>
+                    <path d="M12 8v8M9 11l3-3 3 3"/>
+                  </svg>
+                  <div class="empty-state-title">No snippets yet</div>
+                  <div class="empty-state-hint">Add a trigger phrase and its expansion — e.g. "my email" becomes your full email address</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
       </div>
     </section>
 

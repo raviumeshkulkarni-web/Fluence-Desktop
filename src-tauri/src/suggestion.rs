@@ -240,8 +240,8 @@ pub fn accept_suggestion(id: &str) -> Result<(), String> {
     let spoken = suggestion.spoken.clone();
     let corrected = suggestion.corrected.clone();
 
-    // Add to dictionary
-    crate::dictionary::add_dictionary_entry(spoken, corrected)
+    // Add to dictionary (auto-learned suggestions are always corrections)
+    crate::dictionary::add_dictionary_entry(spoken, corrected, None)
         .map_err(|e| format!("Failed to add to dictionary: {}", e))?;
 
     // Mark as accepted (don't delete — keep for future analytics/undo)

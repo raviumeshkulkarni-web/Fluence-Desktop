@@ -58,10 +58,23 @@
   --color-ink-disabled:          #4A4A4A;
 
   /* ── Semantic ──────────────────────────────────────────────────── */
-  --color-error:                 #EF4444;
-  --color-error-container:       rgba(239, 68, 68, 0.15);
+  --color-error:                 #F87171;
+  --color-error-container:       rgba(248, 113, 113, 0.15);
   --color-success:               #22C55E;
   --color-success-container:     rgba(34, 197, 94, 0.15);
+
+  /* ── Accent Modifiers (alpha variants of brand/semantic colors) ── */
+  --color-brand-amethyst-soft:   rgba(139, 69, 216, 0.8);
+  --color-chart-bar-a:           rgba(139, 69, 216, 0.55);
+  --color-chart-bar-b:           rgba(139, 69, 216, 0.12);
+  --color-mark-search:           rgba(11, 214, 227, 0.22);
+  --color-mark-candidate:        rgba(255, 176, 32, 0.22);
+  --color-mark-candidate-hover:  rgba(255, 176, 32, 0.45);
+  --color-mark-candidate-border: rgba(255, 176, 32, 0.75);
+  --color-toast-success:         rgba(34, 197, 94, 0.12);
+  --color-toast-error:           rgba(248, 113, 113, 0.12);
+  --color-copy-flash:            rgba(34, 197, 94, 0.10);
+  --color-overlay-surface:       rgba(13, 13, 13, 0.94);
 
   /* ── Brand / Accent ────────────────────────────────────────────── */
   --color-brand-amethyst:        #8B45D8;

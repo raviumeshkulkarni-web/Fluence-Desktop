@@ -2,7 +2,6 @@
 // Sends recorded WAV audio to any OpenAI-compatible /v1/audio/transcriptions endpoint.
 // Supports Groq, OpenAI, and custom providers.
 
-use crate::dictionary;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -153,6 +152,50 @@ pub async fn transcribe_audio_bytes(
     Ok(result.text)
 }
 
+/// Build the Whisper vocabulary hint from dictionary entries.
+///
+/// SECURITY INVARIANT: Expansion entries are excluded entirely — expansion
+/// text must never enter the STT recognition prompt. Only correction entries
+/// contribute their spoken/corrected words.
+///
+/// Groq rejects prompts > 896 characters, so the result is truncated to 890.
+fn build_vocabulary_hint(entries: &[crate::dictionary::DictionaryEntry]) -> Option<String> {
+    let mut prompt_words = Vec::new();
+    for entry in entries {
+        if entry.kind == "expansion" {
+            continue;
+        }
+        if !entry.corrected.trim().is_empty() {
+            prompt_words.push(entry.corrected.clone());
+        }
+        if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
+            prompt_words.push(entry.spoken.clone());
+        }
+    }
+    if prompt_words.is_empty() {
+        return None;
+    }
+
+    let mut prompt = prompt_words.join(", ");
+    if prompt.len() > 890 {
+        let mut end = 890;
+        while !prompt.is_char_boundary(end) {
+            end -= 1;
+        }
+        let prefix = &prompt[..end];
+        if let Some(last_comma) = prefix.rfind(',') {
+            prompt.truncate(last_comma);
+        } else {
+            prompt.truncate(end);
+        }
+        log::debug!(
+            "Prompt truncated to {} characters for Groq compatibility",
+            prompt.len()
+        );
+    }
+    Some(prompt)
+}
+
 pub async fn transcribe_mp3_bytes(
     base_url: &str,
     api_key: &str,
@@ -182,35 +225,11 @@ pub async fn transcribe_mp3_bytes(
         }
     }
 
-    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint.
-    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    // Feed correction entries to Whisper as a vocabulary hint.
+    // Expansion entries must never enter the STT recognition prompt.
     if let Ok(entries) = crate::dictionary::get_dictionary() {
-        if !entries.is_empty() {
-            let mut prompt_words = Vec::new();
-            for entry in entries {
-                if !entry.corrected.trim().is_empty() {
-                    prompt_words.push(entry.corrected.clone());
-                }
-                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
-                    prompt_words.push(entry.spoken.clone());
-                }
-            }
-            if !prompt_words.is_empty() {
-                let mut prompt = prompt_words.join(", ");
-                if prompt.len() > 890 {
-                    let truncated = &prompt[..890];
-                    if let Some(last_comma) = truncated.rfind(',') {
-                        prompt = truncated[..last_comma].to_string();
-                    } else {
-                        prompt = truncated.to_string();
-                    }
-                    log::debug!(
-                        "Prompt truncated to {} characters for Groq compatibility",
-                        prompt.len()
-                    );
-                }
-                form = form.text("prompt", prompt);
-            }
+        if let Some(prompt) = build_vocabulary_hint(&entries) {
+            form = form.text("prompt", prompt);
         }
     }
 
@@ -246,8 +265,8 @@ pub async fn transcribe_mp3_bytes(
         .await
         .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    // Apply custom dictionary corrections
-    let corrected = dictionary::apply_corrections(&result.text);
+    // Apply dictionary corrections, then snippet expansion
+    let corrected = crate::snippets::process_transcript(&result.text);
 
     log::info!(
         "transcribe_mp3_bytes performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
@@ -302,35 +321,11 @@ pub async fn transcribe_mp3_bytes_with_raw(
         }
     }
 
-    // Feed custom dictionary entries to Whisper as an initial prompt vocabulary hint.
-    // Groq rejects prompts > 896 characters, so truncate to 890 to be safe.
+    // Feed correction entries to Whisper as a vocabulary hint.
+    // Expansion entries must never enter the STT recognition prompt.
     if let Ok(entries) = crate::dictionary::get_dictionary() {
-        if !entries.is_empty() {
-            let mut prompt_words = Vec::new();
-            for entry in entries {
-                if !entry.corrected.trim().is_empty() {
-                    prompt_words.push(entry.corrected.clone());
-                }
-                if !entry.spoken.trim().is_empty() && entry.spoken != entry.corrected {
-                    prompt_words.push(entry.spoken.clone());
-                }
-            }
-            if !prompt_words.is_empty() {
-                let mut prompt = prompt_words.join(", ");
-                if prompt.len() > 890 {
-                    let truncated = &prompt[..890];
-                    if let Some(last_comma) = truncated.rfind(',') {
-                        prompt = truncated[..last_comma].to_string();
-                    } else {
-                        prompt = truncated.to_string();
-                    }
-                    log::debug!(
-                        "Prompt truncated to {} characters for Groq compatibility",
-                        prompt.len()
-                    );
-                }
-                form = form.text("prompt", prompt);
-            }
+        if let Some(prompt) = build_vocabulary_hint(&entries) {
+            form = form.text("prompt", prompt);
         }
     }
 
@@ -367,8 +362,8 @@ pub async fn transcribe_mp3_bytes_with_raw(
     // Capture raw text before dictionary corrections
     let raw_text = result.text.clone();
 
-    // Apply custom dictionary corrections
-    let corrected_text = dictionary::apply_corrections(&result.text);
+    // Apply dictionary corrections, then snippet expansion
+    let corrected_text = crate::snippets::process_transcript(&result.text);
 
     log::info!(
         "transcribe_mp3_bytes_with_raw performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
@@ -619,5 +614,68 @@ mod tests {
     #[test]
     fn max_audio_b64_len_is_reasonable() {
         assert_eq!(MAX_AUDIO_B64_LEN, 35_000_000);
+    }
+
+    #[test]
+    fn expansion_entries_never_enter_prompt() {
+        let entries = vec![
+            crate::dictionary::DictionaryEntry {
+                id: "1".into(),
+                spoken: "github".into(),
+                corrected: "GitHub".into(),
+                kind: "correction".into(),
+            },
+            crate::dictionary::DictionaryEntry {
+                id: "2".into(),
+                spoken: "meetnotes".into(),
+                corrected: "Share the meeting notes with the team and follow up on action items within 24 hours.".into(),
+                kind: "expansion".into(),
+            },
+        ];
+        let prompt = build_vocabulary_hint(&entries).expect("corrections must produce a hint");
+        assert!(prompt.contains("GitHub"));
+        assert!(prompt.contains("github"));
+        assert!(!prompt.contains("meetnotes"));
+        assert!(!prompt.contains("Share the meeting notes"));
+        assert!(!prompt.contains("follow up on action items"));
+    }
+
+    #[test]
+    fn expansion_only_entries_produce_no_prompt() {
+        let entries = vec![crate::dictionary::DictionaryEntry {
+            id: "1".into(),
+            spoken: "trigger".into(),
+            corrected: "long expansion body that must never be sent".into(),
+            kind: "expansion".into(),
+        }];
+        assert!(build_vocabulary_hint(&entries).is_none());
+    }
+
+    #[test]
+    fn legacy_entries_without_kind_are_corrections() {
+        let raw = r#"[
+            {"id": "1", "spoken": "tori", "corrected": "Tauri"}
+        ]"#;
+        let entries: Vec<crate::dictionary::DictionaryEntry> =
+            serde_json::from_str(raw).expect("legacy entry without kind must deserialize");
+        assert_eq!(entries[0].kind, "correction");
+    }
+
+    #[test]
+    fn prompt_truncation_respects_utf8_boundaries() {
+        // 900 bytes of 3-byte chars with no comma: byte 890 falls mid-character.
+        let entries = vec![crate::dictionary::DictionaryEntry {
+            id: "1".into(),
+            spoken: "x".into(),
+            corrected: "€".repeat(300),
+            kind: "correction".into(),
+        }];
+        let prompt = build_vocabulary_hint(&entries).expect("hint must exist");
+        assert!(
+            prompt.len() <= 890,
+            "prompt exceeded 890 bytes: {}",
+            prompt.len()
+        );
+        assert!(prompt.chars().all(|c| c == '€'), "prompt content corrupted");
     }
 }

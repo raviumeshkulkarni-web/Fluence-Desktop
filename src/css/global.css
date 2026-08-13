@@ -237,7 +237,7 @@ button:focus-visible {
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.25);
+  background: rgba(248, 113, 113, 0.25);
 }
 
 .btn-danger:active {
@@ -329,7 +329,7 @@ select {
 
 .toggle-switch input:checked ~ .toggle-track .toggle-thumb {
   transform: translateX(20px);
-  background: #E2E2E2;
+  background: var(--color-on-surface);
 }
 
 .toggle-switch input:checked:active ~ .toggle-track .toggle-thumb {
@@ -433,8 +433,8 @@ select {
   max-width: 360px;
 }
 
-.toast.success { background: rgba(34, 197, 94, 0.12); }
-.toast.error   { background: rgba(239, 68, 68, 0.12); }
+.toast.success { background: var(--color-toast-success); }
+.toast.error   { background: var(--color-toast-error); }
 
 /* ── Custom Titlebar — ultra-thin bottom border ────────────────── */
 .titlebar {

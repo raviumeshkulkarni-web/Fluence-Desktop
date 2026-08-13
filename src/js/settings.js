@@ -53,17 +53,17 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupProviderCards();
   setupOfflineDownloader();
   setupHistory();
-  setupSystemToggles();
+  setupAutoApply();
   setupSaveButtons();
   setupDictionary();
   setupSuggestions();
+  setupSnippets();
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
   setupSkeletonLoading();
   loadDashboardStats().finally(removeSkeletonLoading);
   setupUpdaterUI();
-  setupUnsavedChanges();
   setupKeyboardShortcuts();
   setupSkeletonLoading();
 
@@ -76,6 +76,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       loadDictionary();
       loadSuggestions();
       expireStaleSuggestions();
+    } else if (currentPage === 'snippets') {
+      loadSnippets();
     }
   });
 });
@@ -164,7 +166,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'about'];
+const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'snippets', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -228,6 +230,9 @@ function _performNavigation(page) {
     loadDictionary();
     loadSuggestions();
     expireStaleSuggestions();
+  }
+  if (page === 'snippets') {
+    loadSnippets();
   }
 }
 
@@ -306,7 +311,10 @@ function wireHotkeyRecorder(displayId, textId, clearBtnId, settingsKey, defaultS
 
   clearBtn?.addEventListener('click', () => {
     setText(textId, defaultShortcut);
-    if (currentSettings) currentSettings[settingsKey] = defaultShortcut;
+    if (currentSettings) {
+      currentSettings[settingsKey] = defaultShortcut;
+      queuePersist('hotkeys');
+    }
   });
 }
 
@@ -326,7 +334,10 @@ function stopHotkeyRecording(apply) {
 
   if (apply && pendingHotkey) {
     setText(activeRecorder.textId, pendingHotkey);
-    if (currentSettings) currentSettings[activeRecorder.settingsKey] = pendingHotkey;
+    if (currentSettings) {
+      currentSettings[activeRecorder.settingsKey] = pendingHotkey;
+      queuePersist('hotkeys');
+    }
   } else {
     setText(activeRecorder.textId, currentSettings?.[activeRecorder.settingsKey] || 'Ctrl+Shift+Space');
   }
@@ -370,6 +381,7 @@ function setupProviderCards() {
       if (hasKey) {
         fetchModels('stt', true);
       }
+      queuePersist('providers');
     });
   });
 
@@ -391,6 +403,7 @@ function setupProviderCards() {
       if (hasKey) {
         fetchModels('llm', true);
       }
+      queuePersist('providers');
     });
   });
 
@@ -447,6 +460,12 @@ function setupProviderCards() {
   // Test buttons
   document.getElementById('stt-test-btn')?.addEventListener('click', () => testConnection('stt'));
   document.getElementById('llm-test-btn')?.addEventListener('click', () => testConnection('llm'));
+
+  // Auto-apply provider endpoint/model changes (debounced)
+  document.getElementById('stt-base-url')?.addEventListener('input', () => queuePersist('providers'));
+  document.getElementById('llm-base-url')?.addEventListener('input', () => queuePersist('providers'));
+  document.getElementById('stt-model-select')?.addEventListener('change', () => queuePersist('providers'));
+  document.getElementById('llm-model-select')?.addEventListener('change', () => queuePersist('providers'));
 }
 
 function selectProviderCard(type, preset) {
@@ -556,27 +575,29 @@ function setupHistory() {
   // Right-click context menu for history rows (Copy / Delete)
   const historyList = document.getElementById('history-list');
   let historyMenuEl = null;
+  let historyMenuRow = null;
 
   const hideHistoryMenu = () => {
     historyMenuEl?.remove();
     historyMenuEl = null;
+    historyMenuRow = null;
   };
 
   document.addEventListener('click', hideHistoryMenu);
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && historyMenuEl) {
       e.stopImmediatePropagation();
+      const row = historyMenuRow;
       hideHistoryMenu();
+      row?.focus();
     }
   });
   historyList?.addEventListener('scroll', hideHistoryMenu);
   document.querySelector('.content-area')?.addEventListener('scroll', hideHistoryMenu);
 
-  historyList?.addEventListener('contextmenu', (e) => {
-    const row = e.target.closest('.history-item');
-    if (!row) return;
-    e.preventDefault();
+  const openHistoryMenu = (row, x, y) => {
     hideHistoryMenu();
+    historyMenuRow = row;
 
     historyMenuEl = document.createElement('div');
     historyMenuEl.className = 'history-context-menu';
@@ -598,14 +619,62 @@ function setupHistory() {
       hideHistoryMenu();
     });
     historyMenuEl.addEventListener('contextmenu', (ev) => ev.preventDefault());
+    historyMenuEl.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape') {
+        hideHistoryMenu();
+        row.focus();
+      }
+    });
 
     document.body.appendChild(historyMenuEl);
 
     const menuRect = historyMenuEl.getBoundingClientRect();
-    const x = Math.min(e.clientX, window.innerWidth - menuRect.width - 8);
-    const y = Math.min(e.clientY, window.innerHeight - menuRect.height - 8);
+    x = Math.min(x, window.innerWidth - menuRect.width - 8);
+    y = Math.min(y, window.innerHeight - menuRect.height - 8);
     historyMenuEl.style.left = x + 'px';
     historyMenuEl.style.top = y + 'px';
+
+    historyMenuEl.querySelector('button')?.focus();
+  };
+
+  // Candidate word markers: click (or Enter/Space) accepts the suggestion
+  const acceptMarkedWord = async (mark) => {
+    const id = mark?.dataset?.suggestionId;
+    if (!id) return;
+    await acceptSuggestion(id);
+    await loadPendingSuggestionMap(true);
+    loadHistory(true, document.getElementById('history-search')?.value);
+  };
+
+  historyList?.addEventListener('click', (e) => {
+    const mark = e.target.closest('.candidate-word');
+    if (!mark) return;
+    e.stopPropagation();
+    acceptMarkedWord(mark);
+  });
+
+  historyList?.addEventListener('keydown', (e) => {
+    if (e.key === 'F10' && e.shiftKey) {
+      const row = e.target.closest?.('.history-item') || document.activeElement?.closest?.('.history-item');
+      if (!row) return;
+      e.preventDefault();
+      const rect = row.getBoundingClientRect();
+      openHistoryMenu(row, rect.left + 8, rect.top);
+      return;
+    }
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    const mark = e.target.closest('.candidate-word');
+    if (!mark) return;
+    e.preventDefault();
+    e.stopPropagation();
+    acceptMarkedWord(mark);
+  });
+
+  historyList?.addEventListener('contextmenu', (e) => {
+    const row = e.target.closest('.history-item');
+    if (!row) return;
+    e.preventDefault();
+    openHistoryMenu(row, e.clientX, e.clientY);
   });
 }
 
@@ -614,6 +683,7 @@ async function loadHistory(reset, search = '') {
   historySearchQuery = search || document.getElementById('history-search')?.value || '';
 
   try {
+    await loadPendingSuggestionMap();
     const entries = await invoke('get_history', {
       page: historyPage,
       searchQuery: search || null,
@@ -761,61 +831,93 @@ window.deleteHistoryItem = async (id) => {
   }
 };
 
-// ── System Toggles ───────────────────────────────────────────────
+// ── Auto-Apply Settings ─────────────────────────────────────────
+// Every settings change persists immediately (debounced). The Save
+// buttons remain only as an explicit flush; nothing is ever lost by
+// closing the window without clicking Save.
 
-function setupSystemToggles() {
-  document.getElementById('autostart-cb')?.addEventListener('change', (e) => {
-    if (currentSettings) currentSettings.auto_start = e.target.checked;
+let persistTimer = null;
+let persistFeatures = new Set();
+let lastAppliedHotkeys = null;
+let lastAppliedAutostart = null;
+
+const GENERAL_BINDINGS = [
+  { id: 'recording-mode-select',       key: 'recording_mode',        type: 'select',   features: ['hotkeys'] },
+  { id: 'agent-recording-mode-select', key: 'agent_recording_mode',  type: 'select',   features: ['hotkeys'] },
+  { id: 'overlay-position-select',     key: 'overlay_position',      type: 'select' },
+  { id: 'language-select',             key: 'language',              type: 'select' },
+  { id: 'ai-polish-select',            key: 'ai_polish_style',       type: 'select' },
+  { id: 'offline-engine-select',       key: 'offline_engine',        type: 'select' },
+  { id: 'audio-device-select',         key: 'audio_device_id',       type: 'select' },
+  { id: 'autostart-cb',                key: 'auto_start',            type: 'checkbox', features: ['autostart'] },
+  { id: 'duck-cb',                     key: 'duck_enabled',          type: 'checkbox' },
+  { id: 'auto-grab-cb',                key: 'auto_grab_highlight',   type: 'checkbox' },
+  { id: 'auto-learn-cb',               key: 'auto_learn_enabled',    type: 'checkbox' },
+  { id: 'sound-on-complete-cb',        key: 'sound_on_complete',     type: 'checkbox' },
+];
+
+function setupAutoApply() {
+  lastAppliedAutostart = currentSettings?.auto_start ?? false;
+
+  GENERAL_BINDINGS.forEach(({ id, key, type, features = [] }) => {
+    document.getElementById(id)?.addEventListener('change', (e) => {
+      if (!currentSettings) return;
+      currentSettings[key] = type === 'checkbox' ? e.target.checked : e.target.value;
+      queuePersist('general', ...features);
+    });
   });
 }
 
-// ── Save Buttons ─────────────────────────────────────────────────
-
-function setupSaveButtons() {
-  document.getElementById('save-general-btn')?.addEventListener('click', saveGeneral);
-  document.getElementById('save-providers-btn')?.addEventListener('click', saveProviders);
+function queuePersist(...features) {
+  features.forEach(f => persistFeatures.add(f));
+  clearTimeout(persistTimer);
+  persistTimer = setTimeout(flushPendingPersists, 350);
 }
 
-async function saveGeneral() {
-  if (!currentSettings) return;
+async function flushPendingPersists() {
+  if (!currentSettings || persistFeatures.size === 0) return;
+  const features = [...persistFeatures];
+  persistFeatures.clear();
 
-  currentSettings.hotkey = document.getElementById('hotkey-display-text')?.textContent || currentSettings.hotkey;
-  currentSettings.recording_mode = document.getElementById('recording-mode-select')?.value || currentSettings.recording_mode;
-  currentSettings.agent_hotkey = document.getElementById('agent-hotkey-display-text')?.textContent || currentSettings.agent_hotkey;
-  currentSettings.agent_recording_mode = document.getElementById('agent-recording-mode-select')?.value || currentSettings.agent_recording_mode;
-  currentSettings.overlay_position = document.getElementById('overlay-position-select')?.value || currentSettings.overlay_position;
-  currentSettings.audio_device_id = document.getElementById('audio-device-select')?.value || null;
-  currentSettings.language = document.getElementById('language-select')?.value || 'en';
-  currentSettings.sound_on_complete = document.getElementById('sound-on-complete-cb')?.checked ?? false;
-  currentSettings.ai_polish_style = document.getElementById('ai-polish-select')?.value || 'none';
-  currentSettings.auto_grab_highlight = document.getElementById('auto-grab-cb')?.checked ?? true;
-  currentSettings.auto_learn_enabled = document.getElementById('auto-learn-cb')?.checked ?? true;
-  currentSettings.duck_enabled = document.getElementById('duck-cb')?.checked ?? false;
-  currentSettings.auto_start = document.getElementById('autostart-cb')?.checked ?? false;
-  currentSettings.offline_engine = document.getElementById('offline-engine-select')?.value || 'sensevoice';
+  if (features.includes('providers')) collectProviderSettings();
 
   try {
     await invoke('update_settings', { settings: currentSettings });
-    // Re-register hotkeys with new settings
-    await invoke('update_hotkeys', {
-      transcriptionShortcut: currentSettings.hotkey,
-      transcriptionMode: currentSettings.recording_mode,
-      agentShortcut: currentSettings.agent_hotkey,
-      agentMode: currentSettings.agent_recording_mode,
-    });
-    // Apply autostart registry entry at save time, matching the on-save model
-    await invoke('set_autostart', { enabled: currentSettings.auto_start }).catch(err =>
-      console.error('Failed to apply autostart:', err)
-    );
-    showToast('Settings saved ✓', 'success');
   } catch (err) {
-    showToast('Failed to save: ' + err, 'error');
+    showToast('Failed to save settings: ' + err, 'error');
+  }
+
+  if (features.includes('hotkeys')) await applyHotkeyChanges();
+  if (features.includes('autostart')) await applyAutostartChange();
+}
+
+async function applyHotkeyChanges() {
+  const desired = {
+    transcriptionShortcut: currentSettings.hotkey,
+    transcriptionMode: currentSettings.recording_mode,
+    agentShortcut: currentSettings.agent_hotkey,
+    agentMode: currentSettings.agent_recording_mode,
+  };
+  if (lastAppliedHotkeys && JSON.stringify(lastAppliedHotkeys) === JSON.stringify(desired)) return;
+  lastAppliedHotkeys = desired;
+  try {
+    await invoke('update_hotkeys', desired);
+  } catch (err) {
+    showToast('Failed to update hotkeys: ' + err, 'error');
   }
 }
 
-async function saveProviders() {
-  if (!currentSettings) return;
+async function applyAutostartChange() {
+  if (lastAppliedAutostart === currentSettings.auto_start) return;
+  lastAppliedAutostart = currentSettings.auto_start;
+  try {
+    await invoke('set_autostart', { enabled: currentSettings.auto_start });
+  } catch (err) {
+    console.error('Failed to apply autostart:', err);
+  }
+}
 
+function collectProviderSettings() {
   const sttPreset = document.querySelector('#stt-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
   const llmPreset = document.querySelector('#llm-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
 
@@ -832,14 +934,24 @@ async function saveProviders() {
     model: document.getElementById('llm-model-select')?.value || '',
     api_key_saved: true,
   };
-
-  try {
-    await invoke('update_settings', { settings: currentSettings });
-    showToast('Provider settings saved ✓', 'success');
-  } catch (err) {
-    showToast('Failed to save providers: ' + err, 'error');
-  }
 }
+
+// ── Save Buttons ─────────────────────────────────────────────────
+
+function setupSaveButtons() {
+  document.getElementById('save-general-btn')?.addEventListener('click', async () => {
+    await flushPendingPersists();
+    showToast('Settings saved ✓', 'success');
+  });
+  document.getElementById('save-providers-btn')?.addEventListener('click', async () => {
+    await flushPendingPersists();
+    showToast('Provider settings saved ✓', 'success');
+  });
+}
+
+// Backwards-compatible aliases used by Ctrl+S shortcuts
+const saveGeneral = () => flushPendingPersists();
+const saveProviders = () => flushPendingPersists();
 
 // ── Audio Devices ────────────────────────────────────────────────
 
@@ -1335,6 +1447,106 @@ async function exportDictionary() {
   }
 }
 
+// ── Snippets (Text Expansion) ───────────────────────────────────
+
+let snippetEntries = [];
+
+function setupSnippets() {
+  document.getElementById('snippets-enabled-cb')?.addEventListener('change', async (e) => {
+    try {
+      await invoke('set_snippets_enabled', { enabled: e.target.checked });
+      showToast(e.target.checked ? 'Text expansion enabled ✓' : 'Text expansion disabled', 'success');
+    } catch (err) {
+      showToast('Failed to update: ' + err, 'error');
+      e.target.checked = !e.target.checked;
+    }
+  });
+
+  document.getElementById('add-snippet-btn')?.addEventListener('click', () => toggleSnippetAddRow(true));
+  document.getElementById('snippet-cancel-btn')?.addEventListener('click', () => toggleSnippetAddRow(false));
+  document.getElementById('snippet-save-btn')?.addEventListener('click', saveSnippetEntry);
+}
+
+function toggleSnippetAddRow(show) {
+  const row = document.getElementById('snippet-add-row');
+  if (row) row.classList.toggle('hidden', !show);
+  if (show) {
+    document.getElementById('snippet-trigger-input')?.focus();
+  } else {
+    setInputValue('snippet-trigger-input', '');
+    setInputValue('snippet-expansion-input', '');
+  }
+}
+
+async function loadSnippets() {
+  try {
+    const store = await invoke('get_snippets');
+    setChecked('snippets-enabled-cb', store.enabled);
+    snippetEntries = store.snippets || [];
+    renderSnippetsTable();
+  } catch (err) {
+    showToast('Failed to load snippets: ' + err, 'error');
+  }
+}
+
+function renderSnippetsTable() {
+  const tbody = document.getElementById('snippet-table-body');
+  const emptyRow = document.getElementById('snippet-empty-row');
+  if (!tbody) return;
+
+  tbody.querySelectorAll('tr[data-snippet-id]').forEach(r => r.remove());
+
+  if (snippetEntries.length === 0) {
+    if (emptyRow) emptyRow.style.display = '';
+  } else {
+    if (emptyRow) emptyRow.style.display = 'none';
+    snippetEntries.forEach(entry => {
+      const tr = document.createElement('tr');
+      tr.dataset.snippetId = entry.id;
+      tr.innerHTML = `
+        <td class="spoken-word">${escapeHtml(entry.trigger)}</td>
+        <td class="corrected-word">${escapeHtml(entry.expansion)}</td>
+        <td class="actions">
+          <button class="btn-ghost snippet-delete-btn" data-snippet-id="${entry.id}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+        </td>
+      `;
+      tr.querySelector('.snippet-delete-btn')?.addEventListener('click', () => deleteSnippetEntry(entry.id));
+      tbody.appendChild(tr);
+    });
+  }
+}
+
+async function saveSnippetEntry() {
+  const trigger = document.getElementById('snippet-trigger-input')?.value?.trim();
+  const expansion = document.getElementById('snippet-expansion-input')?.value?.trim();
+
+  if (!trigger || !expansion) {
+    showToast('Please fill in both fields', 'error');
+    return;
+  }
+
+  try {
+    const entry = await invoke('add_snippet', { trigger, expansion });
+    snippetEntries.push(entry);
+    renderSnippetsTable();
+    toggleSnippetAddRow(false);
+    showToast('Snippet added ✓', 'success');
+  } catch (err) {
+    showToast(String(err).replace(/^Error:\s*/, ''), 'error');
+  }
+}
+
+window.deleteSnippetEntry = async (id) => {
+  try {
+    await invoke('delete_snippet', { id });
+    snippetEntries = snippetEntries.filter(e => e.id !== id);
+    renderSnippetsTable();
+    showToast('Snippet deleted', 'success');
+  } catch (err) {
+    showToast('Failed to delete: ' + err, 'error');
+  }
+};
+
 // ── Suggestions (Auto-Learn) ────────────────────────────────────
 
 function setupSuggestions() {
@@ -1646,76 +1858,6 @@ function setupUpdaterUI() {
   });
 }
 
-// ── Unsaved Changes Tracking ────────────────────────────────────
-
-let isDirty = false;
-let dirtyPages = new Set();
-
-function setupUnsavedChanges() {
-  const generalInputs = ['recording-mode-select', 'overlay-position-select', 'language-select',
-    'ai-polish-select', 'agent-recording-mode-select', 'offline-engine-select'];
-  const generalCheckboxes = ['autostart-cb', 'duck-cb', 'auto-grab-cb', 'auto-learn-cb', 'sound-on-complete-cb'];
-
-  generalInputs.forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => markDirty('general'));
-  });
-  generalCheckboxes.forEach(id => {
-    document.getElementById(id)?.addEventListener('change', () => markDirty('general'));
-  });
-  document.getElementById('hotkey-display')?.addEventListener('click', () => markDirty('general'));
-
-  const providerInputs = ['stt-base-url', 'stt-api-key', 'llm-base-url', 'llm-api-key'];
-  providerInputs.forEach(id => {
-    document.getElementById(id)?.addEventListener('input', () => markDirty('providers'));
-  });
-  document.querySelectorAll('.provider-card').forEach(card => {
-    card.addEventListener('click', () => markDirty('providers'));
-  });
-}
-
-function markDirty(page) {
-  if (dirtyPages.has(page)) return;
-  dirtyPages.add(page);
-  isDirty = true;
-  updateDirtyIndicators();
-}
-
-function clearDirty(page) {
-  dirtyPages.delete(page);
-  if (dirtyPages.size === 0) isDirty = false;
-  updateDirtyIndicators();
-}
-
-function updateDirtyIndicators() {
-  ['general', 'providers'].forEach(page => {
-    const navItem = document.querySelector(`.nav-item[data-page="${page}"]`);
-    if (!navItem) return;
-    let dot = navItem.querySelector('.unsaved-dot');
-    if (dirtyPages.has(page)) {
-      if (!dot) {
-        dot = document.createElement('span');
-        dot.className = 'unsaved-dot';
-        navItem.appendChild(dot);
-      }
-    } else {
-      dot?.remove();
-    }
-  });
-}
-
-// Patch saveGeneral and saveProviders to clear dirty state after save
-const _originalSaveGeneral = saveGeneral;
-saveGeneral = async function() {
-  await _originalSaveGeneral();
-  clearDirty('general');
-};
-
-const _originalSaveProviders = saveProviders;
-saveProviders = async function() {
-  await _originalSaveProviders();
-  clearDirty('providers');
-};
-
 // ── Keyboard Shortcuts ──────────────────────────────────────────
 
 function setupKeyboardShortcuts() {
@@ -1755,6 +1897,9 @@ function renderHistoryItem(entry, container) {
   const div = document.createElement('div');
   div.className = 'history-item';
   div.dataset.historyId = entry.id;
+  div.tabIndex = 0;
+  div.setAttribute('role', 'button');
+  div.setAttribute('aria-label', 'Copy transcription to clipboard');
 
   const date = new Date(entry.timestamp);
   const dayKey = dayKeyFor(date);
@@ -1780,7 +1925,7 @@ function renderHistoryItem(entry, container) {
         <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
       </div>
     </div>
-    <div class="history-item-text">${highlightMatches(entry.text, historySearchQuery)}</div>
+    <div class="history-item-text">${renderTranscriptText(entry.text, historySearchQuery)}</div>
   `;
 
   div.querySelector('.history-copy-btn').addEventListener('click', (e) => {
@@ -1793,6 +1938,12 @@ function renderHistoryItem(entry, container) {
   });
 
   div.addEventListener('click', () => copyHistoryItem(entry.text, div));
+  div.addEventListener('keydown', (e) => {
+    if (e.target !== div) return;
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    e.preventDefault();
+    copyHistoryItem(entry.text, div);
+  });
 
   container?.appendChild(div);
 }
@@ -1840,11 +1991,63 @@ function escapeRegExp(str) {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
-function highlightMatches(text, query) {
-  const safe = escapeHtml(text);
-  const q = query ? escapeHtml(query.trim()) : '';
-  if (!q) return safe;
-  return safe.replace(new RegExp(`(${escapeRegExp(q)})`, 'gi'), '<mark>$1</mark>');
+// ── Candidate Word Markers (Pending Suggestions) ────────────────
+// Words in history transcripts that match a pending auto-learn
+// suggestion are highlighted; clicking the marked word accepts the
+// suggestion. The map is cached briefly so history paging stays cheap.
+
+let pendingSuggestionMap = null;
+let pendingSuggestionsFetchedAt = 0;
+
+async function loadPendingSuggestionMap(force = false) {
+  const now = Date.now();
+  if (!force && pendingSuggestionMap && now - pendingSuggestionsFetchedAt < 30000) {
+    return pendingSuggestionMap;
+  }
+  pendingSuggestionMap = new Map();
+  pendingSuggestionsFetchedAt = now;
+  try {
+    const suggestions = await invoke('get_suggestions');
+    suggestions.forEach(s => {
+      const spoken = s.spoken?.trim();
+      if (s.status !== 'pending' || !spoken) return;
+      const key = spoken.toLowerCase();
+      if (!pendingSuggestionMap.has(key)) {
+        pendingSuggestionMap.set(key, { id: s.id, corrected: s.corrected });
+      }
+    });
+  } catch (err) {
+    console.error('Failed to load suggestions for markers:', err);
+  }
+  return pendingSuggestionMap;
+}
+
+function renderTranscriptText(text, query) {
+  let safe = escapeHtml(text);
+  const q = query ? query.trim() : '';
+  if (!q && (!pendingSuggestionMap || pendingSuggestionMap.size === 0)) return safe;
+
+  const terms = new Map();
+  if (pendingSuggestionMap) {
+    pendingSuggestionMap.forEach((info, key) => terms.set(key, { ...info, isCandidate: true }));
+  }
+  if (q) terms.set(q.toLowerCase(), { isCandidate: false });
+
+  const pattern = [...terms.keys()]
+    .sort((a, b) => b.length - a.length)
+    .map(escapeRegExp)
+    .join('|');
+  if (!pattern) return safe;
+
+  const re = new RegExp(`\\b(${pattern})\\b`, 'gi');
+  return safe.replace(re, (match) => {
+    const info = terms.get(match.toLowerCase());
+    if (info.isCandidate) {
+      const title = `Suggestion: replace with '${info.corrected}' — click to accept`;
+      return `<mark class="candidate-word" data-suggestion-id="${info.id}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
+    }
+    return `<mark>${match}</mark>`;
+  });
 }
 
 window.copyHistoryItem = (text, element) => {

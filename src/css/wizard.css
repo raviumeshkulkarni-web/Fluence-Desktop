@@ -364,7 +364,7 @@ body {
 
 .test-record-btn.recording .test-record-orb {
   background: var(--color-error);
-  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
+  box-shadow: 0 8px 24px rgba(248, 113, 113, 0.5);
 }
 
 .test-record-btn.transcribing .test-record-orb {

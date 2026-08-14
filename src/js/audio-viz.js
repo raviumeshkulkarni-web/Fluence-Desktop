@@ -88,9 +88,14 @@ class AuraVisualizer {
 
     rawAmplitude = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1));
 
-    // Noise gate: discard residual mic noise below the floor of the emitted
-    // dB-compressed range so silence renders as a flat, steady baseline.
-    let normalized = rawAmplitude < 0.03 ? 0 : rawAmplitude;
+    // Noise gate: discard residual mic noise below ~-52 dBFS so speech pauses
+    // collapse the wave back to a flat baseline instead of hovering mid-range.
+    let normalized = rawAmplitude < 0.1 ? 0 : rawAmplitude;
+
+    // Sensitivity gain: amplify the dB-mapped signal so modest or AGC-reduced
+    // speech levels (quiet mics, Windows auto-gain) still drive the wave to
+    // near-full height. Bounded — anything at or above ~-40 dBFS saturates.
+    normalized = Math.min(1, normalized * 1.5);
 
     // Slight fade-in after the guarded startup window for aesthetic smoothness.
     let scale = 1.0;
@@ -101,15 +106,14 @@ class AuraVisualizer {
     // Apply the fade-in scale
     normalized *= scale;
 
-    // Exponential moving average — faster attack (0.4) for snappy reactivity
-    // Elastic decay: when amplitude drops, decay slowly for a bouncy, premium feel
+    // Exponential moving average — fast attack (0.5) so word onsets jump the
+    // wave up immediately; quicker decay (0.13) so word endings visibly dip
+    // back toward baseline. Both directions of motion stay smooth at 30 Hz.
     const prevAmplitude = this.smoothedAmplitude;
     if (normalized < prevAmplitude) {
-      // Slow decay on drop (elastic feel)
-      this.smoothedAmplitude = this.smoothedAmplitude * 0.92 + normalized * 0.08;
+      this.smoothedAmplitude = this.smoothedAmplitude * 0.87 + normalized * 0.13;
     } else {
-      // Fast attack on rise
-      this.smoothedAmplitude = this.smoothedAmplitude * 0.6 + normalized * 0.4;
+      this.smoothedAmplitude = this.smoothedAmplitude * 0.5 + normalized * 0.5;
     }
   }
 
@@ -152,10 +156,10 @@ class AuraVisualizer {
       this.smoothedAmplitude = heartbeatPulse;
     }
 
-    // Phase integration: bounded, conservative speed range — subtle but alive
-    // drift at silence (0.30 rev/s), clearly responsive at full speech
-    // (0.70 rev/s). Worst per-frame shift stays well under 3px: no strobing.
-    const speed = 0.30 + this.smoothedAmplitude * 0.4;
+    // Phase integration: bounded speed range — clearly alive drift at silence
+    // (0.45 rev/s), energetic and reactive at full speech (1.05 rev/s).
+    // Worst per-frame shift stays under ~4px: no strobing.
+    const speed = 0.45 + this.smoothedAmplitude * 0.6;
     this.phase = (this.phase + speed * dt * 2 * Math.PI) % (1000 * Math.PI);
 
     this._draw();
@@ -181,10 +185,12 @@ class AuraVisualizer {
       return;
     }
 
-    // Motion trail: draw previous frame at low opacity before clearing
+    // Motion trail: draw previous frame at low opacity before clearing.
+    // Clear 25% per frame — long ghosting smears the wave into a blur at
+    // speaking speed and hides amplitude changes during continuous speech.
     if (this._prevImageData) {
       ctx.putImageData(this._prevImageData, 0, 0);
-      ctx.globalAlpha = 0.15;
+      ctx.globalAlpha = 0.25;
       ctx.clearRect(0, 0, W, H);
       ctx.globalAlpha = 1.0;
     }
@@ -208,7 +214,7 @@ class AuraVisualizer {
 
     const centerY = H / 2;
     // Idle: flat 8% of height; active: amplitude-driven up to 48% of height
-    const activeAmplitude = (this.smoothedAmplitude * 0.9 + 0.08) * (H * 0.48);
+    const activeAmplitude = (this.smoothedAmplitude * 0.95 + 0.05) * (H * 0.48);
 
     const phase1 = this.phase;
     const phase2 = -this.phase * 0.7;
@@ -222,7 +228,7 @@ class AuraVisualizer {
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.5 + phase1;
-      const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 4;
+      const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 5;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.5 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -240,7 +246,7 @@ class AuraVisualizer {
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 2.5 + phase2;
-      const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 3;
+      const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 4;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.7 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -258,7 +264,7 @@ class AuraVisualizer {
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.2 + (phase1 - phase2) * 0.5;
-      const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 5;
+      const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 6;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.9 + vibration) * e;
       ctx.lineTo(x, y);
     }

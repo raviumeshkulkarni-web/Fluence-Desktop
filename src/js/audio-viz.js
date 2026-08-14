@@ -51,16 +51,24 @@ class AuraVisualizer {
   _resize() {
     if (!this.canvas) return;
     const dpr = window.devicePixelRatio || 1;
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return;
-    this.canvas.width = rect.width * dpr;
-    this.canvas.height = rect.height * dpr;
+    // offsetWidth/offsetHeight are transform-independent (unlike
+    // getBoundingClientRect), so the entry scale animation cannot trigger
+    // backing-store resets. The rounded device-pixel comparison also skips
+    // resizes when the layout size only changes fractionally.
+    const cssW = this.canvas.offsetWidth;
+    const cssH = this.canvas.offsetHeight;
+    if (cssW === 0 || cssH === 0) return;
+    const w = Math.max(1, Math.round(cssW * dpr));
+    const h = Math.max(1, Math.round(cssH * dpr));
+    if (w === this.canvas.width && h === this.canvas.height) return;
+    this.canvas.width = w;
+    this.canvas.height = h;
     if (this.ctx) {
       this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.scale(dpr, dpr);
     }
-    this._logicalW = rect.width;
-    this._logicalH = rect.height;
+    this._logicalW = cssW;
+    this._logicalH = cssH;
   }
 
   setAmplitude(rawAmplitude) {
@@ -97,7 +105,19 @@ class AuraVisualizer {
     this.currentState = state;
 
     if (!this.overlayRoot) return;
-    this.overlayRoot.className = 'overlay-root';
+    // Only manage the state-* classes. Wiping className here would destroy
+    // the tier style (style-full/compact/bubble) and corner docking classes
+    // applied by overlay.js on every state transition — the overlay would
+    // snap back to the full-size card and the waveform canvas would jump.
+    this.overlayRoot.classList.remove(
+      'state-idle',
+      'state-recording',
+      'state-agent',
+      'state-transcribing',
+      'state-agent_transcribing',
+      'state-success',
+      'state-error'
+    );
     if (state !== 'idle') this.overlayRoot.classList.add(`state-${state}`);
 
     if (state === 'idle' || state === 'transcribing' || state === 'agent_transcribing') {
@@ -146,8 +166,9 @@ class AuraVisualizer {
     const ctx = this.ctx;
     if (!ctx || !this.canvas) return;
 
-    const rect = this.canvas.getBoundingClientRect();
-    if (rect.width !== this._logicalW || rect.height !== this._logicalH || this.canvas.width === 0) {
+    const cssW = this.canvas.offsetWidth;
+    const cssH = this.canvas.offsetHeight;
+    if (cssW !== this._logicalW || cssH !== this._logicalH || this.canvas.width === 0) {
       this._resize();
     }
 
@@ -179,13 +200,26 @@ class AuraVisualizer {
 
     const env = (x) => Math.sin((x / W) * Math.PI);
 
+    // 1px sampling on tiny canvases keeps the curve smooth where a 2px step
+    // would alias into jagged edges.
+    const step = W < 60 ? 1 : 2;
+
+    // Ripple scroll rate matches its carrier wave on any canvas width. The
+    // spatial frequencies stay in absolute pixels (0.1 / 0.15 / 0.08 rad/px,
+    // the original calm ripple shapes), while the width-derived phase
+    // multipliers make the ripple advance at the carrier's rate — otherwise
+    // the ripple outruns the wave on narrow canvases (perceived as churn).
+    const vibPhase1 = (0.1 * W) / (2 * Math.PI * 1.5);
+    const vibPhase2 = (0.15 * W) / (2 * Math.PI * 2.5);
+    const vibPhase3 = (0.08 * W) / (2 * Math.PI * 1.2);
+
     // Wave 1: background wave (color: primary, alpha ~0.45)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 2) {
+    for (let x = 0; x <= W; x += step) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.5 + phase1;
-      const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 4;
+      const vibration = Math.sin(x * 0.1 + phase1 * vibPhase1) * this.smoothedAmplitude * 4;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.5 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -200,10 +234,10 @@ class AuraVisualizer {
     // Wave 2: middle wave (slightly higher freq, bolder)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 2) {
+    for (let x = 0; x <= W; x += step) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 2.5 + phase2;
-      const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 3;
+      const vibration = Math.sin(x * 0.15 - phase2 * vibPhase2) * this.smoothedAmplitude * 3;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.7 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -218,10 +252,10 @@ class AuraVisualizer {
     // Wave 3: forefront wave (brightest, most visible)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += 2) {
+    for (let x = 0; x <= W; x += step) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.2 + (phase1 - phase2) * 0.5;
-      const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 5;
+      const vibration = Math.sin(x * 0.08 + (phase1 - phase2) * 0.5 * vibPhase3) * this.smoothedAmplitude * 5;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.9 + vibration) * e;
       ctx.lineTo(x, y);
     }

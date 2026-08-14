@@ -51,6 +51,8 @@ pub struct AppSettings {
     pub recording_mode: String, // "push_to_toggle" | "hold_to_record"
     #[serde(default = "default_overlay_position")]
     pub overlay_position: String, // "center" | "bottom_left" | "bottom_right"
+    #[serde(default = "default_overlay_style")]
+    pub overlay_style: String, // "full" | "compact" | "bubble"
     #[serde(default)]
     pub audio_device_id: Option<String>,
     #[serde(default = "default_stt_provider")]
@@ -96,6 +98,9 @@ fn default_recording_mode() -> String {
 }
 fn default_overlay_position() -> String {
     "bottom_right".to_string()
+}
+fn default_overlay_style() -> String {
+    "full".to_string()
 }
 fn default_false() -> bool {
     false
@@ -151,6 +156,7 @@ impl Default for AppSettings {
             hotkey: default_hotkey(),
             recording_mode: default_recording_mode(),
             overlay_position: default_overlay_position(),
+            overlay_style: default_overlay_style(),
             audio_device_id: None,
             stt_provider: default_stt_provider(),
             llm_provider: default_llm_provider(),

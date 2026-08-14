@@ -131,6 +131,7 @@ function populateUI(s) {
   setText('agent-hotkey-display-text', s.agent_hotkey || 'Ctrl+Shift+A');
   setSelectValue('agent-recording-mode-select', s.agent_recording_mode || 'push_to_toggle');
   setSelectValue('overlay-position-select', s.overlay_position || 'bottom_right');
+  setSelectValue('overlay-style-select', s.overlay_style || 'full');
   setSelectValue('language-select', s.language || 'en');
   setChecked('autostart-cb', s.auto_start || false);
   setChecked('duck-cb', s.duck_enabled || false);
@@ -845,6 +846,7 @@ const GENERAL_BINDINGS = [
   { id: 'recording-mode-select',       key: 'recording_mode',        type: 'select',   features: ['hotkeys'] },
   { id: 'agent-recording-mode-select', key: 'agent_recording_mode',  type: 'select',   features: ['hotkeys'] },
   { id: 'overlay-position-select',     key: 'overlay_position',      type: 'select' },
+  { id: 'overlay-style-select',        key: 'overlay_style',         type: 'select' },
   { id: 'language-select',             key: 'language',              type: 'select' },
   { id: 'ai-polish-select',            key: 'ai_polish_style',       type: 'select' },
   { id: 'offline-engine-select',       key: 'offline_engine',        type: 'select' },

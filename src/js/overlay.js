@@ -55,12 +55,19 @@ function resetTransientUi() {
 
 // ── Initialization ──────────────────────────────────────────────
 
-window.addEventListener('DOMContentLoaded', () => {
+window.addEventListener('DOMContentLoaded', async () => {
   aura = new AuraVisualizer('waveform-canvas');
   setupEventListeners();
   setupDiscardButton();
   setupRetryButton();
+  // Reset synchronously before any awaits so a hotkey that fires while the
+  // settings fetch is in flight never observes a stale state (which would
+  // make applyAppInfo skip the pill for that session).
   setState('idle');
+  try {
+    const prefs = await getRecordingPreferences();
+    applyOverlayStyle(prefs.overlayStyle);
+  } catch {}
 });
 
 // ── Tauri Event Listeners ───────────────────────────────────────
@@ -88,6 +95,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
+      applyOverlayStyle(prefs.overlayStyle);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -141,6 +149,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
+      applyOverlayStyle(prefs.overlayStyle);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -318,6 +327,13 @@ function setOverlayCorner(position) {
   }
 }
 
+function applyOverlayStyle(style) {
+  if (!overlayRoot) return;
+  overlayRoot.classList.remove('style-full', 'style-compact', 'style-bubble');
+  const normalized = (style === 'compact' || style === 'bubble') ? style : 'full';
+  overlayRoot.classList.add(`style-${normalized}`);
+}
+
 // ── Status Message + Retry ──────────────────────────────────────
 
 function setStatusMessage(text) {
@@ -436,6 +452,7 @@ async function getRecordingPreferences() {
 
   return {
     overlayPosition: cachedSettings.overlay_position || 'bottom_right',
+    overlayStyle: cachedSettings.overlay_style || 'full',
     audioDeviceId: cachedSettings.audio_device_id || null,
   };
 }

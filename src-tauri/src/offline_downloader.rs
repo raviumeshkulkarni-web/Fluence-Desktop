@@ -145,10 +145,11 @@ pub fn check_moonshine_model_files_exist() -> bool {
     ]
     .iter()
     .all(|f| dir.join(f).exists());
-    runtime_ready && MOONSHINE_MANIFEST.expected_files.iter().all(|f| {
-        let p = dir.join(f);
-        p.exists() && p.metadata().map(|m| m.len()).unwrap_or(0) > 1000
-    })
+    runtime_ready
+        && MOONSHINE_MANIFEST.expected_files.iter().all(|f| {
+            let p = dir.join(f);
+            p.exists() && p.metadata().map(|m| m.len()).unwrap_or(0) > 1000
+        })
 }
 
 fn emit_progress(app: Option<&AppHandle>, payload: DownloadProgressPayload) {

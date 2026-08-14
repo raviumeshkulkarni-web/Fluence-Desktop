@@ -60,9 +60,7 @@ fn validate_action(action: &AgentAction) -> Result<(), String> {
     {
         return Err("Agent action content exceeds maximum length".to_string());
     }
-    if action.action == "delete_chars"
-        && action.char_count.unwrap_or(0) > MAX_AGENT_DELETE_CHARS
-    {
+    if action.action == "delete_chars" && action.char_count.unwrap_or(0) > MAX_AGENT_DELETE_CHARS {
         return Err("Agent delete action exceeds maximum length".to_string());
     }
     Ok(())

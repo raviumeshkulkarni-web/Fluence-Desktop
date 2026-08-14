@@ -81,6 +81,184 @@ body {
   transform-origin: 50% 100%;
 }
 
+/* ── Tier 2: Compact Pill Style ────────────────────────────────── */
+.overlay-root.active.style-compact {
+  width: 144px;
+  height: 36px;
+  border-radius: 9999px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6px 0 12px;
+}
+
+.overlay-root.style-compact.corner-bottom-left,
+.overlay-root.style-compact.corner-bottom-right,
+.overlay-root.style-compact.corner-bottom-center {
+  border-radius: 9999px;
+}
+
+.overlay-root.style-compact .card-meta {
+  display: none !important;
+}
+
+.overlay-root.style-compact .card-waveform {
+  display: block;
+  opacity: 1;
+  flex: 1;
+  height: 100%;
+  position: relative;
+  min-height: 0;
+}
+
+.overlay-root.style-compact .card-footer {
+  display: flex !important;
+  opacity: 1 !important;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.overlay-root.style-compact .card-timer {
+  display: none !important;
+}
+
+.overlay-root.style-compact .card-discard {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-on-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-root.style-compact .card-discard:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+.overlay-root.style-compact .status-msg,
+.overlay-root.style-compact .status-retry {
+  display: none !important;
+}
+
+.overlay-root.style-compact .status-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  scale: 0.8;
+}
+
+/* ── Tier 3: Minimal Circular Bubble Style ──────────────────────── */
+.overlay-root.active.style-bubble {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+/* Let the discard badge extend past the orb's edge — it anchors on the
+   bubble but must not cover the waveform face. */
+.overlay-root.style-bubble {
+  overflow: visible;
+}
+
+.overlay-root.style-bubble.corner-bottom-left,
+.overlay-root.style-bubble.corner-bottom-right,
+.overlay-root.style-bubble.corner-bottom-center {
+  border-radius: 50%;
+}
+
+.overlay-root.style-bubble .card-meta {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .card-waveform {
+  display: block;
+  opacity: 1;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  inset: 0;
+}
+
+/* Discard badge — a small circular "×" chip anchored on the orb's
+   top-right edge, half inside / half outside. It shares the bubble's edge
+   (gestalt: the two shapes read as one control group) without covering the
+   waveform face. !important overrides the base
+   `.overlay-root.active .card-footer { opacity: 1 }` rule. */
+.overlay-root.style-bubble .card-footer {
+  position: absolute;
+  top: -10px;
+  right: -10px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-overlay-surface);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 0;
+  opacity: 0 !important;
+  scale: 0.5;
+  pointer-events: none !important;
+  transition: opacity 150ms ease, scale 180ms cubic-bezier(0.34, 1.2, 0.64, 1) !important;
+}
+
+.overlay-root.style-bubble:hover .card-footer {
+  opacity: 1 !important;
+  scale: 1;
+  pointer-events: all !important;
+}
+
+.overlay-root.style-bubble .card-timer {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .card-discard {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--color-on-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-root.style-bubble .card-discard:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+.overlay-root.style-bubble .status-msg,
+.overlay-root.style-bubble .status-retry {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .status-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  scale: 0.8;
+}
+
 /* Transcribe mode surface — monochrome ink */
 .overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
   background: var(--color-canvas);
@@ -143,6 +321,35 @@ body {
   100% {
     opacity: 0;
     scale: 0.95;
+  }
+}
+
+/* ── Processing Breathing (compact + bubble tiers only) ────────── */
+/* While the transcription is being processed, the compact pill and the
+   bubble gently pulse. The full card keeps its static processing state.
+   Uses the `scale` property (not transform) so the root's translate
+   positioning is never disturbed. Replaces the one-shot palette-enter,
+   which has already finished by the time processing begins. */
+.overlay-root.active.state-transcribing.style-compact,
+.overlay-root.active.state-agent_transcribing.style-compact,
+.overlay-root.active.state-transcribing.style-bubble,
+.overlay-root.active.state-agent_transcribing.style-bubble {
+  --breathe-scale: 1.04;
+  animation: overlay-breathe 2.4s ease-in-out infinite;
+}
+
+.overlay-root.active.state-transcribing.style-bubble,
+.overlay-root.active.state-agent_transcribing.style-bubble {
+  --breathe-scale: 1.06;
+}
+
+@keyframes overlay-breathe {
+  0%,
+  100% {
+    scale: 1;
+  }
+  50% {
+    scale: var(--breathe-scale, 1.04);
   }
 }
 

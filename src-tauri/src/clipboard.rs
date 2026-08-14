@@ -16,8 +16,8 @@ use windows::Win32::{
     Foundation::HWND,
     System::{
         DataExchange::{
-            CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
-            GetClipboardSequenceNumber, OpenClipboard, SetClipboardData,
+            CloseClipboard, EmptyClipboard, GetClipboardData, GetClipboardSequenceNumber,
+            IsClipboardFormatAvailable, OpenClipboard, SetClipboardData,
         },
         Memory::{GlobalAlloc, GlobalLock, GlobalSize, GlobalUnlock, GMEM_MOVEABLE},
     },

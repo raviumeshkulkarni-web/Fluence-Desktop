@@ -99,19 +99,19 @@ pub fn register_hotkeys(
     {
         let mode = agent_mode.to_string();
         let app_clone = app.clone();
-        if let Err(e) = app
-            .global_shortcut()
-            .on_shortcut(a_shortcut, move |_app, _shortcut, event| {
-                handle_hotkey_event(
-                    &app_clone,
-                    event.state(),
-                    &mode,
-                    &AGENT_RECORDING,
-                    2,
-                    "hotkey-start-agent-recording",
-                    "hotkey-stop-agent-recording",
-                );
-            })
+        if let Err(e) =
+            app.global_shortcut()
+                .on_shortcut(a_shortcut, move |_app, _shortcut, event| {
+                    handle_hotkey_event(
+                        &app_clone,
+                        event.state(),
+                        &mode,
+                        &AGENT_RECORDING,
+                        2,
+                        "hotkey-start-agent-recording",
+                        "hotkey-stop-agent-recording",
+                    );
+                })
         {
             let _ = app.global_shortcut().unregister_all();
             return Err(e.to_string());

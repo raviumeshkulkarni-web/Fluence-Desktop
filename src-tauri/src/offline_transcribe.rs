@@ -67,8 +67,7 @@ struct ServerInstance {
 static SERVER_INSTANCE: Lazy<Mutex<Option<ServerInstance>>> = Lazy::new(|| Mutex::new(None));
 static LAST_USED: Lazy<Mutex<Instant>> = Lazy::new(|| Mutex::new(Instant::now()));
 static IDLE_MONITOR_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
-static SERVER_START_LOCK: Lazy<tokio::sync::Mutex<()>> =
-    Lazy::new(|| tokio::sync::Mutex::new(()));
+static SERVER_START_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
 
 fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
@@ -310,9 +309,9 @@ pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Resul
         Duration::from_secs(10),
         tokio_tungstenite::connect_async(&url),
     )
-        .await
-        .map_err(|_| anyhow!("Timed out connecting to local ASR server"))?
-        .map_err(|e| anyhow!("Failed to connect to local ASR server: {}", e))?;
+    .await
+    .map_err(|_| anyhow!("Timed out connecting to local ASR server"))?
+    .map_err(|e| anyhow!("Failed to connect to local ASR server: {}", e))?;
 
     // Build the custom sherpa-onnx binary payload
     // Format: [int32LE sample_rate][int32LE num_audio_bytes][float32 samples...]
@@ -330,9 +329,9 @@ pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Resul
         Duration::from_secs(10),
         ws_stream.send(tokio_tungstenite::tungstenite::Message::Binary(payload)),
     )
-        .await
-        .map_err(|_| anyhow!("Timed out sending audio to local ASR server"))?
-        .map_err(|e| anyhow!("Failed to send audio to ASR server: {}", e))?;
+    .await
+    .map_err(|_| anyhow!("Timed out sending audio to local ASR server"))?
+    .map_err(|e| anyhow!("Failed to send audio to ASR server: {}", e))?;
 
     // Per sherpa-onnx protocol: server decodes after receiving all bytes,
     // sends text result, THEN client sends "Done" to close.

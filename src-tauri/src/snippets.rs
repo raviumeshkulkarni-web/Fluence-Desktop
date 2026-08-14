@@ -349,7 +349,10 @@ mod tests {
             snippet("1", "my linkedin", "short"),
             snippet("2", "my linkedin profile", "long"),
         ];
-        assert_eq!(expand_with("my linkedin profile is mine", &snippets), "long is mine");
+        assert_eq!(
+            expand_with("my linkedin profile is mine", &snippets),
+            "long is mine"
+        );
     }
 
     #[test]
@@ -368,10 +371,7 @@ mod tests {
 
     #[test]
     fn expansion_text_is_never_rescanned() {
-        let snippets = vec![
-            snippet("1", "ping", "pong"),
-            snippet("2", "pong", "pang"),
-        ];
+        let snippets = vec![snippet("1", "ping", "pong"), snippet("2", "pong", "pang")];
         assert_eq!(expand_with("ping", &snippets), "pong");
         assert_eq!(expand_with("pong", &snippets), "pang");
     }

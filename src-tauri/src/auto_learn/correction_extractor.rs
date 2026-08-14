@@ -45,10 +45,7 @@ pub fn extract_user_corrections(injected_text: &str, field_value: &str) -> Vec<C
     let mut seen = std::collections::HashSet::new();
 
     for (original_word, corrected_word) in &subs {
-        let normalized = (
-            original_word.to_lowercase(),
-            corrected_word.to_lowercase(),
-        );
+        let normalized = (original_word.to_lowercase(), corrected_word.to_lowercase());
 
         // Skip duplicates
         if !seen.insert(normalized.clone()) {

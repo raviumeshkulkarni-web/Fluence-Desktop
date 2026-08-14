@@ -22,6 +22,11 @@ class AuraVisualizer {
     this.recordingStartTime = 0;
     this.recordingFramesReceived = 0;
     this.lastTime = null;
+    this.lastAmplitudeAt = 0;
+    this._lastFrameAt = 0;
+    this.noiseFloor = 1.0;   // fast-attack/slow-release min tracker (seeded high)
+    this.noiseSpread = 0.005;
+    this.calibrationFrames = 0;
     this._rafId = null;
     this._isRunning = false;
     this._resize();
@@ -38,6 +43,13 @@ class AuraVisualizer {
             this._rafId = null;
             this.lastTime = null;
           }
+          // Never let the draw loop die mid-recording: if a stray visibility
+          // event lands while audio is live, resume immediately so the meter
+          // keeps moving instead of latching a frozen frame.
+          if (this.currentState === 'recording' || this.currentState === 'agent') {
+            this._isRunning = true;
+            this._loop(performance.now());
+          }
         }
       });
     } else {
@@ -46,6 +58,26 @@ class AuraVisualizer {
     }
 
     window.addEventListener('resize', () => this._resize());
+
+    // Self-healing watchdog: if the rAF loop ever stalls while recording
+    // (WebView2 occlusion/frame throttling, dropped visibility events, or a
+    // draw exception that kills the rAF chain), restart it so the waveform
+    // can never freeze for the rest of the session.
+    setInterval(() => {
+      const isActive = this.currentState === 'recording' || this.currentState === 'agent';
+      if (!isActive) return;
+      this._isRunning = true;
+      const now = performance.now();
+      const stalled =
+        this._rafId === null ||
+        (this._lastFrameAt > 0 && now - this._lastFrameAt > 1000);
+      if (stalled) {
+        if (this._rafId !== null) cancelAnimationFrame(this._rafId);
+        this._rafId = null;
+        this.lastTime = null;
+        this._loop(now);
+      }
+    }, 500);
   }
 
   _resize() {
@@ -77,15 +109,58 @@ class AuraVisualizer {
     }
 
     this.recordingFramesReceived++;
+    this.lastAmplitudeAt = performance.now();
 
     // Safety sanitize input in [0.0, 1.0]
     const raw = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1.0));
 
-    // Stateless mapping of widened Windows RMS telemetry (spanning -75 dBFS to -30 dBFS).
-    // Silence/ambient sits around 0.0 - 0.05.
-    // Conversational & sustained speech sits around 0.35 - 0.75.
-    // Loud speech reaches 0.85 - 1.00.
-    let normalized = Math.max(0, Math.min((raw - 0.02) * 1.25, 1.0));
+    // Noise-floor tracker (frontend-only; the Rust audio pipeline is frozen).
+    // The backend reports an absolute dBFS-derived level in [0,1], so the
+    // same physical silence can sit at ~0.0 on a clean mic or ~0.7 on a
+    // boosted input (100% mic gain, equalizer, virtual device). A fixed
+    // offset can't work, but a floor seeded at 0 that may only drift inside
+    // a deadband anchored to itself can never climb into a mid-scale noise
+    // band — every noise fluctuation would render as waveform motion.
+    //
+    // This mirrors how TypeWhisper keeps its meter calm on boosted inputs
+    // (raw levels gated below their noise floor), adapted to this
+    // dB-compressed domain: a fast-attack, slow-release minimum tracker
+    // seeds the floor at the machine's true noise bottom within ~2 s, then a
+    // statistical gate sizes the deadband to the noise's own fluctuation
+    // (spread) so jittery high-gain noise stays flat while real speech reads.
+    this.calibrationFrames++;
+    const gate = Math.min(Math.max(2.5 * this.noiseSpread + 0.01, 0.02), 0.15);
+    const canSnap = this.calibrationFrames <= 60 || raw > this.noiseFloor - 0.25;
+    if (raw < this.noiseFloor && canSnap) {
+      // Fast attack on new lows (calibration permits full snaps; afterwards
+      // a >0.25 one-frame drop is treated as a mute/dropout glitch, not a
+      // floor change).
+      this.noiseFloor = raw;
+    } else if (raw >= this.noiseFloor && raw < this.noiseFloor + gate) {
+      // Quiet band above the floor: slow-release the floor toward the
+      // ambient level and track the noise's fluctuation. Speech (raw well
+      // above the band) freezes both, so a long continuous utterance can
+      // never raise the floor and flatten the meter.
+      this.noiseFloor += (raw - this.noiseFloor) * 0.005;
+      this.noiseSpread = this.noiseSpread * 0.9 + Math.abs(raw - this.noiseFloor) * 0.1;
+    }
+    this.noiseSpread = Math.max(0.005, Math.min(this.noiseSpread, 0.12));
+
+    // Statistical gate: hide everything within ~2.5x the noise fluctuation
+    // above the floor (plus a small epsilon). The deadband auto-sizes to the
+    // machine's actual noise, so the meter stays flat at any input volume.
+    const threshold = this.noiseFloor
+      + Math.min(Math.max(2.5 * this.noiseSpread + 0.01, 0.02), 0.15);
+
+    // Relative meter: how far the current level is above the machine's own
+    // noise floor, scaled to the remaining headroom.
+    let rel = (raw - threshold) / Math.max(0.05, 1.0 - threshold);
+    rel = Math.max(0, Math.min(rel, 1));
+
+    // Perceptual sqrt curve (same approach as the reference dictation apps):
+    // compresses residual floor motion toward zero while keeping quiet
+    // speech visible.
+    let normalized = Math.sqrt(rel);
 
     // Asymmetric EMA smoothing (fast 0.50 attack, smooth 0.15 elastic decay)
     const prev = this.smoothedAmplitude;
@@ -124,10 +199,18 @@ class AuraVisualizer {
       this.smoothedAmplitude = 0;
       this.recordingStartTime = 0;
       this.recordingFramesReceived = 0;
+      this.lastAmplitudeAt = 0;
+      this.noiseFloor = 1.0;
+      this.noiseSpread = 0.005;
+      this.calibrationFrames = 0;
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
       this.smoothedAmplitude = 0;
+      this.lastAmplitudeAt = 0;
+      this.noiseFloor = 1.0;
+      this.noiseSpread = 0.005;
+      this.calibrationFrames = 0;
       if (this._rafId === null) {
         this._isRunning = true;
         this._loop(performance.now());
@@ -154,12 +237,26 @@ class AuraVisualizer {
       const heartbeatPhase = (timestamp % heartbeatPeriod) / heartbeatPeriod;
       const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.08;
       this.smoothedAmplitude = heartbeatPulse;
+    } else if (this.currentState === 'recording' || this.currentState === 'agent') {
+      // If amplitude events stall (emit drops, event-loop hiccup), settle the
+      // meter toward a calm baseline instead of latching a stale frame.
+      const sinceEvent = timestamp - this.lastAmplitudeAt;
+      if (sinceEvent > 400) {
+        this.smoothedAmplitude *= 0.88;
+        if (this.smoothedAmplitude < 0.001) this.smoothedAmplitude = 0;
+      }
     }
 
     const speed = 0.60 + this.smoothedAmplitude * 1.20;
     this.phase = (this.phase + speed * dt * 2 * Math.PI) % (1000 * Math.PI);
+    this._lastFrameAt = timestamp;
 
-    this._draw();
+    try {
+      this._draw();
+    } catch (err) {
+      // A canvas/gradient exception must never kill the animation loop.
+      console.warn('Waveform draw error:', err);
+    }
   }
 
   _draw() {

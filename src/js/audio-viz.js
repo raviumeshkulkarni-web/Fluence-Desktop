@@ -1,7 +1,9 @@
 /**
  * Fluence Windows — Siri-Style Canvas Waveform Visualizer
  * 
- * Port of the Android SiriWaveform composable (FloatingBubbleUI.kt).
+ * Android-inspired stateless visualization behavior using the existing
+ * Windows RMS telemetry.
+ * 
  * Three layered sine waves with parabolic edge envelope, phase-integrated
  * scrolling, and amplitude-driven frequency vibration.
  * 
@@ -16,23 +18,21 @@ class AuraVisualizer {
     this.overlayRoot = document.getElementById('overlay-root');
     this.currentState = 'idle';
     this.smoothedAmplitude = 0;      // 0.0 – 1.0
-    this.noiseFloor = null;          // relative baseline (0.0 – 1.0) for sensitivity
-    this.floorFrozen = false;        // floor locked while speech is present
-    this.silentEvents = 0;           // consecutive quiet events to re-learn floor
     this.phase = 0;                  // integrated phase (radians)
     this.recordingStartTime = 0;
     this.recordingFramesReceived = 0;
     this.lastTime = null;
     this._rafId = null;
+    this._isRunning = false;
     this._resize();
 
     if (window.__TAURI__?.event?.listen) {
-      // Tauri context: overlay window starts hidden; only run the animation
-      // loop when the backend explicitly shows the window.
       window.__TAURI__.event.listen('window-visibility', (evt) => {
         if (evt.payload === true) {
+          this._isRunning = true;
           if (this._rafId === null) this._loop(performance.now());
         } else {
+          this._isRunning = false;
           if (this._rafId !== null) {
             cancelAnimationFrame(this._rafId);
             this._rafId = null;
@@ -41,32 +41,22 @@ class AuraVisualizer {
         }
       });
     } else {
-      // Non-Tauri context (e.g. browser preview): start the loop immediately.
+      this._isRunning = true;
       this._loop(performance.now());
     }
 
     window.addEventListener('resize', () => this._resize());
-
-    // Pause rAF when window is hidden, restart when it becomes visible again.
-    // In Tauri context this is handled by the window-visibility event above;
-    // this listener covers standard browser tab switching as a fallback.
-    document.addEventListener('visibilitychange', () => {
-      if (!document.hidden && this._rafId === null) {
-        this._loop(performance.now());
-      }
-    });
   }
 
   _resize() {
     if (!this.canvas) return;
     const dpr = window.devicePixelRatio || 1;
     const rect = this.canvas.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return; // window not visible yet
-    // Setting width/height resets the canvas transform, so scale is always applied fresh
+    if (rect.width === 0 || rect.height === 0) return;
     this.canvas.width = rect.width * dpr;
     this.canvas.height = rect.height * dpr;
     if (this.ctx) {
-      this.ctx.setTransform(1, 0, 0, 1, 0, 0); // reset any accumulated transform
+      this.ctx.setTransform(1, 0, 0, 1, 0, 0);
       this.ctx.scale(dpr, dpr);
     }
     this._logicalW = rect.width;
@@ -80,88 +70,36 @@ class AuraVisualizer {
 
     this.recordingFramesReceived++;
 
-    const elapsedMs = this.recordingStartTime ? performance.now() - this.recordingStartTime : 0;
+    // Safety sanitize input in [0.0, 1.0]
+    const raw = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1.0));
 
-    // The backend zeroes out the first hardware wake-up window. Keep the
-    // visualizer pinned briefly too so early device ticks never calibrate range.
-    if (elapsedMs < 450 || this.recordingFramesReceived <= 6) {
-      this.smoothedAmplitude *= 0.75;
-      return;
-    }
+    // Stateless mapping of widened Windows RMS telemetry (spanning -75 dBFS to -30 dBFS).
+    // Silence/ambient sits around 0.0 - 0.05.
+    // Conversational & sustained speech sits around 0.35 - 0.75.
+    // Loud speech reaches 0.85 - 1.00.
+    let normalized = Math.max(0, Math.min((raw - 0.02) * 1.25, 1.0));
 
-    rawAmplitude = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1));
-
-    // Relative sensitivity, restored from the released build but stabilized:
-    // the wave scales against the mic's noise FLOOR instead of the absolute
-    // dB level, so it reacts fully to speech regardless of gain drift (Windows
-    // auto-gain turning the level down during sustained speech).
-    //
-    // The floor FREEZES while speech is present (raw well above it) — this is
-    // what keeps the wave reacting during long continuous speech instead of
-    // collapsing flat. It re-learns the noise level only after a short quiet
-    // gap, so pauses always dip the wave back to baseline.
-    if (this.noiseFloor === null) {
-      this.noiseFloor = Math.min(rawAmplitude, 0.25);
-      this.floorFrozen = false;
-      this.silentEvents = 0;
-    }
-    if (this.floorFrozen) {
-      if (rawAmplitude < this.noiseFloor + 0.2) {
-        this.silentEvents++;
-      } else {
-        this.silentEvents = 0;
-      }
-      if (this.silentEvents >= 8) {
-        this.floorFrozen = false;
-        this.noiseFloor = rawAmplitude;
-        this.silentEvents = 0;
-      }
+    // Asymmetric EMA smoothing (fast 0.50 attack, smooth 0.15 elastic decay)
+    const prev = this.smoothedAmplitude;
+    if (normalized > prev) {
+      this.smoothedAmplitude = prev * 0.50 + normalized * 0.50;
     } else {
-      if (rawAmplitude < this.noiseFloor) {
-        this.noiseFloor = rawAmplitude;
-      } else {
-        this.noiseFloor += 0.0005;
-      }
-      if (rawAmplitude > this.noiseFloor + 0.25) {
-        this.floorFrozen = true;
-        this.silentEvents = 0;
-      }
+      this.smoothedAmplitude = prev * 0.85 + normalized * 0.15;
     }
-
-    // Fixed-span normalization: any level ~0.3 (about 9 dB) above the floor
-    // saturates to full scale. The span is constant, so unlike the old
-    // peak-relative tracker it can never collapse into a strobe.
-    let normalized = Math.max(0, Math.min(1, (rawAmplitude - this.noiseFloor) / 0.3));
-
-    // Noise gate: silence and residual mic noise render as a flat baseline.
-    if (normalized < 0.1) normalized = 0;
-
-    // Slight fade-in after the guarded startup window for aesthetic smoothness.
-    let scale = 1.0;
-    if (this.recordingFramesReceived <= 18) {
-      scale = (this.recordingFramesReceived - 6) / 12.0;
+    if (this.smoothedAmplitude < 0.001) {
+      this.smoothedAmplitude = 0;
     }
-
-    // Apply the fade-in scale
-    normalized *= scale;
-
-    // Exponential moving average — fast attack (0.5) so word onsets jump the
-    // wave up immediately; quicker decay (0.13) so word endings visibly dip
-    // back toward baseline. Both directions of motion stay smooth at 30 Hz.
-    const prevAmplitude = this.smoothedAmplitude;
-    if (normalized < prevAmplitude) {
-      this.smoothedAmplitude = this.smoothedAmplitude * 0.87 + normalized * 0.13;
-    } else {
-      this.smoothedAmplitude = this.smoothedAmplitude * 0.5 + normalized * 0.5;
-    }
+    this.smoothedAmplitude = Math.max(0, Math.min(this.smoothedAmplitude, 1.0));
   }
 
   setState(state) {
     if (this.currentState === state) return;
     this.currentState = state;
+
     if (!this.overlayRoot) return;
     this.overlayRoot.className = 'overlay-root';
     if (state !== 'idle') this.overlayRoot.classList.add(`state-${state}`);
+
     if (state === 'idle' || state === 'transcribing' || state === 'agent_transcribing') {
       this.smoothedAmplitude = 0;
       this.recordingStartTime = 0;
@@ -169,17 +107,18 @@ class AuraVisualizer {
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
-      this.noiseFloor = null;
-      this.floorFrozen = false;
-      this.silentEvents = 0;
+      this.smoothedAmplitude = 0;
+      if (this._rafId === null) {
+        this._isRunning = true;
+        this._loop(performance.now());
+      }
     }
   }
 
   getState() { return this.currentState; }
 
   _loop(timestamp) {
-    // Pause when the window is hidden — don't burn GPU on an invisible canvas.
-    if (document.hidden) {
+    if (!this._isRunning && this.currentState === 'idle') {
       this._rafId = null;
       return;
     }
@@ -187,21 +126,17 @@ class AuraVisualizer {
     this._rafId = requestAnimationFrame((t) => this._loop(t));
 
     if (this.lastTime === null) { this.lastTime = timestamp; }
-    const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1); // cap at 100ms
+    const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
     this.lastTime = timestamp;
 
-    // Idle heartbeat — subtle periodic pulse
     if (this.currentState === 'idle') {
-      const heartbeatPeriod = 4000; // 4 seconds
+      const heartbeatPeriod = 4000;
       const heartbeatPhase = (timestamp % heartbeatPeriod) / heartbeatPeriod;
       const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.08;
       this.smoothedAmplitude = heartbeatPulse;
     }
 
-    // Phase integration: bounded speed range — clearly alive drift at silence
-    // (0.45 rev/s), energetic and reactive at full speech (1.05 rev/s).
-    // Worst per-frame shift stays under ~4px: no strobing.
-    const speed = 0.45 + this.smoothedAmplitude * 0.6;
+    const speed = 0.60 + this.smoothedAmplitude * 1.20;
     this.phase = (this.phase + speed * dt * 2 * Math.PI) % (1000 * Math.PI);
 
     this._draw();
@@ -211,7 +146,6 @@ class AuraVisualizer {
     const ctx = this.ctx;
     if (!ctx || !this.canvas) return;
 
-    // Dynamically adjust to canvas bounding rect changes (especially when shown from hidden)
     const rect = this.canvas.getBoundingClientRect();
     if (rect.width !== this._logicalW || rect.height !== this._logicalH || this.canvas.width === 0) {
       this._resize();
@@ -220,57 +154,38 @@ class AuraVisualizer {
     const W = this._logicalW || 160;
     const H = this._logicalH || 44;
 
-    // Clear canvas in idle state — no wave rendering when idle
     if (this.currentState === 'idle') {
       ctx.clearRect(0, 0, W, H);
-      this._prevImageData = null;
       return;
     }
 
-    // Motion trail: draw previous frame at low opacity before clearing.
-    // Clear 25% per frame — long ghosting smears the wave into a blur at
-    // speaking speed and hides amplitude changes during continuous speech.
-    if (this._prevImageData) {
-      ctx.putImageData(this._prevImageData, 0, 0);
-      ctx.globalAlpha = 0.25;
-      ctx.clearRect(0, 0, W, H);
-      ctx.globalAlpha = 1.0;
-    }
-
-    // Store current frame for next trail effect
-    this._prevImageData = ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-
     ctx.clearRect(0, 0, W, H);
 
-    // Smooth line rendering
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
     const isAgent = this.currentState === 'agent' || this.currentState === 'agent_transcribing';
-    const isActive = this.currentState === 'recording' || this.currentState === 'agent' || this.currentState === 'agent_transcribing';
 
-    // Color palette (matches Android exactly)
     const primaryColor = isAgent ? '#00F5D4' : '#B08AC8';
     const forefrontColor = isAgent ? '#E6FFFA' : '#F1EAF5';
-    const primaryAlpha = isAgent ? 0.4 : 0.4;
+    const primaryAlpha = 0.45;
 
     const centerY = H / 2;
-    // Idle: flat 8% of height; active: amplitude-driven up to 48% of height
-    const activeAmplitude = (this.smoothedAmplitude * 0.95 + 0.05) * (H * 0.48);
+    // Active amplitude: baseline 10% up to 45% of total height
+    const activeAmplitude = (this.smoothedAmplitude * 0.85 + 0.10) * (H * 0.45);
 
     const phase1 = this.phase;
     const phase2 = -this.phase * 0.7;
 
-    // Helper: parabolic envelope (taper wave to 0 at edges)
     const env = (x) => Math.sin((x / W) * Math.PI);
 
-    // Wave 1: background wave (color: primary, alpha ~0.4)
+    // Wave 1: background wave (color: primary, alpha ~0.45)
     ctx.beginPath();
     ctx.moveTo(0, centerY);
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.5 + phase1;
-      const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 5;
+      const vibration = Math.sin(x * 0.1 + phase1 * 3) * this.smoothedAmplitude * 4;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.5 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -288,7 +203,7 @@ class AuraVisualizer {
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 2.5 + phase2;
-      const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 4;
+      const vibration = Math.sin(x * 0.15 - phase2 * 4) * this.smoothedAmplitude * 3;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.7 + vibration) * e;
       ctx.lineTo(x, y);
     }
@@ -306,22 +221,21 @@ class AuraVisualizer {
     for (let x = 0; x <= W; x += 2) {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.2 + (phase1 - phase2) * 0.5;
-      const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 6;
+      const vibration = Math.sin(x * 0.08 + phase1 * 5) * this.smoothedAmplitude * 5;
       const y = centerY + (Math.sin(angle) * activeAmplitude * 0.9 + vibration) * e;
       ctx.lineTo(x, y);
     }
     const grad3 = ctx.createLinearGradient(0, 0, W, 0);
     grad3.addColorStop(0, 'transparent');
-    grad3.addColorStop(0.5, hexAlpha(forefrontColor, 0.9));
+    grad3.addColorStop(0.5, hexAlpha(forefrontColor, 0.95));
     grad3.addColorStop(1, 'transparent');
     ctx.strokeStyle = grad3;
-    ctx.lineWidth = 2.0;
+    ctx.lineWidth = 2.2;
     ctx.stroke();
   }
 }
 
 function hexAlpha(hex, alpha) {
-  // Convert #RRGGBB to rgba(r,g,b,alpha)
   const r = parseInt(hex.slice(1, 3), 16);
   const g = parseInt(hex.slice(3, 5), 16);
   const b = parseInt(hex.slice(5, 7), 16);

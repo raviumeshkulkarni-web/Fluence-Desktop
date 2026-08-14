@@ -17,8 +17,6 @@ class AuraVisualizer {
     this.currentState = 'idle';
     this.smoothedAmplitude = 0;      // 0.0 – 1.0
     this.phase = 0;                  // integrated phase (radians)
-    this.noiseFloor = 999.0;
-    this.peakAmplitude = 0.002;
     this.recordingStartTime = 0;
     this.recordingFramesReceived = 0;
     this.lastTime = null;
@@ -88,37 +86,16 @@ class AuraVisualizer {
       return;
     }
 
-    rawAmplitude = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1.5));
+    rawAmplitude = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1));
+
+    // Noise gate: discard residual mic noise below the floor of the emitted
+    // dB-compressed range so silence renders as a flat, steady baseline.
+    let normalized = rawAmplitude < 0.03 ? 0 : rawAmplitude;
 
     // Slight fade-in after the guarded startup window for aesthetic smoothness.
     let scale = 1.0;
     if (this.recordingFramesReceived <= 18) {
       scale = (this.recordingFramesReceived - 6) / 12.0;
-    }
-
-    // Track noise floor (min)
-    if (rawAmplitude < this.noiseFloor) {
-      this.noiseFloor = rawAmplitude;
-    } else {
-      this.noiseFloor += (rawAmplitude - this.noiseFloor) * 0.001; // drift up very slowly
-    }
-
-    // Track peak (max)
-    if (rawAmplitude > this.peakAmplitude) {
-      this.peakAmplitude = rawAmplitude;
-    } else {
-      this.peakAmplitude -= (this.peakAmplitude - rawAmplitude) * 0.02; // decay peak faster
-    }
-
-    let range = this.peakAmplitude - this.noiseFloor;
-    if (range < 0.002) range = 0.002; // cap extreme sensitivity to prevent microscopic hardware pops from spiking
-
-    let normalized = (rawAmplitude - this.noiseFloor) / range;
-    if (normalized < 0) normalized = 0;
-    
-    // Noise gate: ignore the bottom 5% of the dynamic range
-    if (normalized < 0.05) {
-      normalized = 0;
     }
 
     // Apply the fade-in scale
@@ -144,8 +121,6 @@ class AuraVisualizer {
     if (state !== 'idle') this.overlayRoot.classList.add(`state-${state}`);
     if (state === 'idle' || state === 'transcribing' || state === 'agent_transcribing') {
       this.smoothedAmplitude = 0;
-      this.peakAmplitude = 0.002;
-      this.noiseFloor = 999.0;
       this.recordingStartTime = 0;
       this.recordingFramesReceived = 0;
     } else if (state === 'recording' || state === 'agent') {
@@ -177,8 +152,10 @@ class AuraVisualizer {
       this.smoothedAmplitude = heartbeatPulse;
     }
 
-    // Phase integration: speed increases with amplitude (matches Android)
-    const speed = 1.0 + this.smoothedAmplitude * 4.0;
+    // Phase integration: bounded, conservative speed range — subtle but alive
+    // drift at silence (0.30 rev/s), clearly responsive at full speech
+    // (0.70 rev/s). Worst per-frame shift stays well under 3px: no strobing.
+    const speed = 0.30 + this.smoothedAmplitude * 0.4;
     this.phase = (this.phase + speed * dt * 2 * Math.PI) % (1000 * Math.PI);
 
     this._draw();

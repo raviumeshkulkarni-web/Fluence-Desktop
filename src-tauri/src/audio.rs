@@ -231,7 +231,8 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
 
                     // Emit outside the lock — send to overlay window directly
                     if let Some(rms) = rms_to_emit {
-                        let amplitude = (rms * 400.0).clamp(0.0, 1.5);
+                        let db = (rms.max(1e-6) as f64).log10() * 20.0;
+                        let amplitude = ((db + 55.0) / 35.0).clamp(0.0, 1.0) as f32;
                         // Emit globally so the overlay (and any other windows) receive it
                         let _ = app_clone.emit("audio-amplitude", amplitude);
                     }

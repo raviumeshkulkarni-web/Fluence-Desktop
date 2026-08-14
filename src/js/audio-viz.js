@@ -16,6 +16,9 @@ class AuraVisualizer {
     this.overlayRoot = document.getElementById('overlay-root');
     this.currentState = 'idle';
     this.smoothedAmplitude = 0;      // 0.0 – 1.0
+    this.noiseFloor = null;          // relative baseline (0.0 – 1.0) for sensitivity
+    this.floorFrozen = false;        // floor locked while speech is present
+    this.silentEvents = 0;           // consecutive quiet events to re-learn floor
     this.phase = 0;                  // integrated phase (radians)
     this.recordingStartTime = 0;
     this.recordingFramesReceived = 0;
@@ -88,14 +91,50 @@ class AuraVisualizer {
 
     rawAmplitude = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1));
 
-    // Noise gate: discard residual mic noise below ~-52 dBFS so speech pauses
-    // collapse the wave back to a flat baseline instead of hovering mid-range.
-    let normalized = rawAmplitude < 0.1 ? 0 : rawAmplitude;
+    // Relative sensitivity, restored from the released build but stabilized:
+    // the wave scales against the mic's noise FLOOR instead of the absolute
+    // dB level, so it reacts fully to speech regardless of gain drift (Windows
+    // auto-gain turning the level down during sustained speech).
+    //
+    // The floor FREEZES while speech is present (raw well above it) — this is
+    // what keeps the wave reacting during long continuous speech instead of
+    // collapsing flat. It re-learns the noise level only after a short quiet
+    // gap, so pauses always dip the wave back to baseline.
+    if (this.noiseFloor === null) {
+      this.noiseFloor = Math.min(rawAmplitude, 0.25);
+      this.floorFrozen = false;
+      this.silentEvents = 0;
+    }
+    if (this.floorFrozen) {
+      if (rawAmplitude < this.noiseFloor + 0.2) {
+        this.silentEvents++;
+      } else {
+        this.silentEvents = 0;
+      }
+      if (this.silentEvents >= 8) {
+        this.floorFrozen = false;
+        this.noiseFloor = rawAmplitude;
+        this.silentEvents = 0;
+      }
+    } else {
+      if (rawAmplitude < this.noiseFloor) {
+        this.noiseFloor = rawAmplitude;
+      } else {
+        this.noiseFloor += 0.0005;
+      }
+      if (rawAmplitude > this.noiseFloor + 0.25) {
+        this.floorFrozen = true;
+        this.silentEvents = 0;
+      }
+    }
 
-    // Sensitivity gain: amplify the dB-mapped signal so modest or AGC-reduced
-    // speech levels (quiet mics, Windows auto-gain) still drive the wave to
-    // near-full height. Bounded — anything at or above ~-40 dBFS saturates.
-    normalized = Math.min(1, normalized * 1.5);
+    // Fixed-span normalization: any level ~0.3 (about 9 dB) above the floor
+    // saturates to full scale. The span is constant, so unlike the old
+    // peak-relative tracker it can never collapse into a strobe.
+    let normalized = Math.max(0, Math.min(1, (rawAmplitude - this.noiseFloor) / 0.3));
+
+    // Noise gate: silence and residual mic noise render as a flat baseline.
+    if (normalized < 0.1) normalized = 0;
 
     // Slight fade-in after the guarded startup window for aesthetic smoothness.
     let scale = 1.0;
@@ -130,6 +169,9 @@ class AuraVisualizer {
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
+      this.noiseFloor = null;
+      this.floorFrozen = false;
+      this.silentEvents = 0;
     }
   }
 

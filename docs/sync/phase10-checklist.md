@@ -13,7 +13,7 @@ human to run **after** the Android client reaches Phase 8 and a live Google Driv
 ## 0. Preconditions (all must be true before S1–S6)
 
 - [ ] Windows app built and installed from the release bundle
-      (`Fluence_1.14.1_x64-setup.exe` or `.msi` from `src-tauri/target/release/bundle/`).
+      (`Fluence_1.15.0_x64-setup.exe` or `.msi` from `src-tauri/target/release/bundle/`).
 - [ ] Windows release was signed OR run unsigned with the updater gated off (see §4).
 - [ ] `FLUENCE_SYNC_CLIENT_SECRET` env var set for the Windows user **or** a valid
       `sync-oauth.json` placed at `%LOCALAPPDATA%\Fluence\sync-oauth.json`
@@ -114,15 +114,17 @@ close it end-to-end with Android:
 
 ## 4. Release gates
 
-- [ ] **Version bump**: `tauri.conf.json` + `package.json` are both `1.14.1` — bump to the
-      next release version (e.g. `1.15.0`) with a coherent changelog entry *before* tagging.
+- [ ] **Version bump**: `tauri.conf.json`, `package.json`, and `Cargo.toml` are bumped
+      from `1.14.1` to `1.15.0` with release notes (`docs/release-notes-v1.15.0.md`) *before* tagging.
 - [ ] **Updater signing**: set `TAURI_SIGNING_PRIVATE_KEY` (and
       `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` if the key is encrypted) in the release
-      environment. Without it, `npm run build` produces the MSI/NSIS installers but fails
-      to sign the updater `.zip` artifacts (no `signature` sidecar), so in-place updates
+      build environment. **The private key must NEVER be committed to version control.**
+      Without it, `npm run build` produces the MSI/NSIS installers but fails
+      to sign the updater `.zip` artifacts (no `.sig` signature sidecar), so in-place updates
       via the `latest.json` endpoint will reject the package.
-- [ ] **Updater endpoint**: confirm `https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases/latest/download/latest.json`
-      is published alongside the signed artifacts for the new version.
+- [ ] **Updater endpoint & manifest**: confirm `latest.json` is generated (with version,
+      release notes summary, and signature strings) and published alongside the signed
+      bundle artifacts at `https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases/latest/download/latest.json`.
 - [ ] **Android release OAuth client note**: this Windows build uses client ID
       `236666538373-005rdohmcf6cgh0in10v5v8nhcc1m85k.apps.googleusercontent.com`; the
       Android release must use its own client ID, and both must be authorized for the same

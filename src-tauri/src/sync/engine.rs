@@ -1116,6 +1116,68 @@ mod tests {
         trashed: bool,
     }
 
+    /// Phase 9 failure injection: which engine error to simulate, per seam.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FaultError {
+        Retryable,
+        NotOurs,
+        AuthRequired,
+        Fatal,
+    }
+
+    impl FaultError {
+        fn into_sync_error(self) -> SyncError {
+            match self {
+                FaultError::Retryable => SyncError::Retryable("injected 429/5xx".to_string()),
+                FaultError::NotOurs => SyncError::NotOurs,
+                FaultError::AuthRequired => SyncError::AuthRequired,
+                FaultError::Fatal => SyncError::Fatal("injected fatal".to_string()),
+            }
+        }
+    }
+
+    /// One injected fault consumed by the matching Drive seam on its next call.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum Fault {
+        Folder(FaultError),
+        List(FaultError),
+        Get(FaultError),
+        Create(FaultError),
+        Patch(FaultError),
+    }
+
+    /// Which Drive seam an injected fault belongs to.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FaultSeam {
+        Folder,
+        List,
+        Get,
+        Create,
+        Patch,
+    }
+
+    impl Fault {
+        fn seam(self) -> FaultSeam {
+            match self {
+                Fault::Folder(_) => FaultSeam::Folder,
+                Fault::List(_) => FaultSeam::List,
+                Fault::Get(_) => FaultSeam::Get,
+                Fault::Create(_) => FaultSeam::Create,
+                Fault::Patch(_) => FaultSeam::Patch,
+            }
+        }
+
+        fn into_error(self) -> FaultError {
+            match self {
+                Fault::Folder(e)
+                | Fault::List(e)
+                | Fault::Get(e)
+                | Fault::Create(e)
+                | Fault::Patch(e) => e,
+            }
+        }
+    }
+
     #[derive(Debug)]
     struct FakeDrive {
         files: Vec<FakeFile>,
@@ -1126,7 +1188,12 @@ mod tests {
         patch_fault_after: Option<usize>,
         patch_ok: usize,
         hide_once: Option<String>,
-        missing_content: Option<String>,
+        missing_content: Vec<String>,
+        /// Injected faults, consumed in order per seam (Phase 9).
+        faults: Vec<Fault>,
+        /// Crash simulation: the create POST lands, then the process "dies"
+        /// before the local commit (spec §7 crash matrix).
+        panic_after_create: bool,
         ops: Vec<String>,
     }
 
@@ -1141,7 +1208,9 @@ mod tests {
                 patch_fault_after: None,
                 patch_ok: 0,
                 hide_once: None,
-                missing_content: None,
+                missing_content: vec![],
+                faults: vec![],
+                panic_after_create: false,
                 ops: vec![],
             }
         }
@@ -1203,6 +1272,15 @@ mod tests {
             self.files.retain(|f| f.file_id != file_id);
         }
 
+        /// Consume the first queued fault for this seam, if any.
+        fn consume(&mut self, seam: FaultSeam) -> Result<(), SyncError> {
+            if let Some(pos) = self.faults.iter().position(|f| f.seam() == seam) {
+                let fault = self.faults.remove(pos);
+                return Err(fault.into_error().into_sync_error());
+            }
+            Ok(())
+        }
+
         fn parsed(&self, file_id: &str) -> WireRecord {
             wire::parse(self.file(file_id).bytes.as_bytes(), UUID_A).expect("fake file parses")
         }
@@ -1216,12 +1294,14 @@ mod tests {
 
     impl DriveStore for FakeDrive {
         fn find_or_create_folder(&mut self) -> Result<(), SyncError> {
+            self.consume(FaultSeam::Folder)?;
             self.folder_created = true;
             self.ops.push("folder".to_string());
             Ok(())
         }
 
         fn list_files(&mut self) -> Result<Vec<FileMeta>, SyncError> {
+            self.consume(FaultSeam::List)?;
             self.list_calls += 1;
             let hidden = self.hide_once.take();
             let mut out: Vec<FileMeta> = self
@@ -1239,8 +1319,9 @@ mod tests {
         }
 
         fn get_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+            self.consume(FaultSeam::Get)?;
             self.ops.push(format!("get:{file_id}"));
-            if self.missing_content.as_deref() == Some(file_id) {
+            if self.missing_content.iter().any(|id| id == file_id) {
                 return Ok(None);
             }
             Ok(self
@@ -1253,13 +1334,18 @@ mod tests {
         fn create_file(&mut self, name: &str, record: &WireRecord) -> Result<String, SyncError> {
             let file_id = self.add_file(name, record);
             self.ops.push(format!("create:{name}:{file_id}"));
+            self.consume(FaultSeam::Create)?;
             if self.create_fail {
                 return Err(SyncError::Retryable("injected create failure".to_string()));
+            }
+            if self.panic_after_create {
+                panic!("injected crash after the create POST, before the local commit");
             }
             Ok(file_id)
         }
 
         fn update_content(&mut self, file_id: &str, record: &WireRecord) -> Result<(), SyncError> {
+            self.consume(FaultSeam::Patch)?;
             self.ops.push(format!("patch:{file_id}"));
             if let Some(n) = self.patch_fault_after {
                 if self.patch_ok >= n {
@@ -1613,7 +1699,7 @@ mod tests {
     fn fetch_404_drops_file_this_pass() {
         let mut drive = FakeDrive::default();
         let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
-        drive.missing_content = Some(f1.clone());
+        drive.missing_content.push(f1.clone());
         let mut local = FakeLocalStore::default();
         local.import(live_row_clean(UUID_A, &f1));
 
@@ -2286,6 +2372,357 @@ mod tests {
         fn with_sfi(mut self, sfi: &str) -> Self {
             self.server_file_id = Some(sfi.to_string());
             self
+        }
+    }
+
+    // ---------------------------------------------------------------------
+    // Layer 6 — failure injection (spec §27 phase 9 hardening). Every test
+    // asserts the observable outcome (SyncOutcome fields / SyncError kind)
+    // and the resulting local state. The scheduler-level mapping to
+    // PassOutcomeKind (Retryable → backoff, AuthRequired → reauth latch,
+    // NotOurs → fatal latch) is covered by `classify_pass` in scheduler.rs.
+    // ---------------------------------------------------------------------
+
+    fn run_pass_err(local: &mut FakeLocalStore, drive: &mut FakeDrive) -> SyncError {
+        let mut token = FakeToken { valid: true };
+        run(RecordType::History, Some(ACCOUNT), local, drive, &mut token)
+            .expect_err("the injected fault must abort the pass")
+    }
+
+    #[test]
+    fn http_429_on_folder_is_retryable_and_nothing_mutated() {
+        // The very first Drive call of a pass fails with a transient error:
+        // the pass aborts before any list/import/upload, and recovers.
+        let mut drive = FakeDrive::default();
+        drive.faults.push(Fault::Folder(FaultError::Retryable));
+        let mut local = FakeLocalStore::default();
+        local.import(live_row(UUID_A));
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::Retryable(_)), "{err:?}");
+        assert!(!drive.folder_created, "no folder side effect on failure");
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL);
+        assert!(r.server_file_id.is_none());
+        assert!(drive.files.is_empty());
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.created, 1);
+    }
+
+    #[test]
+    fn http_5xx_on_patch_is_retryable_then_completes() {
+        // A tombstone PATCH rejected with a transient error is counted (the
+        // pass completes with the failure for backoff); the local row keeps
+        // its tombstone and the next pass finishes the push.
+        let mut drive = FakeDrive::default();
+        let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        let mut local = FakeLocalStore::default();
+        local.import(tombstone_row(UUID_A).with_sfi(&f1));
+
+        drive.faults.push(Fault::Patch(FaultError::Retryable));
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.retryable_failures, 1, "the transient patch is counted");
+        assert_eq!(o.patches, 0);
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.patches, 1, "the recovered pass pushes the tombstone");
+        assert_eq!(o.retryable_failures, 0);
+        assert_eq!(
+            drive.file(&f1).bytes,
+            wire::tombstone(&wire_a(), DELETED_AT).to_json()
+        );
+    }
+
+    #[test]
+    fn http_429_on_list_is_retryable_and_nothing_mutated() {
+        let mut drive = FakeDrive::default();
+        drive.faults.push(Fault::List(FaultError::Retryable));
+        let mut local = FakeLocalStore::default();
+        local.import(live_row(UUID_A));
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::Retryable(_)), "{err:?}");
+        // PREFLIGHT/LIST failure: nothing imported, nothing uploaded.
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL);
+        assert!(r.server_file_id.is_none());
+        assert!(drive.files.is_empty());
+
+        // The fault is consumed; the next pass succeeds and reaches the
+        // fixed point (the scheduler would back off between the two).
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.created, 1);
+        assert_eq!(local.row(UUID_A).unwrap().sync_state, SYNC_STATE_CLEAN);
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn http_5xx_on_get_is_retryable_pass_aborts() {
+        let mut drive = FakeDrive::default();
+        drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.faults.push(Fault::Get(FaultError::Retryable));
+        let mut local = FakeLocalStore::default();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::Retryable(_)), "{err:?}");
+        assert!(local.rows.is_empty(), "VALIDATE abort imports nothing");
+        assert_eq!(drive.files.len(), 1, "remote files untouched");
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.imported, 1, "the recovered pass imports the group");
+    }
+
+    #[test]
+    fn http_401_on_get_is_auth_required_nothing_mutated() {
+        let mut drive = FakeDrive::default();
+        drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.faults.push(Fault::Get(FaultError::AuthRequired));
+        let mut local = FakeLocalStore::default();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::AuthRequired), "{err:?}");
+        assert!(local.rows.is_empty(), "no local mutation on 401");
+        assert_eq!(drive.files.len(), 1);
+
+        // Recovery: the refresh path re-authenticates and the pass imports.
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.imported, 1);
+    }
+
+    #[test]
+    fn http_403_not_ours_aborts_pass_no_retry_bomb() {
+        // Get: a drive.file 403 means the file is not ours — the pass aborts
+        // and surfaces NotOurs (the scheduler latches fatal: never retried).
+        let mut drive = FakeDrive::default();
+        drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.faults.push(Fault::Get(FaultError::NotOurs));
+        let mut local = FakeLocalStore::default();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::NotOurs), "{err:?}");
+        assert!(local.rows.is_empty());
+
+        // Create: an upload rejected with 403 aborts the pass mid-PUSH; the
+        // row is left unchanged for a later pass (no retry-bomb inside the
+        // same pass, and the scheduler does not re-arm automatically).
+        let mut drive = FakeDrive::default();
+        drive.faults.push(Fault::Create(FaultError::NotOurs));
+        let mut local = FakeLocalStore::default();
+        local.import(live_row(UUID_A));
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::NotOurs), "{err:?}");
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL, "row unchanged");
+        assert!(r.server_file_id.is_none());
+    }
+
+    #[test]
+    fn fetch_404_is_absence_dropped_not_deleted() {
+        // A listed file whose content fetch 404s is dropped from its group
+        // this pass (§7). It is NEVER treated as absence-as-deletion, and an
+        // untracked/unknown file is never imported or deleted either.
+        let mut drive = FakeDrive::default();
+        let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        let mut b_wire = wire_a();
+        b_wire.id = UUID_B.to_string();
+        let f2 = drive.add_file(&format!("{UUID_B}.json"), &b_wire);
+        drive.missing_content.push(f1.clone());
+        drive.missing_content.push(f2.clone());
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, &f1));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o, SyncOutcome::default(), "no mutation of any kind");
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.server_file_id.as_deref(), Some(f1.as_str()), "sfi sticky");
+        assert_eq!(r.sync_state, SYNC_STATE_CLEAN, "row never demoted");
+        assert!(
+            !local.ops.iter().any(|op| op.starts_with("hard_delete")),
+            "absence never deletes: {:#?}",
+            local.ops
+        );
+        assert!(
+            !local.ops.iter().any(|op| op.starts_with("tombstone")),
+            "absence never tombstones: {:#?}",
+            local.ops
+        );
+        assert_eq!(
+            drive.list_calls, 1,
+            "no absence re-list: the file IS listed"
+        );
+        assert_eq!(drive.files.len(), 2, "both files byte-untouched");
+        assert!(
+            local.row(UUID_B).is_none(),
+            "untracked file stays untracked"
+        );
+    }
+
+    #[test]
+    fn malformed_wire_json_quarantines_corrupt_file() {
+        let mut drive = FakeDrive::default();
+        drive.add_raw("F1", &format!("{UUID_A}.json"), "this is not json {");
+        let mut local = FakeLocalStore::default();
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.imported, 1, "latched placeholder imported");
+        assert_eq!(o.quarantined, 0, "placeholders count as imports");
+        let r = local.row(UUID_A).expect("placeholder row");
+        assert_eq!(r.sync_state, SYNC_STATE_QUARANTINED);
+        assert_eq!(r.quarantine_reason.as_deref(), Some("corrupt_file"));
+        assert!(r.text.is_empty(), "no content is invented");
+        assert_eq!(drive.files.len(), 1, "the offending file is never deleted");
+
+        // Latched: every later pass is a no-op until the user resolves it.
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+        assert_eq!(drive.file("F1").bytes, "this is not json {");
+    }
+
+    #[test]
+    fn missing_required_field_quarantines_corrupt_file() {
+        // MissingTypeField (history record without `text`) → CorruptFile.
+        let mut drive = FakeDrive::default();
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":1713456000123,"deleted_at":null,"mode":"transcription","duration_ms":8400,"provider":"groq"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.imported, 1);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.quarantine_reason.as_deref(), Some("corrupt_file"));
+        assert_eq!(r.sync_state, SYNC_STATE_QUARANTINED);
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn bad_dictionary_kind_quarantines_corrupt_file() {
+        // BadKind (dictionary record with a kind outside the two allowed
+        // values) → CorruptFile, per the wire/engine error mapping.
+        let mut drive = FakeDrive::default();
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":1713456000123,"deleted_at":null,"type":"dictionary","spoken":"u r","corrected":"you are","kind":"bogus"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+
+        let o = run_pass_kind(RecordType::Dictionary, &mut local, &mut drive);
+        assert_eq!(o.imported, 1);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.rtype, RecordType::Dictionary);
+        assert_eq!(r.quarantine_reason.as_deref(), Some("corrupt_file"));
+        assert_eq!(r.sync_state, SYNC_STATE_QUARANTINED);
+        assert!(r.placeholder_content());
+        assert_eq!(drive.files.len(), 1);
+    }
+
+    #[test]
+    fn unknown_type_quarantines_and_stays_latched() {
+        let mut drive = FakeDrive::default();
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":1713456000123,"deleted_at":null,"type":"note","text":"x","mode":"transcription","duration_ms":1,"provider":"groq"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.imported, 1);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.quarantine_reason.as_deref(), Some("unknown_type"));
+        assert_eq!(r.sync_state, SYNC_STATE_QUARANTINED);
+
+        // Latched and stable; the file is never rewritten or deleted.
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+        assert_eq!(drive.files.len(), 1);
+        assert_eq!(
+            drive
+                .ops
+                .iter()
+                .filter(|op| op.starts_with("patch:"))
+                .count(),
+            0
+        );
+    }
+
+    #[test]
+    fn crash_after_create_before_local_commit_recovers_next_pass() {
+        // §7 crash matrix, "after POST, before id commit": the file exists
+        // remotely, the local row never learned its id. Nothing is lost; the
+        // next pass's create produces a duplicate-identical file (harmless).
+        let mut drive = FakeDrive {
+            panic_after_create: true,
+            ..FakeDrive::default()
+        };
+        let mut local = FakeLocalStore::default();
+        local.import(live_row(UUID_A));
+
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let mut token = FakeToken { valid: true };
+            run(
+                RecordType::History,
+                Some(ACCOUNT),
+                &mut local,
+                &mut drive,
+                &mut token,
+            )
+        }));
+        assert!(result.is_err(), "the injected crash propagates");
+
+        // Consistent state: row still unsynced, orphan file on Drive.
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL);
+        assert!(r.server_file_id.is_none());
+        assert_eq!(drive.files.len(), 1);
+        assert_eq!(drive.file("F1").bytes, wire_a().to_json());
+
+        // Recovery pass: duplicate-identical absorb → one row, clean state.
+        drive.panic_after_create = false;
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.created, 1);
+        assert_eq!(o.retryable_failures, 0);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_CLEAN);
+        assert_eq!(drive.files.len(), 2);
+        assert!(
+            drive.files.iter().all(|f| f.bytes == wire_a().to_json()),
+            "both copies byte-identical"
+        );
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn fatal_drive_error_aborts_pass_nothing_mutated() {
+        let mut drive = FakeDrive::default();
+        drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.faults.push(Fault::Get(FaultError::Fatal));
+        let mut local = FakeLocalStore::default();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::Fatal(_)), "{err:?}");
+        assert!(local.rows.is_empty());
+        assert_eq!(drive.files.len(), 1);
+    }
+
+    impl LocalRow {
+        /// True when the row is the engine's content-less §12 placeholder.
+        fn placeholder_content(&self) -> bool {
+            match self.rtype {
+                RecordType::History => self.text.is_empty() && self.duration_ms == 0,
+                RecordType::Dictionary => {
+                    self.spoken.as_deref().unwrap_or_default().is_empty()
+                        && self.corrected.as_deref().unwrap_or_default().is_empty()
+                }
+                RecordType::Snippet => {
+                    self.trigger.as_deref().unwrap_or_default().is_empty()
+                        && self.expansion.as_deref().unwrap_or_default().is_empty()
+                }
+                RecordType::Settings => self.settings_key.as_deref().unwrap_or_default().is_empty(),
+            }
         }
     }
 }

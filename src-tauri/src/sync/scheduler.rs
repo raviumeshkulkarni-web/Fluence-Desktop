@@ -349,34 +349,56 @@ fn scheduler_thread(app: AppHandle, core: Arc<Mutex<SchedulerCore>>, rx: Receive
             continue;
         }
         log::info!("sync pass starting");
-        let (kind, error) = match run_pass() {
-            Ok(outcome) if outcome.retryable_failures > 0 => (
-                PassOutcomeKind::Retryable,
-                Some(format!(
-                    "{} retryable operation(s) failed this pass",
-                    outcome.retryable_failures
-                )),
-            ),
-            Ok(_) => (PassOutcomeKind::Success, None),
-            Err(SyncError::AuthRequired) => (
-                PassOutcomeKind::AuthRequired,
-                Some("authentication required — sign in again".to_string()),
-            ),
-            Err(SyncError::Retryable(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
-            Err(SyncError::Fatal(e)) => (PassOutcomeKind::Fatal, Some(e.to_string())),
-            Err(SyncError::NotOurs) => {
-                (PassOutcomeKind::Fatal, Some(SyncError::NotOurs.to_string()))
-            }
-        };
-        core.lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .finish(kind, error, now_ms);
-        log::info!("sync pass finished ({:?})", kind);
+        finish_guarded(&core, run_pass);
+        log::info!("sync pass finished");
         let _ = app.emit(
             "sync-status",
             build_status(&core.lock().unwrap_or_else(|e| e.into_inner())),
         );
     }
+}
+
+/// Map a finished pass to the scheduling outcome. Extracted so both the
+/// thread and the tests share one classification.
+fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Option<String>) {
+    match result {
+        Ok(outcome) if outcome.retryable_failures > 0 => (
+            PassOutcomeKind::Retryable,
+            Some(format!(
+                "{} retryable operation(s) failed this pass",
+                outcome.retryable_failures
+            )),
+        ),
+        Ok(_) => (PassOutcomeKind::Success, None),
+        Err(SyncError::AuthRequired) => (
+            PassOutcomeKind::AuthRequired,
+            Some("authentication required — sign in again".to_string()),
+        ),
+        Err(SyncError::Retryable(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
+        Err(SyncError::Fatal(e)) => (PassOutcomeKind::Fatal, Some(e.to_string())),
+        Err(SyncError::NotOurs) => (PassOutcomeKind::Fatal, Some(SyncError::NotOurs.to_string())),
+    }
+}
+
+/// Run one pass and commit its outcome to the core — including when the pass
+/// panics (a bug mid-pass must not wedge the single-flight latch; the panic
+/// surfaces as a fatal error and scheduling waits for a manual command).
+fn finish_guarded<F>(core: &Mutex<SchedulerCore>, pass: F)
+where
+    F: FnOnce() -> Result<SyncOutcome, SyncError>,
+{
+    let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(pass));
+    let (kind, error) = match result {
+        Ok(r) => classify_pass(r),
+        Err(_) => (
+            PassOutcomeKind::Fatal,
+            Some("sync pass crashed internally — automatic scheduling is paused; use \"Sync now\" to retry".to_string()),
+        ),
+    };
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    core.lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .finish(kind, error, now_ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -511,7 +533,7 @@ fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
     }
 }
 
-fn sync_settings_path() -> Option<std::path::PathBuf> {
+pub(crate) fn sync_settings_path() -> Option<std::path::PathBuf> {
     let mut path = dirs::data_local_dir()?;
     path.push("Fluence");
     path.push("sync-settings.json");
@@ -968,5 +990,97 @@ mod tests {
         assert_eq!(parse_account_email("not json"), None);
         assert_eq!(parse_account_email(r#"{}"#), None);
         assert_eq!(parse_account_email(r#"{"email": ""}"#), None);
+    }
+
+    // -- pass classification + panic safety (Phase 9 hardening) -------------
+
+    fn ok_outcome(failures: usize) -> SyncOutcome {
+        SyncOutcome {
+            retryable_failures: failures,
+            ..SyncOutcome::default()
+        }
+    }
+
+    #[test]
+    fn classify_pass_maps_every_engine_result() {
+        assert_eq!(
+            classify_pass(Ok(ok_outcome(0))),
+            (PassOutcomeKind::Success, None)
+        );
+        let (kind, err) = classify_pass(Ok(ok_outcome(3)));
+        assert_eq!(kind, PassOutcomeKind::Retryable);
+        assert!(err.unwrap().contains("3 retryable"));
+
+        assert_eq!(
+            classify_pass(Err(SyncError::AuthRequired)),
+            (
+                PassOutcomeKind::AuthRequired,
+                Some("authentication required — sign in again".to_string())
+            )
+        );
+        let (kind, _) = classify_pass(Err(SyncError::Retryable("boom".into())));
+        assert_eq!(kind, PassOutcomeKind::Retryable);
+        let (kind, _) = classify_pass(Err(SyncError::Fatal("nope".into())));
+        assert_eq!(kind, PassOutcomeKind::Fatal);
+        // 403 drive.file → NotOurs → fatal latch; never retried automatically.
+        let (kind, _) = classify_pass(Err(SyncError::NotOurs));
+        assert_eq!(kind, PassOutcomeKind::Fatal);
+    }
+
+    #[test]
+    fn panic_in_pass_releases_single_flight_latch() {
+        let core = Arc::new(Mutex::new(SchedulerCore::new(true, true)));
+        core.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .apply(&SyncCommand::RunNow);
+        assert!(
+            core.lock().unwrap_or_else(|e| e.into_inner()).take_run(NOW),
+            "the pass starts"
+        );
+
+        // A panicking pass must not wedge `running`: the guard records a
+        // fatal outcome and releases the latch.
+        finish_guarded(&core, || panic!("injected mid-pass crash"));
+        {
+            let c = core.lock().unwrap_or_else(|e| e.into_inner());
+            assert!(!c.running, "the single-flight latch is released");
+            assert!(c.wait_for_command, "a crash pauses automatic scheduling");
+            let err = c.last_error.as_deref().unwrap_or_default();
+            assert!(err.contains("crashed"), "the crash is surfaced: {err}");
+        }
+
+        // A manual command re-arms scheduling; the next pass runs normally.
+        core.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .apply(&SyncCommand::RunNow);
+        let ok = core
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .take_run(NOW + 1);
+        assert!(ok, "manual run starts after a crash");
+    }
+
+    #[test]
+    fn successful_pass_after_crash_resets_state() {
+        let core = Arc::new(Mutex::new(SchedulerCore::new(true, true)));
+        finish_guarded(&core, || panic!("boom"));
+        assert!(
+            core.lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .wait_for_command,
+            "the crash latches scheduling"
+        );
+
+        // The user clicks "Sync now" (which clears the latch), and the
+        // manual pass succeeds: backoff resets and cadence resumes.
+        core.lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .apply(&SyncCommand::RunNow);
+        finish_guarded(&core, || Ok(ok_outcome(0)));
+        let c = core.lock().unwrap_or_else(|e| e.into_inner());
+        assert!(!c.wait_for_command);
+        assert!(c.last_error.is_none());
+        assert!(!c.backoff_active);
+        assert_eq!(c.backoff.current_delay_ms(), SYNC_BACKOFF_BASE_MS);
     }
 }

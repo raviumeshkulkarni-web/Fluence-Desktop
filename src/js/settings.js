@@ -1540,6 +1540,7 @@ async function loadSyncPage() {
   } catch (err) {
     showToast('Failed to load sync status: ' + err, 'error');
   }
+  loadQuarantine();
 }
 
 function setupSyncPage() {
@@ -1592,6 +1593,7 @@ function setupSyncPage() {
   window.__TAURI__.event.listen('sync-status', (event) => {
     syncStatus = event.payload;
     renderSyncStatus();
+    loadQuarantine();
   });
 }
 
@@ -1640,6 +1642,104 @@ function renderSyncStatus() {
     if (statusDesc) statusDesc.textContent = 'Ready to sync.';
   }
   if (nowBtn) nowBtn.disabled = !!s.running;
+}
+
+// ── Quarantine (Phase 9) ────────────────────────────────────────
+
+const QUARANTINE_REASON_LABELS = {
+  content_deviation: 'Content differs from the synced copy',
+  corrupt_file: 'Corrupt file',
+  unknown_schema_version: 'Unknown schema version',
+  id_name_mismatch: 'File name does not match its record',
+  collision: 'Conflicting copies of the same record',
+  unknown_type: 'Unknown record type',
+};
+
+const QUARANTINE_KIND_LABELS = {
+  history: 'History',
+  dictionary: 'Dictionary',
+  snippet: 'Snippet',
+  settings: 'Settings',
+};
+
+async function loadQuarantine() {
+  try {
+    const entries = await invoke('sync_list_quarantined');
+    renderQuarantine(entries || []);
+  } catch (err) {
+    console.error('Failed to load quarantined records:', err);
+    renderQuarantine(null);
+  }
+}
+
+function renderQuarantine(entries) {
+  const list = document.getElementById('quarantine-list');
+  const empty = document.getElementById('quarantine-empty');
+  if (!list || !empty) return;
+  list.textContent = '';
+  if (!entries || entries.length === 0) {
+    empty.style.display = '';
+    return;
+  }
+  empty.style.display = 'none';
+  for (const entry of entries) {
+    const item = document.createElement('div');
+    item.className = 'quarantine-item';
+    const reason = QUARANTINE_REASON_LABELS[entry.reason] || entry.reason || 'Unknown issue';
+    const kind = QUARANTINE_KIND_LABELS[entry.kind] || entry.kind || entry.kind;
+    const date = entry.createdAt
+      ? ` · ${new Date(entry.createdAt).toLocaleDateString()}`
+      : '';
+    const placeholderNote = entry.placeholder
+      ? '<span class="badge badge-warning">placeholder</span>'
+      : '';
+    item.innerHTML = `
+      <div class="quarantine-item-info">
+        <div class="quarantine-item-title">
+          <span class="badge badge-ghost">${escapeHtml(kind)}</span>
+          ${escapeHtml(entry.title || '(untitled record)')}
+          ${placeholderNote}
+        </div>
+        <div class="quarantine-item-reason">${escapeHtml(reason)}${date}</div>
+      </div>
+      <div class="quarantine-item-controls">
+        <button type="button" class="btn-primary quarantine-restore" style="padding:6px 14px;">Restore</button>
+        <button type="button" class="btn-ghost quarantine-discard" style="padding:6px 14px;">Discard</button>
+      </div>`;
+    item.querySelector('.quarantine-restore').addEventListener('click', () =>
+      resolveQuarantine(entry, 'restore'),
+    );
+    item.querySelector('.quarantine-discard').addEventListener('click', () =>
+      resolveQuarantine(entry, 'discard'),
+    );
+    list.appendChild(item);
+  }
+}
+
+async function resolveQuarantine(entry, action) {
+  if (action === 'discard') {
+    const ok = window.confirm(
+      'Discard this record? It will be removed from your app (files on Drive are never deleted). ' +
+        'If the synced copy still conflicts, the next sync may quarantine it again.',
+    );
+    if (!ok) return;
+  }
+  try {
+    await invoke('sync_resolve_quarantine', {
+      uuid: entry.uuid,
+      kind: entry.kind,
+      action,
+    });
+    showToast(
+      action === 'restore'
+        ? 'Record restored — re-evaluated on the next sync'
+        : 'Record discarded',
+      'success',
+    );
+    loadQuarantine();
+  } catch (err) {
+    showToast('Failed to ' + action + ': ' + String(err).replace(/^Error:\s*/, ''), 'error');
+  }
 }
 
 // ── Suggestions (Auto-Learn) ────────────────────────────────────

@@ -3,6 +3,7 @@
 pub mod auth;
 pub mod drive;
 pub mod engine;
+pub mod quarantine;
 pub mod scheduler;
 pub mod settings_store;
 pub mod wire;

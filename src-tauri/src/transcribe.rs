@@ -624,12 +624,14 @@ mod tests {
                 spoken: "github".into(),
                 corrected: "GitHub".into(),
                 kind: "correction".into(),
+                ..Default::default()
             },
             crate::dictionary::DictionaryEntry {
                 id: "2".into(),
                 spoken: "meetnotes".into(),
                 corrected: "Share the meeting notes with the team and follow up on action items within 24 hours.".into(),
                 kind: "expansion".into(),
+                ..Default::default()
             },
         ];
         let prompt = build_vocabulary_hint(&entries).expect("corrections must produce a hint");
@@ -647,6 +649,7 @@ mod tests {
             spoken: "trigger".into(),
             corrected: "long expansion body that must never be sent".into(),
             kind: "expansion".into(),
+            ..Default::default()
         }];
         assert!(build_vocabulary_hint(&entries).is_none());
     }
@@ -669,6 +672,7 @@ mod tests {
             spoken: "x".into(),
             corrected: "€".repeat(300),
             kind: "correction".into(),
+            ..Default::default()
         }];
         let prompt = build_vocabulary_hint(&entries).expect("hint must exist");
         assert!(

@@ -17,11 +17,24 @@ use std::sync::Mutex;
 pub const MAX_TRIGGER_LENGTH: usize = 100;
 pub const MAX_EXPANSION_LENGTH: usize = 500;
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Snippet {
     pub id: String,
     pub trigger: String,
     pub expansion: String,
+    // §30 sync metadata (see dictionary.rs — same contract).
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
+    #[serde(default)]
+    pub sync_state: Option<String>,
+    #[serde(default)]
+    pub server_file_id: Option<String>,
+    #[serde(default)]
+    pub sync_account: Option<String>,
+    #[serde(default)]
+    pub quarantine_reason: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -95,7 +108,12 @@ pub fn process_transcript(text: &str) -> String {
     if !store.enabled {
         return corrected;
     }
-    expand_with(&corrected, &store.snippets)
+    let live: Vec<Snippet> = store
+        .snippets
+        .into_iter()
+        .filter(|s| s.deleted_at.is_none()) // §30.2: deleted snippets never expand
+        .collect();
+    expand_with(&corrected, &live)
 }
 
 fn fold_char(c: char) -> char {
@@ -230,7 +248,9 @@ fn trigger_collides(snippets: &[Snippet], id: &str, trigger: &str) -> bool {
 
 #[tauri::command]
 pub fn get_snippets() -> Result<SnippetStore, String> {
-    load_store_internal().map_err(|e| e.to_string())
+    let mut store = load_store_internal().map_err(|e| e.to_string())?;
+    store.snippets.retain(|s| s.deleted_at.is_none()); // live view only
+    Ok(store)
 }
 
 #[tauri::command]
@@ -246,13 +266,25 @@ pub fn set_snippets_enabled(enabled: bool) -> Result<(), String> {
 pub fn add_snippet(trigger: String, expansion: String) -> Result<Snippet, String> {
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
-    if trigger_collides(&store.snippets, "", &trigger) {
+    let live: Vec<Snippet> = store
+        .snippets
+        .iter()
+        .filter(|s| s.deleted_at.is_none())
+        .cloned()
+        .collect();
+    if trigger_collides(&live, "", &trigger) {
         return Err("A snippet with this trigger already exists".to_string());
     }
     let snippet = Snippet {
         id: uuid::Uuid::new_v4().to_string(),
         trigger,
         expansion,
+        created_at: Some(chrono::Utc::now().timestamp_millis()),
+        deleted_at: None,
+        sync_state: None,
+        server_file_id: None,
+        sync_account: None,
+        quarantine_reason: None,
     };
     store.snippets.push(snippet.clone());
     save_store_internal(&store).map_err(|e| e.to_string())?;
@@ -264,13 +296,42 @@ pub fn add_snippet(trigger: String, expansion: String) -> Result<Snippet, String
 pub fn update_snippet(id: String, trigger: String, expansion: String) -> Result<(), String> {
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
-    if trigger_collides(&store.snippets, &id, &trigger) {
+    let live: Vec<Snippet> = store
+        .snippets
+        .iter()
+        .filter(|s| s.deleted_at.is_none())
+        .cloned()
+        .collect();
+    if trigger_collides(&live, &id, &trigger) {
         return Err("A snippet with this trigger already exists".to_string());
     }
-    if let Some(s) = store.snippets.iter_mut().find(|s| s.id == id) {
-        s.trigger = trigger;
-        s.expansion = expansion;
+    // §30.2: an edit is a tombstone + a new UUID (see dictionary.rs).
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut found = false;
+    for s in store.snippets.iter_mut() {
+        if s.id == id {
+            found = true;
+            s.deleted_at = Some(now);
+            if s.server_file_id.is_some() {
+                s.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            }
+            break;
+        }
     }
+    if !found {
+        return Err("Snippet not found".to_string());
+    }
+    store.snippets.push(Snippet {
+        id: uuid::Uuid::new_v4().to_string(),
+        trigger,
+        expansion,
+        created_at: Some(now),
+        deleted_at: None,
+        sync_state: None,
+        server_file_id: None,
+        sync_account: None,
+        quarantine_reason: None,
+    });
     save_store_internal(&store).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(())
@@ -279,28 +340,298 @@ pub fn update_snippet(id: String, trigger: String, expansion: String) -> Result<
 #[tauri::command]
 pub fn delete_snippet(id: String) -> Result<(), String> {
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
-    store.snippets.retain(|s| s.id != id);
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut removed = false;
+    for s in store.snippets.iter_mut() {
+        if s.id == id {
+            if s.server_file_id.is_some() {
+                // Uploaded → tombstone so other devices delete it too (§30.2).
+                s.deleted_at = Some(now);
+                s.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            } else {
+                // Never uploaded → provably safe to hard-delete (§14).
+                removed = true;
+            }
+        }
+    }
+    if removed {
+        store.snippets.retain(|s| s.id != id);
+    }
     save_store_internal(&store).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(())
 }
 
+// ---------------------------------------------------------------------------
+// §30 sync — SnippetSyncStore (LocalStore seam for the snippet kind).
+// Wired into the desktop binary by the Phase 7 scheduler.
+// ---------------------------------------------------------------------------
+
+pub(crate) mod sync_store {
+    use super::*;
+
+    use crate::sync::engine::{
+        LocalRow, LocalStore, QuarantineReason, SyncError, SYNC_STATE_LOCAL,
+    };
+    use crate::sync::wire::RecordType;
+
+    /// Sync-facing seam over the same persisted store (§30.2). Keeps every row —
+    /// live, tombstoned, latched — so the engine can reconcile them all; user
+    /// reads (`get_snippets`, expansion) see only live rows.
+    #[derive(Debug, Default)]
+    pub struct SnippetSyncStore {
+        pub store: SnippetStore,
+    }
+
+    impl SnippetSyncStore {
+        pub fn new() -> Self {
+            let mut sync_store = Self {
+                store: load_store_internal().unwrap_or_default(),
+            };
+            sync_store.backfill_legacy_created_at();
+            sync_store
+        }
+
+        #[cfg(test)]
+        pub fn snippets(&self) -> &[Snippet] {
+            &self.store.snippets
+        }
+
+        pub fn backfill_legacy_created_at(&mut self) {
+            let now = chrono::Utc::now().timestamp_millis();
+            let mut changed = false;
+            for s in self.store.snippets.iter_mut() {
+                if s.created_at.is_none() {
+                    s.created_at = Some(now);
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save();
+            }
+        }
+
+        fn save(&self) {
+            if save_store_internal(&self.store).is_ok() {
+                invalidate_cache();
+            }
+        }
+    }
+
+    impl LocalStore for SnippetSyncStore {
+        fn list_rows(&self, account: Option<&str>) -> Vec<LocalRow> {
+            let mut out: Vec<LocalRow> = self
+                .store
+                .snippets
+                .iter()
+                .filter(|s| match account {
+                    None => s.sync_account.is_none(),
+                    Some(a) => s.sync_account.as_deref().map_or(true, |s| s == a),
+                })
+                .map(snippet_to_local)
+                .collect();
+            out.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+            out
+        }
+
+        fn find_row(&self, uuid: &str) -> Option<LocalRow> {
+            self.store
+                .snippets
+                .iter()
+                .find(|s| s.id == uuid)
+                .map(snippet_to_local)
+        }
+
+        fn import(&mut self, row: LocalRow) -> Result<(), SyncError> {
+            let Some(snippet) = local_to_snippet(row) else {
+                return Ok(()); // other kinds never reach this store
+            };
+            if let Some(existing) = self.store.snippets.iter_mut().find(|s| s.id == snippet.id) {
+                *existing = snippet;
+            } else {
+                self.store.snippets.push(snippet);
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn mark_tombstoned(&mut self, uuid: &str, deleted_at: i64) -> Result<(), SyncError> {
+            if let Some(s) = self.store.snippets.iter_mut().find(|s| s.id == uuid) {
+                s.deleted_at = Some(deleted_at);
+                s.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn set_server_file_id(&mut self, uuid: &str, file_id: &str) -> Result<(), SyncError> {
+            if let Some(s) = self.store.snippets.iter_mut().find(|s| s.id == uuid) {
+                s.server_file_id = Some(file_id.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn set_sync_state(&mut self, uuid: &str, state: &str) -> Result<(), SyncError> {
+            if let Some(s) = self.store.snippets.iter_mut().find(|s| s.id == uuid) {
+                s.sync_state = Some(state.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn quarantine(&mut self, uuid: &str, reason: QuarantineReason) -> Result<(), SyncError> {
+            if let Some(s) = self.store.snippets.iter_mut().find(|s| s.id == uuid) {
+                s.quarantine_reason = Some(reason.as_str().to_string());
+                s.sync_state = Some(crate::sync::engine::SYNC_STATE_QUARANTINED.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn clear_quarantine(&mut self, uuid: &str) -> Result<(), SyncError> {
+            if let Some(s) = self.store.snippets.iter_mut().find(|s| s.id == uuid) {
+                s.quarantine_reason = None;
+                s.sync_state = Some(SYNC_STATE_LOCAL.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn hard_delete(&mut self, uuid: &str) -> Result<(), SyncError> {
+            self.store.snippets.retain(|s| s.id != uuid);
+            self.save();
+            Ok(())
+        }
+    }
+
+    fn snippet_to_local(s: &Snippet) -> LocalRow {
+        LocalRow {
+            uuid: s.id.clone(),
+            timestamp_ms: s.created_at.unwrap_or(0),
+            text: String::new(),
+            mode: String::new(),
+            duration_ms: 0,
+            provider: String::new(),
+            model: None,
+            language: None,
+            rtype: RecordType::Snippet,
+            spoken: None,
+            corrected: None,
+            kind: None,
+            trigger: Some(s.trigger.clone()),
+            expansion: Some(s.expansion.clone()),
+            settings_key: None,
+            settings_value: None,
+            deleted_at: s.deleted_at,
+            server_file_id: s.server_file_id.clone(),
+            sync_account: s.sync_account.clone(),
+            sync_state: s
+                .sync_state
+                .clone()
+                .unwrap_or_else(|| SYNC_STATE_LOCAL.to_string()),
+            quarantine_reason: s.quarantine_reason.clone(),
+        }
+    }
+
+    fn local_to_snippet(row: LocalRow) -> Option<Snippet> {
+        if row.rtype != RecordType::Snippet {
+            return None;
+        }
+        Some(Snippet {
+            id: row.uuid,
+            trigger: row.trigger.unwrap_or_default(),
+            expansion: row.expansion.unwrap_or_default(),
+            created_at: Some(row.timestamp_ms),
+            deleted_at: row.deleted_at,
+            sync_state: Some(row.sync_state),
+            server_file_id: row.server_file_id,
+            sync_account: row.sync_account,
+            quarantine_reason: row.quarantine_reason,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::sync_store::*;
     use super::*;
+    use crate::sync::engine::{LocalRow, LocalStore, SYNC_STATE_LOCAL};
+    use crate::sync::wire::RecordType;
 
     fn snippet(id: &str, trigger: &str, expansion: &str) -> Snippet {
         Snippet {
             id: id.to_string(),
             trigger: trigger.to_string(),
             expansion: expansion.to_string(),
+            ..Default::default()
         }
     }
 
     #[test]
-    fn single_trigger_replaced() {
-        let snippets = vec![snippet("1", "ping", "pong")];
-        assert_eq!(expand_with("ping", &snippets), "pong");
+    fn sync_store_roundtrip_through_wire() {
+        const U: &str = "00000000-0000-4000-8000-000000000006";
+        let mut store = SnippetSyncStore::default();
+        store
+            .import(local_to_snippet_live(U, "addr", "456 Oak Ave"))
+            .unwrap();
+        let row = store.find_row(U).unwrap();
+        let rec = crate::sync::wire::parse(row.to_wire().to_json().as_bytes(), U).unwrap();
+        assert_eq!(rec.rtype, RecordType::Snippet);
+        assert_eq!(rec.trigger.as_deref(), Some("addr"));
+        assert_eq!(rec.expansion.as_deref(), Some("456 Oak Ave"));
+        assert_eq!(
+            store.find_row(U).unwrap().to_wire().to_json(),
+            row.to_wire().to_json()
+        );
+    }
+
+    fn local_to_snippet_live(uuid: &str, trigger: &str, expansion: &str) -> LocalRow {
+        LocalRow {
+            uuid: uuid.to_string(),
+            timestamp_ms: 1713468000123,
+            text: String::new(),
+            mode: String::new(),
+            duration_ms: 0,
+            provider: String::new(),
+            model: None,
+            language: None,
+            rtype: RecordType::Snippet,
+            spoken: None,
+            corrected: None,
+            kind: None,
+            trigger: Some(trigger.to_string()),
+            expansion: Some(expansion.to_string()),
+            settings_key: None,
+            settings_value: None,
+            deleted_at: None,
+            server_file_id: None,
+            sync_account: None,
+            sync_state: SYNC_STATE_LOCAL.to_string(),
+            quarantine_reason: None,
+        }
+    }
+
+    #[test]
+    fn sync_store_backfills_legacy_snippets() {
+        let mut store = SnippetSyncStore::default();
+        let legacy = snippet("legacy", "addr", "1 Example St");
+        let mut legacy = legacy;
+        legacy.created_at = None;
+        store.store.snippets.push(legacy);
+        store.backfill_legacy_created_at();
+        assert!(store.store.snippets[0].created_at.is_some());
+    }
+
+    #[test]
+    fn deleted_snippets_never_expand() {
+        let mut s = snippet("1", "ping", "pong");
+        s.deleted_at = Some(1713462000456);
+        let live: Vec<Snippet> = vec![s.clone()]
+            .into_iter()
+            .filter(|s| s.deleted_at.is_none())
+            .collect();
+        assert_eq!(expand_with("ping", &live), "ping");
     }
 
     #[test]

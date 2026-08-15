@@ -27,6 +27,12 @@ mod overlay;
 mod settings;
 mod snippets;
 mod suggestion;
+// Sync layer. The Phase 7 scheduler, stores, and commands are live; the
+// remaining dead-code seams (user resolution of quarantine, the future
+// settings-toggle row API, and command variants used only from tests) are
+// allowed until their owning features are wired.
+#[allow(dead_code)]
+mod sync;
 mod transcribe;
 mod tray;
 mod workflow;
@@ -138,6 +144,10 @@ pub fn run() {
                 log::warn!("Failed to register hotkeys: {}", e);
             }
 
+            // Start the background sync scheduler (Phase 7)
+            let scheduler = sync::scheduler::Scheduler::spawn(app.handle().clone());
+            app.manage(scheduler);
+
             // Determine which window to show on startup
             if app_settings.first_run {
                 // Show setup wizard and notify frontend to start animations
@@ -234,6 +244,11 @@ pub fn run() {
             suggestion::dismiss_suggestion_command,
             suggestion::clear_dismissed_suggestions_command,
             suggestion::expire_stale_suggestions_command,
+            // Sync
+            sync::scheduler::sync_get_status,
+            sync::scheduler::sync_toggle,
+            sync::scheduler::sync_sign_in,
+            sync::scheduler::sync_sign_out,
             // Misc
             get_app_version,
         ])

@@ -13,7 +13,7 @@ fn default_entry_kind() -> String {
     "correction".to_string()
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct DictionaryEntry {
     pub id: String,
     pub spoken: String,
@@ -24,6 +24,22 @@ pub struct DictionaryEntry {
     /// NEVER enter the STT recognition prompt.
     #[serde(default = "default_entry_kind")]
     pub kind: String,
+    // §30 sync metadata. `Option` + serde defaults keep legacy JSON loadable.
+    // `created_at: None` marks entries created before sync; the sync store
+    // backfills them on first mapping (cross-device timestamps then differ —
+    // documented edge, §30.2).
+    #[serde(default)]
+    pub created_at: Option<i64>,
+    #[serde(default)]
+    pub deleted_at: Option<i64>,
+    #[serde(default)]
+    pub sync_state: Option<String>,
+    #[serde(default)]
+    pub server_file_id: Option<String>,
+    #[serde(default)]
+    pub sync_account: Option<String>,
+    #[serde(default)]
+    pub quarantine_reason: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -89,7 +105,11 @@ pub fn apply_corrections(text: &str) -> String {
         Some(e) => e.clone(),
         None => {
             drop(cache);
-            let loaded = load_dictionary_internal().unwrap_or_default();
+            let loaded: Vec<DictionaryEntry> = load_dictionary_internal()
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|e| e.deleted_at.is_none()) // §30.2: deleted entries never apply
+                .collect();
             let cached = cache_entries(loaded);
             let mut cache2 = DICTIONARY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
             *cache2 = Some(cached.clone());
@@ -159,13 +179,15 @@ fn entries_already_have(entries: &[DictionaryEntry], spoken: &str, corrected: &s
 
 /// Merge incoming entries into an existing list. Blank entries and exact
 /// duplicates (same spoken→corrected pair) are skipped; incoming entries
-/// get fresh ids. Returns the merged list and the number actually added.
+/// get fresh ids and a creation timestamp. Returns the merged list and the
+/// number actually added.
 fn merge_dictionary_entries(
     existing: &[DictionaryEntry],
     incoming: Vec<DictionaryEntry>,
 ) -> (Vec<DictionaryEntry>, usize) {
     let mut entries = existing.to_vec();
     let mut added = 0;
+    let now = chrono::Utc::now().timestamp_millis();
     for mut entry in incoming {
         entry.spoken = entry.spoken.trim().to_string();
         entry.corrected = entry.corrected.trim().to_string();
@@ -176,17 +198,28 @@ fn merge_dictionary_entries(
             continue;
         }
         entry.id = uuid::Uuid::new_v4().to_string();
+        entry.created_at = Some(now);
         entries.push(entry);
         added += 1;
     }
     (entries, added)
 }
 
+/// Live entries only (not tombstoned) — the user-facing view (§30.2).
+fn live_entries(entries: Vec<DictionaryEntry>) -> Vec<DictionaryEntry> {
+    entries
+        .into_iter()
+        .filter(|e| e.deleted_at.is_none())
+        .collect()
+}
+
 // Tauri Commands
 
 #[tauri::command]
 pub fn get_dictionary() -> Result<Vec<DictionaryEntry>, String> {
-    load_dictionary_internal().map_err(|e| e.to_string())
+    Ok(live_entries(
+        load_dictionary_internal().map_err(|e| e.to_string())?,
+    ))
 }
 
 #[tauri::command]
@@ -196,7 +229,7 @@ pub fn add_dictionary_entry(
     kind: Option<String>,
 ) -> Result<DictionaryEntry, String> {
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
-    let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let mut entries = live_entries(load_dictionary_internal().map_err(|e| e.to_string())?);
     if entries_already_have(&entries, &spoken, &corrected) {
         return Err(format!(
             "Dictionary entry '{} → {}' already exists",
@@ -208,6 +241,12 @@ pub fn add_dictionary_entry(
         spoken,
         corrected,
         kind: kind.unwrap_or_else(default_entry_kind),
+        created_at: Some(chrono::Utc::now().timestamp_millis()),
+        deleted_at: None,
+        sync_state: None,
+        server_file_id: None,
+        sync_account: None,
+        quarantine_reason: None,
     };
     entries.push(entry.clone());
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
@@ -223,7 +262,7 @@ pub fn update_dictionary_entry(
     kind: Option<String>,
 ) -> Result<(), String> {
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
-    let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let mut entries = live_entries(load_dictionary_internal().map_err(|e| e.to_string())?);
     let key = canonical_entry_key(&spoken, &corrected);
     let collides = entries
         .iter()
@@ -234,13 +273,39 @@ pub fn update_dictionary_entry(
             spoken, corrected
         ));
     }
-    if let Some(e) = entries.iter_mut().find(|e| e.id == id) {
-        e.spoken = spoken;
-        e.corrected = corrected;
-        if let Some(kind) = kind {
-            e.kind = kind;
+    // §30.2: an edit is a tombstone + a new UUID, so every device converges
+    // on the same record identity and no in-place rewrite of an uploaded
+    // record ever happens.
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut old_kind: Option<String> = None;
+    let mut found = false;
+    for entry in entries.iter_mut() {
+        if entry.id == id {
+            found = true;
+            entry.deleted_at = Some(now);
+            if entry.server_file_id.is_some() {
+                entry.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            }
+            old_kind = Some(entry.kind.clone());
+            break;
         }
     }
+    if !found {
+        return Err("Dictionary entry not found".to_string());
+    }
+    let new_entry = DictionaryEntry {
+        id: uuid::Uuid::new_v4().to_string(),
+        spoken,
+        corrected,
+        kind: kind.unwrap_or_else(|| old_kind.unwrap_or_else(default_entry_kind)),
+        created_at: Some(now),
+        deleted_at: None,
+        sync_state: None,
+        server_file_id: None,
+        sync_account: None,
+        quarantine_reason: None,
+    };
+    entries.push(new_entry);
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(())
@@ -249,7 +314,23 @@ pub fn update_dictionary_entry(
 #[tauri::command]
 pub fn delete_dictionary_entry(id: String) -> Result<(), String> {
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
-    entries.retain(|e| e.id != id);
+    let now = chrono::Utc::now().timestamp_millis();
+    let mut removed = false;
+    for entry in entries.iter_mut() {
+        if entry.id == id {
+            if entry.server_file_id.is_some() {
+                // Uploaded → tombstone so other devices delete it too (§30.2).
+                entry.deleted_at = Some(now);
+                entry.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            } else {
+                // Never uploaded → provably safe to hard-delete (§14).
+                removed = true;
+            }
+        }
+    }
+    if removed {
+        entries.retain(|e| e.id != id);
+    }
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(())
@@ -272,9 +353,205 @@ pub fn export_dictionary() -> Result<String, String> {
     serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
 }
 
+// ---------------------------------------------------------------------------
+// §30 sync — DictionarySyncStore (LocalStore seam for the dictionary kind).
+// Wired into the desktop binary by the Phase 7 scheduler.
+// ---------------------------------------------------------------------------
+
+pub(crate) mod sync_store {
+    use super::*;
+
+    use crate::sync::engine::{
+        LocalRow, LocalStore, QuarantineReason, SyncError, SYNC_STATE_LOCAL,
+    };
+    use crate::sync::wire::RecordType;
+
+    /// Sync-facing seam over the same persisted entry list (§30.2). Keeps every
+    /// row — live, tombstoned, latched — so the engine can reconcile them all;
+    /// user-facing reads (`get_dictionary`, corrections) see only live rows.
+    #[derive(Debug, Default)]
+    pub struct DictionarySyncStore {
+        pub entries: Vec<DictionaryEntry>,
+    }
+
+    impl DictionarySyncStore {
+        pub fn new() -> Self {
+            let mut store = Self {
+                entries: load_dictionary_internal().unwrap_or_default(),
+            };
+            store.backfill_legacy_created_at();
+            store
+        }
+
+        #[cfg(test)]
+        pub fn entries(&self) -> &[DictionaryEntry] {
+            &self.entries
+        }
+
+        /// Entries created before sync carry `created_at: None`; assign them a
+        /// timestamp on first mapping so the wire record is always valid. The
+        /// backfill is persisted; cross-device timestamps for such legacy rows
+        /// may differ — documented edge (§30.2).
+        pub fn backfill_legacy_created_at(&mut self) {
+            let now = chrono::Utc::now().timestamp_millis();
+            let mut changed = false;
+            for entry in self.entries.iter_mut() {
+                if entry.created_at.is_none() {
+                    entry.created_at = Some(now);
+                    changed = true;
+                }
+            }
+            if changed {
+                self.save();
+            }
+        }
+
+        fn save(&self) {
+            if save_dictionary_internal(&self.entries).is_ok() {
+                invalidate_cache();
+            }
+        }
+    }
+
+    impl LocalStore for DictionarySyncStore {
+        fn list_rows(&self, account: Option<&str>) -> Vec<LocalRow> {
+            let mut out: Vec<LocalRow> = self
+                .entries
+                .iter()
+                .filter(|e| match account {
+                    None => e.sync_account.is_none(),
+                    Some(a) => e.sync_account.as_deref().map_or(true, |s| s == a),
+                })
+                .map(entry_to_local)
+                .collect();
+            out.sort_by(|a, b| a.uuid.cmp(&b.uuid));
+            out
+        }
+
+        fn find_row(&self, uuid: &str) -> Option<LocalRow> {
+            self.entries
+                .iter()
+                .find(|e| e.id == uuid)
+                .map(entry_to_local)
+        }
+
+        fn import(&mut self, row: LocalRow) -> Result<(), SyncError> {
+            let Some(entry) = local_to_entry(row) else {
+                return Ok(()); // other kinds never reach this store
+            };
+            if let Some(existing) = self.entries.iter_mut().find(|e| e.id == entry.id) {
+                *existing = entry;
+            } else {
+                self.entries.push(entry);
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn mark_tombstoned(&mut self, uuid: &str, deleted_at: i64) -> Result<(), SyncError> {
+            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
+                e.deleted_at = Some(deleted_at);
+                e.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn set_server_file_id(&mut self, uuid: &str, file_id: &str) -> Result<(), SyncError> {
+            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
+                e.server_file_id = Some(file_id.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn set_sync_state(&mut self, uuid: &str, state: &str) -> Result<(), SyncError> {
+            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
+                e.sync_state = Some(state.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn quarantine(&mut self, uuid: &str, reason: QuarantineReason) -> Result<(), SyncError> {
+            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
+                e.quarantine_reason = Some(reason.as_str().to_string());
+                e.sync_state = Some(crate::sync::engine::SYNC_STATE_QUARANTINED.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn clear_quarantine(&mut self, uuid: &str) -> Result<(), SyncError> {
+            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
+                e.quarantine_reason = None;
+                e.sync_state = Some(SYNC_STATE_LOCAL.to_string());
+            }
+            self.save();
+            Ok(())
+        }
+
+        fn hard_delete(&mut self, uuid: &str) -> Result<(), SyncError> {
+            self.entries.retain(|e| e.id != uuid);
+            self.save();
+            Ok(())
+        }
+    }
+
+    fn entry_to_local(e: &DictionaryEntry) -> LocalRow {
+        LocalRow {
+            uuid: e.id.clone(),
+            timestamp_ms: e.created_at.unwrap_or(0),
+            text: String::new(),
+            mode: String::new(),
+            duration_ms: 0,
+            provider: String::new(),
+            model: None,
+            language: None,
+            rtype: RecordType::Dictionary,
+            spoken: Some(e.spoken.clone()),
+            corrected: Some(e.corrected.clone()),
+            kind: Some(e.kind.clone()),
+            trigger: None,
+            expansion: None,
+            settings_key: None,
+            settings_value: None,
+            deleted_at: e.deleted_at,
+            server_file_id: e.server_file_id.clone(),
+            sync_account: e.sync_account.clone(),
+            sync_state: e
+                .sync_state
+                .clone()
+                .unwrap_or_else(|| SYNC_STATE_LOCAL.to_string()),
+            quarantine_reason: e.quarantine_reason.clone(),
+        }
+    }
+
+    fn local_to_entry(row: LocalRow) -> Option<DictionaryEntry> {
+        if row.rtype != RecordType::Dictionary {
+            return None;
+        }
+        Some(DictionaryEntry {
+            id: row.uuid,
+            spoken: row.spoken.unwrap_or_default(),
+            corrected: row.corrected.unwrap_or_default(),
+            kind: row.kind.unwrap_or_else(default_entry_kind),
+            created_at: Some(row.timestamp_ms),
+            deleted_at: row.deleted_at,
+            sync_state: Some(row.sync_state),
+            server_file_id: row.server_file_id,
+            sync_account: row.sync_account,
+            quarantine_reason: row.quarantine_reason,
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use super::sync_store::*;
     use super::*;
+    use crate::sync::engine::{LocalRow, LocalStore, SYNC_STATE_LOCAL};
+    use crate::sync::wire::RecordType;
 
     #[test]
     fn test_canonical_entry_key_case_insensitive() {
@@ -306,6 +583,12 @@ mod tests {
             spoken: spoken.to_string(),
             corrected: corrected.to_string(),
             kind: "correction".to_string(),
+            created_at: Some(1713456000123),
+            deleted_at: None,
+            sync_state: None,
+            server_file_id: None,
+            sync_account: None,
+            quarantine_reason: None,
         }
     }
 
@@ -344,5 +627,131 @@ mod tests {
         assert!(merged.iter().any(|e| e.spoken == "grok"));
         assert!(merged.iter().all(|e| e.id != "x" && e.id != "v"));
         assert_eq!(merged[0].id, "1", "existing entries keep their ids");
+        assert!(
+            merged.iter().all(|e| e.created_at.is_some()),
+            "merged entries always carry a creation timestamp"
+        );
+    }
+
+    // §30.2 edit semantics --------------------------------------------------
+
+    #[test]
+    fn test_update_tombstones_old_and_creates_new_uuid() {
+        let uploaded = entry("1", "tori", "Tauri");
+        let mut uploaded = uploaded;
+        uploaded.server_file_id = Some("F1".to_string());
+        uploaded.sync_state = Some(crate::sync::engine::SYNC_STATE_CLEAN.to_string());
+        let mut entries = vec![uploaded];
+
+        let now = chrono::Utc::now().timestamp_millis();
+        if let Some(old) = entries.iter_mut().find(|e| e.id == "1") {
+            old.deleted_at = Some(now);
+            old.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+        }
+        entries.push(DictionaryEntry {
+            id: "new-uuid".to_string(),
+            spoken: "tori".to_string(),
+            corrected: "Tauri 2".to_string(),
+            kind: "correction".to_string(),
+            created_at: Some(now),
+            deleted_at: None,
+            sync_state: None,
+            server_file_id: None,
+            sync_account: None,
+            quarantine_reason: None,
+        });
+
+        assert!(entries[0].deleted_at.is_some());
+        assert_ne!(entries[0].id, entries[1].id);
+        assert_eq!(entries[1].corrected, "Tauri 2");
+    }
+
+    #[test]
+    fn test_delete_semantics_uploaded_vs_never_uploaded() {
+        // Never uploaded → hard delete.
+        let never = entry("1", "tori", "Tauri");
+        assert!(never.server_file_id.is_none());
+        let mut entries = vec![never.clone()];
+        entries.retain(|e| e.id != "1");
+        assert!(entries.is_empty());
+
+        // Uploaded → tombstone, never removed.
+        let uploaded = entry("2", "shunade", "Sinead");
+        let mut uploaded = uploaded;
+        uploaded.server_file_id = Some("F2".to_string());
+        let mut entries = vec![uploaded];
+        if let Some(e) = entries.iter_mut().find(|e| e.id == "2") {
+            e.deleted_at = Some(1713462000456);
+        }
+        assert_eq!(entries.len(), 1);
+        assert!(entries[0].deleted_at.is_some());
+    }
+
+    #[test]
+    fn test_get_dictionary_excludes_deleted() {
+        let live = entry("1", "tori", "Tauri");
+        let deleted = entry("2", "shunade", "Sinead");
+        let mut deleted = deleted;
+        deleted.deleted_at = Some(1713462000456);
+        let shown = live_entries(vec![live.clone(), deleted]);
+        assert_eq!(shown.len(), 1);
+        assert_eq!(shown[0].id, "1");
+    }
+
+    #[test]
+    fn test_sync_store_roundtrip_through_wire() {
+        const U: &str = "00000000-0000-4000-8000-000000000005";
+        let mut store = DictionarySyncStore::default();
+        store
+            .import(local_to_entry_live(U, "tori", "Tauri"))
+            .unwrap();
+        let row = store.find_row(U).unwrap();
+        let rec = crate::sync::wire::parse(row.to_wire().to_json().as_bytes(), U).unwrap();
+        assert_eq!(rec.rtype, RecordType::Dictionary);
+        assert_eq!(rec.spoken.as_deref(), Some("tori"));
+        assert_eq!(rec.corrected.as_deref(), Some("Tauri"));
+        assert_eq!(rec.kind.as_deref(), Some("correction"));
+        let row2 = store.find_row(U).unwrap();
+        assert_eq!(row2.to_wire().to_json(), row.to_wire().to_json());
+    }
+
+    fn local_to_entry_live(uuid: &str, spoken: &str, corrected: &str) -> LocalRow {
+        LocalRow {
+            uuid: uuid.to_string(),
+            timestamp_ms: 1713456000123,
+            text: String::new(),
+            mode: String::new(),
+            duration_ms: 0,
+            provider: String::new(),
+            model: None,
+            language: None,
+            rtype: RecordType::Dictionary,
+            spoken: Some(spoken.to_string()),
+            corrected: Some(corrected.to_string()),
+            kind: Some("correction".to_string()),
+            trigger: None,
+            expansion: None,
+            settings_key: None,
+            settings_value: None,
+            deleted_at: None,
+            server_file_id: None,
+            sync_account: None,
+            sync_state: SYNC_STATE_LOCAL.to_string(),
+            quarantine_reason: None,
+        }
+    }
+
+    #[test]
+    fn test_sync_store_backfills_legacy_entries() {
+        let mut store = DictionarySyncStore::default();
+        let legacy = entry("legacy", "grok", "Groq");
+        let mut legacy = legacy;
+        legacy.created_at = None;
+        store.entries.push(legacy);
+        store.backfill_legacy_created_at();
+        assert!(
+            store.entries[0].created_at.is_some(),
+            "legacy entries get a timestamp on first mapping"
+        );
     }
 }

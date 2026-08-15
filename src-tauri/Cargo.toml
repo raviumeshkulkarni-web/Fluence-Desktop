@@ -34,7 +34,7 @@ tauri-plugin-fs = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "multipart", "json", "stream"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "multipart", "json", "stream", "blocking"] }
 uuid = { version = "1", features = ["v4"] }
 dirs = "5"
 rusqlite = { version = "0.31", features = ["bundled"] }
@@ -92,6 +92,12 @@ strip = true
 
 [profile.dev]
 opt-level = 0
+# Limit codegen to one unit at a time so LLVM never holds multiple modules
+# in RAM simultaneously — fixes "rustc-LLVM ERROR: out of memory" on this crate.
+codegen-units = 1
+# Line-tables-only debuginfo (debug = 1) uses far less memory than full DWARF
+# (debug = 2) while still giving usable backtraces in dev builds.
+debug = 1
 
 [profile.dev.package.reqwest]
 opt-level = 3

@@ -67,6 +67,10 @@
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3"/><path d="M12 8v8M9 11l3-3 3 3"/></svg>
       Snippets
     </button>
+    <button type="button" class="nav-item" data-page="sync" id="nav-sync">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+      Sync
+    </button>
     <button type="button" class="nav-item" data-page="about" id="nav-about">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
       About
@@ -757,6 +761,53 @@
             </tr>
           </tbody>
         </table>
+      </div>
+    </section>
+
+    <!-- ===== SYNC PAGE ===== -->
+    <section class="page" id="page-sync">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Sync</h1>
+        <p class="page-subtitle">Back up history, dictionary, snippets, and settings to your Google Drive</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Cloud Sync</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Enable background sync</div>
+            <div class="setting-desc">Automatically syncs every 5 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="sync-enabled-cb" aria-label="Enable background sync" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Account</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" id="sync-account-label">Not signed in</div>
+            <div class="setting-desc" id="sync-account-desc">Sign in with Google to start syncing your data.</div>
+          </div>
+          <div class="setting-control">
+            <button type="button" class="btn-primary" id="sync-sign-in-btn" style="padding:8px 16px;">Sign in with Google</button>
+            <button type="button" class="btn-ghost" id="sync-sign-out-btn" style="padding:8px 16px;display:none;">Sign out</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Sync status</div>
+            <div class="setting-desc" id="sync-status-desc">Sync is off.</div>
+          </div>
+          <div class="setting-control">
+            <button type="button" class="btn-ghost" id="sync-now-btn" style="padding:8px 16px;">Sync now</button>
+          </div>
+        </div>
       </div>
     </section>
 

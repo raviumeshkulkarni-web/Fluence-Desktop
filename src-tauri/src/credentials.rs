@@ -121,6 +121,24 @@ pub fn delete_credential(_target: &str) -> Result<()> {
 // Credential target name constants
 pub const STT_API_KEY_TARGET: &str = "Fluence/STT_ApiKey";
 pub const LLM_API_KEY_TARGET: &str = "Fluence/LLM_ApiKey";
+/// OAuth refresh token for sync (spec §24) — stored in Credential Manager,
+/// never in a file; the access token stays in memory only.
+pub const SYNC_REFRESH_TOKEN_TARGET: &str = "Fluence/Sync/RefreshToken";
+
+/// Persist the sync refresh token (overwrites the previous one, if any).
+pub fn store_sync_refresh_token(token: &str) -> Result<()> {
+    store_credential(SYNC_REFRESH_TOKEN_TARGET, "fluence", token)
+}
+
+/// Read the sync refresh token. `Err` means the user must sign in again.
+pub fn read_sync_refresh_token() -> Result<String> {
+    read_credential(SYNC_REFRESH_TOKEN_TARGET)
+}
+
+/// Forget the sync refresh token (sign-out).
+pub fn delete_sync_refresh_token() -> Result<()> {
+    delete_credential(SYNC_REFRESH_TOKEN_TARGET)
+}
 
 /// Generate a provider-specific target for STT keys
 pub fn get_stt_target(preset: &str) -> String {

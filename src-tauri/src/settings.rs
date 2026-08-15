@@ -88,6 +88,10 @@ pub struct AppSettings {
     pub duck_level: f32,
     #[serde(default = "default_offline_engine")]
     pub offline_engine: String, // "sensevoice" | "moonshine_base"
+    #[serde(default = "default_false")]
+    pub sync_enabled: bool,
+    #[serde(default)]
+    pub sync_account_key: Option<String>,
 }
 
 fn default_hotkey() -> String {
@@ -174,6 +178,8 @@ impl Default for AppSettings {
             duck_enabled: default_false(),
             duck_level: default_duck_level(),
             offline_engine: default_offline_engine(),
+            sync_enabled: default_false(),
+            sync_account_key: None,
         }
     }
 }

@@ -58,6 +58,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupDictionary();
   setupSuggestions();
   setupSnippets();
+  setupSyncPage();
   populateAudioDevices();
   listenForTauriEvents();
   loadAppVersion();
@@ -141,6 +142,9 @@ function populateUI(s) {
   setChecked('sound-on-complete-cb', s.sound_on_complete ?? true);
   setSelectValue('offline-engine-select', s.offline_engine || 'sensevoice');
 
+  // Sync tab
+  setChecked('sync-enabled-cb', s.sync_enabled || false);
+
   // Providers tab
   const sttPreset = s.stt_provider?.preset || 'groq';
   selectProviderCard('stt', sttPreset);
@@ -167,7 +171,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'snippets', 'about'];
+const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'snippets', 'sync', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -234,6 +238,9 @@ function _performNavigation(page) {
   }
   if (page === 'snippets') {
     loadSnippets();
+  }
+  if (page === 'sync') {
+    loadSyncPage();
   }
 }
 
@@ -719,34 +726,12 @@ async function loadHistory(reset, search = '') {
 
 async function loadDashboardStats() {
   try {
-    // Fetch all history entries (loop pages of 50) to compute stats
-    let allEntries = [];
-    let page = 0;
-    while (true) {
-      const batch = await invoke('get_history', { page, searchQuery: null });
-      allEntries = allEntries.concat(batch);
-      if (batch.length < 50) break;
-      page++;
-    }
-
-    // Total words
-    let totalWords = 0;
-    let weeklyCount = 0;
-    let monthlyCount = 0;
-    let weeklyDurationMs = 0;
-    let weeklyWords = 0;
-    let monthlyWords = 0;
-    const now = Date.now();
-    const sevenDaysAgo = now - 7 * 86400000;
-    const thirtyDaysAgo = now - 30 * 86400000;
-
-    for (const e of allEntries) {
-      const words = e.text.split(/\s+/).filter(Boolean).length;
-      totalWords += words;
-      const ts = new Date(e.timestamp).getTime();
-      if (ts >= sevenDaysAgo) { weeklyCount++; weeklyDurationMs += e.duration_ms; weeklyWords += words; }
-      if (ts >= thirtyDaysAgo) { monthlyCount++; monthlyWords += words; }
-    }
+    // All statistics are computed server-side (single source of truth).
+    const bStats = await invoke('get_history_stats');
+    const totalWords = bStats.total_words;
+    const weeklyWords = bStats.weekly_words;
+    const weeklyDurationMs = bStats.weekly_duration_ms;
+    const monthlyWords = bStats.monthly_words;
 
     if (totalWords >= 1000000) {
       animateStatValue('stat-total-words', (totalWords / 1000000).toFixed(1) + 'M');
@@ -757,7 +742,6 @@ async function loadDashboardStats() {
     }
 
     // Time saved from backend stats (estimated typing time: ~40 WPM average)
-    const bStats = await invoke('get_history_stats');
     const typingMinutesSaved = totalWords / 40;
     const savedHours = typingMinutesSaved / 60;
     if (savedHours >= 1) {
@@ -781,20 +765,16 @@ async function loadDashboardStats() {
       animateStatValue('stat-monthly-saved', Math.round(monthlyWords / 40) + 'm');
     }
 
-    // Weekly activity bar chart
-    const now2 = new Date();
-    const dayOfWeek = now2.getDay();
-    const mondayOffset = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-    const monday = new Date(now2);
-    monday.setDate(now2.getDate() - mondayOffset);
-    monday.setHours(0, 0, 0, 0);
+    // Weekly activity bar chart — UTC Monday boundary comes from the backend
+    // (identical across devices/timezones and matches the weekly header).
+    const monday = new Date(bStats.week_start_ms);
 
     const timestamps = await invoke('get_weekly_activity', { startOfWeekUtc: monday.toISOString() });
 
     const dayCounts = [0, 0, 0, 0, 0, 0, 0];
     timestamps.forEach(ts => {
       const d = new Date(ts);
-      const dow = d.getDay();
+      const dow = d.getUTCDay();
       dayCounts[dow === 0 ? 6 : dow - 1]++;
     });
 
@@ -1549,6 +1529,119 @@ window.deleteSnippetEntry = async (id) => {
   }
 };
 
+// ── Sync ─────────────────────────────────────────────────────────
+
+let syncStatus = null;
+
+async function loadSyncPage() {
+  try {
+    syncStatus = await invoke('sync_get_status');
+    renderSyncStatus();
+  } catch (err) {
+    showToast('Failed to load sync status: ' + err, 'error');
+  }
+}
+
+function setupSyncPage() {
+  document.getElementById('sync-enabled-cb')?.addEventListener('change', async (e) => {
+    try {
+      await invoke('sync_toggle', { enabled: e.target.checked });
+      showToast(e.target.checked ? 'Background sync enabled' : 'Background sync disabled', 'success');
+      loadSyncPage();
+    } catch (err) {
+      e.target.checked = !e.target.checked;
+      showToast('Failed to update sync: ' + String(err).replace(/^Error:\s*/, ''), 'error');
+    }
+  });
+
+  document.getElementById('sync-sign-in-btn')?.addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    btn.textContent = 'Opening browser…';
+    try {
+      const status = await invoke('sync_sign_in');
+      showToast('Signed in as ' + (status?.account_key || 'your Google account'), 'success');
+      syncStatus = status;
+      renderSyncStatus();
+    } catch (err) {
+      showToast('Sign-in failed: ' + String(err).replace(/^Error:\s*/, ''), 'error');
+      btn.disabled = false;
+      btn.textContent = 'Sign in with Google';
+    }
+  });
+
+  document.getElementById('sync-sign-out-btn')?.addEventListener('click', async () => {
+    try {
+      await invoke('sync_sign_out');
+      showToast('Signed out. Existing sync data stays in Drive.', 'success');
+      loadSyncPage();
+    } catch (err) {
+      showToast('Sign-out failed: ' + err, 'error');
+    }
+  });
+
+  document.getElementById('sync-now-btn')?.addEventListener('click', async () => {
+    try {
+      await invoke('sync_toggle', { enabled: syncStatus?.enabled ?? false });
+      showToast('Sync started', 'success');
+    } catch (err) {
+      showToast('Failed to start sync: ' + String(err).replace(/^Error:\s*/, ''), 'error');
+    }
+  });
+
+  window.__TAURI__.event.listen('sync-status', (event) => {
+    syncStatus = event.payload;
+    renderSyncStatus();
+  });
+}
+
+function renderSyncStatus() {
+  const s = syncStatus || {};
+  const enabled = !!s.enabled;
+  const signedIn = !!s.signed_in;
+  const account = s.account_key || null;
+
+  const cb = document.getElementById('sync-enabled-cb');
+  if (cb) cb.checked = enabled;
+
+  const signInBtn = document.getElementById('sync-sign-in-btn');
+  const signOutBtn = document.getElementById('sync-sign-out-btn');
+  const label = document.getElementById('sync-account-label');
+  const desc = document.getElementById('sync-account-desc');
+  const statusDesc = document.getElementById('sync-status-desc');
+  const nowBtn = document.getElementById('sync-now-btn');
+
+  if (signedIn && account) {
+    if (signInBtn) { signInBtn.style.display = 'none'; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
+    if (signOutBtn) signOutBtn.style.display = '';
+    if (label) label.textContent = account;
+    if (desc) desc.textContent = 'Signed in. Your data syncs privately to your personal Drive folder.';
+  } else {
+    if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
+    if (signOutBtn) signOutBtn.style.display = 'none';
+    if (label) label.textContent = 'Not signed in';
+    if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
+  }
+
+  if (!enabled) {
+    if (statusDesc) statusDesc.textContent = 'Sync is off.';
+    if (nowBtn) nowBtn.disabled = false;
+    return;
+  }
+
+  if (s.running) {
+    if (statusDesc) statusDesc.textContent = 'Syncing right now…';
+  } else if (s.last_sync_at) {
+    const t = new Date(s.last_sync_at);
+    if (statusDesc) statusDesc.textContent = `Last synced ${t.toLocaleTimeString()}${s.last_error ? ` · Error: ${s.last_error}` : ''}`;
+  } else if (s.last_error) {
+    if (statusDesc) statusDesc.textContent = `Error: ${s.last_error}`;
+  } else {
+    if (statusDesc) statusDesc.textContent = 'Ready to sync.';
+  }
+  if (nowBtn) nowBtn.disabled = !!s.running;
+}
+
 // ── Suggestions (Auto-Learn) ────────────────────────────────────
 
 function setupSuggestions() {
@@ -1917,14 +2010,16 @@ function renderHistoryItem(entry, container) {
 
   const timeStr = formatHistoryTimestamp(entry.timestamp);
   const titleAttr = escapeHtml(date.toLocaleString());
+  const foreign = !!entry.sync_account && entry.sync_account !== (currentSettings?.sync_account_key || null);
 
   div.innerHTML = `
     <div class="history-item-header">
       <span class="history-item-time" title="${titleAttr}">${timeStr}</span>
       <div class="history-actions">
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
+        ${foreign ? '<span class="badge badge-primary" title="Synced from another account">cloud</span>' : ''}
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        <button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>
+        ${foreign ? '' : `<button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>`}
       </div>
     </div>
     <div class="history-item-text">${renderTranscriptText(entry.text, historySearchQuery)}</div>

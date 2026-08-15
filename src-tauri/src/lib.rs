@@ -22,6 +22,7 @@ pub mod overlay;
 pub mod settings;
 pub mod snippets;
 pub mod suggestion;
+pub mod sync;
 pub mod transcribe;
 pub mod tray;
 pub mod workflow;

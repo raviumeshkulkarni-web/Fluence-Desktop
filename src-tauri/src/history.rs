@@ -62,10 +62,10 @@ pub fn init_db() -> Result<()> {
     Ok(())
 }
 
-// Creates the schema (full 15-column v2 layout) and migrates a legacy DB
-// (PRAGMA user_version 0) to v1. A migration failure rolls back, logs, sets
-// MIGRATION_OK = false and returns Ok so reads keep serving from the old
-// schema — the "serve with sync disabled" seam.
+// Creates the schema (full 15-column layout) and migrates a legacy DB
+// (PRAGMA user_version 0) through v1 to v2. A migration failure rolls back,
+// logs, sets MIGRATION_OK = false and returns Ok so reads keep serving from
+// the old schema — the "serve with sync disabled" seam.
 fn run_migration(conn: &Connection) -> Result<()> {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS history (
@@ -89,35 +89,49 @@ fn run_migration(conn: &Connection) -> Result<()> {
     )?;
 
     let user_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-    if user_version >= 1 {
-        return Ok(());
-    }
 
-    let has_timestamp_ms = {
-        let mut stmt = conn.prepare("PRAGMA table_info(history)")?;
-        let cols = stmt.query_map([], |r| r.get::<_, String>(1))?;
-        let mut found = false;
-        for col in cols.flatten() {
-            if col == "timestamp_ms" {
-                found = true;
-                break;
+    // v0 → v1 (legacy DB without the sync columns). A fresh full-schema DB
+    // needs no structural migration. A failed migration rolls back, logs, and
+    // returns so reads keep serving from the old schema — the "serve with
+    // sync disabled" seam. v1 → v2 must be skipped when v0 → v1 failed.
+    if user_version < 1 {
+        let has_timestamp_ms = {
+            let mut stmt = conn.prepare("PRAGMA table_info(history)")?;
+            let cols = stmt.query_map([], |r| r.get::<_, String>(1))?;
+            let mut found = false;
+            for col in cols.flatten() {
+                if col == "timestamp_ms" {
+                    found = true;
+                    break;
+                }
+            }
+            found
+        };
+
+        if !has_timestamp_ms {
+            if let Err(e) = migrate_v0_to_v1(conn) {
+                log::error!(
+                    "History DB migration failed; serving with sync disabled: {}",
+                    e
+                );
+                MIGRATION_OK.store(false, Ordering::SeqCst);
+                return Ok(());
             }
         }
-        found
-    };
-
-    if has_timestamp_ms {
-        // Fresh DB already created with the full schema — just stamp the version.
-        conn.execute_batch("PRAGMA user_version = 1")?;
-        return Ok(());
     }
 
-    if let Err(e) = migrate_v0_to_v1(conn) {
-        log::error!(
-            "History DB migration failed; serving with sync disabled: {}",
-            e
-        );
-        MIGRATION_OK.store(false, Ordering::SeqCst);
+    // v1 → v2: backfill the integer millisecond column from the RFC3339
+    // `timestamp` string where the v1 write path left it at 0 (pre-sync
+    // builds inserted rows with the DEFAULT), and un-latch previously
+    // quarantined corrupt-file rows that now carry valid millis and real
+    // content so the sync engine's auto-repair heals their Drive files on the
+    // next pass. Content-less placeholders and rows awaiting user resolution
+    // stay latched.
+    if user_version < 2 {
+        if let Err(e) = migrate_v1_to_v2(conn) {
+            log::error!("History DB v2 migration failed: {}", e);
+            MIGRATION_OK.store(false, Ordering::SeqCst);
+        }
     }
     Ok(())
 }
@@ -158,6 +172,48 @@ fn migrate_v0_to_v1(conn: &Connection) -> Result<()> {
     Ok(())
 }
 
+fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
+    // The connection is exclusively held (behind the DB mutex), so the
+    // &self transaction API is safe here.
+    let tx = conn.unchecked_transaction()?;
+
+    // Backfill timestamp_ms from the RFC3339 timestamp for rows the v1 write
+    // path left at the DEFAULT 0 (best effort; unparseable → stays 0).
+    let rows: Vec<(String, String)> = {
+        let mut stmt = tx.prepare("SELECT id, timestamp FROM history WHERE timestamp_ms = 0")?;
+        let iter = stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?;
+        iter.collect::<Result<Vec<_>, _>>()?
+    };
+    for (id, ts) in rows {
+        let ms = chrono::DateTime::parse_from_rfc3339(&ts)
+            .map(|dt| dt.timestamp_millis())
+            .unwrap_or(0);
+        tx.execute(
+            "UPDATE history SET timestamp_ms = ?1 WHERE id = ?2",
+            params![ms, id],
+        )?;
+    }
+
+    // Un-latch corrupt-file rows that now carry valid millis and real content
+    // so the sync engine can auto-repair their Drive files on the next pass.
+    // Content-less placeholders and records awaiting user resolution stay
+    // latched; non-repairable corrupt files are simply re-latched by the next
+    // sync pass (the auto-repair rule only patches self-inflicted bad
+    // timestamps/modes owned by the local row).
+    tx.execute_batch(
+        "UPDATE history
+         SET quarantine_reason = NULL,
+             sync_state = 'local'
+         WHERE quarantine_reason = 'corrupt_file'
+           AND text <> ''
+           AND timestamp_ms > 0",
+    )?;
+
+    tx.execute_batch("PRAGMA user_version = 2")?;
+    tx.commit()?;
+    Ok(())
+}
+
 fn with_db<F, T>(f: F) -> Result<T>
 where
     F: FnOnce(&Connection) -> Result<T>,
@@ -187,6 +243,17 @@ pub fn add_history_entry(
     duration_ms: u64,
     provider: &str,
 ) -> Result<HistoryEntry> {
+    // Canonical mode values only; the write seam must never emit a record the
+    // sync parser rejects (BadMode → corrupt_file quarantine).
+    let mode = if mode == "transcription" || mode == "agent" {
+        mode
+    } else {
+        log::warn!(
+            "history entry with non-canonical mode '{}' coerced to 'transcription'",
+            mode
+        );
+        "transcription"
+    };
     let now = Utc::now();
     let entry = HistoryEntry {
         id: uuid::Uuid::new_v4().to_string(),
@@ -236,7 +303,8 @@ pub fn get_history(page: u32, search_query: Option<String>) -> Result<Vec<Histor
         let rows: Result<Vec<HistoryEntry>, _> = if query.is_empty() {
             let mut stmt = conn.prepare(
                 "SELECT id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, model, language, sync_account, quarantine_reason, sync_state
-                 FROM history WHERE deleted_at IS NULL ORDER BY timestamp_ms DESC LIMIT ?1 OFFSET ?2",
+                 FROM history WHERE deleted_at IS NULL AND quarantine_reason IS NULL
+                 ORDER BY timestamp_ms DESC LIMIT ?1 OFFSET ?2",
             )?;
             let res = stmt.query_map(params![page_size, offset], map_row)
                 .map_err(|e| anyhow::anyhow!(e))?
@@ -249,7 +317,7 @@ pub fn get_history(page: u32, search_query: Option<String>) -> Result<Vec<Histor
             let pattern = format!("%{}%", escaped_query);
             let mut stmt = conn.prepare(
                 "SELECT id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, model, language, sync_account, quarantine_reason, sync_state
-                 FROM history WHERE text LIKE ?1 ESCAPE '\\' AND deleted_at IS NULL
+                 FROM history WHERE text LIKE ?1 ESCAPE '\\' AND deleted_at IS NULL AND quarantine_reason IS NULL
                  ORDER BY timestamp_ms DESC LIMIT ?2 OFFSET ?3",
             )?;
             let res = stmt.query_map(params![pattern, page_size, offset], map_row)
@@ -484,7 +552,7 @@ fn compute_stats(rows: &[(i64, i64, String)], now_ms: i64) -> HistoryStats {
 pub fn get_history_stats() -> Result<HistoryStats, String> {
     with_db(|conn| {
         let mut stmt = conn.prepare(
-            "SELECT timestamp_ms, duration_ms, text FROM history WHERE deleted_at IS NULL",
+            "SELECT timestamp_ms, duration_ms, text FROM history WHERE deleted_at IS NULL AND quarantine_reason IS NULL",
         )?;
         let rows = stmt
             .query_map([], |r| {
@@ -505,8 +573,9 @@ pub fn get_history_stats() -> Result<HistoryStats, String> {
 // matched on the integer timestamp_ms column so the comparison is exact and
 // immune to the fractional-second formatting of the timestamp string.
 fn weekly_activity(conn: &Connection, week_start_ms: i64) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn
-        .prepare("SELECT timestamp FROM history WHERE timestamp_ms >= ?1 AND deleted_at IS NULL")?;
+    let mut stmt = conn.prepare(
+        "SELECT timestamp FROM history WHERE timestamp_ms >= ?1 AND deleted_at IS NULL AND quarantine_reason IS NULL",
+    )?;
     let rows = stmt.query_map(params![week_start_ms], |r| r.get::<_, String>(0))?;
     let mut timestamps = Vec::new();
     for ts in rows.flatten() {
@@ -838,6 +907,106 @@ mod tests {
     }
 
     #[test]
+    fn v2_backfills_zero_timestamp_ms_and_unlatches_repairable_corrupt_file_rows() {
+        // Simulate the pre-v2 production shape: full schema, user_version 1,
+        // zero-ts rows, and a latched corrupt-file row carrying real content.
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE history (
+                id              TEXT PRIMARY KEY,
+                timestamp       TEXT NOT NULL,
+                text            TEXT NOT NULL,
+                mode            TEXT NOT NULL DEFAULT 'transcription',
+                duration_ms     INTEGER NOT NULL DEFAULT 0,
+                provider        TEXT NOT NULL DEFAULT '',
+                char_count      INTEGER NOT NULL DEFAULT 0,
+                timestamp_ms    INTEGER NOT NULL DEFAULT 0,
+                model           TEXT,
+                language        TEXT,
+                deleted_at      INTEGER,
+                sync_state      TEXT NOT NULL DEFAULT 'local',
+                server_file_id  TEXT,
+                sync_account    TEXT,
+                quarantine_reason TEXT
+            );
+            PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history (id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, sync_state, quarantine_reason)
+             VALUES ('id-zero', '2026-08-14T12:29:01.570902600+00:00', 'meeting notes', 'transcription', 8400, 'groq', 13, 0, 'quarantined', 'corrupt_file')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history (id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, sync_state, quarantine_reason)
+             VALUES ('id-empty', '2026-08-15T09:00:00.000Z', '', 'transcription', 0, 'groq', 0, 0, 'quarantined', 'corrupt_file')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO history (id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, quarantine_reason)
+             VALUES ('id-content-deviation', '2026-08-16T10:00:00.000Z', 'real', 'transcription', 1, 'groq', 4, 1713456000123, 'content_deviation')",
+            [],
+        )
+        .unwrap();
+
+        run_migration(&conn).unwrap();
+
+        // Zero-ts backfill from the RFC3339 timestamp.
+        let expected_ms =
+            chrono::DateTime::parse_from_rfc3339("2026-08-14T12:29:01.570902600+00:00")
+                .unwrap()
+                .timestamp_millis();
+        let ms: i64 = conn
+            .query_row(
+                "SELECT timestamp_ms FROM history WHERE id = 'id-zero'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ms, expected_ms);
+
+        // Latched corrupt-file row with real content + valid millis is
+        // unlatched so the engine's auto-repair can heal its Drive file.
+        let (reason, state): (Option<String>, String) = conn
+            .query_row(
+                "SELECT quarantine_reason, sync_state FROM history WHERE id = 'id-zero'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(reason, None, "repairable corrupt-file row is unlatched");
+        assert_eq!(state, "local");
+
+        // Content-less placeholder stays latched.
+        let (reason, state): (Option<String>, String) = conn
+            .query_row(
+                "SELECT quarantine_reason, sync_state FROM history WHERE id = 'id-empty'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(reason, Some("corrupt_file".to_string()));
+        assert_eq!(state, "quarantined");
+
+        // Non-corrupt-file latches are never touched.
+        let reason: Option<String> = conn
+            .query_row(
+                "SELECT quarantine_reason FROM history WHERE id = 'id-content-deviation'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(reason, Some("content_deviation".to_string()));
+
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(v, 2);
+    }
+
+    #[test]
     fn existing_rows_unchanged() {
         let conn = old_schema_conn();
         insert_old_row(&conn, "id-1", "2024-04-18T16:00:00.123Z", "first");
@@ -885,21 +1054,21 @@ mod tests {
     }
 
     #[test]
-    fn user_version_set_to_1() {
+    fn user_version_set_to_2() {
         let conn = old_schema_conn();
         run_migration(&conn).unwrap();
         let v: i64 = conn
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v, 1);
+        assert_eq!(v, 2);
 
-        // Fresh (empty) DB also lands on version 1 with the full schema.
+        // Fresh (empty) DB also lands on version 2 with the full schema.
         let fresh = Connection::open_in_memory().unwrap();
         run_migration(&fresh).unwrap();
         let v2: i64 = fresh
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v2, 1);
+        assert_eq!(v2, 2);
         assert_eq!(column_names(&fresh, "history").len(), 15);
 
         // Idempotent: a second run leaves the schema and version untouched.
@@ -907,7 +1076,7 @@ mod tests {
         let v3: i64 = fresh
             .query_row("PRAGMA user_version", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(v3, 1);
+        assert_eq!(v3, 2);
         assert_eq!(column_names(&fresh, "history").len(), 15);
     }
 

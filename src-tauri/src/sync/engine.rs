@@ -199,6 +199,12 @@ pub enum SyncAction {
         file_id: String,
         record: WireRecord,
     },
+    /// Auto-repair: rewrite a parse-invalid file we own with the authoritative
+    /// local row (spec §12, "self-inflicted damage": BadTimestamp/BadMode).
+    Patch {
+        file_id: String,
+        record: WireRecord,
+    },
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -207,6 +213,9 @@ pub struct SyncOutcome {
     pub created: usize,
     pub reuploaded: usize,
     pub patches: usize,
+    /// Auto-repaired files (self-inflicted BadTimestamp/BadMode damage where
+    /// the authoritative local row existed) — healed without user input.
+    pub repaired: usize,
     pub tombstoned_local: usize,
     pub quarantined: usize,
     pub hard_deleted: usize,
@@ -266,7 +275,8 @@ pub trait LocalStore {
     fn hard_delete(&mut self, uuid: &str) -> Result<(), SyncError>;
 }
 
-/// Remote Drive seam (spec §7, §23). `update_content` is tombstone-media only.
+/// Remote Drive seam (spec §7, §23). `update_content` is used for tombstone
+/// media and for auto-repair of self-inflicted file damage.
 pub trait DriveStore {
     fn find_or_create_folder(&mut self) -> Result<(), SyncError>;
     /// Full listing, `trashed=false`, paginated to exhaustion by the store.
@@ -349,6 +359,9 @@ pub fn run(
 
     let mut local_actions: Vec<SyncAction> = Vec::new();
     let mut push_actions: Vec<SyncAction> = Vec::new();
+    // UUIDs of rows whose single parse-invalid file is repairable this pass
+    // (auto-repair target). FINALIZE treats these as pending/unquarantined.
+    let mut repair_uuids: BTreeSet<String> = BTreeSet::new();
 
     for row in &rows {
         if row.rtype != kind {
@@ -407,10 +420,21 @@ pub fn run(
                     }
                 }
                 GroupVerdict::Divergent => {
-                    local_actions.push(SyncAction::Quarantine {
-                        uuid: row.uuid.clone(),
-                        reason: divergent_reason(g, true),
-                    });
+                    if let Some(file_id) = repair_target(g, row) {
+                        // Self-inflicted damage (BadTimestamp/BadMode) owned by
+                        // the local row: heal silently instead of surfacing a
+                        // quarantine decision to the user (spec §12).
+                        repair_uuids.insert(row.uuid.clone());
+                        push_actions.push(SyncAction::Patch {
+                            file_id,
+                            record: row.to_wire(),
+                        });
+                    } else {
+                        local_actions.push(SyncAction::Quarantine {
+                            uuid: row.uuid.clone(),
+                            reason: divergent_reason(g, true),
+                        });
+                    }
                 }
                 GroupVerdict::Absent => {}
             },
@@ -503,6 +527,8 @@ pub fn run(
     // unchanged, the failure is counted, and the pass continues (§7).
     let mut reuploaded_uuids: BTreeSet<String> = BTreeSet::new();
     let mut patched_file_ids: BTreeSet<String> = BTreeSet::new();
+    // UUIDs whose auto-repair patch landed this pass (FINALIZE → clean).
+    let mut repaired_uuids: BTreeSet<String> = BTreeSet::new();
     for action in push_actions.into_iter().chain(reuploads) {
         match action {
             SyncAction::Create { uuid, record } => {
@@ -559,6 +585,26 @@ pub fn run(
                     },
                 }
             }
+            SyncAction::Patch { file_id, record } => {
+                match drive.update_content(&file_id, &record) {
+                    Ok(()) => {
+                        patched_file_ids.insert(file_id);
+                        repaired_uuids.insert(record.id.clone());
+                        outcome.patches += 1;
+                        outcome.repaired += 1;
+                    }
+                    Err(e) => match e {
+                        // Retryable: file unchanged, counted; the row stays
+                        // unquarantined and the next pass retries invisibly.
+                        SyncError::Retryable(_) => outcome.retryable_failures += 1,
+                        // Rejected: permanent client rejection, counted; the
+                        // pass continues and surfaces non-success (§23).
+                        SyncError::Rejected(_) => outcome.rejected_failures += 1,
+                        // Fatal/AuthRequired/NotOurs: abort the pass, surface (§23).
+                        other => return Err(other),
+                    },
+                }
+            }
             _ => unreachable!("local actions never reach PUSH"),
         }
     }
@@ -573,10 +619,13 @@ pub fn run(
             Some(g) => classify(g, Some(&row)),
             None => GroupVerdict::Absent,
         };
-        let derived = derived_sync_state(
+        let derived = derived_sync_state_pass(
             &row,
             verdict,
             group_fully_tombstoned(&row, group, &reuploaded_uuids, &patched_file_ids),
+            &repair_uuids,
+            &repaired_uuids,
+            &patched_file_ids,
         );
         if row.sync_state != derived {
             fixups.push((row.uuid.clone(), derived));
@@ -592,10 +641,13 @@ pub fn run(
                 Some(g) => classify(g, Some(&row)),
                 None => GroupVerdict::Absent,
             };
-            let derived = derived_sync_state(
+            let derived = derived_sync_state_pass(
                 &row,
                 verdict,
                 group_fully_tombstoned(&row, group, &reuploaded_uuids, &patched_file_ids),
+                &repair_uuids,
+                &repaired_uuids,
+                &patched_file_ids,
             );
             debug_assert_eq!(
                 row.sync_state, derived,
@@ -697,6 +749,31 @@ fn quarantine_reason_of(reason: InvalidReason) -> QuarantineReason {
         InvalidReason::IdNameMismatch => QuarantineReason::IdNameMismatch,
         InvalidReason::UnknownType => QuarantineReason::UnknownType,
     }
+}
+
+/// The single file id to auto-repair for a DIVERGENT known row, or `None`.
+///
+/// Repair is limited to parse-invalid files in the self-inflicted classes
+/// (BadTimestamp / BadMode) — never ambiguous or foreign content. The group
+/// must hold exactly one file, the file must be the row's own (`server_file_id`
+/// must match; a foreign or recreated file is never overwritten), and the local
+/// row must re-serialize to a record the parser accepts (so we only write
+/// parse-clean content). Everything else keeps the existing quarantine path.
+fn repair_target(group: &Group, row: &LocalRow) -> Option<String> {
+    if group.files.len() + group.invalid.len() != 1 {
+        return None;
+    }
+    let (file_id, reason) = &group.invalid[0];
+    if !matches!(reason, InvalidReason::BadTimestamp | InvalidReason::BadMode) {
+        return None;
+    }
+    if row.server_file_id.as_deref() != Some(file_id.as_str()) {
+        return None;
+    }
+    if wire::parse(&row.to_wire().to_json().into_bytes(), &row.uuid).is_err() {
+        return None;
+    }
+    Some(file_id.clone())
 }
 
 fn group_deleted_at(group: &Group) -> i64 {
@@ -819,6 +896,40 @@ pub fn derived_sync_state(
             }
         }
     }
+}
+
+/// The `sync_state` a row should hold at the end of this pass, including the
+/// auto-repair fixups: a row whose file was patched this pass is CLEAN (the
+/// patched file now carries exactly the row's content); a row whose repair is
+/// still pending (patch failed) is LOCAL so it is never latched and the next
+/// pass retries invisibly.
+fn derived_sync_state_pass(
+    row: &LocalRow,
+    verdict: GroupVerdict,
+    group_fully_tombstoned: bool,
+    repair_uuids: &BTreeSet<String>,
+    repaired_uuids: &BTreeSet<String>,
+    patched_file_ids: &BTreeSet<String>,
+) -> &'static str {
+    if repaired_this_pass(row, repaired_uuids, patched_file_ids) {
+        SYNC_STATE_CLEAN
+    } else if repair_uuids.contains(&row.uuid) {
+        SYNC_STATE_LOCAL
+    } else {
+        derived_sync_state(row, verdict, group_fully_tombstoned)
+    }
+}
+
+fn repaired_this_pass(
+    row: &LocalRow,
+    repaired_uuids: &BTreeSet<String>,
+    patched_file_ids: &BTreeSet<String>,
+) -> bool {
+    repaired_uuids.contains(&row.uuid)
+        && row
+            .server_file_id
+            .as_deref()
+            .is_some_and(|sfi| patched_file_ids.contains(sfi))
 }
 
 fn group_fully_tombstoned(
@@ -2701,6 +2812,109 @@ mod tests {
         // Latched: every later pass is a no-op until the user resolves it.
         assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
         assert_eq!(drive.file("F1").bytes, "this is not json {");
+    }
+
+    #[test]
+    fn bad_timestamp_file_auto_repairs_when_local_row_authoritative() {
+        // Self-inflicted damage: created_at:0 (BadTimestamp) on our own file.
+        // The local row is authoritative → repaired invisibly, never surfaced.
+        let mut drive = FakeDrive::default();
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":0,"deleted_at":null,"text":"stale","mode":"transcription","duration_ms":8400,"provider":"groq"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, "F1"));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.repaired, 1);
+        assert_eq!(o.patches, 1);
+        assert_eq!(o.quarantined, 0);
+
+        // The file now carries the authoritative local row and reparses.
+        let parsed =
+            wire::parse(drive.file("F1").bytes.as_bytes(), UUID_A).expect("patched file parses");
+        assert_eq!(parsed.created_at, CREATED_AT);
+        assert_eq!(parsed.text, TEXT);
+
+        let r = local.row(UUID_A).unwrap();
+        assert!(!r.is_latched());
+        assert_eq!(r.sync_state, SYNC_STATE_CLEAN);
+
+        // Healed: the next pass is a no-op.
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn bad_mode_file_auto_repairs() {
+        // BadMode (mode outside transcription/agent) is likewise self-inflicted.
+        let mut drive = FakeDrive::default();
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":1713456000123,"deleted_at":null,"text":"x","mode":"note","duration_ms":8400,"provider":"groq"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, "F1"));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.repaired, 1);
+        assert_eq!(o.quarantined, 0);
+        let r = local.row(UUID_A).unwrap();
+        assert!(!r.is_latched());
+        assert_eq!(r.sync_state, SYNC_STATE_CLEAN);
+        assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn malformed_json_with_local_row_quarantines_not_repairs() {
+        // MalformedJson is not self-inflicted damage in a known class: with a
+        // matching local row the record is still quarantined, never rewritten.
+        let mut drive = FakeDrive::default();
+        drive.add_raw("F1", &format!("{UUID_A}.json"), "this is not json {");
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, "F1"));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.repaired, 0);
+        assert_eq!(o.quarantined, 1);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.quarantine_reason.as_deref(), Some("corrupt_file"));
+        assert_eq!(r.sync_state, SYNC_STATE_QUARANTINED);
+        assert_eq!(drive.file("F1").bytes, "this is not json {");
+    }
+
+    #[test]
+    fn repair_failure_is_retried_invisibly_next_pass() {
+        // A transient patch failure never latches the row: it stays local and
+        // the next pass heals it without any user decision.
+        let mut drive = FakeDrive {
+            patch_fault_after: Some(0),
+            ..FakeDrive::default()
+        };
+        drive.add_raw(
+            "F1",
+            &format!("{UUID_A}.json"),
+            r#"{"v":1,"id":"00000000-0000-4000-8000-000000000001","created_at":0,"deleted_at":null,"text":"stale","mode":"transcription","duration_ms":8400,"provider":"groq"}"#,
+        );
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, "F1"));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.repaired, 0);
+        assert_eq!(o.quarantined, 0, "failed repairs never latch the row");
+        assert_eq!(o.retryable_failures, 1);
+        let r = local.row(UUID_A).unwrap();
+        assert!(!r.is_latched());
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL);
+
+        drive.patch_fault_after = None;
+        let o2 = run_pass(&mut local, &mut drive);
+        assert_eq!(o2.repaired, 1);
+        assert_eq!(o2.retryable_failures, 0);
+        assert_eq!(local.row(UUID_A).unwrap().sync_state, SYNC_STATE_CLEAN);
+        assert!(wire::parse(drive.file("F1").bytes.as_bytes(), UUID_A).is_ok());
     }
 
     #[test]

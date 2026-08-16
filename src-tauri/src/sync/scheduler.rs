@@ -53,7 +53,10 @@ const SYNC_IDLE_POLL_MS: u64 = 3_600_000;
 
 const SYNC_CLIENT_SECRET_ENV: &str = "FLUENCE_SYNC_CLIENT_SECRET";
 const SYNC_OAUTH_CONFIG_FILE: &str = "sync-oauth.json";
-const SYNC_USERINFO_URL: &str = "https://www.googleapis.com/oauth2/v3/userinfo";
+/// Drive `about` endpoint: returns the signed-in user's email address under the
+/// `drive.file` scope alone (no `openid`/`email` scope needed for the account
+/// key used by sync).
+const SYNC_ABOUT_URL: &str = "https://www.googleapis.com/drive/v3/about?fields=user";
 const SYNC_SECRET_MISSING_MSG: &str = "sync client secret is not configured — set the \
     FLUENCE_SYNC_CLIENT_SECRET environment variable or create Fluence/sync-oauth.json \
     with {\"client_secret\": \"...\"}";
@@ -603,10 +606,11 @@ pub fn resolve_client_secret() -> Result<String, String> {
     resolve_client_secret_from(env.as_deref(), file.as_deref())
 }
 
-/// Extract the account key (email) from the Google userinfo response.
+/// Extract the account key (email) from the Drive `about` response
+/// (`{"user": {"emailAddress": "..."}}`).
 pub fn parse_account_email(json: &str) -> Option<String> {
     let value: serde_json::Value = serde_json::from_str(json).ok()?;
-    let email = value.get("email")?.as_str()?;
+    let email = value.get("user")?.get("emailAddress")?.as_str()?;
     if email.trim().is_empty() {
         None
     } else {
@@ -614,16 +618,21 @@ pub fn parse_account_email(json: &str) -> Option<String> {
     }
 }
 
-/// Open the authorization URL in the system browser. Windows: `cmd /c start`
-/// — no shell plugin, no new Tauri capability needed.
+/// The URL-open invocation for Windows (testable).
+#[cfg(windows)]
+fn windows_browser_command(url: &str) -> Vec<String> {
+    vec!["url.dll,FileProtocolHandler".to_string(), url.to_string()]
+}
+
+/// Open the authorization URL in the system browser. Windows: route the URL
+/// to `ShellExecuteEx` via `rundll32 url.dll,FileProtocolHandler` — no cmd
+/// involved, so the `&` query separators in the auth URL are passed through
+/// verbatim instead of being split into separate commands.
 fn open_browser(url: &str) -> std::io::Result<()> {
     #[cfg(windows)]
     {
-        std::process::Command::new("cmd")
-            .arg("/c")
-            .arg("start")
-            .arg("")
-            .arg(url)
+        std::process::Command::new("rundll32.exe")
+            .args(windows_browser_command(url))
             .spawn()
             .map(|_| ())
     }
@@ -735,11 +744,13 @@ pub fn sync_sign_out(
     Ok(scheduler.status())
 }
 
-/// Account key fetch: userinfo email with the memory-only access token. The
-/// response is parsed without ever logging transcript or token material.
+/// Account key fetch: Drive `about` email with the memory-only access token.
+/// The token carries only the `drive.file` scope, so the OpenID userinfo
+/// endpoint (which needs `openid`/`email`) cannot be used. The response is
+/// parsed without ever logging transcript or token material.
 async fn fetch_account_email(access_token: &str) -> Result<String, String> {
     let response = crate::http_client::CLIENT
-        .get(SYNC_USERINFO_URL)
+        .get(SYNC_ABOUT_URL)
         .bearer_auth(access_token)
         .send()
         .await
@@ -1029,19 +1040,38 @@ mod tests {
         assert!(url.contains("code_challenge=challenge-1"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("state=state-1"));
+        assert!(url.contains("prompt=select_account"));
+    }
+
+    #[test]
+    #[cfg(windows)]
+    fn open_browser_routes_the_url_to_the_shell_protocol_handler() {
+        // Regression: `cmd /c start "" <url>` split the auth URL at its `&`
+        // query separators (dropping client_id) and Rust's re-quoting of the
+        // embedded quotes surfaced as `\https://...`. The URL must go to
+        // rundll32's protocol handler verbatim, never through cmd.
+        let url =
+            "https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=x&scope=y";
+        assert_eq!(
+            windows_browser_command(url),
+            vec!["url.dll,FileProtocolHandler".to_string(), url.to_string()]
+        );
     }
 
     // -- account key parsing -------------------------------------------------
 
     #[test]
-    fn account_email_parses_from_userinfo() {
+    fn account_email_parses_from_drive_about() {
         assert_eq!(
-            parse_account_email(r#"{"email": "me@example.com", "name": "Me"}"#),
+            parse_account_email(r#"{"user": {"emailAddress": "me@example.com"}}"#),
             Some("me@example.com".to_string())
         );
         assert_eq!(parse_account_email("not json"), None);
         assert_eq!(parse_account_email(r#"{}"#), None);
-        assert_eq!(parse_account_email(r#"{"email": ""}"#), None);
+        assert_eq!(
+            parse_account_email(r#"{"user": {"emailAddress": ""}}"#),
+            None
+        );
     }
 
     // -- pass classification + panic safety (Phase 9 hardening) -------------

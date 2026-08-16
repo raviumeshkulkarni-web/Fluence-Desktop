@@ -87,7 +87,9 @@ pub fn pkce_s256(verifier: &str) -> String {
     base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(digest)
 }
 
-/// The authorization URL to open in the system browser.
+/// The authorization URL to open in the system browser. `prompt=select_account`
+/// forces the account chooser so users with multiple Google accounts pick the
+/// one they want instead of silently reusing the signed-in session.
 pub fn authorization_url(config: &OAuthConfig, state: &str, challenge: &str) -> String {
     let mut url = Url::parse(&config.authorization_endpoint).expect("valid endpoint");
     url.query_pairs_mut()
@@ -95,6 +97,7 @@ pub fn authorization_url(config: &OAuthConfig, state: &str, challenge: &str) -> 
         .append_pair("client_id", &config.client_id)
         .append_pair("redirect_uri", &config.redirect_uri)
         .append_pair("scope", &config.scope)
+        .append_pair("prompt", "select_account")
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("code_challenge_method", "S256");
@@ -408,6 +411,7 @@ mod tests {
         assert!(url.contains("code_challenge=challenge-1"));
         assert!(url.contains("code_challenge_method=S256"));
         assert!(url.contains("response_type=code"));
+        assert!(url.contains("prompt=select_account"));
     }
 
     #[test]

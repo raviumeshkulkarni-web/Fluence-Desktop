@@ -3,10 +3,11 @@
 // Implements the `DriveStore` trait against the Drive v3 API using the shared
 // reqwest client. Error mapping (§23):
 // - `401`                  -> `AuthRequired` (reauth)
-// - `403` drive.file scope -> `NotOurs` (skip this pass, never retry-bomb)
+// - `403` drive.file scope -> `NotOurs` (abort the pass — ABSENCE never runs
+//                            on an unconfirmed listing, never retry-bomb)
 // - `429` / 5xx / timeout  -> `Retryable` (scheduler backs off)
 // - fetch-404 during fetch -> `Ok(None)` (drop the file this pass)
-// - partial responses      -> treated as failures, re-fetch
+// - partial responses      -> `Rejected`, pass aborted before any mutation
 //
 // `Backoff` is the configurable exponential backoff used by the scheduler
 // between passes; it is a pure value type so its schedule is unit-testable.
@@ -18,6 +19,21 @@ pub const FOLDER_NAME: &str = "Fluence Transcribe";
 
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 const API_BASE: &str = "https://www.googleapis.com/drive/v3";
+/// Uploads (multipart create, media patch) must hit the upload host, not the
+/// metadata host (§23 / Phase 0 remediation).
+const UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
+
+/// URL for a multipart create against an upload base. Pure so the host and
+/// query are testable offline.
+pub fn create_upload_url(upload_base: &str) -> String {
+    format!("{upload_base}/files?uploadType=multipart&fields=id")
+}
+
+/// URL for a media patch against an upload base. Pure so the host is testable
+/// offline.
+pub fn update_media_url(upload_base: &str, file_id: &str) -> String {
+    format!("{upload_base}/files/{file_id}?uploadType=media")
+}
 
 /// Exponential backoff (base 1000ms, factor 2, cap 60000ms). No hardcoded
 /// quota figures — only these timing constants, per §23/§28.
@@ -70,10 +86,17 @@ pub struct GoogleDriveStore {
     client: reqwest::blocking::Client,
     access_token: String,
     folder_id: Option<String>,
+    /// Upload host for create/media writes (§23).
+    upload_base: String,
 }
 
 impl GoogleDriveStore {
     pub fn new(access_token: String) -> Self {
+        Self::with_upload_base(access_token, UPLOAD_BASE.to_string())
+    }
+
+    /// Test seam: point upload writes at an injectable upload base.
+    pub fn with_upload_base(access_token: String, upload_base: String) -> Self {
         Self {
             client: reqwest::blocking::Client::builder()
                 .connect_timeout(std::time::Duration::from_secs(8))
@@ -82,6 +105,7 @@ impl GoogleDriveStore {
                 .expect("Failed to build blocking Drive client"),
             access_token,
             folder_id: None,
+            upload_base,
         }
     }
 
@@ -94,13 +118,30 @@ impl GoogleDriveStore {
 
 /// Classify a Drive HTTP status into the engine's error kinds (§23).
 /// Timeouts and transport failures arrive as `Retryable` via the caller.
+///
+/// Strict: only 2xx is `Ok`. Every other 4xx (and 3xx) that is not already
+/// mapped to `AuthRequired`/`NotOurs`/`Retryable` is a permanent client
+/// rejection → `Rejected`: surfaced non-success, never backoff-escalated. Op
+/// level handling (e.g. fetch-404 → `Ok(None)`) happens BEFORE this call.
 pub fn classify_status(status: u16) -> Result<(), SyncError> {
     match status {
+        200..=299 => Ok(()),
         401 => Err(SyncError::AuthRequired),
         403 => Err(SyncError::NotOurs),
         429 => Err(SyncError::Retryable("rate limited".to_string())),
         500..=599 => Err(SyncError::Retryable(format!("Drive HTTP {status}"))),
-        _ => Ok(()),
+        _ => Err(SyncError::Rejected(format!("Drive HTTP {status}"))),
+    }
+}
+
+/// Classify an `update_content` status. A 404 means the remote file is
+/// already gone — the tombstone is already satisfied, an idempotent success
+/// (§23 / Phase 1 remediation). Every other status follows [`classify_status`].
+pub fn classify_update_status(status: u16) -> Result<(), SyncError> {
+    if status == 404 {
+        Ok(())
+    } else {
+        classify_status(status)
     }
 }
 
@@ -124,42 +165,52 @@ pub fn list_files_query(folder_id: &str, page_token: Option<&str>) -> String {
 }
 
 /// Extract `id` from a create/folder JSON response. Pure, testable offline.
+/// An empty id is rejected (Android parity, `optString("id").ifEmpty { null }`):
+/// committing `Some("")` would make the engine believe a remote file exists.
 pub fn parse_id_from_response(json: &str) -> Option<String> {
     serde_json::from_str::<serde_json::Value>(json)
         .ok()
         .and_then(|v| v.get("id")?.as_str().map(str::to_string))
+        .filter(|s| !s.is_empty())
 }
 
-/// Parse a `files(id,name,trashed)` listing page.
-pub fn parse_file_listing(json: &str) -> (Vec<FileMeta>, Option<String>) {
+/// Parse a `files(id,name,trashed)` listing page. A partial/corrupt page is a
+/// failure — never a silently-empty result — so the caller aborts the pass
+/// before any mutation (§23 / Phase 2).
+pub fn parse_file_listing(json: &str) -> Result<(Vec<FileMeta>, Option<String>), SyncError> {
     let value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
-        Err(_) => return (Vec::new(), None), // partial/corrupt response -> failed, re-fetch
+        Err(_) => return Err(SyncError::Rejected("corrupt listing response".to_string())),
     };
     let next = value
         .get("nextPageToken")
         .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
         .map(str::to_string);
     let mut files = Vec::new();
-    let mut partial = false;
     if let Some(list) = value.get("files").and_then(|v| v.as_array()) {
         for item in list {
             match (
                 item.get("id").and_then(|v| v.as_str()),
                 item.get("name").and_then(|v| v.as_str()),
             ) {
-                (Some(id), Some(name)) => files.push(FileMeta {
-                    file_id: id.to_string(),
-                    name: name.to_string(),
-                }),
-                _ => partial = true,
+                // Empty id/name are rejected (Android parity): a partial
+                // entry invalidates the page (§23 / Phase 2).
+                (Some(id), Some(name)) if !id.is_empty() && !name.is_empty() => {
+                    files.push(FileMeta {
+                        file_id: id.to_string(),
+                        name: name.to_string(),
+                    })
+                }
+                _ => return Err(SyncError::Rejected("partial listing response".to_string())),
             }
         }
+    } else {
+        return Err(SyncError::Rejected(
+            "listing response missing files".to_string(),
+        ));
     }
-    if partial {
-        return (Vec::new(), None); // partial response -> failed, re-fetch (§23)
-    }
-    (files, next)
+    Ok((files, next))
 }
 
 impl DriveStore for GoogleDriveStore {
@@ -188,7 +239,7 @@ impl DriveStore for GoogleDriveStore {
         let body = response
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let (folders, _) = parse_file_listing(&body);
+        let (folders, _) = parse_file_listing(&body)?;
         if let Some(first) = folders.first() {
             self.folder_id = Some(first.file_id.clone());
             return Ok(());
@@ -236,13 +287,15 @@ impl DriveStore for GoogleDriveStore {
                     }
                 })?;
             match classify_status(response.status().as_u16()) {
-                Err(SyncError::NotOurs) => return Ok(Vec::new()), // skip this pass
+                // 403 drive.file scope: abort the whole pass — ABSENCE must
+                // never run on an unconfirmed listing (§23 / Phase 2).
+                Err(SyncError::NotOurs) => return Err(SyncError::NotOurs),
                 other => other?,
             }
             let body = response
                 .text()
                 .map_err(|e| SyncError::Retryable(e.to_string()))?;
-            let (files, next) = parse_file_listing(&body);
+            let (files, next) = parse_file_listing(&body)?;
             all.extend(files);
             match next {
                 Some(token) => page_token = Some(token),
@@ -265,12 +318,12 @@ impl DriveStore for GoogleDriveStore {
                 }
             })?;
         let status = response.status();
+        if status == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None); // fetch-404 during VALIDATE: drop file from group this pass
+        }
         match classify_status(status.as_u16()) {
             Err(SyncError::NotOurs) => return Ok(None), // drop file this pass
             other => other?,
-        }
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None); // fetch-404 during VALIDATE: drop file from group this pass
         }
         response
             .bytes()
@@ -305,10 +358,7 @@ impl DriveStore for GoogleDriveStore {
             .part("metadata", part_meta)
             .part("file", part_bytes);
         let response = self
-            .bearer(
-                reqwest::Method::POST,
-                &format!("{API_BASE}/files?uploadType=multipart&fields=id"),
-            )
+            .bearer(reqwest::Method::POST, &create_upload_url(&self.upload_base))
             .multipart(form)
             .send()
             .map_err(|e| {
@@ -331,7 +381,7 @@ impl DriveStore for GoogleDriveStore {
         id: &str,
         record: &crate::sync::wire::WireRecord,
     ) -> Result<(), SyncError> {
-        let url = format!("{API_BASE}/files/{id}?uploadType=media");
+        let url = update_media_url(&self.upload_base, id);
         let response = self
             .bearer(reqwest::Method::PATCH, &url)
             .body(record.to_json())
@@ -343,8 +393,7 @@ impl DriveStore for GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_status(response.status().as_u16())?;
-        Ok(())
+        classify_update_status(response.status().as_u16())
     }
 }
 
@@ -385,10 +434,54 @@ mod tests {
         assert!(matches!(classify_status(500), Err(SyncError::Retryable(_))));
         assert!(matches!(classify_status(502), Err(SyncError::Retryable(_))));
         assert!(classify_status(200).is_ok());
+        assert!(classify_status(204).is_ok(), "any 2xx is success");
+        assert!(classify_status(304).is_err(), "3xx is never treated as OK");
         assert!(
-            classify_status(404).is_ok(),
-            "404 is op-level, not transport"
+            matches!(classify_status(304), Err(SyncError::Rejected(_))),
+            "3xx -> Rejected"
         );
+        assert!(
+            matches!(classify_status(400), Err(SyncError::Rejected(_))),
+            "400 is a permanent client rejection -> Rejected"
+        );
+        assert!(
+            matches!(classify_status(404), Err(SyncError::Rejected(_))),
+            "transport-level 404 -> Rejected (fetch-404 is handled op-level)"
+        );
+    }
+
+    #[test]
+    fn upload_urls_hit_the_upload_host_not_metadata() {
+        let base = "https://example.test/upload/drive/v3";
+        assert_eq!(
+            create_upload_url(base),
+            "https://example.test/upload/drive/v3/files?uploadType=multipart&fields=id"
+        );
+        assert_eq!(
+            update_media_url(base, "file-9"),
+            "https://example.test/upload/drive/v3/files/file-9?uploadType=media"
+        );
+        // The production default keeps Google's upload host.
+        assert_eq!(
+            create_upload_url(UPLOAD_BASE),
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id"
+        );
+    }
+
+    #[test]
+    fn update_status_404_is_idempotent_success() {
+        // A tombstone PATCH that 404s means the remote file is already gone:
+        // the tombstone is satisfied — never retried, never rejected.
+        assert!(classify_update_status(404).is_ok(), "already gone -> Ok");
+        assert!(classify_update_status(200).is_ok());
+        assert!(
+            matches!(classify_update_status(400), Err(SyncError::Rejected(_))),
+            "other 4xx still rejected"
+        );
+        assert!(matches!(
+            classify_update_status(500),
+            Err(SyncError::Retryable(_))
+        ));
     }
 
     #[test]
@@ -407,32 +500,43 @@ mod tests {
     fn parse_file_listing_extracts_files_and_page_token() {
         let (files, next) = parse_file_listing(
             r#"{"files":[{"id":"a","name":"a.json","trashed":false},{"id":"b","name":"b.json","trashed":true}],"nextPageToken":"tok"}"#,
-        );
+        )
+        .expect("valid listing");
         assert_eq!(files.len(), 2);
         assert_eq!(files[0].file_id, "a");
         assert_eq!(files[0].name, "a.json");
         assert_eq!(next.as_deref(), Some("tok"));
 
-        let (files, next) = parse_file_listing(r#"{"files":[]}"#);
+        let (files, next) = parse_file_listing(r#"{"files":[]}"#).expect("valid listing");
         assert!(files.is_empty());
         assert!(next.is_none());
     }
 
     #[test]
     fn parse_file_listing_partial_response_is_a_failure() {
-        let (files, next) = parse_file_listing(r#"{"files":[{"id":"a"}]}"#); // name missing
-        assert!(files.is_empty(), "partial response -> failed, re-fetch");
-        assert!(next.is_none());
-        let (files, next) =
-            parse_file_listing(r#"{"files":[{"id":"a","name":"a.json"},{"name":"b"}]}"#);
-        assert!(files.is_empty(), "one malformed entry invalidates the page");
-        assert!(next.is_none());
-        let (files, next) = parse_file_listing("not json");
+        // A partial/corrupt page is an error, never a silent empty result:
+        // the pass must abort before mutation (§23 / Phase 2).
+        let err = parse_file_listing(r#"{"files":[{"id":"a"}]}"#) // name missing
+            .expect_err("partial response is a failure");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let err = parse_file_listing(r#"{"files":[{"id":"a","name":"a.json"},{"name":"b"}]}"#)
+            .expect_err("one malformed entry invalidates the page");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let err = parse_file_listing("not json").expect_err("corrupt response is a failure");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let err = parse_file_listing(r#"{"nextPageToken":"tok"}"#)
+            .expect_err("missing files array is a failure");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let err = parse_file_listing(r#"{"files":[{"id":"","name":"a.json"}]}"#)
+            .expect_err("empty id is a failure");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let err = parse_file_listing(r#"{"files":[{"id":"a","name":""}]}"#)
+            .expect_err("empty name is a failure");
+        assert!(matches!(err, SyncError::Rejected(_)));
+        let (files, next) = parse_file_listing(r#"{"files":[],"nextPageToken":""}"#)
+            .expect("empty token is treated as no more pages");
         assert!(files.is_empty());
-        assert!(
-            next.is_none(),
-            "partial/corrupt response -> failed, re-fetch"
-        );
+        assert!(next.is_none(), "empty page token must not re-fetch");
     }
 
     #[test]
@@ -447,5 +551,9 @@ mod tests {
         );
         assert!(parse_id_from_response("garbage").is_none());
         assert!(parse_id_from_response(r#"{"error":{"code":403}}"#).is_none());
+        assert!(
+            parse_id_from_response(r#"{"id":""}"#).is_none(),
+            "empty id is not a confirmed create"
+        );
     }
 }

@@ -211,6 +211,10 @@ pub struct SyncOutcome {
     pub quarantined: usize,
     pub hard_deleted: usize,
     pub retryable_failures: usize,
+    /// Permanent client rejections (e.g. HTTP 400/4xx outside op-level
+    /// handling). Counted in PUSH; surfaced non-success, never backoff-
+    /// escalated (§23 / Phase 0 remediation).
+    pub rejected_failures: usize,
 }
 
 #[derive(Debug)]
@@ -222,12 +226,18 @@ pub enum SyncError {
     /// 403 under the `drive.file` scope — file/folder not ours; skip, never
     /// retry-bomb (§23).
     NotOurs,
+    /// A permanent client rejection (e.g. HTTP 400/404 outside op-level
+    /// handling, or a malformed listing page). Surfaced non-success, never
+    /// backoff-escalated (§23 / Phase 0 remediation).
+    Rejected(String),
 }
 
 impl std::fmt::Display for SyncError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            SyncError::Retryable(m) | SyncError::Fatal(m) => write!(f, "{m}"),
+            SyncError::Retryable(m) | SyncError::Fatal(m) | SyncError::Rejected(m) => {
+                write!(f, "{m}")
+            }
             SyncError::AuthRequired => write!(f, "authentication required"),
             SyncError::NotOurs => write!(f, "file not owned by this app (403 drive.file)"),
         }
@@ -505,6 +515,9 @@ pub fn run(
                     Err(e) => match e {
                         // Retryable: row unchanged, counted, pass continues (§7).
                         SyncError::Retryable(_) => outcome.retryable_failures += 1,
+                        // Rejected: permanent client rejection, counted; the
+                        // pass continues and surfaces non-success (§23).
+                        SyncError::Rejected(_) => outcome.rejected_failures += 1,
                         // Fatal/AuthRequired/NotOurs: abort the pass, surface (§23).
                         other => return Err(other),
                     },
@@ -521,6 +534,9 @@ pub fn run(
                     Err(e) => match e {
                         // Retryable: row unchanged, counted, pass continues (§7).
                         SyncError::Retryable(_) => outcome.retryable_failures += 1,
+                        // Rejected: permanent client rejection, counted; the
+                        // pass continues and surfaces non-success (§23).
+                        SyncError::Rejected(_) => outcome.rejected_failures += 1,
                         // Fatal/AuthRequired/NotOurs: abort the pass, surface (§23).
                         other => return Err(other),
                     },
@@ -535,6 +551,9 @@ pub fn run(
                     Err(e) => match e {
                         // Retryable: row unchanged, counted, pass continues (§7).
                         SyncError::Retryable(_) => outcome.retryable_failures += 1,
+                        // Rejected: permanent client rejection, counted; the
+                        // pass continues and surfaces non-success (§23).
+                        SyncError::Rejected(_) => outcome.rejected_failures += 1,
                         // Fatal/AuthRequired/NotOurs: abort the pass, surface (§23).
                         other => return Err(other),
                     },
@@ -1123,6 +1142,7 @@ mod tests {
         NotOurs,
         AuthRequired,
         Fatal,
+        Rejected,
     }
 
     impl FaultError {
@@ -1132,6 +1152,7 @@ mod tests {
                 FaultError::NotOurs => SyncError::NotOurs,
                 FaultError::AuthRequired => SyncError::AuthRequired,
                 FaultError::Fatal => SyncError::Fatal("injected fatal".to_string()),
+                FaultError::Rejected => SyncError::Rejected("injected 4xx".to_string()),
             }
         }
     }
@@ -1188,6 +1209,10 @@ mod tests {
         patch_fault_after: Option<usize>,
         patch_ok: usize,
         hide_once: Option<String>,
+        /// Return `Err(NotOurs)` on every list call once `list_calls >= n`
+        /// (simulates a 403 that appears only on a later listing, e.g. the
+        /// ABSENCE confirmation re-list). Phase 2: must abort, never reupload.
+        list_fail_from: Option<usize>,
         missing_content: Vec<String>,
         /// Injected faults, consumed in order per seam (Phase 9).
         faults: Vec<Fault>,
@@ -1208,6 +1233,7 @@ mod tests {
                 patch_fault_after: None,
                 patch_ok: 0,
                 hide_once: None,
+                list_fail_from: None,
                 missing_content: vec![],
                 faults: vec![],
                 panic_after_create: false,
@@ -1303,6 +1329,11 @@ mod tests {
         fn list_files(&mut self) -> Result<Vec<FileMeta>, SyncError> {
             self.consume(FaultSeam::List)?;
             self.list_calls += 1;
+            if let Some(from) = self.list_fail_from {
+                if self.list_calls >= from {
+                    return Err(SyncError::NotOurs);
+                }
+            }
             let hidden = self.hide_once.take();
             let mut out: Vec<FileMeta> = self
                 .files
@@ -2435,6 +2466,52 @@ mod tests {
     }
 
     #[test]
+    fn http_4xx_on_create_is_rejected_counted_not_aborted() {
+        // A permanent 4xx on an upload is NOT a pass abort and is NOT retried
+        // inside the pass: counted, the row is left unchanged, the pass
+        // continues and surfaces non-success (§23).
+        let mut drive = FakeDrive::default();
+        drive.faults.push(Fault::Create(FaultError::Rejected));
+        let mut local = FakeLocalStore::default();
+        local.import(live_row(UUID_A));
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.rejected_failures, 1, "the permanent rejection is counted");
+        assert_eq!(o.retryable_failures, 0, "Rejected is not backoff-escalated");
+        assert_eq!(o.created, 0);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_LOCAL, "row unchanged");
+        assert!(r.server_file_id.is_none(), "no confirmed create -> no sfi");
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.rejected_failures, 0, "the fault was consumed");
+        assert_eq!(o.created, 1, "the next pass uploads normally");
+        assert_eq!(local.row(UUID_A).unwrap().sync_state, SYNC_STATE_CLEAN);
+    }
+
+    #[test]
+    fn http_4xx_on_patch_is_rejected_counted_not_aborted() {
+        // A permanent 4xx on a tombstone PATCH is counted; the row keeps its
+        // tombstone + sfi and the pass completes instead of aborting.
+        let mut drive = FakeDrive::default();
+        let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        let mut local = FakeLocalStore::default();
+        local.import(tombstone_row(UUID_A).with_sfi(&f1));
+
+        drive.faults.push(Fault::Patch(FaultError::Rejected));
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.rejected_failures, 1, "the permanent rejection is counted");
+        assert_eq!(o.patches, 0);
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_DIRTY, "tombstone stays dirty");
+        assert_eq!(r.server_file_id.as_deref(), Some(f1.as_str()), "sfi sticky");
+
+        let o = run_pass(&mut local, &mut drive);
+        assert_eq!(o.patches, 1, "the next pass pushes the tombstone");
+        assert_eq!(o.rejected_failures, 0);
+    }
+
+    #[test]
     fn http_429_on_list_is_retryable_and_nothing_mutated() {
         let mut drive = FakeDrive::default();
         drive.faults.push(Fault::List(FaultError::Retryable));
@@ -2455,6 +2532,53 @@ mod tests {
         assert_eq!(o.created, 1);
         assert_eq!(local.row(UUID_A).unwrap().sync_state, SYNC_STATE_CLEAN);
         assert_eq!(run_pass(&mut local, &mut drive), SyncOutcome::default());
+    }
+
+    #[test]
+    fn http_403_on_list_is_notours_aborts_before_absence() {
+        // A 403 (drive.file scope) on the FIRST listing must abort the whole
+        // pass — ABSENCE must never run on an unconfirmed listing, and a 403
+        // is not a "skip this pass" (Phase 2 / §23).
+        let mut drive = FakeDrive::default();
+        let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.faults.push(Fault::List(FaultError::NotOurs));
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, &f1)).unwrap();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::NotOurs), "{err:?}");
+        assert!(
+            !drive.ops.iter().any(|op| op.starts_with("get:")),
+            "aborts on the first list, before any fetch"
+        );
+        assert_eq!(drive.files.len(), 1, "remote file untouched");
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(
+            r.sync_state, SYNC_STATE_CLEAN,
+            "no reupload on a failed list"
+        );
+        assert_eq!(r.server_file_id.as_deref(), Some(f1.as_str()), "sfi sticky");
+    }
+
+    #[test]
+    fn http_403_on_relist_aborts_before_reupload() {
+        // The first listing is fine, but the ABSENCE confirmation re-list hits
+        // a 403: the pass must abort — never re-upload on an unconfirmed
+        // listing (Phase 2 / §23).
+        let mut drive = FakeDrive::default();
+        let f1 = drive.add_file(&format!("{UUID_A}.json"), &wire_a());
+        drive.hide_once = Some(f1.clone()); // file absent from page 1
+        drive.list_fail_from = Some(2); // page 2 (the re-list) fails 403
+        let mut local = FakeLocalStore::default();
+        local.import(live_row_clean(UUID_A, &f1)).unwrap();
+
+        let err = run_pass_err(&mut local, &mut drive);
+        assert!(matches!(err, SyncError::NotOurs), "{err:?}");
+        assert_eq!(drive.list_calls, 2, "re-list attempted and failed");
+        assert_eq!(drive.files.len(), 1, "no reupload happened");
+        let r = local.row(UUID_A).unwrap();
+        assert_eq!(r.sync_state, SYNC_STATE_CLEAN);
+        assert_eq!(r.server_file_id.as_deref(), Some(f1.as_str()), "sfi sticky");
     }
 
     #[test]

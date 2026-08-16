@@ -82,6 +82,10 @@ pub enum PassOutcomeKind {
     Success,
     /// Pass ran but reported retryable failures, or ended on a retryable error.
     Retryable,
+    /// Permanent client rejections were surfaced — non-success, but unlike
+    /// `Retryable` the backoff is NOT escalated: the next attempt runs at the
+    /// cadence (§23 / Phase 0 remediation).
+    Rejected,
     /// Fatal or NotOurs error — automatic scheduling stops until a command.
     Fatal,
     /// 401 — the refresh token is gone; the user must sign in again.
@@ -228,6 +232,15 @@ impl SchedulerCore {
                 self.backoff_active = true;
                 self.last_error = error;
             }
+            PassOutcomeKind::Rejected => {
+                // Permanent rejections must NOT backoff-escalate: reset the
+                // backoff and let the next attempt run at the cadence. The
+                // pass is surfaced non-success (last_sync_at not advanced).
+                self.backoff.reset();
+                self.backoff_active = false;
+                self.retry_delay_ms = SYNC_BACKOFF_BASE_MS;
+                self.last_error = error;
+            }
             PassOutcomeKind::Fatal => {
                 self.backoff.reset();
                 self.backoff_active = false;
@@ -369,12 +382,20 @@ fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Op
                 outcome.retryable_failures
             )),
         ),
+        Ok(outcome) if outcome.rejected_failures > 0 => (
+            PassOutcomeKind::Rejected,
+            Some(format!(
+                "{} operation(s) permanently rejected this pass",
+                outcome.rejected_failures
+            )),
+        ),
         Ok(_) => (PassOutcomeKind::Success, None),
         Err(SyncError::AuthRequired) => (
             PassOutcomeKind::AuthRequired,
             Some("authentication required — sign in again".to_string()),
         ),
         Err(SyncError::Retryable(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
+        Err(SyncError::Rejected(e)) => (PassOutcomeKind::Rejected, Some(e.to_string())),
         Err(SyncError::Fatal(e)) => (PassOutcomeKind::Fatal, Some(e.to_string())),
         Err(SyncError::NotOurs) => (PassOutcomeKind::Fatal, Some(SyncError::NotOurs.to_string())),
     }
@@ -494,6 +515,7 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         outcome.quarantined += o.quarantined;
         outcome.hard_deleted += o.hard_deleted;
         outcome.retryable_failures += o.retryable_failures;
+        outcome.rejected_failures += o.rejected_failures;
     }
 
     // §30.3: mirror the synced snippets_enabled row into the live toggle.
@@ -923,6 +945,36 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rejected_pass_is_non_success_without_backoff_escalation() {
+        let mut c = core();
+        assert!(c.take_run(NOW));
+        // Warm the backoff up so the reset is observable.
+        c.finish(PassOutcomeKind::Retryable, Some("boom".into()), NOW);
+        c.finish(PassOutcomeKind::Retryable, Some("boom".into()), NOW);
+        assert!(c.backoff_active);
+        assert_eq!(c.retry_delay_ms, 2_000, "backoff escalated");
+
+        assert!(c.take_run(NOW + 3_000));
+        c.finish(
+            PassOutcomeKind::Rejected,
+            Some("4 permanently rejected".into()),
+            NOW + 3_100,
+        );
+        assert!(!c.backoff_active, "Rejected resets the backoff");
+        assert_eq!(c.retry_delay_ms, SYNC_BACKOFF_BASE_MS);
+        assert!(
+            c.last_sync_at.is_none(),
+            "a rejected pass is not recorded as synced"
+        );
+        assert!(c.last_error.is_some(), "the rejection is surfaced");
+        assert!(
+            !c.take_run(NOW + 3_200),
+            "no immediate rerun (cadence, not backoff, gates the next attempt)"
+        );
+        assert!(c.take_run(NOW + SYNC_CADENCE_MS as i64 + 3_000));
+    }
+
     // -- client secret resolution -------------------------------------------
 
     #[test]
@@ -1010,6 +1062,16 @@ mod tests {
         let (kind, err) = classify_pass(Ok(ok_outcome(3)));
         assert_eq!(kind, PassOutcomeKind::Retryable);
         assert!(err.unwrap().contains("3 retryable"));
+
+        let (kind, err) = classify_pass(Ok(SyncOutcome {
+            rejected_failures: 2,
+            ..SyncOutcome::default()
+        }));
+        assert_eq!(kind, PassOutcomeKind::Rejected);
+        assert!(err.unwrap().contains("2 operation(s) permanently rejected"));
+
+        let (kind, _) = classify_pass(Err(SyncError::Rejected("permanent 400".into())));
+        assert_eq!(kind, PassOutcomeKind::Rejected);
 
         assert_eq!(
             classify_pass(Err(SyncError::AuthRequired)),

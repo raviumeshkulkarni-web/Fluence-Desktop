@@ -202,7 +202,35 @@ pub fn load_settings() -> Result<AppSettings> {
         }
         Err(e) => {
             log::error!("Failed to deserialize settings JSON: {:?}", e);
-            Err(e.into())
+            // Atomic recovery: rename corrupt file and return fresh defaults
+            let corrupt_path = path.with_extension("json.corrupt.json");
+            // Ensure unique name if .corrupt already exists
+            let mut target = corrupt_path.clone();
+            let mut counter = 1;
+            while target.exists() {
+                target = path.with_extension(format!("json.corrupt.{}.json", counter));
+                counter += 1;
+            }
+            if let Err(rename_err) = fs::rename(&path, &target) {
+                log::error!("Failed to rename corrupt settings file: {}", rename_err);
+                // Fallback: try copy+delete
+                if fs::copy(&path, &target).is_ok() {
+                    let _ = fs::remove_file(&path);
+                }
+            }
+            log::warn!(
+                "Corrupted settings file renamed to {:?}. Creating fresh defaults.",
+                target
+            );
+            let settings = AppSettings::default();
+            // Preserve first_run=false if the corrupt file existed (was not a fresh install)
+            // so we do not reshown wizard after a mid-write corruption.
+            // Note: we cannot parse the corrupt file, so we conservatively keep first_run false
+            // to avoid disrupting returning users; fresh installs have no file at all.
+            let mut repaired = settings;
+            repaired.first_run = false;
+            let _ = save_settings(&repaired);
+            Ok(repaired)
         }
     }
 }
@@ -213,7 +241,13 @@ pub fn save_settings(settings: &AppSettings) -> Result<()> {
         fs::create_dir_all(parent)?;
     }
     let data = serde_json::to_string_pretty(settings)?;
-    fs::write(&path, data)?;
+    // Atomic write: tmp + sync_all + rename (matches suggestion.rs + ducking.rs)
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &data)?;
+    if let Ok(f) = fs::File::open(&tmp_path) {
+        let _ = f.sync_all();
+    }
+    fs::rename(&tmp_path, &path)?;
     Ok(())
 }
 

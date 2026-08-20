@@ -98,6 +98,13 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         if samples.is_empty() {
             None
         } else {
+            if samples.len() > crate::transcribe::MAX_OFFLINE_SAMPLES {
+                return Err(format!(
+                    "Recording too long ({} samples, {:.1} minutes). Maximum is 10 minutes for offline mode. Please split recordings.",
+                    samples.len(),
+                    samples.len() as f64 / 16_000.0 / 60.0
+                ));
+            }
             let engine: crate::offline_transcribe::OfflineEngine = settings
                 .offline_engine
                 .parse()
@@ -110,6 +117,13 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         if mp3_bytes.is_empty() {
             None
         } else {
+            if mp3_bytes.len() > crate::transcribe::MAX_AUDIO_BYTES {
+                return Err(format!(
+                    "Recording too long ({} bytes, {:.1} MB). Maximum is ~22 MB (~10 minutes at 64 kbps). Please split recordings.",
+                    mp3_bytes.len(),
+                    mp3_bytes.len() as f64 / 1_000_000.0
+                ));
+            }
             Some(PendingAudio::Online { mp3_bytes })
         }
     };

@@ -3,6 +3,7 @@ node_modules/
 
 # Local Rust toolchain (installed project-locally, not system-wide)
 .rust/
+.cargo/
 
 # Local MSVC Build Tools + Windows SDK (installed project-locally)
 .msvc/

@@ -37,6 +37,23 @@ fn default_filename() -> String {
 /// Maximum base64-encoded audio size (~25MB decoded, ~5 minutes at 16kHz mono)
 const MAX_AUDIO_B64_LEN: usize = 35_000_000;
 
+/// Maximum raw MP3/FLAC/WAV payload for online providers (25MB provider limit, leave margin)
+pub const MAX_AUDIO_BYTES: usize = 22_000_000;
+
+/// Maximum offline sample count (10 minutes at 16kHz mono = 9.6M samples)
+pub const MAX_OFFLINE_SAMPLES: usize = 10 * 60 * 16_000;
+
+fn check_audio_bytes_len(len: usize) -> Result<(), String> {
+    if len > MAX_AUDIO_BYTES {
+        return Err(format!(
+            "Recording too long ({} bytes, {:.1} MB). Maximum is ~22 MB (~10 minutes at 64 kbps). Please split recordings.",
+            len,
+            len as f64 / 1_000_000.0
+        ));
+    }
+    Ok(())
+}
+
 /// Transcribe audio via an OpenAI-compatible API.
 #[tauri::command]
 pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
@@ -83,6 +100,7 @@ pub async fn transcribe_audio_bytes(
     language: Option<&str>,
     prompt: Option<&str>,
 ) -> Result<String, String> {
+    check_audio_bytes_len(audio_bytes.len())?;
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
@@ -203,6 +221,7 @@ pub async fn transcribe_mp3_bytes(
     mp3_bytes: Vec<u8>,
     language: Option<&str>,
 ) -> Result<String, String> {
+    check_audio_bytes_len(mp3_bytes.len())?;
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
@@ -299,6 +318,7 @@ pub async fn transcribe_mp3_bytes_with_raw(
     mp3_bytes: &[u8],
     language: Option<&str>,
 ) -> Result<TranscriptionWithRaw, String> {
+    check_audio_bytes_len(mp3_bytes.len())?;
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");

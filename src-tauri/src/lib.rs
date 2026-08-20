@@ -25,3 +25,6 @@ pub mod suggestion;
 pub mod transcribe;
 pub mod tray;
 pub mod workflow;
+
+#[cfg(test)]
+pub mod audit_evidence;

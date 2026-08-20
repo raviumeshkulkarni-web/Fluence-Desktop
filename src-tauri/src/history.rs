@@ -205,21 +205,19 @@ pub fn clear_history(app: tauri::AppHandle) -> Result<(), String> {
 #[tauri::command]
 pub fn get_history_stats() -> Result<serde_json::Value, String> {
     with_db(|conn| {
-        let total: i64 = conn
-            .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
-            .unwrap_or(0);
+        let total: i64 = conn.query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))?;
         let total_chars: i64 = conn
             .query_row("SELECT COALESCE(SUM(char_count),0) FROM history", [], |r| {
                 r.get(0)
             })
-            .unwrap_or(0);
+            .map_err(|e| anyhow::anyhow!(e))?;
         let total_duration_ms: i64 = conn
             .query_row(
                 "SELECT COALESCE(SUM(duration_ms),0) FROM history",
                 [],
                 |r| r.get(0),
             )
-            .unwrap_or(0);
+            .map_err(|e| anyhow::anyhow!(e))?;
         Ok(serde_json::json!({
             "total_entries": total,
             "total_chars": total_chars,
@@ -235,8 +233,8 @@ pub fn get_weekly_activity(start_of_week_utc: String) -> Result<Vec<String>, Str
         let mut stmt = conn.prepare("SELECT timestamp FROM history WHERE timestamp >= ?1")?;
         let rows = stmt.query_map(params![start_of_week_utc], |r| r.get::<_, String>(0))?;
         let mut timestamps = Vec::new();
-        for ts in rows.flatten() {
-            timestamps.push(ts);
+        for ts in rows {
+            timestamps.push(ts.map_err(|e| anyhow::anyhow!(e))?);
         }
         Ok(timestamps)
     })

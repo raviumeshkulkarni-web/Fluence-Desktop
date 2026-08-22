@@ -164,8 +164,7 @@ fn migrate_v0_to_v1(conn: &Connection) -> Result<()> {
     };
     for (id, ts) in rows {
         let ms = chrono::DateTime::parse_from_rfc3339(&ts)
-            .map(|dt| dt.timestamp_millis())
-            .unwrap_or(0);
+            .map_or(0, |dt| dt.timestamp_millis());
         tx.execute(
             "UPDATE history SET timestamp_ms = ?1 WHERE id = ?2",
             params![ms, id],
@@ -191,8 +190,7 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
     };
     for (id, ts) in rows {
         let ms = chrono::DateTime::parse_from_rfc3339(&ts)
-            .map(|dt| dt.timestamp_millis())
-            .unwrap_or(0);
+            .map_or(0, |dt| dt.timestamp_millis());
         tx.execute(
             "UPDATE history SET timestamp_ms = ?1 WHERE id = ?2",
             params![ms, id],

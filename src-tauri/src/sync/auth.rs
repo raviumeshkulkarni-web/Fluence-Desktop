@@ -35,7 +35,7 @@ impl OAuthConfig {
             authorization_endpoint: "https://accounts.google.com/o/oauth2/v2/auth".to_string(),
             token_endpoint: "https://oauth2.googleapis.com/token".to_string(),
             redirect_uri: format!("http://localhost:{redirect_port}/"),
-            scope: "https://www.googleapis.com/auth/drive.file".to_string(),
+            scope: "https://www.googleapis.com/auth/drive.appdata".to_string(),
         }
     }
 }
@@ -361,18 +361,9 @@ impl AuthSession {
     }
 }
 
-impl crate::sync::engine::TokenProvider for AuthSession {
-    fn has_valid_token(&mut self) -> bool {
-        // A stored refresh token may still authorize a pass that refreshes on
-        // the first 401 (§23); only a full sign-out skips the pass.
-        self.has_valid_access_token() || self.refresh_token.is_some()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sync::engine::TokenProvider;
 
     fn test_config() -> OAuthConfig {
         OAuthConfig::google("test-client".to_string(), 17251)
@@ -406,7 +397,7 @@ mod tests {
         assert!(url.starts_with("https://accounts.google.com/o/oauth2/v2/auth?"));
         assert!(url.contains("client_id=test-client"));
         assert!(url.contains("redirect_uri=http%3A%2F%2Flocalhost%3A17251%2F"));
-        assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.file"));
+        assert!(url.contains("scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fdrive.appdata"));
         assert!(url.contains("state=state-1"));
         assert!(url.contains("code_challenge=challenge-1"));
         assert!(url.contains("code_challenge_method=S256"));
@@ -499,7 +490,7 @@ mod tests {
     #[test]
     fn google_config_uses_drive_file_scope() {
         let c = test_config();
-        assert_eq!(c.scope, "https://www.googleapis.com/auth/drive.file");
+        assert_eq!(c.scope, "https://www.googleapis.com/auth/drive.appdata");
         assert_eq!(
             c.authorization_endpoint,
             "https://accounts.google.com/o/oauth2/v2/auth"
@@ -513,7 +504,7 @@ mod tests {
     fn session_token_lifecycle_and_expiry() {
         let mut session = AuthSession::new(test_config());
         assert!(!session.has_valid_access_token());
-        assert!(!session.has_valid_token(), "no tokens at all -> skip pass");
+        assert!(!session.has_valid_access_token(), "no tokens at all");
 
         session.store_tokens(&TokenResponse {
             access_token: "at-1".to_string(),
@@ -538,13 +529,10 @@ mod tests {
         // all) skips it. The Credential Manager round-trip is OS integration,
         // not unit-testable here.
         session.refresh_token = None;
-        assert!(
-            session.has_valid_token(),
-            "valid access token without refresh token still authorizes the pass"
-        );
+        assert!(session.has_valid_access_token(), "valid access token still authorizes");
         session.access_token = None;
         session.expires_at = None;
-        assert!(!session.has_valid_token(), "no tokens at all -> skip pass");
+        assert!(!session.has_valid_access_token(), "no tokens at all");
     }
 
     #[test]

@@ -1,9 +1,12 @@
-// Fluence sync — wire codec, pure reconciliation engine, §30 record-kind
-// stores, and the Phase 7 global scheduler (spec §4, §7, §21, §23, §24, §30).
+// Fluence sync — frozen v1.2 (dictionary, snippets, stats, settings).
+// Transcription history is platform-local and NEVER synchronizes.
 pub mod auth;
+pub mod clock;
+pub mod domain;
 pub mod drive;
-pub mod engine;
-pub mod quarantine;
+pub mod error;
+pub mod frozen;
+pub mod merge;
+pub mod metadata;
 pub mod scheduler;
-pub mod settings_store;
-pub mod wire;
+pub mod stores;

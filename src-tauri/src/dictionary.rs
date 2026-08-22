@@ -13,33 +13,62 @@ fn default_entry_kind() -> String {
     "correction".to_string()
 }
 
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DictionaryEntry {
     pub id: String,
     pub spoken: String,
     pub corrected: String,
     /// Entry type: "correction" (word/phrase fix) or "expansion"
-    /// (spoken trigger expanding to longer replacement text).
-    /// Expansion entries are applied AFTER transcription and must
-    /// NEVER enter the STT recognition prompt.
     #[serde(default = "default_entry_kind")]
     pub kind: String,
-    // §30 sync metadata. `Option` + serde defaults keep legacy JSON loadable.
-    // `created_at: None` marks entries created before sync; the sync store
-    // backfills them on first mapping (cross-device timestamps then differ —
-    // documented edge, §30.2).
+    // Frozen v1.1 sync metadata
     #[serde(default)]
     pub created_at: Option<i64>,
     #[serde(default)]
     pub deleted_at: Option<i64>,
     #[serde(default)]
+    pub updated_at: Option<i64>,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    #[serde(default = "default_true")]
+    pub is_enabled: bool,
+    #[serde(default)]
+    pub dirty: bool,
+    #[serde(default)]
+    pub ever_pushed: bool,
+    #[serde(default)]
+    pub sync_account: Option<String>,
+    // Legacy fields for migration (kept for load compatibility, ignored after migration)
+    #[serde(default)]
     pub sync_state: Option<String>,
     #[serde(default)]
     pub server_file_id: Option<String>,
     #[serde(default)]
-    pub sync_account: Option<String>,
-    #[serde(default)]
     pub quarantine_reason: Option<String>,
+}
+
+fn default_true() -> bool { true }
+
+impl Default for DictionaryEntry {
+    fn default() -> Self {
+        Self {
+            id: String::new(),
+            spoken: String::new(),
+            corrected: String::new(),
+            kind: default_entry_kind(),
+            created_at: None,
+            deleted_at: None,
+            updated_at: None,
+            device_id: None,
+            is_enabled: true,
+            dirty: false,
+            ever_pushed: false,
+            sync_account: None,
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -57,7 +86,7 @@ fn dictionary_path() -> PathBuf {
     path
 }
 
-fn load_dictionary_internal() -> Result<Vec<DictionaryEntry>> {
+pub(crate) fn load_dictionary_internal() -> Result<Vec<DictionaryEntry>> {
     let path = dictionary_path();
     if !path.exists() {
         return Ok(Vec::new());
@@ -67,13 +96,22 @@ fn load_dictionary_internal() -> Result<Vec<DictionaryEntry>> {
     Ok(entries)
 }
 
-fn save_dictionary_internal(entries: &[DictionaryEntry]) -> Result<()> {
+pub(crate) fn save_dictionary_internal(entries: &[DictionaryEntry]) -> Result<()> {
     let path = dictionary_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;
     }
     let data = serde_json::to_string_pretty(entries)?;
-    fs::write(&path, data)?;
+    // Atomic write: tmp + sync_all + rename (prevents half-written file on power loss)
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &data)?;
+    if let Ok(f) = fs::File::open(&tmp_path) {
+        let _ = f.sync_all();
+    }
+    fs::rename(&tmp_path, &path)?;
+    if let Ok(f) = fs::File::open(&path) {
+        let _ = f.sync_all();
+    }
     Ok(())
 }
 
@@ -108,7 +146,7 @@ pub fn apply_corrections(text: &str) -> String {
             let loaded: Vec<DictionaryEntry> = load_dictionary_internal()
                 .unwrap_or_default()
                 .into_iter()
-                .filter(|e| e.deleted_at.is_none()) // §30.2: deleted entries never apply
+                .filter(|e| e.deleted_at.is_none() && e.is_enabled) // deleted never apply, disabled never apply
                 .collect();
             let cached = cache_entries(loaded);
             let mut cache2 = DICTIONARY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -229,27 +267,41 @@ pub fn add_dictionary_entry(
     kind: Option<String>,
 ) -> Result<DictionaryEntry, String> {
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
-    let mut entries = live_entries(load_dictionary_internal().map_err(|e| e.to_string())?);
-    if entries_already_have(&entries, &spoken, &corrected) {
+    let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    // Frozen v1.1: businessKey = lower(trim(spoken)) must be unique among live+disabled (non-deleted)
+    let bk = spoken.trim().to_lowercase();
+    if all_entries.iter().any(|e| e.deleted_at.is_none() && e.spoken.trim().to_lowercase() == bk) {
         return Err(format!(
-            "Dictionary entry '{} → {}' already exists",
-            spoken, corrected
+            "Dictionary entry '{}' already exists",
+            spoken
         ));
     }
+    let mut meta = crate::sync::metadata::SyncMetadata::load();
+    let device_id = meta.ensure_device_id();
+    // Monotonic per-account maxSeen (or global if no account yet) — prevents clock skew from making stale win
+    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
     let entry = DictionaryEntry {
         id: uuid::Uuid::new_v4().to_string(),
         spoken,
         corrected,
         kind: kind.unwrap_or_else(default_entry_kind),
-        created_at: Some(chrono::Utc::now().timestamp_millis()),
+        created_at: Some(now),
         deleted_at: None,
+        updated_at: Some(now),
+        device_id: Some(device_id),
+        is_enabled: true,
+        dirty: true,
+        ever_pushed: false,
+        sync_account: None,
         sync_state: None,
         server_file_id: None,
-        sync_account: None,
         quarantine_reason: None,
     };
-    entries.push(entry.clone());
-    save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
+    all_entries.push(entry.clone());
+    save_dictionary_internal(&all_entries).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(entry)
 }
@@ -262,51 +314,47 @@ pub fn update_dictionary_entry(
     kind: Option<String>,
 ) -> Result<(), String> {
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
-    let mut entries = live_entries(load_dictionary_internal().map_err(|e| e.to_string())?);
-    let key = canonical_entry_key(&spoken, &corrected);
-    let collides = entries
-        .iter()
-        .any(|other| other.id != id && canonical_entry_key(&other.spoken, &other.corrected) == key);
-    if collides {
+    let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let bk = spoken.trim().to_lowercase();
+    if all_entries.iter().any(|other| other.id != id && other.deleted_at.is_none() && other.spoken.trim().to_lowercase() == bk) {
         return Err(format!(
-            "Dictionary entry '{} → {}' already exists",
-            spoken, corrected
+            "Dictionary entry '{}' already exists",
+            spoken
         ));
     }
-    // §30.2: an edit is a tombstone + a new UUID, so every device converges
-    // on the same record identity and no in-place rewrite of an uploaded
-    // record ever happens.
-    let now = chrono::Utc::now().timestamp_millis();
-    let mut old_kind: Option<String> = None;
+    // Frozen v1.1: same syncId on edit, update updatedAt/deviceId/dirty in same TX
+    let mut meta = crate::sync::metadata::SyncMetadata::load();
+    let device_id = meta.ensure_device_id();
+    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+    if let Some(h) = account_hash.clone() { meta.update_max_seen(&h, new_max); }
+    // We need account hash for maxSeen? For local edit without account, use device's maxSeen global
+    // For simplicity, update global maxSeen via metadata (per-account will be updated on sync)
     let mut found = false;
-    for entry in entries.iter_mut() {
+    for entry in all_entries.iter_mut() {
         if entry.id == id {
-            found = true;
-            entry.deleted_at = Some(now);
-            if entry.server_file_id.is_some() {
-                entry.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            if entry.deleted_at.is_some() {
+                return Err("Cannot edit a deleted entry".to_string());
             }
-            old_kind = Some(entry.kind.clone());
+            found = true;
+            entry.spoken = spoken.clone();
+            entry.corrected = corrected.clone();
+            if let Some(k) = kind.clone() { entry.kind = k; }
+            entry.updated_at = Some(now);
+            entry.device_id = Some(device_id.clone());
+            entry.dirty = true;
+            // ever_pushed stays as is
             break;
         }
     }
     if !found {
         return Err("Dictionary entry not found".to_string());
     }
-    let new_entry = DictionaryEntry {
-        id: uuid::Uuid::new_v4().to_string(),
-        spoken,
-        corrected,
-        kind: kind.unwrap_or_else(|| old_kind.unwrap_or_else(default_entry_kind)),
-        created_at: Some(now),
-        deleted_at: None,
-        sync_state: None,
-        server_file_id: None,
-        sync_account: None,
-        quarantine_reason: None,
-    };
-    entries.push(new_entry);
-    save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
+    // Update maxSeen persisted (use a dummy account hash for local clock)
+    // We'll store maxSeen under a special key "__local__" or just update device's global
+    // For now, we update per-account if we have account, else just don't persist maxSeen here (sync will handle)
+    save_dictionary_internal(&all_entries).map_err(|e| e.to_string())?;
     invalidate_cache();
     Ok(())
 }
@@ -314,21 +362,29 @@ pub fn update_dictionary_entry(
 #[tauri::command]
 pub fn delete_dictionary_entry(id: String) -> Result<(), String> {
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
-    let now = chrono::Utc::now().timestamp_millis();
-    let mut removed = false;
+    let mut meta = crate::sync::metadata::SyncMetadata::load();
+    let device_id = meta.ensure_device_id();
+    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    let mut to_hard_delete = false;
     for entry in entries.iter_mut() {
         if entry.id == id {
-            if entry.server_file_id.is_some() {
-                // Uploaded → tombstone so other devices delete it too (§30.2).
-                entry.deleted_at = Some(now);
-                entry.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            if !entry.ever_pushed {
+                // Never pushed → hard delete (everPushed distinguishes)
+                to_hard_delete = true;
             } else {
-                // Never uploaded → provably safe to hard-delete (§14).
-                removed = true;
+                // Tombstone forever never GC
+                entry.deleted_at = Some(now);
+                entry.updated_at = Some(now);
+                entry.device_id = Some(device_id.clone());
+                entry.dirty = true;
+                // isEnabled remains but deletedAt takes precedence (tombstoneBit=1)
             }
         }
     }
-    if removed {
+    if to_hard_delete {
         entries.retain(|e| e.id != id);
     }
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
@@ -354,204 +410,14 @@ pub fn export_dictionary() -> Result<String, String> {
 }
 
 // ---------------------------------------------------------------------------
-// §30 sync — DictionarySyncStore (LocalStore seam for the dictionary kind).
-// Wired into the desktop binary by the Phase 7 scheduler.
+// Sync note (frozen v1.2): the sync-facing store lives in
+// `crate::sync::stores::DictionaryDirtyStore`. History never syncs.
 // ---------------------------------------------------------------------------
 
-pub(crate) mod sync_store {
-    use super::*;
-
-    use crate::sync::engine::{
-        LocalRow, LocalStore, QuarantineReason, SyncError, SYNC_STATE_LOCAL,
-    };
-    use crate::sync::wire::RecordType;
-
-    /// Sync-facing seam over the same persisted entry list (§30.2). Keeps every
-    /// row — live, tombstoned, latched — so the engine can reconcile them all;
-    /// user-facing reads (`get_dictionary`, corrections) see only live rows.
-    #[derive(Debug, Default)]
-    pub struct DictionarySyncStore {
-        pub entries: Vec<DictionaryEntry>,
-    }
-
-    impl DictionarySyncStore {
-        pub fn new() -> Self {
-            let mut store = Self {
-                entries: load_dictionary_internal().unwrap_or_default(),
-            };
-            store.backfill_legacy_created_at();
-            store
-        }
-
-        #[cfg(test)]
-        pub fn entries(&self) -> &[DictionaryEntry] {
-            &self.entries
-        }
-
-        /// Entries created before sync carry `created_at: None`; assign them a
-        /// timestamp on first mapping so the wire record is always valid. The
-        /// backfill is persisted; cross-device timestamps for such legacy rows
-        /// may differ — documented edge (§30.2).
-        pub fn backfill_legacy_created_at(&mut self) {
-            let now = chrono::Utc::now().timestamp_millis();
-            let mut changed = false;
-            for entry in self.entries.iter_mut() {
-                if entry.created_at.is_none() {
-                    entry.created_at = Some(now);
-                    changed = true;
-                }
-            }
-            if changed {
-                self.save();
-            }
-        }
-
-        fn save(&self) {
-            if save_dictionary_internal(&self.entries).is_ok() {
-                invalidate_cache();
-            }
-        }
-    }
-
-    impl LocalStore for DictionarySyncStore {
-        fn list_rows(&self, account: Option<&str>) -> Vec<LocalRow> {
-            let mut out: Vec<LocalRow> = self
-                .entries
-                .iter()
-                .filter(|e| match account {
-                    None => e.sync_account.is_none(),
-                    Some(a) => e.sync_account.as_deref().map_or(true, |s| s == a),
-                })
-                .map(entry_to_local)
-                .collect();
-            out.sort_by(|a, b| a.uuid.cmp(&b.uuid));
-            out
-        }
-
-        fn find_row(&self, uuid: &str) -> Option<LocalRow> {
-            self.entries
-                .iter()
-                .find(|e| e.id == uuid)
-                .map(entry_to_local)
-        }
-
-        fn import(&mut self, row: LocalRow) -> Result<(), SyncError> {
-            let Some(entry) = local_to_entry(row) else {
-                return Ok(()); // other kinds never reach this store
-            };
-            if let Some(existing) = self.entries.iter_mut().find(|e| e.id == entry.id) {
-                *existing = entry;
-            } else {
-                self.entries.push(entry);
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn mark_tombstoned(&mut self, uuid: &str, deleted_at: i64) -> Result<(), SyncError> {
-            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
-                e.deleted_at = Some(deleted_at);
-                e.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn set_server_file_id(&mut self, uuid: &str, file_id: &str) -> Result<(), SyncError> {
-            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
-                e.server_file_id = Some(file_id.to_string());
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn set_sync_state(&mut self, uuid: &str, state: &str) -> Result<(), SyncError> {
-            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
-                e.sync_state = Some(state.to_string());
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn quarantine(&mut self, uuid: &str, reason: QuarantineReason) -> Result<(), SyncError> {
-            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
-                e.quarantine_reason = Some(reason.as_str().to_string());
-                e.sync_state = Some(crate::sync::engine::SYNC_STATE_QUARANTINED.to_string());
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn clear_quarantine(&mut self, uuid: &str) -> Result<(), SyncError> {
-            if let Some(e) = self.entries.iter_mut().find(|e| e.id == uuid) {
-                e.quarantine_reason = None;
-                e.sync_state = Some(SYNC_STATE_LOCAL.to_string());
-            }
-            self.save();
-            Ok(())
-        }
-
-        fn hard_delete(&mut self, uuid: &str) -> Result<(), SyncError> {
-            self.entries.retain(|e| e.id != uuid);
-            self.save();
-            Ok(())
-        }
-    }
-
-    fn entry_to_local(e: &DictionaryEntry) -> LocalRow {
-        LocalRow {
-            uuid: e.id.clone(),
-            timestamp_ms: e.created_at.unwrap_or(0),
-            text: String::new(),
-            mode: String::new(),
-            duration_ms: 0,
-            provider: String::new(),
-            model: None,
-            language: None,
-            rtype: RecordType::Dictionary,
-            spoken: Some(e.spoken.clone()),
-            corrected: Some(e.corrected.clone()),
-            kind: Some(e.kind.clone()),
-            trigger: None,
-            expansion: None,
-            settings_key: None,
-            settings_value: None,
-            deleted_at: e.deleted_at,
-            server_file_id: e.server_file_id.clone(),
-            sync_account: e.sync_account.clone(),
-            sync_state: e
-                .sync_state
-                .clone()
-                .unwrap_or_else(|| SYNC_STATE_LOCAL.to_string()),
-            quarantine_reason: e.quarantine_reason.clone(),
-        }
-    }
-
-    fn local_to_entry(row: LocalRow) -> Option<DictionaryEntry> {
-        if row.rtype != RecordType::Dictionary {
-            return None;
-        }
-        Some(DictionaryEntry {
-            id: row.uuid,
-            spoken: row.spoken.unwrap_or_default(),
-            corrected: row.corrected.unwrap_or_default(),
-            kind: row.kind.unwrap_or_else(default_entry_kind),
-            created_at: Some(row.timestamp_ms),
-            deleted_at: row.deleted_at,
-            sync_state: Some(row.sync_state),
-            server_file_id: row.server_file_id,
-            sync_account: row.sync_account,
-            quarantine_reason: row.quarantine_reason,
-        })
-    }
-}
 
 #[cfg(test)]
 mod tests {
-    use super::sync_store::*;
     use super::*;
-    use crate::sync::engine::{LocalRow, LocalStore, SYNC_STATE_LOCAL};
-    use crate::sync::wire::RecordType;
 
     #[test]
     fn test_canonical_entry_key_case_insensitive() {
@@ -585,6 +451,11 @@ mod tests {
             kind: "correction".to_string(),
             created_at: Some(1713456000123),
             deleted_at: None,
+            updated_at: Some(1713456000123),
+            device_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+            is_enabled: true,
+            dirty: false,
+            ever_pushed: false,
             sync_state: None,
             server_file_id: None,
             sync_account: None,
@@ -633,20 +504,18 @@ mod tests {
         );
     }
 
-    // §30.2 edit semantics --------------------------------------------------
+    // Edit semantics --------------------------------------------------------
 
     #[test]
     fn test_update_tombstones_old_and_creates_new_uuid() {
         let uploaded = entry("1", "tori", "Tauri");
         let mut uploaded = uploaded;
-        uploaded.server_file_id = Some("F1".to_string());
-        uploaded.sync_state = Some(crate::sync::engine::SYNC_STATE_CLEAN.to_string());
         let mut entries = vec![uploaded];
 
         let now = chrono::Utc::now().timestamp_millis();
         if let Some(old) = entries.iter_mut().find(|e| e.id == "1") {
             old.deleted_at = Some(now);
-            old.sync_state = Some(crate::sync::engine::SYNC_STATE_DIRTY.to_string());
+            old.dirty = true;
         }
         entries.push(DictionaryEntry {
             id: "new-uuid".to_string(),
@@ -655,9 +524,14 @@ mod tests {
             kind: "correction".to_string(),
             created_at: Some(now),
             deleted_at: None,
+            updated_at: Some(now),
+            device_id: Some("00000000-0000-4000-8000-000000000001".to_string()),
+            is_enabled: true,
+            dirty: true,
+            ever_pushed: false,
+            sync_account: None,
             sync_state: None,
             server_file_id: None,
-            sync_account: None,
             quarantine_reason: None,
         });
 
@@ -696,62 +570,5 @@ mod tests {
         let shown = live_entries(vec![live.clone(), deleted]);
         assert_eq!(shown.len(), 1);
         assert_eq!(shown[0].id, "1");
-    }
-
-    #[test]
-    fn test_sync_store_roundtrip_through_wire() {
-        const U: &str = "00000000-0000-4000-8000-000000000005";
-        let mut store = DictionarySyncStore::default();
-        store
-            .import(local_to_entry_live(U, "tori", "Tauri"))
-            .unwrap();
-        let row = store.find_row(U).unwrap();
-        let rec = crate::sync::wire::parse(row.to_wire().to_json().as_bytes(), U).unwrap();
-        assert_eq!(rec.rtype, RecordType::Dictionary);
-        assert_eq!(rec.spoken.as_deref(), Some("tori"));
-        assert_eq!(rec.corrected.as_deref(), Some("Tauri"));
-        assert_eq!(rec.kind.as_deref(), Some("correction"));
-        let row2 = store.find_row(U).unwrap();
-        assert_eq!(row2.to_wire().to_json(), row.to_wire().to_json());
-    }
-
-    fn local_to_entry_live(uuid: &str, spoken: &str, corrected: &str) -> LocalRow {
-        LocalRow {
-            uuid: uuid.to_string(),
-            timestamp_ms: 1713456000123,
-            text: String::new(),
-            mode: String::new(),
-            duration_ms: 0,
-            provider: String::new(),
-            model: None,
-            language: None,
-            rtype: RecordType::Dictionary,
-            spoken: Some(spoken.to_string()),
-            corrected: Some(corrected.to_string()),
-            kind: Some("correction".to_string()),
-            trigger: None,
-            expansion: None,
-            settings_key: None,
-            settings_value: None,
-            deleted_at: None,
-            server_file_id: None,
-            sync_account: None,
-            sync_state: SYNC_STATE_LOCAL.to_string(),
-            quarantine_reason: None,
-        }
-    }
-
-    #[test]
-    fn test_sync_store_backfills_legacy_entries() {
-        let mut store = DictionarySyncStore::default();
-        let legacy = entry("legacy", "grok", "Groq");
-        let mut legacy = legacy;
-        legacy.created_at = None;
-        store.entries.push(legacy);
-        store.backfill_legacy_created_at();
-        assert!(
-            store.entries[0].created_at.is_some(),
-            "legacy entries get a timestamp on first mapping"
-        );
     }
 }

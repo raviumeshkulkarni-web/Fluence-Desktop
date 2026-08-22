@@ -726,8 +726,11 @@ async function loadHistory(reset, search = '') {
 
 async function loadDashboardStats() {
   try {
-    // All statistics are computed server-side (single source of truth).
-    const bStats = await invoke('get_history_stats');
+    // Account-level statistics: when signed in, totals come from the merged
+    // account ledger (Windows + Android contributions combined). Signed out
+    // or before the first sync, the backend falls back to platform-local
+    // history-derived numbers (source: "local").
+    const bStats = await invoke('get_account_stats');
     const totalWords = bStats.total_words;
     const weeklyWords = bStats.weekly_words;
     const weeklyDurationMs = bStats.weekly_duration_ms;
@@ -769,7 +772,14 @@ async function loadDashboardStats() {
     // (identical across devices/timezones and matches the weekly header).
     const monday = new Date(bStats.week_start_ms);
 
-    const timestamps = await invoke('get_weekly_activity', { startOfWeekUtc: monday.toISOString() });
+    // Account mode returns weekly timestamps directly from the merged event
+    // ledger; local mode falls back to querying transcription history.
+    let timestamps;
+    if (bStats.source === 'account' && Array.isArray(bStats.weekly_timestamps)) {
+      timestamps = bStats.weekly_timestamps;
+    } else {
+      timestamps = await invoke('get_weekly_activity', { startOfWeekUtc: monday.toISOString() });
+    }
 
     const dayCounts = [0, 0, 0, 0, 0, 0, 0];
     timestamps.forEach(ts => {

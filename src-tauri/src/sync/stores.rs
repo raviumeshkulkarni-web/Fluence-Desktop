@@ -1,0 +1,757 @@
+// Fluence sync — frozen v1.2 local stores (DirtyStore implementations)
+//
+// Account isolation model:
+// - dictionary.json / snippets.json rows carry `sync_account`; loads filter
+//   by the active account hash, so another account's rows are never uploaded.
+// - stats events live in one local ledger (`stats_events.json`) with a
+//   nullable account stamp; unstamped (pre-sign-in) dictations are claimed by
+//   the first account that syncs them. Event ids are UUIDv5 of the history
+//   row id, so a backfilled row and a freshly-recorded event for the same
+//   dictation collapse under union dedup — exactly-once counting by
+//   construction.
+// - settings LWW bookkeeping lives in `settings_sync_<hash>.json`, one
+//   document per account, so preferences cannot cross accounts.
+
+use std::collections::HashMap;
+use std::path::PathBuf;
+
+use dirs::data_local_dir;
+use serde::{Deserialize, Serialize};
+
+use crate::dictionary::{load_dictionary_internal, save_dictionary_internal, DictionaryEntry};
+use crate::settings::{load_settings, AppSettings};
+use crate::snippets::{load_store_internal as load_snippets_internal, save_store_internal as save_snippets_internal, Snippet};
+use crate::sync::domain::*;
+use crate::sync::error::SyncError;
+use crate::sync::frozen::DirtyStore;
+use crate::sync::metadata::SyncMetadata;
+
+fn data_dir() -> PathBuf {
+    let mut p = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    p.push("Fluence");
+    p
+}
+
+fn atomic_write(path: &PathBuf, data: &str) -> Result<(), SyncError> {
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent).map_err(|e| SyncError::Fatal(e.to_string()))?;
+    }
+    let tmp = path.with_extension("tmp");
+    std::fs::write(&tmp, data).map_err(|e| SyncError::Fatal(e.to_string()))?;
+    if let Ok(f) = std::fs::File::open(&tmp) {
+        let _ = f.sync_all();
+    }
+    std::fs::rename(&tmp, path).map_err(|e| SyncError::Fatal(e.to_string()))
+}
+
+// ── Dictionary store ────────────────────────────────────────────────────────
+
+pub struct DictionaryDirtyStore;
+
+impl DictionaryDirtyStore {
+    fn to_domain_item(e: &DictionaryEntry) -> Option<DictionaryItem> {
+        let updated = e.updated_at.or(e.created_at).unwrap_or(0);
+        if updated <= 0 {
+            return None;
+        }
+        let device = e
+            .device_id
+            .clone()
+            .unwrap_or_else(|| SyncMetadata::load().device_id);
+        Some(DictionaryItem {
+            sync_id: e.id.clone(),
+            spoken: e.spoken.clone(),
+            corrected: e.corrected.clone(),
+            kind: e.kind.clone(),
+            is_enabled: e.is_enabled,
+            deleted_at: e.deleted_at,
+            updated_at: updated,
+            device_id: device,
+        })
+    }
+
+    fn from_domain_item(item: DictionaryItem, account_hash: &str) -> DictionaryEntry {
+        DictionaryEntry {
+            id: item.sync_id,
+            spoken: item.spoken,
+            corrected: item.corrected,
+            kind: item.kind,
+            created_at: Some(item.updated_at),
+            deleted_at: item.deleted_at,
+            updated_at: Some(item.updated_at),
+            device_id: Some(item.device_id),
+            is_enabled: item.is_enabled,
+            dirty: false,
+            ever_pushed: true,
+            sync_account: Some(account_hash.to_string()),
+            // Dormant legacy columns (kept for file-format compatibility).
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        }
+    }
+}
+
+impl DirtyStore for DictionaryDirtyStore {
+    type Item = DictionaryItem;
+
+    fn load(&self, account_hash: &str) -> Vec<Self::Item> {
+        load_dictionary_internal()
+            .unwrap_or_default()
+            .iter()
+            .filter(|e| e.sync_account.as_deref() == Some(account_hash))
+            .filter_map(Self::to_domain_item)
+            .collect()
+    }
+
+    fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let mut stamped = 0;
+        let mut meta = SyncMetadata::load();
+        let device_id = meta.ensure_device_id();
+        for e in all.iter_mut() {
+            if e.sync_account.is_none() {
+                let max_seen = meta.for_account(account_hash).map(|s| s.max_seen).unwrap_or(0);
+                let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+                meta.update_max_seen(account_hash, new_max);
+                e.sync_account = Some(account_hash.to_string());
+                e.device_id = Some(device_id.clone());
+                // Preserve an existing valid updatedAt; only stamp when absent
+                // so enrollment never fabricates a newer-than-remote edit.
+                if e.updated_at.is_none() || e.updated_at == Some(0) {
+                    e.updated_at = Some(now);
+                }
+                if e.created_at.is_none() {
+                    e.created_at = Some(now);
+                }
+                e.dirty = true;
+                e.ever_pushed = false;
+                stamped += 1;
+            }
+        }
+        if stamped > 0 {
+            save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(stamped)
+    }
+
+    fn has_dirty(&self, account_hash: &str) -> bool {
+        load_dictionary_internal()
+            .unwrap_or_default()
+            .iter()
+            .any(|e| e.sync_account.as_deref() == Some(account_hash) && e.dirty)
+    }
+
+    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        all.retain(|e| e.sync_account.as_deref() != Some(account_hash));
+        for item in merged {
+            all.push(Self::from_domain_item(item, account_hash));
+        }
+        save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))
+    }
+
+    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
+        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let mut touched = false;
+        for e in all.iter_mut() {
+            if e.sync_account.as_deref() == Some(account_hash) {
+                e.ever_pushed = true;
+                e.dirty = false;
+                touched = true;
+            }
+        }
+        if touched {
+            save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn hard_delete_never_pushed_tombstones(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let before = all.len();
+        all.retain(|e| {
+            !(e.sync_account.as_deref() == Some(account_hash)
+                && e.deleted_at.is_some()
+                && !e.ever_pushed)
+        });
+        let removed = before - all.len();
+        if removed > 0 {
+            save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(removed)
+    }
+}
+
+// ── Snippet store ───────────────────────────────────────────────────────────
+
+pub struct SnippetDirtyStore;
+
+impl SnippetDirtyStore {
+    fn to_domain_item(s: &Snippet) -> Option<SnippetItem> {
+        let updated = s.updated_at.or(s.created_at).unwrap_or(0);
+        if updated <= 0 {
+            return None;
+        }
+        let device = s
+            .device_id
+            .clone()
+            .unwrap_or_else(|| SyncMetadata::load().device_id);
+        Some(SnippetItem {
+            sync_id: s.id.clone(),
+            trigger: s.trigger.clone(),
+            expansion: s.expansion.clone(),
+            is_enabled: s.is_enabled,
+            deleted_at: s.deleted_at,
+            updated_at: updated,
+            device_id: device,
+        })
+    }
+
+    fn from_domain_item(item: SnippetItem, account_hash: &str) -> Snippet {
+        Snippet {
+            id: item.sync_id,
+            trigger: item.trigger,
+            expansion: item.expansion,
+            created_at: Some(item.updated_at),
+            updated_at: Some(item.updated_at),
+            device_id: Some(item.device_id),
+            is_enabled: item.is_enabled,
+            deleted_at: item.deleted_at,
+            dirty: false,
+            ever_pushed: true,
+            sync_account: Some(account_hash.to_string()),
+            // Dormant legacy columns (kept for file-format compatibility).
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        }
+    }
+}
+
+impl DirtyStore for SnippetDirtyStore {
+    type Item = SnippetItem;
+
+    fn load(&self, account_hash: &str) -> Vec<Self::Item> {
+        load_snippets_internal()
+            .unwrap_or_default()
+            .snippets
+            .iter()
+            .filter(|s| s.sync_account.as_deref() == Some(account_hash))
+            .filter_map(Self::to_domain_item)
+            .collect()
+    }
+
+    fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let mut stamped = 0;
+        let mut meta = SyncMetadata::load();
+        let device_id = meta.ensure_device_id();
+        for s in store.snippets.iter_mut() {
+            if s.sync_account.is_none() {
+                let max_seen = meta.for_account(account_hash).map(|s| s.max_seen).unwrap_or(0);
+                let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+                meta.update_max_seen(account_hash, new_max);
+                s.sync_account = Some(account_hash.to_string());
+                s.device_id = Some(device_id.clone());
+                if s.updated_at.is_none() || s.updated_at == Some(0) {
+                    s.updated_at = Some(now);
+                }
+                if s.created_at.is_none() {
+                    s.created_at = Some(now);
+                }
+                s.dirty = true;
+                s.ever_pushed = false;
+                stamped += 1;
+            }
+        }
+        if stamped > 0 {
+            save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(stamped)
+    }
+
+    fn has_dirty(&self, account_hash: &str) -> bool {
+        load_snippets_internal()
+            .unwrap_or_default()
+            .snippets
+            .iter()
+            .any(|s| s.sync_account.as_deref() == Some(account_hash) && s.dirty)
+    }
+
+    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        store.snippets.retain(|s| s.sync_account.as_deref() != Some(account_hash));
+        for item in merged {
+            store.snippets.push(Self::from_domain_item(item, account_hash));
+        }
+        save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))
+    }
+
+    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
+        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let mut touched = false;
+        for s in store.snippets.iter_mut() {
+            if s.sync_account.as_deref() == Some(account_hash) {
+                s.ever_pushed = true;
+                s.dirty = false;
+                touched = true;
+            }
+        }
+        if touched {
+            save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn hard_delete_never_pushed_tombstones(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let before = store.snippets.len();
+        store.snippets.retain(|s| {
+            !(s.sync_account.as_deref() == Some(account_hash)
+                && s.deleted_at.is_some()
+                && !s.ever_pushed)
+        });
+        let removed = before - store.snippets.len();
+        if removed > 0 {
+            save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(removed)
+    }
+}
+
+// ── Settings store (value-diff LWW, per-account bookkeeping) ────────────────
+//
+// Mirrors the proven Android PrefsSettingsV1Store semantics: a per-account
+// meta document records the last-synced {value, updatedAt} per key. A live
+// value differing from the recorded one is dirty with a fresh wall-clock
+// timestamp. Incoming winners are applied to real settings and recorded.
+//
+// Windows emits four keys. `dictionary_enabled` is never emitted here
+// (Windows applies the dictionary unconditionally and has no toggle); an
+// incoming value for it is recorded but not applied, so the two platforms
+// do not fight over a setting only Android exposes.
+
+pub struct SettingsDirtyStore;
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+struct SettingsMetaDoc {
+    /// key -> last-synced {v: value, t: updatedAt}
+    #[serde(default)]
+    keys: HashMap<String, KeyMeta>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct KeyMeta {
+    v: String,
+    t: i64,
+}
+
+/// The keys this platform emits/accepts, mapped onto real settings. See
+/// `live_values` — `dictionary_enabled` is deliberately absent (Windows has
+/// no dictionary toggle; incoming values are recorded but not applied).
+
+impl SettingsDirtyStore {
+    fn meta_path(account_hash: &str) -> PathBuf {
+        let mut p = data_dir();
+        p.push(format!("settings_sync_{account_hash}.json"));
+        p
+    }
+
+    fn load_meta(account_hash: &str) -> SettingsMetaDoc {
+        let path = Self::meta_path(account_hash);
+        std::fs::read_to_string(&path)
+            .ok()
+            .and_then(|d| serde_json::from_str(&d).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_meta(account_hash: &str, doc: &SettingsMetaDoc) -> Result<(), SyncError> {
+        let data = serde_json::to_string_pretty(doc).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        atomic_write(&Self::meta_path(account_hash), &data)
+    }
+
+    /// Live values for the emitted keys, read from real application settings.
+    fn live_values(settings: &AppSettings) -> Vec<(String, String)> {
+        let snippets_enabled = load_snippets_internal().map(|s| s.enabled).unwrap_or(false);
+        vec![
+            ("language".to_string(), settings.language.clone()),
+            ("snippets_enabled".to_string(), snippets_enabled.to_string()),
+            ("auto_learn_enabled".to_string(), settings.auto_learn_enabled.to_string()),
+            ("ai_polish_style".to_string(), settings.ai_polish_style.clone()),
+        ]
+    }
+
+    /// Apply an incoming winner to real settings. Only allowed keys are ever
+    /// touched; provider credentials/hotkeys/audio can never arrive here.
+    fn apply_winner(settings: &mut AppSettings, key: &str, value: &str) {
+        match key {
+            "language" => settings.language = value.to_string(),
+            "auto_learn_enabled" => settings.auto_learn_enabled = value == "true",
+            "ai_polish_style" => settings.ai_polish_style = value.to_string(),
+            "snippets_enabled" => {
+                if let Ok(mut store) = load_snippets_internal() {
+                    store.enabled = value == "true";
+                    let _ = save_snippets_internal(&store);
+                }
+            }
+            // "dictionary_enabled": recorded in meta but not applied on Windows.
+            _ => {}
+        }
+    }
+}
+
+impl DirtyStore for SettingsDirtyStore {
+    type Item = SettingsItem;
+
+    fn load(&self, account_hash: &str) -> Vec<Self::Item> {
+        let meta = Self::load_meta(account_hash);
+        let Ok(settings) = load_settings() else { return Vec::new() };
+        let mut out = Vec::new();
+        for (key, live) in Self::live_values(&settings) {
+            match meta.keys.get(&key) {
+                None => {
+                    // First observation of a locally-set key: adopt it.
+                    out.append(&mut vec![SettingsItem {
+                        key,
+                        value: live,
+                        updated_at: crate::sync::clock::wall_now_ms(),
+                        device_id: SyncMetadata::load().device_id,
+                    }]);
+                }
+                Some(known) if known.v != live => {
+                    // Local edit since last sync → dirty with fresh clock.
+                    out.push(SettingsItem {
+                        key,
+                        value: live,
+                        updated_at: crate::sync::clock::wall_now_ms(),
+                        device_id: SyncMetadata::load().device_id,
+                    });
+                }
+                Some(known) => {
+                    out.push(SettingsItem {
+                        key,
+                        value: known.v.clone(),
+                        updated_at: known.t,
+                        device_id: SyncMetadata::load().device_id,
+                    });
+                }
+            }
+        }
+        out
+    }
+
+    fn stamp_account(&mut self, _account_hash: &str) -> Result<usize, SyncError> {
+        // Value-diff bookkeeping needs no row stamping.
+        Ok(0)
+    }
+
+    fn has_dirty(&self, account_hash: &str) -> bool {
+        let meta = Self::load_meta(account_hash);
+        let Ok(settings) = load_settings() else { return false };
+        Self::live_values(&settings).iter().any(|(key, live)| {
+            meta.keys.get(key).map_or(true, |known| known.v != *live)
+        })
+    }
+
+    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+        let mut meta = Self::load_meta(account_hash);
+        let mut settings_changed = false;
+        let mut settings = load_settings().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        for item in merged {
+            let known = meta.keys.get(&item.key);
+            let is_newer = known.map_or(true, |k| item.updated_at > k.t);
+            if is_newer {
+                if known.map_or(true, |k| k.v != item.value) {
+                    Self::apply_winner(&mut settings, &item.key, &item.value);
+                    settings_changed = true;
+                }
+                meta.keys.insert(
+                    item.key.clone(),
+                    KeyMeta { v: item.value, t: item.updated_at },
+                );
+            }
+        }
+        Self::save_meta(account_hash, &meta)?;
+        if settings_changed {
+            crate::settings::save_settings(&settings).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        }
+        Ok(())
+    }
+
+    fn mark_all_pushed(&mut self, _account_hash: &str) -> Result<(), SyncError> {
+        // Meta document already reflects pushed state after save_merged.
+        Ok(())
+    }
+}
+
+// ── Stats ledger (event-sourced, account-claiming, exactly-once) ───────────
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StatEventRow {
+    pub item: StatsItem,
+    /// None until an account claims this event (unstamped dictation).
+    pub account: Option<String>,
+    pub dirty: bool,
+    pub ever_pushed: bool,
+}
+
+/// Local persistent ledger of this device's dictation events.
+pub struct StatsDirtyStore;
+
+#[cfg(test)]
+static TEST_LEDGER_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+
+impl StatsDirtyStore {
+    fn ledger_path() -> PathBuf {
+        #[cfg(test)]
+        {
+            if let Ok(guard) = TEST_LEDGER_PATH.lock() {
+                if let Some(p) = guard.as_ref() {
+                    return p.clone();
+                }
+            }
+        }
+        let mut p = data_dir();
+        p.push("stats_events.json");
+        p
+    }
+
+    /// Test seam: redirect the ledger to a temp path for isolation.
+    #[cfg(test)]
+    pub fn set_test_ledger_path(path: Option<std::path::PathBuf>) {
+        *TEST_LEDGER_PATH.lock().unwrap() = path;
+    }
+
+    fn load_rows() -> Vec<StatEventRow> {
+        std::fs::read_to_string(Self::ledger_path())
+            .ok()
+            .and_then(|d| serde_json::from_str(&d).ok())
+            .unwrap_or_default()
+    }
+
+    fn save_rows(rows: &[StatEventRow]) -> Result<(), SyncError> {
+        let data = serde_json::to_string(rows).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        atomic_write(&Self::ledger_path(), &data)
+    }
+
+    /// Record one completed dictation exactly once. Called from the history
+    /// commit path. The event id is UUIDv5 of the history row id, so even a
+    /// duplicated call (or a later backfill of the same row) collapses under
+    /// union dedup. Safe offline: the event rides the next successful sync.
+    pub fn record_dictation_event(history_id: &str, timestamp_ms: i64, text: &str, duration_ms: i64) {
+        let item = StatsItem::from_history_row(history_id, timestamp_ms, text, duration_ms);
+        let mut rows = Self::load_rows();
+        if rows.iter().any(|r| r.item.event_id == item.event_id) {
+            return; // idempotent by construction
+        }
+        rows.push(StatEventRow { item, account: None, dirty: true, ever_pushed: false });
+        let _ = Self::save_rows(&rows);
+    }
+
+    /// One-time per-account seed: convert pre-existing history rows into
+    /// events. Deterministic ids make this idempotent against events already
+    /// recorded by `record_dictation_event`.
+    fn backfill_from_history(account_hash: &str) -> Vec<StatEventRow> {
+        let db_path = {
+            let mut p = data_dir();
+            p.push("history.db");
+            p
+        };
+        if !db_path.exists() {
+            return Vec::new();
+        }
+        let conn = match rusqlite::Connection::open(&db_path) {
+            Ok(c) => c,
+            Err(_) => return Vec::new(),
+        };
+        let Ok(mut stmt) =
+            conn.prepare("SELECT id, timestamp_ms, text, duration_ms FROM history WHERE deleted_at IS NULL AND timestamp_ms > 0")
+        else {
+            return Vec::new();
+        };
+        let mapper = |r: &rusqlite::Row| -> rusqlite::Result<(String, i64, String, i64)> {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, i64>(3)?,
+            ))
+        };
+        let rows = match stmt.query_map([], mapper) {
+            Ok(rows) => rows,
+            Err(_) => return Vec::new(),
+        };
+        rows.flatten()
+            .filter_map(|r| {
+                let (id, ts, text, dur) = r;
+                let item = StatsItem::from_history_row(&id, ts, &text, dur);
+                Some(StatEventRow {
+                    item,
+                    account: Some(account_hash.to_string()),
+                    dirty: true,
+                    ever_pushed: false,
+                })
+            })
+            .collect::<Vec<_>>()
+    }
+
+    fn backfill_done(metadata: &SyncMetadata, account_hash: &str) -> bool {
+        metadata
+            .for_account(account_hash)
+            .map(|s| s.backfill_done)
+            .unwrap_or(false)
+    }
+
+    /// Test seam: raw ledger rows.
+    #[cfg(test)]
+    pub fn test_rows() -> Vec<StatEventRow> {
+        Self::load_rows()
+    }
+
+    /// Account-level view: every event belonging to this account as
+    /// (timestamp_ms, duration_ms, words, chars). After a sync pass this is
+    /// the merged account state (local ∪ remote), so summing here yields the
+    /// combined cross-device totals.
+    pub fn account_event_rows(account_hash: &str) -> Vec<(i64, i64, i64, i64)> {
+        Self::load_rows()
+            .into_iter()
+            .filter(|r| r.account.as_deref() == Some(account_hash))
+            .map(|r| {
+                (
+                    r.item.timestamp_ms,
+                    r.item.durationMs.unwrap_or(0),
+                    r.item.words.unwrap_or(0),
+                    r.item.chars.unwrap_or(0),
+                )
+            })
+            .collect()
+    }
+}
+
+impl DirtyStore for StatsDirtyStore {
+    type Item = StatsItem;
+
+    fn load(&self, account_hash: &str) -> Vec<Self::Item> {
+        let mut rows = Self::load_rows();
+        let metadata = SyncMetadata::load();
+        if !Self::backfill_done(&metadata, account_hash) {
+            // Seed once per account. Deterministic ids dedup against events
+            // already recorded live by the commit path.
+            let synthetic = Self::backfill_from_history(account_hash);
+            let mut changed = false;
+            for row in synthetic {
+                if !rows.iter().any(|r| r.item.event_id == row.item.event_id) {
+                    rows.push(row);
+                    changed = true;
+                }
+            }
+            if changed {
+                let _ = Self::save_rows(&rows);
+            }
+        }
+        rows.into_iter()
+            .filter(|r| r.account.as_deref() == Some(account_hash))
+            .map(|r| r.item)
+            .collect()
+    }
+
+    fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+        let mut rows = Self::load_rows();
+        let mut stamped = 0;
+        for row in rows.iter_mut() {
+            if row.account.is_none() {
+                row.account = Some(account_hash.to_string());
+                row.dirty = true;
+                stamped += 1;
+            }
+        }
+        if stamped > 0 {
+            Self::save_rows(&rows)?;
+        }
+        Ok(stamped)
+    }
+
+    fn has_dirty(&self, account_hash: &str) -> bool {
+        Self::load_rows()
+            .iter()
+            .any(|r| r.account.as_deref() == Some(account_hash) && r.dirty)
+    }
+
+    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+        let mut rows = Self::load_rows();
+        rows.retain(|r| r.account.as_deref() != Some(account_hash));
+        for item in merged {
+            rows.push(StatEventRow {
+                item,
+                account: Some(account_hash.to_string()),
+                dirty: false,
+                ever_pushed: true,
+            });
+        }
+        Self::save_rows(&rows)?;
+        // Mark backfill done after the first successful merge for this account.
+        let mut metadata = SyncMetadata::load();
+        if !Self::backfill_done(&metadata, account_hash) {
+            metadata.for_account_mut(account_hash).backfill_done = true;
+            metadata.save();
+        }
+        Ok(())
+    }
+
+    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
+        let mut rows = Self::load_rows();
+        let mut touched = false;
+        for row in rows.iter_mut() {
+            if row.account.as_deref() == Some(account_hash) {
+                row.dirty = false;
+                row.ever_pushed = true;
+                touched = true;
+            }
+        }
+        if touched {
+            Self::save_rows(&rows)?;
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn settings_emitted_keys_never_include_secrets_or_platform_config() {
+        let settings = AppSettings::default();
+        let values = SettingsDirtyStore::live_values(&settings);
+        let keys: Vec<&str> = values.iter().map(|(k, _)| k.as_str()).collect();
+        assert_eq!(keys, ["language", "snippets_enabled", "auto_learn_enabled", "ai_polish_style"]);
+        for forbidden in ["hotkey", "agent_hotkey", "audio_device_id", "stt_provider", "llm_provider", "api_key"] {
+            assert!(!keys.contains(&forbidden), "{forbidden} must never be emitted");
+        }
+    }
+
+    #[test]
+    fn apply_winner_cannot_touch_secrets_or_providers() {
+        let mut settings = AppSettings::default();
+        let before = settings.hotkey.clone();
+        SettingsDirtyStore::apply_winner(&mut settings, "hotkey", "Ctrl+X");
+        SettingsDirtyStore::apply_winner(&mut settings, "unknown_future_key", "evil");
+        assert_eq!(settings.hotkey, before, "hotkey must be immutable via sync");
+    }
+
+    #[test]
+    fn stat_event_recording_is_idempotent_per_history_row() {
+        let tmp = std::env::temp_dir().join(format!("fluence-test-ledger-{}.json", std::process::id()));
+        StatsDirtyStore::set_test_ledger_path(Some(tmp.clone()));
+        // record_dictation_event dedups on the deterministic event id.
+        let id = "test-row-123";
+        StatsDirtyStore::record_dictation_event(id, 1_000, "hello world", 500);
+        StatsDirtyStore::record_dictation_event(id, 1_000, "hello world", 500);
+        let rows = StatsDirtyStore::load_rows();
+        let count = rows.iter().filter(|r| r.item.event_id == synthetic_event_id(id)).count();
+        assert_eq!(count, 1, "duplicate commits must not double-count");
+        StatsDirtyStore::set_test_ledger_path(None);
+        let _ = std::fs::remove_file(&tmp);
+    }
+}

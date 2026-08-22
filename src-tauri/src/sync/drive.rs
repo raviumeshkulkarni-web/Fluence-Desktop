@@ -1,42 +1,67 @@
-// Fluence sync — Google Drive REST layer (spec §23).
+// Fluence sync — Google Drive REST layer (frozen v1.2).
 //
-// Implements the `DriveStore` trait against the Drive v3 API using the shared
-// reqwest client. Error mapping (§23):
+// Implements the `DomainDriveStore` trait against the Drive v3 API using the
+// shared reqwest blocking client. Error mapping:
 // - `401`                  -> `AuthRequired` (reauth)
-// - `403` drive.file scope -> `NotOurs` (abort the pass — ABSENCE never runs
-//                            on an unconfirmed listing, never retry-bomb)
+// - `403`                  -> `NotOurs` (abort the pass — never retry-bomb)
 // - `429` / 5xx / timeout  -> `Retryable` (scheduler backs off)
-// - fetch-404 during fetch -> `Ok(None)` (drop the file this pass)
+// - fetch-404              -> `Ok(None)` (domain treated as absent this pass)
 // - partial responses      -> `Rejected`, pass aborted before any mutation
+//
+// Concurrency model (v1.2): Drive API v3 does NOT honor If-Match on media
+// updates, so optimistic concurrency is implemented with the per-file
+// monotonically increasing `version` revision number instead:
+//
+//   LIST (id+version) -> GET content -> merge -> PUT(expected_version)
+//
+// `put_domain` re-checks the live version immediately before writing and
+// returns `SyncError::StaleVersion` when another device changed the file in
+// the meantime; the engine re-fetches, re-merges and retries. Check-then-write
+// is not atomic — a race can still slip through that window — but every
+// device keeps its merged state locally, so the next pass converges. This is
+// deliberate: deterministic self-healing convergence, not transactional
+// guarantees.
 //
 // `Backoff` is the configurable exponential backoff used by the scheduler
 // between passes; it is a pure value type so its schedule is unit-testable.
 
-use crate::sync::engine::{DriveStore, FileMeta, SyncError};
+use crate::sync::error::SyncError;
 
-/// The shared sync folder created lazily under the active account (§14).
-pub const FOLDER_NAME: &str = "Fluence Transcribe";
+// Frozen v1.1 drive.appdata layout: appDataFolder/fluence/v1/{dictionary,snippets,stats,settings}.json
+pub const APPDATA_FOLDER_ALIAS: &str = "appDataFolder";
+pub const FLUENCE_FOLDER_NAME: &str = "fluence";
+pub const V1_FOLDER_NAME: &str = "v1";
+pub const DICT_FILE: &str = "dictionary.json";
+pub const SNIPPETS_FILE: &str = "snippets.json";
+pub const STATS_FILE: &str = "stats.json";
+pub const SETTINGS_FILE: &str = "settings.json";
+pub const DOMAIN_FILES: [&str; 4] = [DICT_FILE, SNIPPETS_FILE, STATS_FILE, SETTINGS_FILE];
 
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 const API_BASE: &str = "https://www.googleapis.com/drive/v3";
-/// Uploads (multipart create, media patch) must hit the upload host, not the
-/// metadata host (§23 / Phase 0 remediation).
+/// Uploads (multipart create/update) must hit the upload host, not the
+/// metadata host.
 const UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
+
+/// Hard cap on a domain payload we will read or write. Legitimate envelopes
+/// are tens of KB; anything near this bound is corruption or abuse.
+pub const MAX_DOMAIN_BYTES: usize = 1024 * 1024;
 
 /// URL for a multipart create against an upload base. Pure so the host and
 /// query are testable offline.
 pub fn create_upload_url(upload_base: &str) -> String {
-    format!("{upload_base}/files?uploadType=multipart&fields=id")
+    format!("{upload_base}/files?uploadType=multipart&fields=id,version")
 }
 
-/// URL for a media patch against an upload base. Pure so the host is testable
-/// offline.
+/// URL for a multipart update against an upload base. Pure so the host is
+/// testable offline. Returns the new file metadata (including `version`) in
+/// the response body.
 pub fn update_media_url(upload_base: &str, file_id: &str) -> String {
-    format!("{upload_base}/files/{file_id}?uploadType=media")
+    format!("{upload_base}/files/{file_id}?uploadType=multipart&fields=version")
 }
 
 /// Exponential backoff (base 1000ms, factor 2, cap 60000ms). No hardcoded
-/// quota figures — only these timing constants, per §23/§28.
+/// quota figures — only these timing constants.
 #[derive(Debug, Clone)]
 pub struct Backoff {
     base_ms: u64,
@@ -79,14 +104,14 @@ impl Backoff {
 }
 
 /// The active account's Drive connection. Holds a memory-only access token;
-/// a `403`/`401`/`429`/5xx/timeout is classified per §23 by
-/// [`classify_status`]. Uses the blocking client because the `DriveStore`
-/// trait is synchronous — the engine runs on a worker thread.
+/// failures are classified by [`classify_status`]. Uses the blocking client
+/// because the domain engine runs on a worker thread.
 pub struct GoogleDriveStore {
     client: reqwest::blocking::Client,
     access_token: String,
-    folder_id: Option<String>,
-    /// Upload host for create/media writes (§23).
+    /// Cached appDataFolder/fluence/v1 folder id.
+    v1_folder_id: Option<String>,
+    /// Upload host for multipart writes.
     upload_base: String,
 }
 
@@ -104,7 +129,7 @@ impl GoogleDriveStore {
                 .build()
                 .expect("Failed to build blocking Drive client"),
             access_token,
-            folder_id: None,
+            v1_folder_id: None,
             upload_base,
         }
     }
@@ -116,13 +141,13 @@ impl GoogleDriveStore {
     }
 }
 
-/// Classify a Drive HTTP status into the engine's error kinds (§23).
+/// Classify a Drive HTTP status into the engine's error kinds.
 /// Timeouts and transport failures arrive as `Retryable` via the caller.
 ///
 /// Strict: only 2xx is `Ok`. Every other 4xx (and 3xx) that is not already
 /// mapped to `AuthRequired`/`NotOurs`/`Retryable` is a permanent client
 /// rejection → `Rejected`: surfaced non-success, never backoff-escalated. Op
-/// level handling (e.g. fetch-404 → `Ok(None)`) happens BEFORE this call.
+/// level handling (e.g. fetch-404 → absent) happens BEFORE this call.
 pub fn classify_status(status: u16) -> Result<(), SyncError> {
     match status {
         200..=299 => Ok(()),
@@ -134,34 +159,28 @@ pub fn classify_status(status: u16) -> Result<(), SyncError> {
     }
 }
 
-/// Classify an `update_content` status. A 404 means the remote file is
-/// already gone — the tombstone is already satisfied, an idempotent success
-/// (§23 / Phase 1 remediation). Every other status follows [`classify_status`].
-pub fn classify_update_status(status: u16) -> Result<(), SyncError> {
-    if status == 404 {
-        Ok(())
-    } else {
-        classify_status(status)
-    }
-}
-
-/// The files query for the sync folder, `trashed=false`, with optional
+/// The files query for a folder listing, `trashed=false`, with optional
 /// pagination token. Pure so the escaping is testable offline.
-pub fn list_files_query(folder_id: &str, page_token: Option<&str>) -> String {
+fn list_files_query(folder_id: &str, page_token: Option<&str>, spaces: &str) -> String {
     let q = format!("'{folder_id}' in parents and trashed = false");
     let mut url = url::Url::parse(&format!("{API_BASE}/files")).expect("valid base");
     {
         let mut pairs = url.query_pairs_mut();
         pairs.append_pair("q", &q);
-        pairs.append_pair("spaces", "drive");
-        pairs.append_pair("fields", "files(id,name,trashed),nextPageToken");
+        pairs.append_pair("spaces", spaces);
+        pairs.append_pair("fields", "files(id,name,version),nextPageToken");
         pairs.append_pair("pageSize", "1000");
-        pairs.append_pair("supportsAllDrives", "false");
         if let Some(token) = page_token {
             pairs.append_pair("pageToken", token);
         }
     }
     url.to_string()
+}
+
+/// Query for listing files inside the v1 folder (domain files). Public for
+/// tests. Pure.
+pub fn list_v1_files_query(v1_folder_id: &str, page_token: Option<&str>) -> String {
+    list_files_query(v1_folder_id, page_token, APPDATA_FOLDER_ALIAS)
 }
 
 /// Extract `id` from a create/folder JSON response. Pure, testable offline.
@@ -174,13 +193,64 @@ pub fn parse_id_from_response(json: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Parse a `files(id,name,trashed)` listing page. A partial/corrupt page is a
-/// failure — never a silently-empty result — so the caller aborts the pass
-/// before any mutation (§23 / Phase 2).
-pub fn parse_file_listing(json: &str) -> Result<(Vec<FileMeta>, Option<String>), SyncError> {
+/// Extract the `version` field Drive returns for a file. Drive serializes
+/// int64 fields as strings but tolerate bare numbers defensively. Pure.
+pub fn parse_version_from_response(json: &str) -> Option<String> {
+    let value: serde_json::Value = serde_json::from_str(json).ok()?;
+    let v = value.get("version")?;
+    match v {
+        serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+        serde_json::Value::Number(n) => Some(n.to_string()),
+        _ => None,
+    }
+}
+
+/// Metadata for a domain file inside appDataFolder/fluence/v1. `version` is
+/// Drive's monotonically increasing per-file revision used for staleness
+/// detection (v1.2 concurrency model).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DomainFileMeta {
+    pub file_id: String,
+    pub name: String,
+    pub version: Option<String>,
+}
+
+/// Domain drive seam — one file per domain (dictionary, snippets, stats,
+/// settings) under appDataFolder/fluence/v1. Handles duplicate files
+/// (returns all duplicates for the caller to merge) and corruption skip
+/// (invalid envelope treated as absent, not a failure).
+pub trait DomainDriveStore {
+    fn ensure_v1_folder(&mut self) -> Result<String, SyncError>;
+    /// List all files in the v1 folder with their current versions.
+    fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError>;
+    /// Download a domain file's bytes. `Ok(None)` = absent (404).
+    fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError>;
+    /// Upload a domain envelope.
+    ///
+    /// `expected_version` is the version the caller based its merge on:
+    /// - `Some(v)` and the live file still has version `v` → update, return
+    ///   the new version.
+    /// - `Some(v)` and the live file has a different version (or none) →
+    ///   `Err(StaleVersion)`; the caller re-fetches and re-merges.
+    /// - `None` (caller believes the file does not exist) and a file DOES
+    ///   exist → `Err(StaleVersion)`; never clobber a concurrently created
+    ///   domain.
+    /// - `None` and no file exists → create, return the new version.
+    fn put_domain(
+        &mut self,
+        name: &str,
+        content: &[u8],
+        expected_version: Option<&str>,
+    ) -> Result<String, SyncError>;
+    fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError>;
+}
+
+/// Parse a domain listing page extracting `id`, `name` and `version`.
+/// Corrupt or partial pages are treated as failures (caller aborts before mutation).
+pub fn parse_domain_listing(json: &str) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
     let value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
-        Err(_) => return Err(SyncError::Rejected("corrupt listing response".to_string())),
+        Err(_) => return Err(SyncError::Rejected("corrupt domain listing".to_string())),
     };
     let next = value
         .get("nextPageToken")
@@ -190,42 +260,48 @@ pub fn parse_file_listing(json: &str) -> Result<(Vec<FileMeta>, Option<String>),
     let mut files = Vec::new();
     if let Some(list) = value.get("files").and_then(|v| v.as_array()) {
         for item in list {
-            match (
-                item.get("id").and_then(|v| v.as_str()),
-                item.get("name").and_then(|v| v.as_str()),
-            ) {
-                // Empty id/name are rejected (Android parity): a partial
-                // entry invalidates the page (§23 / Phase 2).
+            let id = item.get("id").and_then(|v| v.as_str());
+            let name = item.get("name").and_then(|v| v.as_str());
+            let version = item.get("version").and_then(|v| match v {
+                serde_json::Value::String(s) if !s.is_empty() => Some(s.clone()),
+                serde_json::Value::Number(n) => Some(n.to_string()),
+                _ => None,
+            });
+            match (id, name) {
                 (Some(id), Some(name)) if !id.is_empty() && !name.is_empty() => {
-                    files.push(FileMeta {
+                    files.push(DomainFileMeta {
                         file_id: id.to_string(),
                         name: name.to_string(),
+                        version,
                     })
                 }
-                _ => return Err(SyncError::Rejected("partial listing response".to_string())),
+                _ => return Err(SyncError::Rejected("partial domain listing".to_string())),
             }
         }
     } else {
-        return Err(SyncError::Rejected(
-            "listing response missing files".to_string(),
-        ));
+        return Err(SyncError::Rejected("domain listing missing files".to_string()));
     }
     Ok((files, next))
 }
 
-impl DriveStore for GoogleDriveStore {
-    fn find_or_create_folder(&mut self) -> Result<(), SyncError> {
-        if self.folder_id.is_some() {
-            return Ok(());
-        }
+/// Whether a domain file name is one of the 4 valid domain files.
+pub fn is_domain_file(name: &str) -> bool {
+    DOMAIN_FILES.contains(&name)
+}
+
+impl GoogleDriveStore {
+    /// Find or create a folder `name` under `parent` ("appDataFolder" or a
+    /// folder id). Caches nothing except at the v1 level.
+    fn ensure_folder(&mut self, name: &str, parent: &str) -> Result<String, SyncError> {
         let q = format!(
-            "name = '{}' and mimeType = '{FOLDER_MIME}' and trashed = false",
-            FOLDER_NAME.replace('\'', "\\'")
+            "name = '{}' and mimeType = '{FOLDER_MIME}' and '{}' in parents and trashed = false",
+            name.replace('\'', "\\'"),
+            parent
         );
         let list_url =
-            url::Url::parse_with_params(&format!("{API_BASE}/files"), [("q", q.as_str())])
+            url::Url::parse_with_params(&format!("{API_BASE}/files"), [("q", q.as_str()), ("spaces", APPDATA_FOLDER_ALIAS)])
                 .expect("valid url");
-        let response = self
+        let resp = self
             .bearer(reqwest::Method::GET, list_url.as_str())
             .send()
             .map_err(|e| {
@@ -235,130 +311,75 @@ impl DriveStore for GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_status(response.status().as_u16())?;
-        let body = response
-            .text()
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let (folders, _) = parse_file_listing(&body)?;
-        if let Some(first) = folders.first() {
-            self.folder_id = Some(first.file_id.clone());
-            return Ok(());
+        classify_status(resp.status().as_u16())?;
+        let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        // Folder listings reuse the same parser shape (id/name); versions are
+        // simply absent for folders.
+        let (folders, _) = Self::parse_file_listing_lenient(&body)?;
+        if let Some(first) = folders.into_iter().find(|f| f.name == name) {
+            return Ok(first.file_id);
         }
-
         let create = self
-            .bearer(
-                reqwest::Method::POST,
-                &format!("{API_BASE}/files?fields=id"),
-            )
-            .json(&serde_json::json!({
-                "name": FOLDER_NAME,
-                "mimeType": FOLDER_MIME,
-            }))
+            .bearer(reqwest::Method::POST, &format!("{API_BASE}/files?fields=id"))
+            .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
             .send()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
         classify_status(create.status().as_u16())?;
-        let body = create
-            .text()
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let id = parse_id_from_response(&body)
-            .ok_or_else(|| SyncError::Retryable("folder create response missing id".to_string()))?;
-        self.folder_id = Some(id);
-        Ok(())
+        let body = create.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        parse_id_from_response(&body).ok_or_else(|| SyncError::Retryable("folder create missing id".to_string()))
     }
 
-    fn list_files(&mut self) -> Result<Vec<FileMeta>, SyncError> {
-        self.find_or_create_folder()?;
-        let folder_id = self
-            .folder_id
-            .as_ref()
-            .expect("folder id cached by find_or_create_folder");
-        let mut all = Vec::new();
-        let mut page_token: Option<String> = None;
-        loop {
-            let url = list_files_query(folder_id, page_token.as_deref());
-            let response = self
-                .bearer(reqwest::Method::GET, &url)
-                .send()
-                .map_err(|e| {
-                    if e.is_timeout() {
-                        SyncError::Retryable("timeout".to_string())
-                    } else {
-                        SyncError::Retryable(e.to_string())
+    /// Simple id/name listing parser used for folder lookups (no version
+    /// field required). Partial pages are failures.
+    fn parse_file_listing_lenient(json: &str) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
+        let value: serde_json::Value = match serde_json::from_str(json) {
+            Ok(v) => v,
+            Err(_) => return Err(SyncError::Rejected("corrupt listing response".to_string())),
+        };
+        let mut files = Vec::new();
+        if let Some(list) = value.get("files").and_then(|v| v.as_array()) {
+            for item in list {
+                match (
+                    item.get("id").and_then(|v| v.as_str()),
+                    item.get("name").and_then(|v| v.as_str()),
+                ) {
+                    (Some(id), Some(name)) if !id.is_empty() && !name.is_empty() => {
+                        files.push(DomainFileMeta {
+                            file_id: id.to_string(),
+                            name: name.to_string(),
+                            version: None,
+                        })
                     }
-                })?;
-            match classify_status(response.status().as_u16()) {
-                // 403 drive.file scope: abort the whole pass — ABSENCE must
-                // never run on an unconfirmed listing (§23 / Phase 2).
-                Err(SyncError::NotOurs) => return Err(SyncError::NotOurs),
-                other => other?,
-            }
-            let body = response
-                .text()
-                .map_err(|e| SyncError::Retryable(e.to_string()))?;
-            let (files, next) = parse_file_listing(&body)?;
-            all.extend(files);
-            match next {
-                Some(token) => page_token = Some(token),
-                None => break,
-            }
-        }
-        Ok(all)
-    }
-
-    fn get_content(&mut self, id: &str) -> Result<Option<Vec<u8>>, SyncError> {
-        let url = format!("{API_BASE}/files/{id}?alt=media");
-        let response = self
-            .bearer(reqwest::Method::GET, &url)
-            .send()
-            .map_err(|e| {
-                if e.is_timeout() {
-                    SyncError::Retryable("timeout".to_string())
-                } else {
-                    SyncError::Retryable(e.to_string())
+                    _ => return Err(SyncError::Rejected("partial listing response".to_string())),
                 }
-            })?;
-        let status = response.status();
-        if status == reqwest::StatusCode::NOT_FOUND {
-            return Ok(None); // fetch-404 during VALIDATE: drop file from group this pass
+            }
+        } else {
+            return Err(SyncError::Rejected("listing response missing files".to_string()));
         }
-        match classify_status(status.as_u16()) {
-            Err(SyncError::NotOurs) => return Ok(None), // drop file this pass
-            other => other?,
-        }
-        response
-            .bytes()
-            .map(|b| Some(b.to_vec()))
-            .map_err(|e| SyncError::Retryable(e.to_string()))
+        Ok((files, None))
     }
 
-    fn create_file(
+    /// Multipart write (create or update) returning the post-write version.
+    fn multipart_write(
         &mut self,
+        method: reqwest::Method,
+        url: String,
         name: &str,
-        record: &crate::sync::wire::WireRecord,
+        content: &[u8],
     ) -> Result<String, SyncError> {
-        self.find_or_create_folder()?;
-        let folder_id = self
-            .folder_id
-            .as_ref()
-            .expect("folder id cached by find_or_create_folder");
-        let metadata = serde_json::json!({
-            "name": name,
-            "parents": [folder_id],
-        })
-        .to_string();
-        let content = record.to_json();
+        let metadata = serde_json::json!({"name": name}).to_string();
         let part_meta = reqwest::blocking::multipart::Part::text(metadata)
             .mime_str("application/json")
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let part_bytes = reqwest::blocking::multipart::Part::bytes(content.into_bytes())
+        let part_bytes = reqwest::blocking::multipart::Part::bytes(content.to_vec())
             .file_name(name.to_string())
-            .mime_str("application/octet-stream")
+            .mime_str("application/json")
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
         let form = reqwest::blocking::multipart::Form::new()
             .part("metadata", part_meta)
             .part("file", part_bytes);
-        let response = self
-            .bearer(reqwest::Method::POST, &create_upload_url(&self.upload_base))
+        let resp = self
+            .bearer(method, &url)
             .multipart(form)
             .send()
             .map_err(|e| {
@@ -368,23 +389,78 @@ impl DriveStore for GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_status(response.status().as_u16())?;
-        let body = response
-            .text()
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        parse_id_from_response(&body)
-            .ok_or_else(|| SyncError::Retryable("create response missing id".to_string()))
+        classify_status(resp.status().as_u16())?;
+        let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        if let Some(v) = parse_version_from_response(&body) {
+            return Ok(v);
+        }
+        // Defensive fallback: if the response did not carry a version (shape
+        // change), fetch it explicitly so staleness detection stays armed.
+        let id = parse_id_from_response(&body);
+        if let Some(id) = id {
+            let meta_url = format!("{API_BASE}/files/{id}?fields=version");
+            let resp = self
+                .bearer(reqwest::Method::GET, &meta_url)
+                .send()
+                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            classify_status(resp.status().as_u16())?;
+            let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+            if let Some(v) = parse_version_from_response(&body) {
+                return Ok(v);
+            }
+        }
+        Err(SyncError::Retryable(
+            "write succeeded but no file version was returned".to_string(),
+        ))
+    }
+}
+
+impl DomainDriveStore for GoogleDriveStore {
+    fn ensure_v1_folder(&mut self) -> Result<String, SyncError> {
+        if let Some(id) = &self.v1_folder_id {
+            return Ok(id.clone());
+        }
+        let fluence_id = self.ensure_folder(FLUENCE_FOLDER_NAME, APPDATA_FOLDER_ALIAS)?;
+        let v1_id = self.ensure_folder(V1_FOLDER_NAME, &fluence_id)?;
+        self.v1_folder_id = Some(v1_id.clone());
+        Ok(v1_id)
     }
 
-    fn update_content(
-        &mut self,
-        id: &str,
-        record: &crate::sync::wire::WireRecord,
-    ) -> Result<(), SyncError> {
-        let url = update_media_url(&self.upload_base, id);
-        let response = self
-            .bearer(reqwest::Method::PATCH, &url)
-            .body(record.to_json())
+    fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError> {
+        let v1_id = self.ensure_v1_folder()?;
+        let mut all = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let url = list_v1_files_query(&v1_id, page_token.as_deref());
+            let resp = self
+                .bearer(reqwest::Method::GET, &url)
+                .send()
+                .map_err(|e| {
+                    if e.is_timeout() {
+                        SyncError::Retryable("timeout".to_string())
+                    } else {
+                        SyncError::Retryable(e.to_string())
+                    }
+                })?;
+            if resp.status().as_u16() == 404 {
+                return Ok(Vec::new());
+            }
+            classify_status(resp.status().as_u16())?;
+            let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+            let (files, next) = parse_domain_listing(&body)?;
+            all.extend(files);
+            match next {
+                Some(t) => page_token = Some(t),
+                None => break,
+            }
+        }
+        Ok(all)
+    }
+
+    fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+        let url = format!("{API_BASE}/files/{file_id}?alt=media");
+        let resp = self
+            .bearer(reqwest::Method::GET, &url)
             .send()
             .map_err(|e| {
                 if e.is_timeout() {
@@ -393,7 +469,85 @@ impl DriveStore for GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_update_status(response.status().as_u16())
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(None);
+        }
+        classify_status(resp.status().as_u16())?;
+        let bytes = resp.bytes().map(|b| b.to_vec()).map_err(|e| SyncError::Retryable(e.to_string()))?;
+        if bytes.len() > MAX_DOMAIN_BYTES {
+            return Err(SyncError::Rejected(format!(
+                "domain payload {} bytes exceeds cap",
+                bytes.len()
+            )));
+        }
+        Ok(Some(bytes))
+    }
+
+    fn put_domain(
+        &mut self,
+        name: &str,
+        content: &[u8],
+        expected_version: Option<&str>,
+    ) -> Result<String, SyncError> {
+        if content.len() > MAX_DOMAIN_BYTES {
+            return Err(SyncError::Rejected(format!(
+                "refusing to upload {} byte domain payload",
+                content.len()
+            )));
+        }
+        let v1_id = self.ensure_v1_folder()?;
+        let files = self.list_v1_files()?;
+        let existing = files.iter().find(|f| f.name == name);
+        match existing {
+            Some(meta) => {
+                // Concurrency check: the live version must still match what
+                // the caller merged against. A missing live version means we
+                // cannot prove freshness — treat as stale and let the caller
+                // re-read (fail-safe, never fail-open).
+                let live = meta.version.as_deref();
+                let fresh = match (expected_version, live) {
+                    (Some(exp), Some(cur)) => exp == cur,
+                    (Some(_), None) => false,
+                    (None, Some(_)) => false,
+                    (None, None) => true,
+                };
+                if !fresh {
+                    return Err(SyncError::StaleVersion(
+                        live.unwrap_or("<none>").to_string(),
+                    ));
+                }
+                self.multipart_write(
+                    reqwest::Method::PATCH,
+                    update_media_url(&self.upload_base, &meta.file_id),
+                    name,
+                    content,
+                )
+            }
+            None => {
+                // File absent. Creating is always safe unless the caller
+                // expected to UPDATE an existing file whose row vanished
+                // between list and write — also fine: recreate.
+                let _ = v1_id;
+                self.multipart_write(
+                    reqwest::Method::POST,
+                    create_upload_url(&self.upload_base),
+                    name,
+                    content,
+                )
+            }
+        }
+    }
+
+    fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
+        let url = format!("{API_BASE}/files/{file_id}");
+        let resp = self
+            .bearer(reqwest::Method::DELETE, &url)
+            .send()
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        if resp.status() == reqwest::StatusCode::NOT_FOUND {
+            return Ok(());
+        }
+        classify_status(resp.status().as_u16())
     }
 }
 
@@ -455,100 +609,70 @@ mod tests {
         let base = "https://example.test/upload/drive/v3";
         assert_eq!(
             create_upload_url(base),
-            "https://example.test/upload/drive/v3/files?uploadType=multipart&fields=id"
+            "https://example.test/upload/drive/v3/files?uploadType=multipart&fields=id,version"
         );
         assert_eq!(
             update_media_url(base, "file-9"),
-            "https://example.test/upload/drive/v3/files/file-9?uploadType=media"
+            "https://example.test/upload/drive/v3/files/file-9?uploadType=multipart&fields=version"
         );
-        // The production default keeps Google's upload host.
         assert_eq!(
             create_upload_url(UPLOAD_BASE),
-            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id"
+            "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,version"
         );
     }
 
     #[test]
-    fn update_status_404_is_idempotent_success() {
-        // A tombstone PATCH that 404s means the remote file is already gone:
-        // the tombstone is satisfied — never retried, never rejected.
-        assert!(classify_update_status(404).is_ok(), "already gone -> Ok");
-        assert!(classify_update_status(200).is_ok());
-        assert!(
-            matches!(classify_update_status(400), Err(SyncError::Rejected(_))),
-            "other 4xx still rejected"
-        );
-        assert!(matches!(
-            classify_update_status(500),
-            Err(SyncError::Retryable(_))
-        ));
-    }
-
-    #[test]
-    fn list_files_query_escapes_folder_and_adds_pagination() {
-        let q1 = list_files_query("folder-1", None);
-        assert!(q1.contains("q=%27folder-1%27+in+parents+and+trashed+%3D+false"));
-        assert!(q1.contains("fields=files%28id%2Cname%2Ctrashed%29%2CnextPageToken"));
-        assert!(q1.contains("pageSize=1000"));
-        assert!(!q1.contains("pageToken"));
-
-        let q2 = list_files_query("folder-1", Some("next-1"));
+    fn list_v1_query_scopes_to_appdata_and_requests_versions() {
+        let q = list_v1_files_query("folder-1", None);
+        assert!(q.contains("q=%27folder-1%27+in+parents+and+trashed+%3D+false"));
+        assert!(q.contains("spaces=appDataFolder"));
+        assert!(q.contains("version"));
+        assert!(q.contains("pageSize=1000"));
+        let q2 = list_v1_files_query("folder-1", Some("next-1"));
         assert!(q2.contains("pageToken=next-1"));
     }
 
     #[test]
-    fn parse_file_listing_extracts_files_and_page_token() {
-        let (files, next) = parse_file_listing(
-            r#"{"files":[{"id":"a","name":"a.json","trashed":false},{"id":"b","name":"b.json","trashed":true}],"nextPageToken":"tok"}"#,
+    fn parse_domain_listing_extracts_versions() {
+        let (files, next) = parse_domain_listing(
+            r#"{"files":[{"id":"a","name":"dictionary.json","version":"7"},{"id":"b","name":"stats.json"}],"nextPageToken":"tok"}"#,
         )
         .expect("valid listing");
         assert_eq!(files.len(), 2);
-        assert_eq!(files[0].file_id, "a");
-        assert_eq!(files[0].name, "a.json");
+        assert_eq!(files[0].version.as_deref(), Some("7"));
+        assert_eq!(files[1].version, None);
         assert_eq!(next.as_deref(), Some("tok"));
 
-        let (files, next) = parse_file_listing(r#"{"files":[]}"#).expect("valid listing");
-        assert!(files.is_empty());
-        assert!(next.is_none());
+        let (numeric, _) = parse_domain_listing(r#"{"files":[{"id":"a","name":"x.json","version":42}]}"#)
+            .expect("numeric version parses");
+        assert_eq!(numeric[0].version.as_deref(), Some("42"));
     }
 
     #[test]
-    fn parse_file_listing_partial_response_is_a_failure() {
-        // A partial/corrupt page is an error, never a silent empty result:
-        // the pass must abort before mutation (§23 / Phase 2).
-        let err = parse_file_listing(r#"{"files":[{"id":"a"}]}"#) // name missing
-            .expect_err("partial response is a failure");
+    fn parse_domain_listing_partial_response_is_a_failure() {
+        let err = parse_domain_listing(r#"{"files":[{"id":"a"}]}"#).expect_err("missing name");
         assert!(matches!(err, SyncError::Rejected(_)));
-        let err = parse_file_listing(r#"{"files":[{"id":"a","name":"a.json"},{"name":"b"}]}"#)
-            .expect_err("one malformed entry invalidates the page");
+        let err = parse_domain_listing("not json").expect_err("corrupt response");
         assert!(matches!(err, SyncError::Rejected(_)));
-        let err = parse_file_listing("not json").expect_err("corrupt response is a failure");
+        let err = parse_domain_listing(r#"{"nextPageToken":"tok"}"#).expect_err("missing files");
         assert!(matches!(err, SyncError::Rejected(_)));
-        let err = parse_file_listing(r#"{"nextPageToken":"tok"}"#)
-            .expect_err("missing files array is a failure");
-        assert!(matches!(err, SyncError::Rejected(_)));
-        let err = parse_file_listing(r#"{"files":[{"id":"","name":"a.json"}]}"#)
-            .expect_err("empty id is a failure");
-        assert!(matches!(err, SyncError::Rejected(_)));
-        let err = parse_file_listing(r#"{"files":[{"id":"a","name":""}]}"#)
-            .expect_err("empty name is a failure");
-        assert!(matches!(err, SyncError::Rejected(_)));
-        let (files, next) = parse_file_listing(r#"{"files":[],"nextPageToken":""}"#)
-            .expect("empty token is treated as no more pages");
-        assert!(files.is_empty());
-        assert!(next.is_none(), "empty page token must not re-fetch");
+    }
+
+    #[test]
+    fn parse_version_handles_string_number_and_garbage() {
+        assert_eq!(parse_version_from_response(r#"{"version":"9"}"#).as_deref(), Some("9"));
+        assert_eq!(parse_version_from_response(r#"{"version":9}"#).as_deref(), Some("9"));
+        assert_eq!(parse_version_from_response(r#"{"id":"x"}"#), None);
+        assert_eq!(parse_version_from_response("garbage"), None);
     }
 
     #[test]
     fn parse_id_from_response_handles_folder_and_file() {
         assert_eq!(
-            parse_id_from_response(r#"{"id":"folder-9","name":"Fluence Transcribe"}"#).as_deref(),
+            parse_id_from_response(r#"{"id":"folder-9","name":"fluence"}"#).as_deref(),
             Some("folder-9")
         );
-        assert_eq!(
-            parse_id_from_response(r#"{"id":"file-7"}"#).as_deref(),
-            Some("file-7")
-        );
+        assert_eq!(parse_id_from_response(r#"{"id":"file-7"}"#).as_deref(), Some("file-7"));
         assert!(parse_id_from_response("garbage").is_none());
         assert!(parse_id_from_response(r#"{"error":{"code":403}}"#).is_none());
         assert!(

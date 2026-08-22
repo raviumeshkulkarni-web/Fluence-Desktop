@@ -249,9 +249,8 @@ pub fn run() {
             sync::scheduler::sync_toggle,
             sync::scheduler::sync_sign_in,
             sync::scheduler::sync_sign_out,
-            // Quarantine list + resolve (Phase 9)
-            sync::quarantine::sync_list_quarantined,
-            sync::quarantine::sync_resolve_quarantine,
+            // Account-level combined statistics
+            sync::scheduler::get_account_stats,
             // Misc
             get_app_version,
         ])

@@ -1,14 +1,15 @@
-// Fluence sync — global scheduler + settings UI wiring (spec §21, §27 row 7).
+// Fluence sync — global scheduler + settings UI wiring (frozen v1.2).
 //
 // One scheduler per process. A background thread owns the pass loop: it waits
-// on a command channel for the cadence interval, then runs one engine pass
-// over every record kind (History, Dictionary, Snippet, Settings) and emits a
-// `sync-status` Tauri event. Scheduling is gated by three flags — sync
-// enabled (settings), signed in (refresh token present), and a fatal-error
-// latch (only a manual command re-arms automatic scheduling). A "sync now"
-// request while a pass is running coalesces into exactly one follow-up pass
-// (single-flight). Retryable failures advance the drive `Backoff` (1000 ms ×2,
-// cap 60 s); successful passes reset it.
+// on a command channel for the cadence interval, then runs one v1.2 domain
+// pass (dictionary, snippets, stats, settings — history NEVER syncs) and
+// emits a `sync-status` Tauri event. Scheduling is gated by three flags —
+// sync enabled (settings), signed in (refresh token present), and a
+// fatal-error latch (only a manual command re-arms automatic scheduling). A
+// "sync now" or local-change request that arrives while a pass is running is
+// recorded as `pending_run` and produces exactly one follow-up pass after the
+// current pass finishes (single-flight with requeue). Retryable failures
+// advance the drive `Backoff` (1000 ms ×2, cap 60 s); successful passes reset it.
 //
 // Secrets and persistence follow the security contract: the client secret is
 // never committed — it comes from the `FLUENCE_SYNC_CLIENT_SECRET` environment
@@ -24,14 +25,9 @@ use std::time::Duration;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
-use crate::dictionary::sync_store::DictionarySyncStore;
-use crate::history::HistorySyncStore;
-use crate::snippets::sync_store::SnippetSyncStore;
 use crate::sync::auth::{self, AuthSession};
 use crate::sync::drive::{Backoff, GoogleDriveStore};
-use crate::sync::engine::{self, SyncError, SyncOutcome};
-use crate::sync::settings_store::SyncSettingsStore;
-use crate::sync::wire::RecordType;
+use crate::sync::error::SyncError;
 
 // ---------------------------------------------------------------------------
 // Public constants (reported to the user; Exp 4 fixed the client ID and port).
@@ -42,8 +38,10 @@ pub const SYNC_CLIENT_ID: &str =
     "236666538373-005rdohmcf6cgh0in10v5v8nhcc1m85k.apps.googleusercontent.com";
 /// Loopback redirect port validated in Exp 4.
 pub const SYNC_REDIRECT_PORT: u16 = 58611;
-/// Automatic pass cadence: one pass every 5 minutes while enabled + signed in.
-pub const SYNC_CADENCE_MS: u64 = 300_000;
+/// Automatic pass cadence: one pass every 15 minutes while enabled + signed in (frozen v1.1).
+pub const SYNC_CADENCE_MS: u64 = 900_000;
+/// Debounce for local changes: 300ms after last local mutation before syncing.
+pub const SYNC_DEBOUNCE_MS: u64 = 300;
 /// Backoff after a retryable failure: 1000 ms base, ×2, capped at 60 s.
 pub const SYNC_BACKOFF_BASE_MS: u64 = 1_000;
 pub const SYNC_BACKOFF_FACTOR: u32 = 2;
@@ -69,12 +67,16 @@ const SYNC_SECRET_MISSING_MSG: &str = "sync client secret is not configured — 
 pub enum SyncCommand {
     /// Manual pass now (coalesces while running; re-arms after a fatal error).
     RunNow,
+    /// Local data changed — debounce 300ms before syncing (frozen v1.1).
+    LocalChange,
     /// User toggled sync in settings.
     SetEnabled(bool),
     /// Sign-in succeeded: signed_in = true, immediate pass, backoff reset.
     SignedIn,
     /// Sign-out: scheduling stops until the next sign-in.
     SignedOut,
+    /// Foreground/background transition (frozen v1.1: only sync in foreground).
+    SetForeground(bool),
     /// Stop the background thread.
     Shutdown,
 }
@@ -95,6 +97,15 @@ pub enum PassOutcomeKind {
     AuthRequired,
 }
 
+/// Aggregated outcome of one full pass across the four domains.
+#[derive(Debug, Default)]
+pub struct SyncOutcome {
+    pub created: usize,
+    pub imported: usize,
+    pub retryable_failures: usize,
+    pub rejected_failures: usize,
+}
+
 /// Pure scheduling state machine. All transitions are deterministic given the
 /// command stream and injected wall-clock millis, so the thread logic is
 /// fully unit-testable.
@@ -113,6 +124,8 @@ pub struct SchedulerCore {
     /// The delay gating the next attempt after a retryable failure (the value
     /// `next_delay_ms` returned; the backoff itself pre-steps for later).
     pub retry_delay_ms: u64,
+    pub debounce_until_ms: Option<i64>,
+    pub is_foreground: bool,
 }
 
 impl SchedulerCore {
@@ -133,12 +146,21 @@ impl SchedulerCore {
             ),
             backoff_active: false,
             retry_delay_ms: SYNC_BACKOFF_BASE_MS,
+            debounce_until_ms: None,
+            is_foreground: true,
         }
     }
 
     pub fn apply(&mut self, cmd: &SyncCommand) {
+        // For time-dependent commands we need now_ms; callers should use apply_with_time for LocalChange
         match cmd {
             SyncCommand::RunNow => {
+                self.pending_run = true;
+                self.wait_for_command = false;
+                self.debounce_until_ms = None;
+            }
+            SyncCommand::LocalChange => {
+                // Debounce handling without explicit now is done via apply_debounced
                 self.pending_run = true;
                 self.wait_for_command = false;
             }
@@ -156,25 +178,49 @@ impl SchedulerCore {
                 self.backoff.reset();
                 self.backoff_active = false;
                 self.retry_delay_ms = SYNC_BACKOFF_BASE_MS;
+                self.debounce_until_ms = None;
             }
             SyncCommand::SignedOut => {
                 self.signed_in = false;
                 self.pending_run = false;
                 self.wait_for_command = false;
                 self.backoff_active = false;
+                self.debounce_until_ms = None;
+            }
+            SyncCommand::SetForeground(fg) => {
+                self.is_foreground = *fg;
+                if *fg && self.enabled && self.signed_in && self.pending_run {
+                    // foreground regain may trigger pending
+                }
             }
             SyncCommand::Shutdown => {}
+        }
+    }
+
+    /// Debounced local change: schedule a run after SYNC_DEBOUNCE_MS
+    pub fn apply_debounced(&mut self, cmd: &SyncCommand, now_ms: i64) {
+        if let SyncCommand::LocalChange = cmd {
+            self.pending_run = true;
+            self.wait_for_command = false;
+            self.debounce_until_ms = Some(now_ms + SYNC_DEBOUNCE_MS as i64);
+        } else {
+            self.apply(cmd);
         }
     }
 
     /// How long the thread should sleep before the next opportunity to run a
     /// pass; `None` = no automatic run is possible (block on the channel).
     pub fn wait_ms(&self, now_ms: i64) -> Option<u64> {
-        if !self.enabled || !self.signed_in || self.wait_for_command {
+        if !self.enabled || !self.signed_in || self.wait_for_command || !self.is_foreground {
             return None;
         }
         if self.running {
             return Some(SYNC_CADENCE_MS);
+        }
+        if let Some(debounce) = self.debounce_until_ms {
+            if now_ms < debounce {
+                return Some((debounce - now_ms) as u64);
+            }
         }
         if self.pending_run {
             return Some(0);
@@ -194,8 +240,13 @@ impl SchedulerCore {
     /// records `last_attempt_ms`). Single-flight: while `running`, this is
     /// always `false` and `pending_run` keeps coalescing requests.
     pub fn take_run(&mut self, now_ms: i64) -> bool {
-        if self.running || !self.enabled || !self.signed_in || self.wait_for_command {
+        if self.running || !self.enabled || !self.signed_in || self.wait_for_command || !self.is_foreground {
             return false;
+        }
+        if let Some(debounce) = self.debounce_until_ms {
+            if now_ms < debounce {
+                return false;
+            }
         }
         if !self.pending_run {
             let interval = if self.backoff_active {
@@ -210,6 +261,7 @@ impl SchedulerCore {
             }
         }
         self.pending_run = false;
+        self.debounce_until_ms = None;
         self.running = true;
         self.last_attempt_ms = Some(now_ms);
         true
@@ -397,6 +449,7 @@ fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Op
             PassOutcomeKind::AuthRequired,
             Some("authentication required — sign in again".to_string()),
         ),
+        Err(SyncError::StaleVersion(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
         Err(SyncError::Retryable(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
         Err(SyncError::Rejected(e)) => (PassOutcomeKind::Rejected, Some(e.to_string())),
         Err(SyncError::Fatal(e)) => (PassOutcomeKind::Fatal, Some(e.to_string())),
@@ -426,17 +479,9 @@ where
 }
 
 // ---------------------------------------------------------------------------
-// The pass driver (spec §30.1: one `engine::run` per kind, in order).
+// The pass driver (frozen v1.2: one domain pass over dictionary, snippets,
+// stats, settings — transcription history is platform-local and never syncs).
 // ---------------------------------------------------------------------------
-
-/// Record kinds in pass order. The Settings pass runs last so its mirrored
-/// value (snippets_enabled) wins the §30.3 toggle race on a single pass.
-const KINDS: [RecordType; 4] = [
-    RecordType::History,
-    RecordType::Dictionary,
-    RecordType::Snippet,
-    RecordType::Settings,
-];
 
 /// Build the OAuth config. The client secret is resolved at runtime and only
 /// attached when present — never hard-coded, never persisted.
@@ -450,19 +495,16 @@ fn sync_config() -> auth::OAuthConfig {
     build_config(resolve_client_secret().ok())
 }
 
-/// The real pass: refresh-token → access token → one engine pass per kind,
-/// stores rebuilt from their persisted state each time. Returns the first
-/// kind-level error, aborting the pass (nothing further mutates).
+/// The real pass: frozen v1.2 domain sync (dictionary, snippets, stats,
+/// settings). History stays local (never uploaded). Returns aggregated outcome.
 fn run_pass() -> Result<SyncOutcome, SyncError> {
     let settings = crate::settings::load_settings()
         .map_err(|e| SyncError::Fatal(format!("failed to load settings for sync: {e}")))?;
-    let account = settings.sync_account_key.clone();
+    let account_email = settings.sync_account_key.clone();
+    let account_hash = account_email.as_deref().map(crate::sync::metadata::account_hash_from_email);
 
     let config = sync_config();
     if config.client_secret.is_none() {
-        // Exp 4: Google requires the client secret at the token endpoint even
-        // with PKCE; without it no refresh can ever succeed. Fail fast with a
-        // clear, transcript-free message instead of retry-bombing.
         return Err(SyncError::Fatal(SYNC_SECRET_MISSING_MSG.to_string()));
     }
     let mut session = AuthSession::new(config);
@@ -471,60 +513,44 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         return Err(SyncError::AuthRequired);
     }
     let token = ensure_access_token(&mut session)?;
-
     let mut drive = GoogleDriveStore::new(token);
-    let mut history = HistorySyncStore::new();
-    let mut dictionary = DictionarySyncStore::new();
-    let mut snippets = SnippetSyncStore::new();
-    let mut settings_store = SyncSettingsStore::new(sync_settings_path());
+    let mut metadata = crate::sync::metadata::SyncMetadata::load();
+    // Account switch: update the active-account marker so per-account
+    // bookkeeping (lastRev) partitions correctly.
+    if let Some(hash) = account_hash.clone() {
+        if metadata.last_account_hash.as_deref() != Some(&hash) {
+            metadata.last_account_hash = Some(hash.clone());
+            metadata.save();
+        }
+    }
+    let Some(hash) = account_hash else {
+        return Err(SyncError::AuthRequired);
+    };
+
+    let mut dict_store = crate::sync::stores::DictionaryDirtyStore;
+    let mut snippet_store = crate::sync::stores::SnippetDirtyStore;
+    let mut settings_store = crate::sync::stores::SettingsDirtyStore;
+    let mut stats_store = crate::sync::stores::StatsDirtyStore;
+
+    let outcomes = crate::sync::frozen::sync_all_domains(
+        &mut drive,
+        &hash,
+        &mut metadata,
+        &mut dict_store,
+        &mut snippet_store,
+        &mut settings_store,
+        &mut stats_store,
+    )?;
 
     let mut outcome = SyncOutcome::default();
-    for kind in KINDS {
-        let o = match kind {
-            RecordType::History => engine::run(
-                kind,
-                account.as_deref(),
-                &mut history,
-                &mut drive,
-                &mut session,
-            ),
-            RecordType::Dictionary => engine::run(
-                kind,
-                account.as_deref(),
-                &mut dictionary,
-                &mut drive,
-                &mut session,
-            ),
-            RecordType::Snippet => engine::run(
-                kind,
-                account.as_deref(),
-                &mut snippets,
-                &mut drive,
-                &mut session,
-            ),
-            RecordType::Settings => engine::run(
-                kind,
-                account.as_deref(),
-                &mut settings_store,
-                &mut drive,
-                &mut session,
-            ),
-        }?;
-        outcome.imported += o.imported;
-        outcome.created += o.created;
-        outcome.reuploaded += o.reuploaded;
-        outcome.patches += o.patches;
-        outcome.tombstoned_local += o.tombstoned_local;
-        outcome.quarantined += o.quarantined;
-        outcome.hard_deleted += o.hard_deleted;
-        outcome.retryable_failures += o.retryable_failures;
-        outcome.rejected_failures += o.rejected_failures;
+    for o in outcomes {
+        if o.pushed {
+            outcome.created += 1;
+        }
+        if o.merged {
+            outcome.imported += o.items_merged;
+        }
     }
-
-    // §30.3: mirror the synced snippets_enabled row into the live toggle.
-    settings_store.mirror_enabled(&mut |enabled| {
-        let _ = crate::snippets::set_snippets_enabled(enabled);
-    });
     Ok(outcome)
 }
 
@@ -556,13 +582,6 @@ fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
         }
         Err(e) => Err(SyncError::Retryable(format!("token refresh failed: {e}"))),
     }
-}
-
-pub(crate) fn sync_settings_path() -> Option<std::path::PathBuf> {
-    let mut path = dirs::data_local_dir()?;
-    path.push("Fluence");
-    path.push("sync-settings.json");
-    Some(path)
 }
 
 // ---------------------------------------------------------------------------
@@ -745,7 +764,7 @@ pub fn sync_sign_out(
 }
 
 /// Account key fetch: Drive `about` email with the memory-only access token.
-/// The token carries only the `drive.file` scope, so the OpenID userinfo
+/// The token carries only the `drive.appdata` scope, so the OpenID userinfo
 /// endpoint (which needs `openid`/`email`) cannot be used. The response is
 /// parsed without ever logging transcript or token material.
 async fn fetch_account_email(access_token: &str) -> Result<String, String> {
@@ -766,6 +785,87 @@ async fn fetch_account_email(access_token: &str) -> Result<String, String> {
         .await
         .map_err(|e| format!("account lookup failed: {e}"))?;
     parse_account_email(&text).ok_or_else(|| "account lookup did not return an email".to_string())
+}
+
+/// Account-level combined statistics (frozen v1.2 product contract).
+///
+/// Signed in: totals derive from the merged account event ledger — the same
+/// union set every device converges to — so Windows + Android contributions
+/// sum naturally (X + Y). Signed out, or before the first successful sync
+/// populates the ledger, falls back to platform-local history-derived numbers.
+///
+/// Transcription history itself is never consulted for account mode and never
+/// leaves the device; clearing history cannot reduce these totals because
+/// they come from the append-only stats ledger.
+#[tauri::command]
+pub fn get_account_stats() -> Result<serde_json::Value, String> {
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let week_start = crate::history::utc_week_start_ms(now_ms);
+    let month_start = crate::history::utc_month_start_ms(now_ms);
+
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|email| crate::sync::metadata::account_hash_from_email(&email));
+
+    if let Some(hash) = account_hash {
+        let rows = crate::sync::stores::StatsDirtyStore::account_event_rows(&hash);
+        if !rows.is_empty() {
+            let mut total_words = 0i64;
+            let mut total_chars = 0i64;
+            let mut total_duration_ms = 0i64;
+            let mut weekly_words = 0i64;
+            let mut weekly_duration_ms = 0i64;
+            let mut weekly_count = 0i64;
+            let mut monthly_words = 0i64;
+            let mut monthly_count = 0i64;
+            let mut weekly_timestamps: Vec<String> = Vec::new();
+            for (ts, dur, words, chars) in &rows {
+                total_words += words;
+                total_chars += chars;
+                total_duration_ms += dur;
+                if *ts >= week_start {
+                    weekly_words += words;
+                    weekly_duration_ms += dur;
+                    weekly_count += 1;
+                    weekly_timestamps.push(
+                        chrono::DateTime::from_timestamp_millis(*ts)
+                            .map(|dt| dt.to_rfc3339())
+                            .unwrap_or_default(),
+                    );
+                }
+                if *ts >= month_start {
+                    monthly_words += words;
+                    monthly_count += 1;
+                }
+            }
+            return Ok(serde_json::json!({
+                "source": "account",
+                "total_entries": rows.len() as i64,
+                "total_chars": total_chars,
+                "total_duration_ms": total_duration_ms,
+                "total_words": total_words,
+                "weekly_count": weekly_count,
+                "weekly_duration_ms": weekly_duration_ms,
+                "weekly_words": weekly_words,
+                "monthly_count": monthly_count,
+                "monthly_words": monthly_words,
+                "week_start_ms": week_start,
+                "month_start_ms": month_start,
+                "weekly_timestamps": weekly_timestamps,
+            }));
+        }
+    }
+
+    // Fallback: platform-local view (signed out, or signed in but the ledger
+    // has not synced yet).
+    let local = crate::history::get_history_stats()?;
+    let mut value = serde_json::to_value(&local).map_err(|e| e.to_string())?;
+    if let Some(obj) = value.as_object_mut() {
+        obj.insert("source".to_string(), serde_json::Value::String("local".to_string()));
+        obj.insert("weekly_timestamps".to_string(), serde_json::Value::Array(Vec::new()));
+    }
+    Ok(value)
 }
 
 // ---------------------------------------------------------------------------

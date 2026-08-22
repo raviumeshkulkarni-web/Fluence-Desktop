@@ -151,14 +151,7 @@ pub async fn test_llm_connection(
     model: String,
 ) -> Result<String, String> {
     crate::http_client::validate_api_url(&base_url)?;
-
-    // Smart URL parsing: handle both trailing slashes and missing/extra /v1
-    let base = base_url.trim_end_matches('/');
-    let url = if base.to_lowercase().ends_with("/v1") {
-        format!("{}/chat/completions", base)
-    } else {
-        format!("{}/v1/chat/completions", base)
-    };
+    let url = crate::http_client::build_api_url(&base_url, "chat/completions");
 
     let body = serde_json::json!({
         "model": model,

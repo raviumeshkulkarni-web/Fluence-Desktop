@@ -261,9 +261,12 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 
         if let Some(base_target) = base {
             if let Ok(legacy_key) = read_credential(base_target) {
-                log::info!("Found legacy key in global slot, migrating to: {}", target);
-                // Optional: Migrate the key to the new specific slot automatically
-                let _ = store_credential(&target, "fluence", &legacy_key);
+                log::info!(
+                    "Found legacy key in global slot, using for: {} (legacy fallback, not auto-migrating)",
+                    target
+                );
+                // Do NOT auto-migrate to per-preset slot: prevents cross-preset contamination
+                // (e.g., global openai key being persisted as groq). User should re-save per-preset explicitly.
                 return Ok(legacy_key);
             }
         }

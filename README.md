@@ -4,7 +4,7 @@
 
 [![Build Windows App](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/actions/workflows/publish.yml/badge.svg)](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/actions/workflows/publish.yml)
 [![GitHub Release](https://img.shields.io/github/v/release/raviumeshkulkarni-web/Fluence-Desktop?color=blue)](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases)
-[![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
+[![License: AGPL-3.0-only](https://img.shields.io/badge/License-AGPL_3.0--only-blue.svg)](https://www.gnu.org/licenses/agpl-3.0)
 [![Platform](https://img.shields.io/badge/Platform-Windows%2010%20%2F%2011%20x64-brightgreen.svg)](https://microsoft.com)
 [![Rust](https://img.shields.io/badge/Rust-1.77%2B-orange.svg)](https://www.rust-lang.org)
 
@@ -102,4 +102,7 @@ To run or build the application from source, you need **Rust** and **Node.js** i
 ---
 
 ## 📄 License
-This project is licensed under the Apache License 2.0, see the [LICENSE](LICENSE) file for details.
+
+Fluence is licensed under the GNU Affero General Public License v3.0 only (AGPL-3.0-only).
+
+See the [LICENSE](LICENSE) file for the complete license text.

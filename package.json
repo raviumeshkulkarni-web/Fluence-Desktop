@@ -2,6 +2,7 @@
   "name": "fluence-windows",
   "version": "1.15.0",
   "description": "Fluence — AI Voice Typing for Windows",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "tauri": "tauri",

@@ -431,12 +431,10 @@ async fn perform_moonshine_download(app: Option<&AppHandle>) -> Result<()> {
         temp_extract_dir
     );
     let output = tokio::process::Command::new("tar")
-        .args([
-            "-xjf",
-            archive_path.to_str().unwrap(),
-            "-C",
-            temp_extract_dir.to_str().unwrap(),
-        ])
+        .arg("-xjf")
+        .arg(&archive_path)
+        .arg("-C")
+        .arg(&temp_extract_dir)
         .output()
         .await
         .map_err(|e| {
@@ -548,12 +546,10 @@ async fn ensure_server_runtime(
     );
 
     let output = tokio::process::Command::new("tar")
-        .args([
-            "-xjf",
-            archive_path.to_str().unwrap(),
-            "-C",
-            temp_extract_dir.to_str().unwrap(),
-        ])
+        .arg("-xjf")
+        .arg(&archive_path)
+        .arg("-C")
+        .arg(&temp_extract_dir)
         .output()
         .await
         .map_err(|e| {

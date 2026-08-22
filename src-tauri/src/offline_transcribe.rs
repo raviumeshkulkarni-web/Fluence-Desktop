@@ -215,20 +215,20 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         OfflineEngine::SenseVoice => {
             let model_path = offline_dir.join("model.int8.onnx");
             let tokens_path = offline_dir.join("tokens.txt");
-            let tokens_arg = format!("--tokens={}", tokens_path.to_str().unwrap());
-            let model_arg = format!("--sense-voice-model={}", model_path.to_str().unwrap());
+            let tokens_arg = format!("--tokens={}", tokens_path.display().to_string());
+            let model_arg = format!("--sense-voice-model={}", model_path.display().to_string());
             cmd.args([&tokens_arg, &model_arg, &port_arg, &threads_arg]);
         }
         OfflineEngine::MoonshineBase => {
             let tokens_path = offline_dir.join("tokens.txt");
-            let tokens_arg = format!("--tokens={}", tokens_path.to_str().unwrap());
+            let tokens_arg = format!("--tokens={}", tokens_path.display().to_string());
             let preprocessor_arg = format!(
                 "--moonshine-preprocessor={}",
-                offline_dir.join("preprocess.onnx").to_str().unwrap()
+                offline_dir.join("preprocess.onnx").display().to_string()
             );
             let encoder_arg = format!(
                 "--moonshine-encoder={}",
-                offline_dir.join("encode.int8.onnx").to_str().unwrap()
+                offline_dir.join("encode.int8.onnx").display().to_string()
             );
             let uncached_decoder_arg = format!(
                 "--moonshine-uncached-decoder={}",
@@ -301,6 +301,13 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
 }
 
 pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Result<String> {
+    if samples.len() > crate::transcribe::MAX_OFFLINE_SAMPLES {
+        return Err(anyhow!(
+            "Recording too long ({} samples, {:.1} minutes). Maximum is 10 minutes for offline mode.",
+            samples.len(),
+            samples.len() as f64 / 16_000.0 / 60.0
+        ));
+    }
     let port = ensure_server_running(engine).await?;
     *LAST_USED.lock().unwrap() = Instant::now();
 

@@ -373,36 +373,20 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 STARTUP_CANCELLED.store(true, Ordering::SeqCst);
                 STOP_REQUESTED.store(true, Ordering::SeqCst);
                 let done_rx = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?.take();
-                let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
                 if let Some(done_rx) = done_rx {
-                    stop_completed =
-                        tokio::time::timeout(std::time::Duration::from_secs(2), done_rx)
-                            .await
-                            .is_ok();
-                    if stop_completed {
-                        clear_cancelled_startup_owner();
-                    }
-                } else if stop_completed {
-                    clear_cancelled_startup_owner();
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), done_rx).await;
                 }
+                clear_cancelled_startup_owner();
                 Err("Audio stream closed unexpectedly".to_string())
             }
             Err(_) => {
                 STARTUP_CANCELLED.store(true, Ordering::SeqCst);
                 STOP_REQUESTED.store(true, Ordering::SeqCst);
                 let done_rx = STREAM_DONE_RX.lock().map_err(|e| e.to_string())?.take();
-                let mut stop_completed = !RECORDING.load(Ordering::SeqCst);
                 if let Some(done_rx) = done_rx {
-                    stop_completed =
-                        tokio::time::timeout(std::time::Duration::from_secs(2), done_rx)
-                            .await
-                            .is_ok();
-                    if stop_completed {
-                        clear_cancelled_startup_owner();
-                    }
-                } else if stop_completed {
-                    clear_cancelled_startup_owner();
+                    let _ = tokio::time::timeout(std::time::Duration::from_secs(2), done_rx).await;
                 }
+                clear_cancelled_startup_owner();
                 Err("Audio device timed out (3s)".to_string())
             }
         }
@@ -699,6 +683,8 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
+    // Reset counter BEFORE signaling stop so callbacks that fire after
+    // STOP_REQUESTED is set are counted from a clean baseline.
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
     STOP_REQUESTED.store(true, Ordering::SeqCst);
 
@@ -734,6 +720,13 @@ pub async fn stop_recording_f32_samples() -> Result<Vec<f32>, String> {
                 duration_ms
             );
             return Ok(Vec::new());
+        }
+        if duration_ms > 600_000 {
+            return Err(format!(
+                "Recording too long ({}ms, {:.1} minutes). Maximum is 10 minutes. Please split recordings.",
+                duration_ms,
+                duration_ms as f64 / 60_000.0
+            ));
         }
     }
 
@@ -791,10 +784,10 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
-    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
-    // then reset the counter so we start counting from a clean baseline.
-    STOP_REQUESTED.store(true, Ordering::SeqCst);
+    // Reset counter BEFORE signaling stop so callbacks that fire after
+    // STOP_REQUESTED is set are counted from a clean baseline.
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -828,6 +821,13 @@ pub async fn stop_recording_wav_bytes() -> Result<Vec<u8>, String> {
                 duration_ms
             );
             return Ok(Vec::new());
+        }
+        if duration_ms > 600_000 {
+            return Err(format!(
+                "Recording too long ({}ms, {:.1} minutes). Maximum is 10 minutes. Please split recordings.",
+                duration_ms,
+                duration_ms as f64 / 60_000.0
+            ));
         }
     }
 
@@ -902,10 +902,10 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
-    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
-    // then reset the counter so we start counting from a clean baseline.
-    STOP_REQUESTED.store(true, Ordering::SeqCst);
+    // Reset counter BEFORE signaling stop so callbacks that fire after
+    // STOP_REQUESTED is set are counted from a clean baseline.
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -939,6 +939,13 @@ pub async fn stop_recording_flac_bytes() -> Result<Vec<u8>, String> {
                 duration_ms
             );
             return Ok(Vec::new());
+        }
+        if duration_ms > 600_000 {
+            return Err(format!(
+                "Recording too long ({}ms, {:.1} minutes). Maximum is 10 minutes. Please split recordings.",
+                duration_ms,
+                duration_ms as f64 / 60_000.0
+            ));
         }
     }
 
@@ -1002,10 +1009,10 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     if let Ok(mut guard) = TIMING_STOP_REQUESTED.lock() {
         *guard = Some(stop_request_time);
     }
-    // Signal stop FIRST so any in-flight callback sees it and increments the counter,
-    // then reset the counter so we start counting from a clean baseline.
-    STOP_REQUESTED.store(true, Ordering::SeqCst);
+    // Reset counter BEFORE signaling stop so callbacks that fire after
+    // STOP_REQUESTED is set are counted from a clean baseline.
     CALLBACKS_POST_STOP.store(0, Ordering::SeqCst);
+    STOP_REQUESTED.store(true, Ordering::SeqCst);
 
     // Wait for the recording task to finish flushing (up to 2 seconds)
     let rx = {
@@ -1039,6 +1046,13 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
                 duration_ms
             );
             return Ok(Vec::new());
+        }
+        if duration_ms > 600_000 {
+            return Err(format!(
+                "Recording too long ({}ms, {:.1} minutes). Maximum is 10 minutes. Please split recordings.",
+                duration_ms,
+                duration_ms as f64 / 60_000.0
+            ));
         }
     }
 

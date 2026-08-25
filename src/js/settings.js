@@ -66,7 +66,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   loadDashboardStats().finally(removeSkeletonLoading);
   setupUpdaterUI();
   setupKeyboardShortcuts();
-  setupSkeletonLoading();
 
   // Refresh data when window is focused
   window.addEventListener('focus', () => {
@@ -256,12 +255,14 @@ function setupHotkeyRecorders() {
 
     if (e.key === 'Escape') {
       stopHotkeyRecording(false);
+      // Keep the global Esc handler from hiding the window mid-capture
+      e.stopImmediatePropagation();
       return;
     }
 
     pendingHotkeyKeys.add(e.key);
     const parts = buildHotkeyString(e);
-    setText(activeRecorder.textId, parts || 'Press keys...');
+    setText(activeRecorder.textId, parts || 'Press keys…');
     pendingHotkey = parts;
   });
 
@@ -332,7 +333,7 @@ function startHotkeyRecording(displayId, textId, settingsKey, clearEl) {
   pendingHotkeyKeys = new Set();
   pendingHotkey = '';
   display?.classList.add('recording');
-  setText(textId, 'Press your shortcut...');
+  setText(textId, 'Press your shortcut…');
 }
 
 function stopHotkeyRecording(apply) {
@@ -538,7 +539,7 @@ async function testConnection(type) {
   const statusText = document.getElementById(`${type}-status-text`);
 
   if (statusDot) { statusDot.className = 'dot dot-idle'; }
-  if (statusText) statusText.textContent = 'Testing...';
+  if (statusText) statusText.textContent = 'Testing…';
 
   try {
     let msg;
@@ -995,7 +996,7 @@ async function listenForTauriEvents() {
 
 // ── App Version ──────────────────────────────────────────────────
 
-let currentAppVersion = '1.6.0';
+let currentAppVersion = '1.15.0';
 
 async function loadAppVersion() {
   try {
@@ -1200,7 +1201,7 @@ async function setupOfflineDownloader() {
     downloadBtn.addEventListener('click', async () => {
       try {
         downloadBtn.disabled = true;
-        downloadBtn.textContent = 'Connecting...';
+        downloadBtn.textContent = 'Connecting…';
         if (progressWrapper) progressWrapper.classList.remove('hidden');
         await invoke('download_offline_model');
       } catch (err) {
@@ -1230,7 +1231,7 @@ async function setupOfflineDownloader() {
     moonshineDownloadBtn.addEventListener('click', async () => {
       try {
         moonshineDownloadBtn.disabled = true;
-        moonshineDownloadBtn.textContent = 'Connecting...';
+        moonshineDownloadBtn.textContent = 'Connecting…';
         if (progressWrapper) progressWrapper.classList.remove('hidden');
         await invoke('download_moonshine_model');
       } catch (err) {
@@ -1291,7 +1292,7 @@ async function setupOfflineDownloader() {
         const totalMb = (payload.totalBytes / (1024 * 1024)).toFixed(1);
         if (bytesText) bytesText.textContent = `${downloadedMb} / ${totalMb} MB`;
       } else if (status === 'extracting') {
-        if (statusText) statusText.textContent = 'Extracting model files...';
+        if (statusText) statusText.textContent = 'Extracting model files…';
         if (percentageText) percentageText.textContent = `${progress.toFixed(0)}%`;
         if (progressFill) progressFill.style.width = `${progress}%`;
         if (progressTrack) progressTrack.setAttribute('aria-valuenow', Math.round(progress));
@@ -1591,9 +1592,17 @@ function setupSyncPage() {
   });
 
   document.getElementById('sync-now-btn')?.addEventListener('click', async () => {
+    if (!syncStatus?.enabled) {
+      showToast('Enable background sync first', 'error');
+      return;
+    }
     try {
-      await invoke('sync_toggle', { enabled: syncStatus?.enabled ?? false });
-      showToast('Sync started', 'success');
+      const status = await invoke('sync_toggle', { enabled: syncStatus?.enabled ?? false });
+      if (status.next_attempt_ms != null) {
+        showToast('Sync started', 'success');
+      } else {
+        showToast('Sync will run shortly', 'success');
+      }
     } catch (err) {
       showToast('Failed to start sync: ' + String(err).replace(/^Error:\s*/, ''), 'error');
     }
@@ -1603,6 +1612,18 @@ function setupSyncPage() {
     syncStatus = event.payload;
     renderSyncStatus();
   });
+}
+
+// Map a raw backend sync error to safe, user-facing copy. Raw enum/internal
+// strings are never rendered; full detail stays in the console for diagnosis.
+function describeSyncError(raw) {
+  console.log('[sync] last_error detail:', raw);
+  const m = String(raw || '').toLowerCase();
+  if (/timeout|network|connection|dns/.test(m)) return 'Connection issue — will retry automatically';
+  if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached — pausing briefly';
+  if (/rejected|exceeds|too large/.test(m)) return 'Sync data exceeds size limits';
+  if (/auth|credential|sign in again/.test(m)) return 'Session expired — please sign in again';
+  return 'Sync error — will retry';
 }
 
 function renderSyncStatus() {
@@ -1629,27 +1650,41 @@ function renderSyncStatus() {
   } else {
     if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
     if (signOutBtn) signOutBtn.style.display = 'none';
-    if (label) label.textContent = 'Not signed in';
-    if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
+    if (account) {
+      // Backend flipped signed_in=false while an account key remains set
+      // (PassOutcomeKind::AuthRequired): the session expired mid-use.
+      if (label) label.textContent = 'Session expired';
+      if (desc) desc.textContent = 'Your Google session ended — sign in again to resume syncing.';
+    } else {
+      if (label) label.textContent = 'Not signed in';
+      if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
+    }
   }
 
   if (!enabled) {
     if (statusDesc) statusDesc.textContent = 'Sync is off.';
-    if (nowBtn) nowBtn.disabled = false;
+    if (nowBtn) nowBtn.disabled = !signedIn;
     return;
   }
+
+  const errText = s.last_error ? describeSyncError(s.last_error) : null;
 
   if (s.running) {
     if (statusDesc) statusDesc.textContent = 'Syncing right now…';
   } else if (s.last_sync_at) {
+    // Time-only looks fresh even after days; include the date once the sync
+    // is older than today.
     const t = new Date(s.last_sync_at);
-    if (statusDesc) statusDesc.textContent = `Last synced ${t.toLocaleTimeString()}${s.last_error ? ` · Error: ${s.last_error}` : ''}`;
-  } else if (s.last_error) {
-    if (statusDesc) statusDesc.textContent = `Error: ${s.last_error}`;
+    const stamp = t.toDateString() === new Date().toDateString()
+      ? t.toLocaleTimeString()
+      : t.toLocaleString();
+    if (statusDesc) statusDesc.textContent = `Last synced ${stamp}${errText ? ` · ${errText}` : ''}`;
+  } else if (errText) {
+    if (statusDesc) statusDesc.textContent = errText;
   } else {
     if (statusDesc) statusDesc.textContent = 'Ready to sync.';
   }
-  if (nowBtn) nowBtn.disabled = !!s.running;
+  if (nowBtn) nowBtn.disabled = !!s.running || !signedIn;
 }
 
 // ── Suggestions (Auto-Learn) ────────────────────────────────────
@@ -1797,10 +1832,10 @@ function setupUpdaterUI() {
           break;
 
         case 'checking':
-          titleEl.textContent = 'Checking for updates...';
+          titleEl.textContent = 'Checking for updates…';
           descEl.style.display = 'none';
           if (progressContainer) progressContainer.style.display = 'none';
-          btnEl.textContent = 'Checking...';
+          btnEl.textContent = 'Checking…';
           btnEl.disabled = true;
           btnEl.className = 'btn-secondary';
           break;
@@ -1819,7 +1854,7 @@ function setupUpdaterUI() {
           break;
 
         case 'downloading':
-          titleEl.textContent = 'Downloading Update...';
+          titleEl.textContent = 'Downloading Update…';
           descEl.style.display = 'none';
           if (progressContainer) {
             progressContainer.style.display = 'block';
@@ -1886,11 +1921,11 @@ function setupUpdaterUI() {
           if (statusTimeout) clearTimeout(statusTimeout);
           sidebarVersionLabel.textContent = `v${currentAppVersion}`;
           sidebarVersionLabel.className = 'sidebar-version-label';
-          if (btnText) btnText.textContent = 'Checking...';
+          if (btnText) btnText.textContent = 'Checking…';
           sidebarBtn.disabled = true;
           sidebarBtn.className = 'sidebar-update-btn';
           if (sidebarStatus) {
-            sidebarStatus.textContent = 'Checking for updates...';
+            sidebarStatus.textContent = 'Checking for updates…';
             sidebarStatus.style.display = 'block';
           }
           if (sidebarProgressBar) sidebarProgressBar.style.display = 'none';

@@ -237,7 +237,7 @@ button:focus-visible {
 }
 
 .btn-danger:hover {
-  background: rgba(248, 113, 113, 0.25);
+  background: rgba(239, 68, 68, 0.25);
 }
 
 .btn-danger:active {
@@ -281,6 +281,33 @@ select {
   background-position: right 12px center;
   padding-right: 36px;
 }
+
+/* ── Form Rows ─────────────────────────────────────────────────── */
+.form-row {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.form-row label {
+  font-size: var(--text-label-lg);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+}
+
+.input-with-btn {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.input-with-btn input { flex: 1; }
+.input-with-btn button { flex-shrink: 0; }
+
+/* ── Status Dot ────────────────────────────────────────────────── */
+.dot { width: 8px; height: 8px; border-radius: var(--radius-full); }
+.dot-success { background: var(--color-success); }
+.dot-error   { background: var(--color-error); }
+.dot-idle    { background: var(--color-ink-muted); }
 
 /* ── Toggle Switch — luminance + ultra-thin border ─────────────── */
 .toggle-switch {
@@ -496,6 +523,45 @@ select {
 .titlebar-close:hover {
   background: #E81123 !important;
   color: var(--color-on-primary) !important;
+}
+
+/* ── Disabled States ───────────────────────────────────────────── */
+button:disabled,
+select:disabled,
+input:disabled,
+textarea:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.btn-primary:disabled:hover,
+.btn-primary:disabled:active {
+  transform: none;
+  background: var(--color-interactive);
+}
+
+.btn-secondary:disabled:hover,
+.btn-secondary:disabled:active {
+  transform: none;
+  background: var(--color-surface-elevated);
+}
+
+.btn-ghost:disabled:hover,
+.btn-ghost:disabled:active {
+  transform: none;
+  background: transparent;
+  color: var(--color-on-surface-variant);
+}
+
+.btn-danger:disabled:hover,
+.btn-danger:disabled:active {
+  transform: none;
+  background: var(--color-error-container);
+}
+
+.toggle-switch input:disabled ~ .toggle-track {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 
 /* ── Reduced Motion ────────────────────────────────────────────── */

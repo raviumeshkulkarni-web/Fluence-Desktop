@@ -540,7 +540,7 @@ body {
 .card-timer {
   font-family: var(--font-label), 'SF Mono', 'Cascadia Code', monospace;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-on-surface-variant);
   letter-spacing: 0.02em;
   font-variant-numeric: tabular-nums;

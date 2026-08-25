@@ -159,27 +159,6 @@ body {
   gap: var(--spacing-md);
 }
 
-/* ── Form Rows ─────────────────────────────────────────────────── */
-.form-row {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.form-row label {
-  font-size: var(--text-label-lg);
-  font-weight: 500;
-  color: var(--color-on-surface-variant);
-}
-
-.input-with-btn {
-  display: flex;
-  gap: var(--spacing-sm);
-}
-
-.input-with-btn input { flex: 1; }
-.input-with-btn button { flex-shrink: 0; }
-
 /* ── Inline Form Errors ───────────────────────────────────────── */
 .form-error {
   font-size: var(--text-label-sm);
@@ -262,7 +241,7 @@ body {
 .position-label {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
 }
@@ -364,7 +343,7 @@ body {
 
 .test-record-btn.recording .test-record-orb {
   background: var(--color-error);
-  box-shadow: 0 8px 24px rgba(248, 113, 113, 0.5);
+  box-shadow: 0 8px 24px rgba(239, 68, 68, 0.5);
 }
 
 .test-record-btn.transcribing .test-record-orb {
@@ -471,7 +450,7 @@ body {
 .provider-card .provider-name {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
-  font-weight: 600;
+  font-weight: 500;
   text-transform: uppercase;
   letter-spacing: 0.08em;
   transition: color 0.2s ease;

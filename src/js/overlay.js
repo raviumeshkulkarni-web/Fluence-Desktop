@@ -486,7 +486,6 @@ async function stopAndTranscribe(agentMode, sessionId) {
 
   try {
     if (agentMode) {
-      console.time('StopAndTranscribeAgent');
       const selectionPromise = invoke('grab_active_selection').catch((err) => {
         console.warn('Failed to grab active selection early:', err);
         return null;

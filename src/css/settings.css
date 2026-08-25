@@ -130,7 +130,7 @@ body {
   font-size: 11px;
   color: var(--color-ink-muted);
   text-align: center;
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.02em;
   margin-bottom: 6px;
   transition: color 0.2s ease;
@@ -471,7 +471,7 @@ body {
 .history-group-header {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
-  font-weight: 600;
+  font-weight: 500;
   letter-spacing: 0.08em;
   text-transform: uppercase;
   color: var(--color-ink-muted);
@@ -569,11 +569,6 @@ body {
   font-size: var(--text-label-lg);
   padding: 4px 0;
 }
-
-.dot { width: 8px; height: 8px; border-radius: var(--radius-full); }
-.dot-success { background: var(--color-success); }
-.dot-error   { background: var(--color-error); }
-.dot-idle    { background: var(--color-ink-muted); }
 
 /* ── View Transitions ──────────────────────────────────────────── */
 ::view-transition-old(content-area),
@@ -716,7 +711,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .chart-bar-count {
   font-family: var(--font-label);
   font-size: 11px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-on-surface-variant);
   min-height: 16px;
   display: flex;

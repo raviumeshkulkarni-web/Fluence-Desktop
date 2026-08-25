@@ -364,7 +364,7 @@ function setupStep2() {
     const txt = document.getElementById('wiz-test-text');
 
     if (dot) dot.className = 'dot dot-idle';
-    if (txt) txt.textContent = 'Testing...';
+    if (txt) txt.textContent = 'Testing…';
 
     try {
       const msg = await invoke('test_stt_connection', { baseUrl, apiKey });
@@ -402,7 +402,7 @@ function setupStep3() {
     if (isRecordingHotkey) return;
     isRecordingHotkey = true;
     display.classList.add('recording');
-    document.getElementById('wiz-hotkey-text').textContent = 'Press your shortcut...';
+    document.getElementById('wiz-hotkey-text').textContent = 'Press your shortcut…';
   });
 
   // Cancel when the display loses focus (tabbed away, focus moves elsewhere)
@@ -452,7 +452,7 @@ function setupStep3() {
   document.addEventListener('keyup', (e) => {
     if (!isRecordingHotkey || currentStep !== 3) return;
     const current = document.getElementById('wiz-hotkey-text')?.textContent;
-    if (current && current !== 'Press your shortcut...') {
+    if (current && current !== 'Press your shortcut…') {
       // Require a non-modifier key — modifiers-only shortcuts (e.g. "Ctrl" or
       // "Ctrl+Shift") keep recording until a real key is pressed
       const MODIFIER_TOKENS = new Set(['Ctrl','Alt','Shift','Meta']);
@@ -515,7 +515,7 @@ function setupStep5() {
     if (!isTestRecording) {
       isTestRecording = true;
       setRecordState('Stop Recording', 'recording');
-      if (testResult) { testResult.className = 'test-result'; testResult.textContent = 'Recording... speak now'; }
+      if (testResult) { testResult.className = 'test-result'; testResult.textContent = 'Recording… speak now'; }
 
       try {
         await invoke('start_recording', { deviceId: null });
@@ -526,7 +526,7 @@ function setupStep5() {
       }
     } else {
       isTestRecording = false;
-      setRecordState('Transcribing...', 'transcribing');
+      setRecordState('Transcribing…', 'transcribing');
       if (testBtn) testBtn.disabled = true;
 
       try {

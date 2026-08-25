@@ -225,7 +225,7 @@ pub fn get_pending_suggestions() -> Result<Vec<SuggestionEntry>, String> {
 }
 
 /// Accept a suggestion: add to dictionary, mark as Accepted.
-pub fn accept_suggestion(id: &str) -> Result<(), String> {
+pub fn accept_suggestion(id: &str, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
     let _guard = SUGGESTION_LOCK.lock().map_err(|e| e.to_string())?;
 
     let mut database = load_from_disk().map_err(|e| e.to_string())?;
@@ -241,7 +241,7 @@ pub fn accept_suggestion(id: &str) -> Result<(), String> {
     let corrected = suggestion.corrected.clone();
 
     // Add to dictionary (auto-learned suggestions are always corrections)
-    crate::dictionary::add_dictionary_entry(spoken, corrected, None)
+    crate::dictionary::add_dictionary_entry(spoken, corrected, None, scheduler)
         .map_err(|e| format!("Failed to add to dictionary: {}", e))?;
 
     // Mark as accepted (don't delete — keep for future analytics/undo)
@@ -337,8 +337,8 @@ pub fn get_suggestions() -> Result<Vec<SuggestionEntry>, String> {
 }
 
 #[tauri::command]
-pub fn accept_suggestion_command(id: String) -> Result<(), String> {
-    accept_suggestion(&id)
+pub fn accept_suggestion_command(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+    accept_suggestion(&id, scheduler)
 }
 
 #[tauri::command]

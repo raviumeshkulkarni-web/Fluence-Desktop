@@ -284,6 +284,7 @@ pub fn add_history_entry(
     duration_ms: u64,
     provider: &str,
 ) -> Result<HistoryEntry> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     // Canonical mode values only; the write seam must never emit a record the
     // sync parser rejects (BadMode → corrupt_file quarantine).
     let mode = if mode == "transcription" || mode == "agent" {

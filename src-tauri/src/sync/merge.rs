@@ -104,10 +104,32 @@ pub fn merge_settings(
         if !is_allowed_settings_key(&item.key) {
             continue;
         }
-        let entry = map.entry(item.key.clone()).or_insert_with(|| item.clone());
-        let ord = cmp_winner(item.updated_at, &item.device_id, entry.updated_at, &entry.device_id);
-        if ord == std::cmp::Ordering::Greater {
-            *entry = item.clone();
+        match map.entry(item.key.clone()) {
+            std::collections::hash_map::Entry::Vacant(e) => {
+                e.insert(item.clone());
+            }
+            std::collections::hash_map::Entry::Occupied(mut e) => {
+                let existing = e.get();
+                let winner_is_item = if existing.updated_at == 0 && item.updated_at == 0 {
+                    cmp_winner(item.updated_at, &item.device_id, existing.updated_at, &existing.device_id)
+                        == std::cmp::Ordering::Greater
+                } else if existing.updated_at == 0 {
+                    true
+                } else if item.updated_at == 0 {
+                    false
+                } else {
+                    cmp_winner(item.updated_at, &item.device_id, existing.updated_at, &existing.device_id)
+                        == std::cmp::Ordering::Greater
+                };
+                if winner_is_item {
+                    e.insert(item.clone());
+                }
+            }
+        }
+    }
+    for v in map.values_mut() {
+        if v.updated_at == 0 {
+            v.updated_at = crate::sync::clock::wall_now_ms();
         }
     }
     let mut merged: Vec<SettingsItem> = map.into_values().collect();
@@ -322,6 +344,26 @@ mod tests {
         assert_eq!(outcome.merged[0].key, "language");
     }
 
+    #[test]
+    fn adoption_loses_to_existing_remote() {
+        let local = vec![setting("language", "en", 0, "a")];
+        let remote = vec![setting("language", "fr", 100, "b")];
+        let outcome = merge_settings(&local, &remote);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(outcome.merged[0].value, "fr");
+        assert_eq!(outcome.merged[0].updated_at, 100);
+    }
+
+    #[test]
+    fn adoption_wins_when_no_remote_and_gets_stamped() {
+        let local = vec![setting("language", "en", 0, "a")];
+        let remote = vec![];
+        let outcome = merge_settings(&local, &remote);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(outcome.merged[0].value, "en");
+        assert!(outcome.merged[0].updated_at > 0, "adoption sentinel must be stamped");
+    }
+
     // ── Stats ───────────────────────────────────────────────────────────
 
     fn stat(event_id: &str, day: &str, ts: i64) -> StatsItem {
@@ -331,7 +373,9 @@ mod tests {
             timestamp_ms: ts,
             words: Some(10),
             chars: Some(40),
-            durationMs: Some(5000),
+            duration_ms: Some(5000),
+            updated_at: None,
+            device_id: None,
         }
     }
 

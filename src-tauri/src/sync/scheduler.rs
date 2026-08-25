@@ -75,8 +75,6 @@ pub enum SyncCommand {
     SignedIn,
     /// Sign-out: scheduling stops until the next sign-in.
     SignedOut,
-    /// Foreground/background transition (frozen v1.1: only sync in foreground).
-    SetForeground(bool),
     /// Stop the background thread.
     Shutdown,
 }
@@ -125,7 +123,6 @@ pub struct SchedulerCore {
     /// `next_delay_ms` returned; the backoff itself pre-steps for later).
     pub retry_delay_ms: u64,
     pub debounce_until_ms: Option<i64>,
-    pub is_foreground: bool,
 }
 
 impl SchedulerCore {
@@ -147,7 +144,6 @@ impl SchedulerCore {
             backoff_active: false,
             retry_delay_ms: SYNC_BACKOFF_BASE_MS,
             debounce_until_ms: None,
-            is_foreground: true,
         }
     }
 
@@ -187,12 +183,6 @@ impl SchedulerCore {
                 self.backoff_active = false;
                 self.debounce_until_ms = None;
             }
-            SyncCommand::SetForeground(fg) => {
-                self.is_foreground = *fg;
-                if *fg && self.enabled && self.signed_in && self.pending_run {
-                    // foreground regain may trigger pending
-                }
-            }
             SyncCommand::Shutdown => {}
         }
     }
@@ -211,7 +201,7 @@ impl SchedulerCore {
     /// How long the thread should sleep before the next opportunity to run a
     /// pass; `None` = no automatic run is possible (block on the channel).
     pub fn wait_ms(&self, now_ms: i64) -> Option<u64> {
-        if !self.enabled || !self.signed_in || self.wait_for_command || !self.is_foreground {
+        if !self.enabled || !self.signed_in || self.wait_for_command {
             return None;
         }
         if self.running {
@@ -240,7 +230,7 @@ impl SchedulerCore {
     /// records `last_attempt_ms`). Single-flight: while `running`, this is
     /// always `false` and `pending_run` keeps coalescing requests.
     pub fn take_run(&mut self, now_ms: i64) -> bool {
-        if self.running || !self.enabled || !self.signed_in || self.wait_for_command || !self.is_foreground {
+        if self.running || !self.enabled || !self.signed_in || self.wait_for_command {
             return false;
         }
         if let Some(debounce) = self.debounce_until_ms {
@@ -504,9 +494,6 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
     let account_hash = account_email.as_deref().map(crate::sync::metadata::account_hash_from_email);
 
     let config = sync_config();
-    if config.client_secret.is_none() {
-        return Err(SyncError::Fatal(SYNC_SECRET_MISSING_MSG.to_string()));
-    }
     let mut session = AuthSession::new(config);
     session.load_refresh_token().map_err(SyncError::Fatal)?;
     if session.refresh_token.is_none() {
@@ -572,6 +559,15 @@ fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
     )) {
         Ok(response) => {
             session.store_tokens(&response);
+            // RFC 6749 §6 / Google rotation: a refresh grant MAY return a new
+            // refresh token. Dropping it would orphan the stored credential
+            // and force a needless re-auth on the next pass, so persist
+            // rotations through the same Credential Manager path as sign-in.
+            if needs_refresh_token_persist(Some(&refresh), &response) {
+                session
+                    .persist_refresh_token()
+                    .map_err(SyncError::Retryable)?;
+            }
             session
                 .access_token()
                 .map(str::to_string)
@@ -581,6 +577,17 @@ fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
             Err(SyncError::AuthRequired)
         }
         Err(e) => Err(SyncError::Retryable(format!("token refresh failed: {e}"))),
+    }
+}
+
+/// Whether a successful token grant must update the stored refresh token:
+/// true only when the provider returned a rotated token different from the
+/// one already held/persisted. Pure — the Credential Manager round-trip is
+/// OS integration, not unit-testable here.
+fn needs_refresh_token_persist(previous: Option<&str>, response: &auth::TokenResponse) -> bool {
+    match &response.refresh_token {
+        Some(rotated) => previous != Some(rotated.as_str()),
+        None => false,
     }
 }
 
@@ -1084,6 +1091,43 @@ mod tests {
             "no immediate rerun (cadence, not backoff, gates the next attempt)"
         );
         assert!(c.take_run(NOW + SYNC_CADENCE_MS as i64 + 3_000));
+    }
+
+    // -- refresh-token rotation persistence ----------------------------------
+
+    fn token_response(refresh: Option<&str>) -> auth::TokenResponse {
+        auth::TokenResponse {
+            access_token: "at-1".to_string(),
+            refresh_token: refresh.map(str::to_string),
+            expires_in_secs: 3600,
+        }
+    }
+
+    #[test]
+    fn rotated_refresh_token_must_be_persisted() {
+        assert!(
+            needs_refresh_token_persist(Some("rt-old"), &token_response(Some("rt-new"))),
+            "a rotated token must go to the credential store, or the old one is orphaned"
+        );
+        assert!(needs_refresh_token_persist(
+            None,
+            &token_response(Some("rt-new"))
+        ));
+    }
+
+    #[test]
+    fn unrotated_refresh_response_keeps_previous_token() {
+        // No rotation: the previously persisted token stays authoritative.
+        assert!(!needs_refresh_token_persist(
+            Some("rt-old"),
+            &token_response(None)
+        ));
+        assert!(!needs_refresh_token_persist(None, &token_response(None)));
+        // Provider echoed the same token: no redundant credential write.
+        assert!(!needs_refresh_token_persist(
+            Some("rt-old"),
+            &token_response(Some("rt-old"))
+        ));
     }
 
     // -- client secret resolution -------------------------------------------

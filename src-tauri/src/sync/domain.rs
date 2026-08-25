@@ -21,6 +21,10 @@ pub const ENVELOPE_V1: i32 = 1;
 /// anything beyond this bound is corruption or abuse.
 pub const MAX_ENVELOPE_ITEMS: usize = 10_000;
 
+fn default_kind() -> String {
+    "correction".to_string()
+}
+
 // ── Dictionary ──────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -29,6 +33,7 @@ pub struct DictionaryItem {
     pub sync_id: String,
     pub spoken: String,
     pub corrected: String,
+    #[serde(default = "default_kind")]
     pub kind: String, // correction | expansion
     #[serde(rename = "isEnabled")]
     pub is_enabled: bool,
@@ -81,7 +86,7 @@ impl DictionaryItem {
             return false;
         }
         // Bound string sizes: a hostile record cannot balloon memory.
-        self.spoken.len() <= 4096 && self.corrected.len() <= 4096
+        self.spoken.chars().count() <= 4096 && self.corrected.chars().count() <= 4096
     }
 }
 
@@ -89,7 +94,7 @@ impl DictionaryItem {
 pub struct DictionaryEnvelope {
     pub v: i32,
     #[serde(default)]
-    pub items: Vec<DictionaryItem>,
+    pub entries: Vec<DictionaryItem>,
 }
 
 impl DictionaryEnvelope {
@@ -104,12 +109,12 @@ impl DictionaryEnvelope {
             return None;
         }
         let env: Self = serde_json::from_slice(bytes).ok()?;
-        if env.v != ENVELOPE_V1 || env.items.len() > MAX_ENVELOPE_ITEMS {
+        if env.v != ENVELOPE_V1 || env.entries.len() > MAX_ENVELOPE_ITEMS {
             return None;
         }
         Some(Self {
             v: env.v,
-            items: env.items.into_iter().filter(|i| i.validate()).collect(),
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
         })
     }
 }
@@ -157,7 +162,7 @@ impl SnippetItem {
         if self.trigger.trim().is_empty() || self.expansion.is_empty() {
             return false;
         }
-        self.trigger.len() <= 4096 && self.expansion.len() <= 8192
+        self.trigger.chars().count() <= 4096 && self.expansion.chars().count() <= 8192
     }
 }
 
@@ -165,7 +170,7 @@ impl SnippetItem {
 pub struct SnippetEnvelope {
     pub v: i32,
     #[serde(default)]
-    pub items: Vec<SnippetItem>,
+    pub entries: Vec<SnippetItem>,
 }
 
 impl SnippetEnvelope {
@@ -178,12 +183,12 @@ impl SnippetEnvelope {
             return None;
         }
         let env: Self = serde_json::from_slice(bytes).ok()?;
-        if env.v != ENVELOPE_V1 || env.items.len() > MAX_ENVELOPE_ITEMS {
+        if env.v != ENVELOPE_V1 || env.entries.len() > MAX_ENVELOPE_ITEMS {
             return None;
         }
         Some(Self {
             v: env.v,
-            items: env.items.into_iter().filter(|i| i.validate()).collect(),
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
         })
     }
 }
@@ -231,7 +236,7 @@ impl SettingsItem {
 pub struct SettingsEnvelope {
     pub v: i32,
     #[serde(default)]
-    pub items: Vec<SettingsItem>,
+    pub entries: Vec<SettingsItem>,
 }
 
 impl SettingsEnvelope {
@@ -244,12 +249,12 @@ impl SettingsEnvelope {
             return None;
         }
         let env: Self = serde_json::from_slice(bytes).ok()?;
-        if env.v != ENVELOPE_V1 || env.items.len() > SETTINGS_KEYS.len() * 4 {
+        if env.v != ENVELOPE_V1 || env.entries.len() > SETTINGS_KEYS.len() * 4 {
             return None;
         }
         Some(Self {
             v: env.v,
-            items: env.items.into_iter().filter(|i| i.validate()).collect(),
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
         })
     }
 }
@@ -264,15 +269,19 @@ impl SettingsEnvelope {
 pub struct StatsItem {
     #[serde(rename = "eventId")]
     pub event_id: String,
-    pub day: String, // YYYY-MM-DD UTC
-    #[serde(rename = "timestampMs")]
+    pub day: String,
+    #[serde(rename = "timestampMs", default)]
     pub timestamp_ms: i64,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub words: Option<i64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chars: Option<i64>,
-    #[serde(default)]
-    pub durationMs: Option<i64>,
+    #[serde(rename = "durationMs", default, skip_serializing_if = "Option::is_none")]
+    pub duration_ms: Option<i64>,
+    #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<i64>,
+    #[serde(rename = "deviceId", default, skip_serializing_if = "Option::is_none")]
+    pub device_id: Option<String>,
 }
 
 impl StatsItem {
@@ -286,13 +295,13 @@ impl StatsItem {
         if chrono::NaiveDate::parse_from_str(&self.day, "%Y-%m-%d").is_err() {
             return false;
         }
-        if self.timestamp_ms <= 0 {
+        if self.timestamp_ms < 0 {
             return false;
         }
         // Sanity: a single dictation cannot contribute absurd magnitudes.
         let words = self.words.unwrap_or(0);
         let chars = self.chars.unwrap_or(0);
-        let dur = self.durationMs.unwrap_or(0);
+        let dur = self.duration_ms.unwrap_or(0);
         (0..=1_000_000).contains(&words)
             && (0..=10_000_000).contains(&chars)
             && (0..=86_400_000 * 7).contains(&dur)
@@ -312,7 +321,9 @@ impl StatsItem {
             timestamp_ms,
             words: Some(text.split_whitespace().count() as i64),
             chars: Some(text.chars().count() as i64),
-            durationMs: Some(duration_ms),
+            duration_ms: Some(duration_ms),
+            updated_at: None,
+            device_id: None,
         }
     }
 }
@@ -334,7 +345,7 @@ pub fn synthetic_backfill_id(history_id: &str, account_hash: &str) -> String {
 pub struct StatsEnvelope {
     pub v: i32,
     #[serde(default)]
-    pub items: Vec<StatsItem>,
+    pub entries: Vec<StatsItem>,
 }
 
 impl StatsEnvelope {
@@ -347,12 +358,12 @@ impl StatsEnvelope {
             return None;
         }
         let env: Self = serde_json::from_slice(bytes).ok()?;
-        if env.v != ENVELOPE_V1 || env.items.len() > MAX_ENVELOPE_ITEMS {
+        if env.v != ENVELOPE_V1 || env.entries.len() > MAX_ENVELOPE_ITEMS {
             return None;
         }
         Some(Self {
             v: env.v,
-            items: env.items.into_iter().filter(|i| i.validate()).collect(),
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
         })
     }
 }
@@ -385,16 +396,16 @@ mod tests {
         let good = dict("hello", "hi", 100);
         let mut bad = dict("world", "mundo", 200);
         bad.sync_id = "not-a-uuid".to_string();
-        let env = DictionaryEnvelope { v: 1, items: vec![good, bad] };
+        let env = DictionaryEnvelope { v: 1, entries: vec![good, bad] };
         let bytes = env.to_bytes();
         let parsed = DictionaryEnvelope::from_bytes(&bytes).expect("envelope parses");
-        assert_eq!(parsed.items.len(), 1, "invalid item skipped, valid kept");
-        assert_eq!(parsed.items[0].spoken, "hello");
+        assert_eq!(parsed.entries.len(), 1, "invalid item skipped, valid kept");
+        assert_eq!(parsed.entries[0].spoken, "hello");
     }
 
     #[test]
     fn wrong_version_rejects_whole_envelope() {
-        let env = DictionaryEnvelope { v: 2, items: vec![dict("a", "b", 1)] };
+        let env = DictionaryEnvelope { v: 2, entries: vec![dict("a", "b", 1)] };
         assert!(DictionaryEnvelope::from_bytes(&env.to_bytes()).is_none());
     }
 
@@ -403,7 +414,7 @@ mod tests {
         let items: Vec<DictionaryItem> = (0..MAX_ENVELOPE_ITEMS + 1)
             .map(|i| dict(&format!("w{i}"), "x", 1))
             .collect();
-        let env = DictionaryEnvelope { v: 1, items };
+        let env = DictionaryEnvelope { v: 1, entries: items };
         assert!(DictionaryEnvelope::from_bytes(&env.to_bytes()).is_none());
     }
 
@@ -415,12 +426,14 @@ mod tests {
             timestamp_ms: 1_000,
             words: Some(500),
             chars: Some(2000),
-            durationMs: Some(60_000),
+            duration_ms: Some(60_000),
+            updated_at: None,
+            device_id: None,
         };
         assert!(ok.validate());
         let absurd = StatsItem { words: Some(99_000_000), ..ok.clone() };
         assert!(!absurd.validate());
-        let negative = StatsItem { durationMs: Some(-5), ..ok };
+        let negative = StatsItem { duration_ms: Some(-5), ..ok };
         assert!(!negative.validate());
     }
 
@@ -437,13 +450,50 @@ mod tests {
     fn settings_unknown_keys_rejected_per_item() {
         let env = SettingsEnvelope {
             v: 1,
-            items: vec![
+            entries: vec![
                 SettingsItem { key: "theme".into(), value: "dark".into(), updated_at: 1, device_id: "d".into() },
                 SettingsItem { key: "language".into(), value: "en".into(), updated_at: 1, device_id: "d".into() },
             ],
         };
         let parsed = SettingsEnvelope::from_bytes(&env.to_bytes()).expect("parses");
-        assert_eq!(parsed.items.len(), 1);
-        assert_eq!(parsed.items[0].key, "language");
+        assert_eq!(parsed.entries.len(), 1);
+        assert_eq!(parsed.entries[0].key, "language");
+    }
+
+    #[test]
+    fn android_canonical_fixtures_parse_and_roundtrip() {
+        let dict = DictionaryEnvelope::from_bytes(
+            include_bytes!("../../../examples/sync/v1/dictionary.json")).expect("dict fixture");
+        assert_eq!(dict.entries.len(), 3);
+        let snip = SnippetEnvelope::from_bytes(
+            include_bytes!("../../../examples/sync/v1/snippets.json")).expect("snippet fixture");
+        assert_eq!(snip.entries.len(), 2);
+        let set = SettingsEnvelope::from_bytes(
+            include_bytes!("../../../examples/sync/v1/settings.json")).expect("settings fixture");
+        assert_eq!(set.entries.len(), 5);
+
+        let raw = include_bytes!("../../../examples/sync/v1/stats.json");
+        let stats = StatsEnvelope::from_bytes(raw).expect("stats fixture");
+        assert_eq!(stats.entries.len(), 2);
+        assert!(stats.entries.iter().any(|s| s.updated_at.is_none() && s.device_id.is_none()));
+        let first = stats.entries.iter().find(|s| s.event_id == "5f0c1a2b-3c4d-5e6f-8a9b-0c1d2e3f4a5b").unwrap();
+        assert_eq!(first.timestamp_ms, 1787184000123);
+        assert!(stats.entries.iter().all(|s| s.validate()));
+
+        let mut bytes = StatsEnvelope { v: 1, entries: stats.entries.clone() }.to_bytes();
+        bytes.push(b'\n');
+        assert_eq!(bytes.as_slice(), &raw[..], "canonical stats bytes must be stable");
+    }
+
+    #[test]
+    fn emoji_length_counts_codepoints_not_bytes() {
+        let mut item = dict("a", "b", 100);
+        item.spoken = "😀".repeat(3000);
+        assert_eq!(item.spoken.chars().count(), 3000);
+        assert!(item.spoken.len() > 6000);
+        assert!(item.validate(), "3000-emoji spoken should pass codepoint cap");
+        let mut too_big = dict("a", "b", 100);
+        too_big.spoken = "😀".repeat(4097);
+        assert!(!too_big.validate(), "4097 chars should fail");
     }
 }

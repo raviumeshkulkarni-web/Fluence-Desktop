@@ -67,7 +67,17 @@ impl SyncMetadata {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(data) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(&path, data);
+            let tmp = path.with_extension("tmp");
+            if let Err(e) = std::fs::write(&tmp, &data) {
+                log::error!("failed to write sync metadata tmp file: {}", e);
+                return;
+            }
+            if let Ok(f) = std::fs::File::open(&tmp) {
+                let _ = f.sync_all();
+            }
+            if let Err(e) = std::fs::rename(&tmp, &path) {
+                log::error!("failed to rename sync metadata tmp file: {}", e);
+            }
         }
     }
 

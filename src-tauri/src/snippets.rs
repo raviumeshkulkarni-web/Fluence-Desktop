@@ -294,16 +294,19 @@ pub fn get_snippets() -> Result<SnippetStore, String> {
 }
 
 #[tauri::command]
-pub fn set_snippets_enabled(enabled: bool) -> Result<(), String> {
+pub fn set_snippets_enabled(enabled: bool, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     store.enabled = enabled;
     save_store_internal(&store).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(())
 }
 
 #[tauri::command]
-pub fn add_snippet(trigger: String, expansion: String) -> Result<Snippet, String> {
+pub fn add_snippet(trigger: String, expansion: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<Snippet, String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     let live: Vec<Snippet> = store
@@ -339,12 +342,14 @@ pub fn add_snippet(trigger: String, expansion: String) -> Result<Snippet, String
     };
     store.snippets.push(snippet.clone());
     save_store_internal(&store).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(snippet)
 }
 
 #[tauri::command]
-pub fn update_snippet(id: String, trigger: String, expansion: String) -> Result<(), String> {
+pub fn update_snippet(id: String, trigger: String, expansion: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     let live: Vec<Snippet> = store
@@ -380,12 +385,14 @@ pub fn update_snippet(id: String, trigger: String, expansion: String) -> Result<
         return Err("Snippet not found".to_string());
     }
     save_store_internal(&store).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_snippet(id: String) -> Result<(), String> {
+pub fn delete_snippet(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
@@ -410,6 +417,7 @@ pub fn delete_snippet(id: String) -> Result<(), String> {
         store.snippets.retain(|s| s.id != id);
     }
     save_store_internal(&store).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(())
 }

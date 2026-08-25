@@ -13,6 +13,11 @@ use base64::Engine;
 use sha2::{Digest, Sha256};
 use url::Url;
 
+/// How long `listen_for_redirect` waits for the browser redirect before
+/// giving up. Long enough for a slow account chooser; short enough that an
+/// abandoned browser tab cannot wedge the sign-in button until app restart.
+pub const SIGN_IN_TIMEOUT_SECS: u64 = 300;
+
 /// OAuth client configuration. `OAuthConfig::google(client_id)` supplies the
 /// Google defaults; real client credentials come from the app's OAuth setup
 /// (spec §29 Experiment 1), never hardcoded in the repo.
@@ -51,6 +56,8 @@ pub enum AuthError {
     InvalidState,
     AccessDenied(String),
     NoRefreshToken,
+    /// The loopback redirect never arrived within `SIGN_IN_TIMEOUT_SECS`.
+    Timeout,
 }
 
 impl std::fmt::Display for AuthError {
@@ -63,6 +70,7 @@ impl std::fmt::Display for AuthError {
             AuthError::InvalidState => write!(f, "OAuth state mismatch"),
             AuthError::AccessDenied(m) => write!(f, "authorization denied: {m}"),
             AuthError::NoRefreshToken => write!(f, "no refresh token — sign in again"),
+            AuthError::Timeout => write!(f, "sign-in timed out — please try again"),
         }
     }
 }
@@ -180,31 +188,43 @@ pub async fn listen_for_redirect(
     let listener = tokio::net::TcpListener::bind(("127.0.0.1", port))
         .await
         .map_err(|e| AuthError::Network(e.to_string()))?;
-    let (mut stream, _) = listener
-        .accept()
-        .await
-        .map_err(|e| AuthError::Network(e.to_string()))?;
 
-    let mut buf = [0u8; 4096];
-    let n = stream
-        .read(&mut buf)
-        .await
-        .map_err(|e| AuthError::Network(e.to_string()))?;
-    let head = std::str::from_utf8(&buf[..n]).map_err(|_| AuthError::BadRedirect)?;
-    let request_line = head.lines().next().ok_or(AuthError::BadRedirect)?;
-    let code = parse_redirect_request(request_line, expected_state)?;
+    // The whole accept+handshake is bounded: on timeout the listener and the
+    // accepted stream drop here, releasing the loopback socket exactly as on
+    // the success path.
+    let handshake = async {
+        let (mut stream, _) = listener
+            .accept()
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
 
-    let body = "Fluence sync authorized — you can close this window.";
-    let response = format!(
-        "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-        body.len(),
-        body
-    );
-    stream
-        .write_all(response.as_bytes())
-        .await
-        .map_err(|e| AuthError::Network(e.to_string()))?;
-    Ok(code)
+        let mut buf = [0u8; 4096];
+        let n = stream
+            .read(&mut buf)
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+        let head = std::str::from_utf8(&buf[..n]).map_err(|_| AuthError::BadRedirect)?;
+        let request_line = head.lines().next().ok_or(AuthError::BadRedirect)?;
+        let code = parse_redirect_request(request_line, expected_state)?;
+
+        let body = "Fluence sync authorized — you can close this window.";
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream
+            .write_all(response.as_bytes())
+            .await
+            .map_err(|e| AuthError::Network(e.to_string()))?;
+        Ok(code)
+    };
+    tokio::time::timeout(
+        std::time::Duration::from_secs(SIGN_IN_TIMEOUT_SECS),
+        handshake,
+    )
+    .await
+    .map_err(|_| AuthError::Timeout)?
 }
 
 /// Parse `GET /?code=..&state=.. HTTP/1.1` and validate the state.

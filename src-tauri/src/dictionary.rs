@@ -265,7 +265,9 @@ pub fn add_dictionary_entry(
     spoken: String,
     corrected: String,
     kind: Option<String>,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<DictionaryEntry, String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     // Frozen v1.1: businessKey = lower(trim(spoken)) must be unique among live+disabled (non-deleted)
@@ -302,6 +304,7 @@ pub fn add_dictionary_entry(
     };
     all_entries.push(entry.clone());
     save_dictionary_internal(&all_entries).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(entry)
 }
@@ -312,7 +315,9 @@ pub fn update_dictionary_entry(
     spoken: String,
     corrected: String,
     kind: Option<String>,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     let bk = spoken.trim().to_lowercase();
@@ -355,12 +360,14 @@ pub fn update_dictionary_entry(
     // We'll store maxSeen under a special key "__local__" or just update device's global
     // For now, we update per-account if we have account, else just don't persist maxSeen here (sync will handle)
     save_dictionary_internal(&all_entries).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(())
 }
 
 #[tauri::command]
-pub fn delete_dictionary_entry(id: String) -> Result<(), String> {
+pub fn delete_dictionary_entry(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
@@ -388,17 +395,20 @@ pub fn delete_dictionary_entry(id: String) -> Result<(), String> {
         entries.retain(|e| e.id != id);
     }
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(())
 }
 
 #[tauri::command]
-pub fn import_dictionary(json_data: String) -> Result<usize, String> {
+pub fn import_dictionary(json_data: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<usize, String> {
+    let _io = crate::sync::io_lock::io_lock_guard();
     let new_entries: Vec<DictionaryEntry> =
         serde_json::from_str(&json_data).map_err(|e| e.to_string())?;
     let existing = load_dictionary_internal().map_err(|e| e.to_string())?;
     let (merged, added) = merge_dictionary_entries(&existing, new_entries);
     save_dictionary_internal(&merged).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(added)
 }

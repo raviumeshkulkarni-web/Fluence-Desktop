@@ -3,7 +3,9 @@
 // Implements the `DomainDriveStore` trait against the Drive v3 API using the
 // shared reqwest blocking client. Error mapping:
 // - `401`                  -> `AuthRequired` (reauth)
-// - `403`                  -> `NotOurs` (abort the pass — never retry-bomb)
+// - `403`                  -> quota/transient reason -> `Retryable`; other
+//                            reasons -> `NotOurs`; unparseable body fails
+//                            safe to `Retryable` (see `classify_forbidden`)
 // - `429` / 5xx / timeout  -> `Retryable` (scheduler backs off)
 // - fetch-404              -> `Ok(None)` (domain treated as absent this pass)
 // - partial responses      -> `Rejected`, pass aborted before any mutation
@@ -159,6 +161,66 @@ pub fn classify_status(status: u16) -> Result<(), SyncError> {
     }
 }
 
+/// Google returns 403 with these error reasons for TRANSIENT quota/backend
+/// throttling. Everything else (e.g. `insufficientPermissions`) is treated as
+/// a genuine scope/account mismatch.
+const TRANSIENT_403_REASONS: [&str; 6] = [
+    "userRateLimitExceeded",
+    "rateLimitExceeded",
+    "dailyLimitExceeded",
+    "sharedLimitExceeded",
+    "quotaExceeded",
+    "backendError",
+];
+
+/// Classify a Drive response using its body. Only 403 inspects the body (to
+/// separate transient quota errors from genuine ownership mismatches); every
+/// other status matches [`classify_status`] exactly.
+pub fn classify_status_with_body(status: u16, body: &str) -> Result<(), SyncError> {
+    match status {
+        403 => Err(classify_forbidden(body)),
+        _ => classify_status(status),
+    }
+}
+
+/// Whether a Drive error reason denotes a transient quota/backend failure
+/// (same retryable path as 429). Pure, offline-testable.
+fn is_transient_403_reason(reason: &str) -> bool {
+    TRANSIENT_403_REASONS.contains(&reason)
+}
+
+/// Extract `error.reason`, falling back to the first `error.errors[].reason`.
+/// `None` when absent or the body is not a Drive error JSON object.
+fn forbidden_reason(value: &serde_json::Value) -> Option<&str> {
+    let error = value.get("error")?;
+    error.get("reason").and_then(|r| r.as_str()).or_else(|| {
+        error
+            .get("errors")?
+            .as_array()?
+            .iter()
+            .find_map(|e| e.get("reason").and_then(|r| r.as_str()))
+    })
+}
+
+/// Classify an HTTP 403 body. A quota-shaped reason takes the retryable
+/// backoff path; a parsed non-quota reason stays `NotOurs`.
+///
+/// Fail-safe default: a 403 whose body cannot be parsed as a Drive error JSON
+/// is classified `Retryable`, NOT `NotOurs`. Deliberate: `NotOurs` latches the
+/// scheduler into a fleet-wide fatal stop until manual intervention, while a
+/// wrongly-retried 403 merely costs one backoff attempt. On unknown bodies we
+/// prefer availability over strictness.
+pub fn classify_forbidden(body: &str) -> SyncError {
+    let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
+    match parsed.as_ref().and_then(forbidden_reason) {
+        Some(reason) if is_transient_403_reason(reason) => {
+            SyncError::Retryable(format!("Drive rate limited ({reason})"))
+        }
+        Some(_) => SyncError::NotOurs,
+        None => SyncError::Retryable("Drive HTTP 403".to_string()),
+    }
+}
+
 /// The files query for a folder listing, `trashed=false`, with optional
 /// pagination token. Pure so the escaping is testable offline.
 fn list_files_query(folder_id: &str, page_token: Option<&str>, spaces: &str) -> String {
@@ -241,6 +303,7 @@ pub trait DomainDriveStore {
         name: &str,
         content: &[u8],
         expected_version: Option<&str>,
+        preferred_file_id: Option<&str>,
     ) -> Result<String, SyncError>;
     fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError>;
 }
@@ -311,8 +374,11 @@ impl GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_status(resp.status().as_u16())?;
-        let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let body = resp
+            .text()
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        classify_status_with_body(status, &body)?;
         // Folder listings reuse the same parser shape (id/name); versions are
         // simply absent for folders.
         let (folders, _) = Self::parse_file_listing_lenient(&body)?;
@@ -324,8 +390,11 @@ impl GoogleDriveStore {
             .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
             .send()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        classify_status(create.status().as_u16())?;
-        let body = create.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let status = create.status().as_u16();
+        let body = create
+            .text()
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        classify_status_with_body(status, &body)?;
         parse_id_from_response(&body).ok_or_else(|| SyncError::Retryable("folder create missing id".to_string()))
     }
 
@@ -389,8 +458,11 @@ impl GoogleDriveStore {
                     SyncError::Retryable(e.to_string())
                 }
             })?;
-        classify_status(resp.status().as_u16())?;
-        let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let body = resp
+            .text()
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        classify_status_with_body(status, &body)?;
         if let Some(v) = parse_version_from_response(&body) {
             return Ok(v);
         }
@@ -403,8 +475,11 @@ impl GoogleDriveStore {
                 .bearer(reqwest::Method::GET, &meta_url)
                 .send()
                 .map_err(|e| SyncError::Retryable(e.to_string()))?;
-            classify_status(resp.status().as_u16())?;
-            let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+            let status = resp.status().as_u16();
+            let body = resp
+                .text()
+                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            classify_status_with_body(status, &body)?;
             if let Some(v) = parse_version_from_response(&body) {
                 return Ok(v);
             }
@@ -445,8 +520,11 @@ impl DomainDriveStore for GoogleDriveStore {
             if resp.status().as_u16() == 404 {
                 return Ok(Vec::new());
             }
-            classify_status(resp.status().as_u16())?;
-            let body = resp.text().map_err(|e| SyncError::Retryable(e.to_string()))?;
+            let status = resp.status().as_u16();
+            let body = resp
+                .text()
+                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            classify_status_with_body(status, &body)?;
             let (files, next) = parse_domain_listing(&body)?;
             all.extend(files);
             match next {
@@ -472,8 +550,12 @@ impl DomainDriveStore for GoogleDriveStore {
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
-        classify_status(resp.status().as_u16())?;
-        let bytes = resp.bytes().map(|b| b.to_vec()).map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let status = resp.status().as_u16();
+        let bytes = resp
+            .bytes()
+            .map(|b| b.to_vec())
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        classify_status_with_body(status, &String::from_utf8_lossy(&bytes))?;
         if bytes.len() > MAX_DOMAIN_BYTES {
             return Err(SyncError::Rejected(format!(
                 "domain payload {} bytes exceeds cap",
@@ -488,6 +570,7 @@ impl DomainDriveStore for GoogleDriveStore {
         name: &str,
         content: &[u8],
         expected_version: Option<&str>,
+        preferred_file_id: Option<&str>,
     ) -> Result<String, SyncError> {
         if content.len() > MAX_DOMAIN_BYTES {
             return Err(SyncError::Rejected(format!(
@@ -497,7 +580,9 @@ impl DomainDriveStore for GoogleDriveStore {
         }
         let v1_id = self.ensure_v1_folder()?;
         let files = self.list_v1_files()?;
-        let existing = files.iter().find(|f| f.name == name);
+        let existing = preferred_file_id
+            .and_then(|id| files.iter().find(|f| f.file_id == id))
+            .or_else(|| files.iter().find(|f| f.name == name));
         match existing {
             Some(meta) => {
                 // Concurrency check: the live version must still match what
@@ -547,7 +632,14 @@ impl DomainDriveStore for GoogleDriveStore {
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(());
         }
-        classify_status(resp.status().as_u16())
+        let status = resp.status().as_u16();
+        if status == 403 {
+            let body = resp
+                .text()
+                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            return Err(classify_forbidden(&body));
+        }
+        classify_status(status)
     }
 }
 
@@ -602,6 +694,64 @@ mod tests {
             matches!(classify_status(404), Err(SyncError::Rejected(_))),
             "transport-level 404 -> Rejected (fetch-404 is handled op-level)"
         );
+    }
+
+    #[test]
+    fn forbidden_quota_reason_takes_the_retryable_backoff_path() {
+        // Top-level `error.reason` shape.
+        assert!(matches!(
+            classify_status_with_body(
+                403,
+                r#"{"error":{"code":403,"message":"Rate limit exceeded","reason":"userRateLimitExceeded"}}"#
+            ),
+            Err(SyncError::Retryable(_))
+        ));
+        // Nested `error.errors[].reason` shape.
+        assert!(matches!(
+            classify_status_with_body(
+                403,
+                r#"{"error":{"code":403,"errors":[{"domain":"usageLimits","reason":"dailyLimitExceeded"}]}}"#
+            ),
+            Err(SyncError::Retryable(_))
+        ));
+        for reason in [
+            "rateLimitExceeded",
+            "sharedLimitExceeded",
+            "quotaExceeded",
+            "backendError",
+        ] {
+            let body = format!(r#"{{"error":{{"code":403,"reason":"{reason}"}}}}"#);
+            assert!(
+                matches!(classify_forbidden(&body), SyncError::Retryable(_)),
+                "{reason} must retry, not latch NotOurs"
+            );
+        }
+    }
+
+    #[test]
+    fn forbidden_permission_reason_stays_not_ours() {
+        assert_eq!(
+            classify_status_with_body(
+                403,
+                r#"{"error":{"code":403,"message":"insufficient permissions","reason":"insufficientPermissions"}}"#,
+            ),
+            Err(SyncError::NotOurs)
+        );
+        // Well-formed but unrecognized reason: still ownership-shaped.
+        assert_eq!(
+            classify_forbidden(r#"{"error":{"code":403,"reason":"appNotAuthorizedToFile"}}"#),
+            SyncError::NotOurs
+        );
+    }
+
+    #[test]
+    fn forbidden_unparseable_body_fails_safe_to_retryable() {
+        for body in ["", "<html>Bad Gateway</html>", "not json", "{}"] {
+            assert!(
+                matches!(classify_forbidden(body), SyncError::Retryable(_)),
+                "unparseable 403 body {body:?} must not latch NotOurs"
+            );
+        }
     }
 
     #[test]

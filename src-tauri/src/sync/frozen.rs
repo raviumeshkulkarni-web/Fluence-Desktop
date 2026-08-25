@@ -92,7 +92,9 @@ where
 
         // 2. Read remote state (all duplicate files merged; corrupt skipped).
         let files = drive.list_v1_files()?;
-        let domain_files: Vec<&DomainFileMeta> = files.iter().filter(|f| f.name == name).collect();
+        let mut domain_files: Vec<&DomainFileMeta> = files.iter().filter(|f| f.name == name).collect();
+        domain_files.sort_by(|a, b| a.file_id.cmp(&b.file_id));
+        let preferred_file_id = domain_files.first().map(|m| m.file_id.as_str());
         let mut remote_items: Vec<T> = Vec::new();
         let mut remote_version: Option<String> = None;
         let mut valid_found = false;
@@ -130,6 +132,9 @@ where
         if !needs_push {
             if outcome.changed {
                 let max_ts = merged.iter().map(ts_of).max().unwrap_or(0);
+                // Same lock discipline as the stamped store paths: the
+                // persisted max_seen read-modify-write must not race them.
+                let _io = crate::sync::io_lock::io_lock_guard();
                 metadata.update_max_seen(account_hash, max_ts);
                 let count = merged.len();
                 store.save_merged(account_hash, merged)?;
@@ -154,12 +159,15 @@ where
             )));
         }
 
-        // 6. Advance the monotonic clock floor before writing.
+        // 6. Advance the monotonic clock floor before writing (under io_lock,
+        // like every other max_seen writer; the guard is reentrant).
+        let _io = crate::sync::io_lock::io_lock_guard();
         let max_ts = merged.iter().map(ts_of).max().unwrap_or(0);
         metadata.update_max_seen(account_hash, max_ts);
+        drop(_io);
 
         // 7. Version-checked upload. StaleVersion loops back to step 2.
-        match drive.put_domain(name, &bytes, remote_version.as_deref()) {
+        match drive.put_domain(name, &bytes, remote_version.as_deref(), preferred_file_id) {
             Ok(new_version) => {
                 metadata.set_last_rev(account_hash, name, new_version);
                 let count = merged.len();
@@ -169,8 +177,14 @@ where
                 // Consolidate duplicate domain files: keep the first valid
                 // one (the file we just updated), drop extras.
                 if domain_files.len() > 1 {
-                    for dup in domain_files.iter().skip(1) {
-                        let _ = drive.delete_domain_file(&dup.file_id);
+                    if let Some(target) = preferred_file_id {
+                        for dup in domain_files.iter().filter(|d| d.file_id != target) {
+                            let _ = drive.delete_domain_file(&dup.file_id);
+                        }
+                    } else {
+                        for dup in domain_files.iter().skip(1) {
+                            let _ = drive.delete_domain_file(&dup.file_id);
+                        }
                     }
                 }
                 return Ok(DomainSyncOutcome {
@@ -206,9 +220,9 @@ pub fn sync_dictionary_domain(
         metadata,
         store,
         merge::merge_dictionary,
-        |items| DictionaryEnvelope { v: ENVELOPE_V1, items: items.to_vec() }.to_bytes(),
-        |bytes| DictionaryEnvelope::from_bytes(bytes).map(|e| e.items),
-        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key())),
+        |items| DictionaryEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |bytes| DictionaryEnvelope::from_bytes(bytes).map(|e| e.entries),
+        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key()).then_with(|| a.sync_id.cmp(&b.sync_id))),
         |i| i.updated_at,
     )
 }
@@ -226,9 +240,9 @@ pub fn sync_snippet_domain(
         metadata,
         store,
         merge::merge_snippets,
-        |items| SnippetEnvelope { v: ENVELOPE_V1, items: items.to_vec() }.to_bytes(),
-        |bytes| SnippetEnvelope::from_bytes(bytes).map(|e| e.items),
-        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key())),
+        |items| SnippetEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |bytes| SnippetEnvelope::from_bytes(bytes).map(|e| e.entries),
+        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key()).then_with(|| a.sync_id.cmp(&b.sync_id))),
         |i| i.updated_at,
     )
 }
@@ -246,8 +260,8 @@ pub fn sync_settings_domain(
         metadata,
         store,
         merge::merge_settings,
-        |items| SettingsEnvelope { v: ENVELOPE_V1, items: items.to_vec() }.to_bytes(),
-        |bytes| SettingsEnvelope::from_bytes(bytes).map(|e| e.items),
+        |items| SettingsEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |bytes| SettingsEnvelope::from_bytes(bytes).map(|e| e.entries),
         |items| items.sort_by(|a, b| a.key.cmp(&b.key)),
         |i| i.updated_at,
     )
@@ -266,9 +280,9 @@ pub fn sync_stats_domain(
         metadata,
         store,
         merge::merge_stats,
-        |items| StatsEnvelope { v: ENVELOPE_V1, items: items.to_vec() }.to_bytes(),
-        |bytes| StatsEnvelope::from_bytes(bytes).map(|e| e.items),
-        |items| items.sort_by(|a, b| a.event_id.cmp(&b.event_id)),
+        |items| StatsEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |bytes| StatsEnvelope::from_bytes(bytes).map(|e| e.entries),
+        |items| items.sort_by(|a, b| a.day.cmp(&b.day).then_with(|| a.event_id.cmp(&b.event_id))),
         |i| i.timestamp_ms,
     )
 }

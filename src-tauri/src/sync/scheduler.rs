@@ -491,7 +491,9 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
     let settings = crate::settings::load_settings()
         .map_err(|e| SyncError::Fatal(format!("failed to load settings for sync: {e}")))?;
     let account_email = settings.sync_account_key.clone();
-    let account_hash = account_email.as_deref().map(crate::sync::metadata::account_hash_from_email);
+    let account_hash = account_email
+        .as_deref()
+        .map(crate::sync::metadata::account_hash_from_email);
 
     let config = sync_config();
     let mut session = AuthSession::new(config);
@@ -870,8 +872,14 @@ pub fn get_account_stats() -> Result<serde_json::Value, String> {
     let local = crate::history::get_history_stats()?;
     let mut value = serde_json::to_value(&local).map_err(|e| e.to_string())?;
     if let Some(obj) = value.as_object_mut() {
-        obj.insert("source".to_string(), serde_json::Value::String("local".to_string()));
-        obj.insert("weekly_timestamps".to_string(), serde_json::Value::Array(Vec::new()));
+        obj.insert(
+            "source".to_string(),
+            serde_json::Value::String("local".to_string()),
+        );
+        obj.insert(
+            "weekly_timestamps".to_string(),
+            serde_json::Value::Array(Vec::new()),
+        );
     }
     Ok(value)
 }
@@ -1183,7 +1191,10 @@ mod tests {
         // scheduler's `sync_config()` already did. The worst-case resolution
         // (env and file both absent) must still produce a valid config.
         let config = build_config(resolve_client_secret_from(None, None).ok());
-        assert!(config.client_secret.is_none(), "public client has no secret");
+        assert!(
+            config.client_secret.is_none(),
+            "public client has no secret"
+        );
         assert_eq!(config.client_id, SYNC_CLIENT_ID);
         assert_eq!(
             config.redirect_uri,

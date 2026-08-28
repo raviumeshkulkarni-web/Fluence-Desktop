@@ -793,10 +793,18 @@ mod tests {
         println!("[HARDENING] default.json permissions: {:?}", perms);
         let has_fs_default = perms.iter().any(|v| v.as_str() == Some("fs:default"));
         let has_dialog_default = perms.iter().any(|v| v.as_str() == Some("dialog:default"));
-        let has_dialog_open = perms.iter().any(|v| v.as_str() == Some("dialog:allow-open"));
+        let has_dialog_open = perms
+            .iter()
+            .any(|v| v.as_str() == Some("dialog:allow-open"));
         assert!(has_fs_default, "fs:default retained - read-only scope required for settings import of an arbitrary user-picked JSON path");
-        assert!(!has_dialog_default, "dialog:default remains granted - should be narrowed");
-        assert!(has_dialog_open, "dialog:allow-open present - only dialog.open() is used (settings import)");
+        assert!(
+            !has_dialog_default,
+            "dialog:default remains granted - should be narrowed"
+        );
+        assert!(
+            has_dialog_open,
+            "dialog:allow-open present - only dialog.open() is used (settings import)"
+        );
         println!("[HARDENING] VERIFIED FIXED: dialog narrowed to dialog:allow-open; fs:default retained with justification (settings import)");
     }
 }

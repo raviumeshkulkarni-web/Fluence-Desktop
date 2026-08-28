@@ -47,7 +47,9 @@ pub struct DictionaryEntry {
     pub quarantine_reason: Option<String>,
 }
 
-fn default_true() -> bool { true }
+fn default_true() -> bool {
+    true
+}
 
 impl Default for DictionaryEntry {
     fn default() -> Self {
@@ -272,19 +274,27 @@ pub fn add_dictionary_entry(
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     // Frozen v1.1: businessKey = lower(trim(spoken)) must be unique among live+disabled (non-deleted)
     let bk = spoken.trim().to_lowercase();
-    if all_entries.iter().any(|e| e.deleted_at.is_none() && e.spoken.trim().to_lowercase() == bk) {
-        return Err(format!(
-            "Dictionary entry '{}' already exists",
-            spoken
-        ));
+    if all_entries
+        .iter()
+        .any(|e| e.deleted_at.is_none() && e.spoken.trim().to_lowercase() == bk)
+    {
+        return Err(format!("Dictionary entry '{}' already exists", spoken));
     }
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
     // Monotonic per-account maxSeen (or global if no account yet) — prevents clock skew from making stale win
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
     let entry = DictionaryEntry {
         id: uuid::Uuid::new_v4().to_string(),
         spoken,
@@ -321,19 +331,26 @@ pub fn update_dictionary_entry(
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     let bk = spoken.trim().to_lowercase();
-    if all_entries.iter().any(|other| other.id != id && other.deleted_at.is_none() && other.spoken.trim().to_lowercase() == bk) {
-        return Err(format!(
-            "Dictionary entry '{}' already exists",
-            spoken
-        ));
+    if all_entries.iter().any(|other| {
+        other.id != id && other.deleted_at.is_none() && other.spoken.trim().to_lowercase() == bk
+    }) {
+        return Err(format!("Dictionary entry '{}' already exists", spoken));
     }
     // Frozen v1.1: same syncId on edit, update updatedAt/deviceId/dirty in same TX
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash.clone() { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash.clone() {
+        meta.update_max_seen(&h, new_max);
+    }
     // We need account hash for maxSeen? For local edit without account, use device's maxSeen global
     // For simplicity, update global maxSeen via metadata (per-account will be updated on sync)
     let mut found = false;
@@ -345,7 +362,9 @@ pub fn update_dictionary_entry(
             found = true;
             entry.spoken = spoken.clone();
             entry.corrected = corrected.clone();
-            if let Some(k) = kind.clone() { entry.kind = k; }
+            if let Some(k) = kind.clone() {
+                entry.kind = k;
+            }
             entry.updated_at = Some(now);
             entry.device_id = Some(device_id.clone());
             entry.dirty = true;
@@ -366,15 +385,26 @@ pub fn update_dictionary_entry(
 }
 
 #[tauri::command]
-pub fn delete_dictionary_entry(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn delete_dictionary_entry(
+    id: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
     let mut to_hard_delete = false;
     for entry in entries.iter_mut() {
         if entry.id == id {
@@ -401,7 +431,10 @@ pub fn delete_dictionary_entry(id: String, scheduler: tauri::State<'_, crate::sy
 }
 
 #[tauri::command]
-pub fn import_dictionary(json_data: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<usize, String> {
+pub fn import_dictionary(
+    json_data: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<usize, String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let new_entries: Vec<DictionaryEntry> =
         serde_json::from_str(&json_data).map_err(|e| e.to_string())?;
@@ -423,7 +456,6 @@ pub fn export_dictionary() -> Result<String, String> {
 // Sync note (frozen v1.2): the sync-facing store lives in
 // `crate::sync::stores::DictionaryDirtyStore`. History never syncs.
 // ---------------------------------------------------------------------------
-
 
 #[cfg(test)]
 mod tests {

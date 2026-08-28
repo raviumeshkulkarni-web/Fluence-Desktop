@@ -118,7 +118,9 @@ struct ExpectedStat {
 
 // ---- pub(crate) replay helpers ----
 
-pub(crate) fn build_per_device(scenario: &Scenario) -> (
+pub(crate) fn build_per_device(
+    scenario: &Scenario,
+) -> (
     HashMap<String, Vec<DictionaryItem>>,
     HashMap<String, Vec<SnippetItem>>,
     HashMap<String, Vec<SettingsItem>>,
@@ -207,46 +209,141 @@ pub(crate) fn collect_ordered(
     per: &HashMap<String, Vec<DictionaryItem>>,
     order: &[String],
 ) -> Vec<Vec<DictionaryItem>> {
-    order.iter().map(|k| per.get(k).cloned().unwrap_or_default()).collect()
+    order
+        .iter()
+        .map(|k| per.get(k).cloned().unwrap_or_default())
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::sync::domain::{DictionaryEnvelope, SettingsEnvelope, SnippetEnvelope, StatsEnvelope};
+    use crate::sync::domain::{
+        DictionaryEnvelope, SettingsEnvelope, SnippetEnvelope, StatsEnvelope,
+    };
 
     // 30 scenarios — explicit include_bytes! per harness spec
     const SCENARIOS: &[&[u8]] = &[
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-01.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-02.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-03.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-04.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-05.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-06.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-07.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-08.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-09.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-10.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-11.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-12.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-13.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-14.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-15.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-16.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-17.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-18.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-19.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-20.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-21.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-22.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-23.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-24.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-25.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-26.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-27.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-28.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-29.json")),
-        include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/../examples/sync/convergence/scenario-30.json")),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-01.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-02.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-03.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-04.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-05.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-06.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-07.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-08.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-09.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-10.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-11.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-12.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-13.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-14.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-15.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-16.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-17.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-18.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-19.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-20.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-21.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-22.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-23.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-24.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-25.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-26.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-27.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-28.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-29.json"
+        )),
+        include_bytes!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../examples/sync/convergence/scenario-30.json"
+        )),
     ];
 
     fn parse_scenario(bytes: &[u8]) -> Scenario {
@@ -254,34 +351,98 @@ mod tests {
     }
 
     fn assert_dict_equal(merged: &[DictionaryItem], expected: &[ExpectedDict], scenario: &str) {
-        assert_eq!(merged.len(), expected.len(), "{} dict len mismatch", scenario);
+        assert_eq!(
+            merged.len(),
+            expected.len(),
+            "{} dict len mismatch",
+            scenario
+        );
         for exp in expected {
             let found = merged.iter().find(|m| m.sync_id == exp.syncId);
-            assert!(found.is_some(), "{} dict missing expected syncId {}", scenario, exp.syncId);
+            assert!(
+                found.is_some(),
+                "{} dict missing expected syncId {}",
+                scenario,
+                exp.syncId
+            );
             let m = found.unwrap();
-            assert_eq!(m.business_key(), exp.businessKey, "{} businessKey mismatch for {}", scenario, exp.syncId);
-            assert_eq!(m.spoken, exp.spoken, "{} spoken mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.corrected, exp.corrected, "{} corrected mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.is_enabled, exp.isEnabled, "{} isEnabled mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.updated_at, exp.updatedAt, "{} updatedAt mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.deleted_at, exp.deletedAt, "{} deletedAt mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.device_id, exp.deviceId, "{} deviceId mismatch {}", scenario, exp.syncId);
+            assert_eq!(
+                m.business_key(),
+                exp.businessKey,
+                "{} businessKey mismatch for {}",
+                scenario,
+                exp.syncId
+            );
+            assert_eq!(
+                m.spoken, exp.spoken,
+                "{} spoken mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.corrected, exp.corrected,
+                "{} corrected mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.is_enabled, exp.isEnabled,
+                "{} isEnabled mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.updated_at, exp.updatedAt,
+                "{} updatedAt mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.deleted_at, exp.deletedAt,
+                "{} deletedAt mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.device_id, exp.deviceId,
+                "{} deviceId mismatch {}",
+                scenario, exp.syncId
+            );
         }
         // also verify no extra
         for m in merged {
-            assert!(expected.iter().any(|e| e.syncId == m.sync_id), "{} merged has extra syncId {}", scenario, m.sync_id);
+            assert!(
+                expected.iter().any(|e| e.syncId == m.sync_id),
+                "{} merged has extra syncId {}",
+                scenario,
+                m.sync_id
+            );
         }
     }
 
     fn assert_snip_equal(merged: &[SnippetItem], expected: &[ExpectedSnip], scenario: &str) {
-        assert_eq!(merged.len(), expected.len(), "{} snip len mismatch", scenario);
+        assert_eq!(
+            merged.len(),
+            expected.len(),
+            "{} snip len mismatch",
+            scenario
+        );
         for exp in expected {
             let found = merged.iter().find(|m| m.sync_id == exp.syncId);
             assert!(found.is_some(), "{} snip missing {}", scenario, exp.syncId);
             let m = found.unwrap();
-            assert_eq!(m.business_key(), exp.businessKey, "{} snip bk mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.trigger, exp.trigger, "{} trigger mismatch {}", scenario, exp.syncId);
-            assert_eq!(m.expansion, exp.expansion, "{} expansion mismatch {}", scenario, exp.syncId);
+            assert_eq!(
+                m.business_key(),
+                exp.businessKey,
+                "{} snip bk mismatch {}",
+                scenario,
+                exp.syncId
+            );
+            assert_eq!(
+                m.trigger, exp.trigger,
+                "{} trigger mismatch {}",
+                scenario, exp.syncId
+            );
+            assert_eq!(
+                m.expansion, exp.expansion,
+                "{} expansion mismatch {}",
+                scenario, exp.syncId
+            );
             assert_eq!(m.is_enabled, exp.isEnabled);
             assert_eq!(m.updated_at, exp.updatedAt);
             assert_eq!(m.deleted_at, exp.deletedAt);
@@ -290,32 +451,94 @@ mod tests {
     }
 
     fn assert_settings_equal(merged: &[SettingsItem], expected: &[ExpectedSet], scenario: &str) {
-        assert_eq!(merged.len(), expected.len(), "{} settings len mismatch: merged {:?} vs expected {:?}", scenario, merged, expected);
+        assert_eq!(
+            merged.len(),
+            expected.len(),
+            "{} settings len mismatch: merged {:?} vs expected {:?}",
+            scenario,
+            merged,
+            expected
+        );
         for exp in expected {
             let found = merged.iter().find(|m| m.key == exp.key);
-            assert!(found.is_some(), "{} settings missing key {}", scenario, exp.key);
+            assert!(
+                found.is_some(),
+                "{} settings missing key {}",
+                scenario,
+                exp.key
+            );
             let m = found.unwrap();
-            assert_eq!(m.value, exp.value, "{} value mismatch key {}", scenario, exp.key);
-            assert_eq!(m.device_id, exp.deviceId, "{} deviceId mismatch key {}", scenario, exp.key);
+            assert_eq!(
+                m.value, exp.value,
+                "{} value mismatch key {}",
+                scenario, exp.key
+            );
+            assert_eq!(
+                m.device_id, exp.deviceId,
+                "{} deviceId mismatch key {}",
+                scenario, exp.key
+            );
             if exp.updatedAt == FIXED_STAMP {
-                assert!(m.updated_at >= FIXED_STAMP, "{} stamped t=0 winner should be >= FIXED_STAMP, got {} for key {}", scenario, m.updated_at, exp.key);
+                assert!(
+                    m.updated_at >= FIXED_STAMP,
+                    "{} stamped t=0 winner should be >= FIXED_STAMP, got {} for key {}",
+                    scenario,
+                    m.updated_at,
+                    exp.key
+                );
             } else {
-                assert_eq!(m.updated_at, exp.updatedAt, "{} updatedAt mismatch key {}", scenario, exp.key);
+                assert_eq!(
+                    m.updated_at, exp.updatedAt,
+                    "{} updatedAt mismatch key {}",
+                    scenario, exp.key
+                );
             }
         }
     }
 
     fn assert_stats_equal(merged: &[StatsItem], expected: &[ExpectedStat], scenario: &str) {
-        assert_eq!(merged.len(), expected.len(), "{} stats len mismatch", scenario);
+        assert_eq!(
+            merged.len(),
+            expected.len(),
+            "{} stats len mismatch",
+            scenario
+        );
         for exp in expected {
             let found = merged.iter().find(|m| m.event_id == exp.eventId);
-            assert!(found.is_some(), "{} stats missing eventId {}", scenario, exp.eventId);
+            assert!(
+                found.is_some(),
+                "{} stats missing eventId {}",
+                scenario,
+                exp.eventId
+            );
             let m = found.unwrap();
             assert_eq!(m.day, exp.day, "{} day mismatch {}", scenario, exp.eventId);
-            assert_eq!(m.timestamp_ms, exp.timestampMs, "{} timestampMs mismatch {}", scenario, exp.eventId);
-            assert_eq!(m.words, Some(exp.words), "{} words mismatch {}", scenario, exp.eventId);
-            assert_eq!(m.chars, Some(exp.chars), "{} chars mismatch {}", scenario, exp.eventId);
-            assert_eq!(m.duration_ms, Some(exp.durationMs), "{} durationMs mismatch {}", scenario, exp.eventId);
+            assert_eq!(
+                m.timestamp_ms, exp.timestampMs,
+                "{} timestampMs mismatch {}",
+                scenario, exp.eventId
+            );
+            assert_eq!(
+                m.words,
+                Some(exp.words),
+                "{} words mismatch {}",
+                scenario,
+                exp.eventId
+            );
+            assert_eq!(
+                m.chars,
+                Some(exp.chars),
+                "{} chars mismatch {}",
+                scenario,
+                exp.eventId
+            );
+            assert_eq!(
+                m.duration_ms,
+                Some(exp.durationMs),
+                "{} durationMs mismatch {}",
+                scenario,
+                exp.eventId
+            );
         }
     }
 
@@ -364,7 +587,13 @@ mod tests {
                 let mut first = true;
                 for dev in order {
                     let list = per_snip.get(dev).cloned().unwrap_or_default();
-                    if first { acc = list; first = false; } else { let out = merge_snippets(&acc, &list); acc = out.merged; }
+                    if first {
+                        acc = list;
+                        first = false;
+                    } else {
+                        let out = merge_snippets(&acc, &list);
+                        acc = out.merged;
+                    }
                 }
                 acc
             };
@@ -373,7 +602,13 @@ mod tests {
                 let mut first = true;
                 for dev in order {
                     let list = per_set.get(dev).cloned().unwrap_or_default();
-                    if first { acc = list; first = false; } else { let out = merge_settings(&acc, &list); acc = out.merged; }
+                    if first {
+                        acc = list;
+                        first = false;
+                    } else {
+                        let out = merge_settings(&acc, &list);
+                        acc = out.merged;
+                    }
                 }
                 acc
             };
@@ -382,7 +617,13 @@ mod tests {
                 let mut first = true;
                 for dev in order {
                     let list = per_stat.get(dev).cloned().unwrap_or_default();
-                    if first { acc = list; first = false; } else { let out = merge_stats(&acc, &list); acc = out.merged; }
+                    if first {
+                        acc = list;
+                        first = false;
+                    } else {
+                        let out = merge_stats(&acc, &list);
+                        acc = out.merged;
+                    }
                 }
                 acc
             };
@@ -390,8 +631,16 @@ mod tests {
             let dict1 = merge_dict_order(&order1);
             let dict2 = merge_dict_order(&order2);
             let dict3 = merge_dict_order(&order3);
-            assert_eq!(dict1, dict2, "{} dict merge order (a,b,c) vs (c,a,b) must be identical", sname);
-            assert_eq!(dict1, dict3, "{} dict merge order (a,b,c) vs (b,c,a) must be identical", sname);
+            assert_eq!(
+                dict1, dict2,
+                "{} dict merge order (a,b,c) vs (c,a,b) must be identical",
+                sname
+            );
+            assert_eq!(
+                dict1, dict3,
+                "{} dict merge order (a,b,c) vs (b,c,a) must be identical",
+                sname
+            );
 
             let snip1 = merge_snip_order(&order1);
             let snip2 = merge_snip_order(&order2);
@@ -405,7 +654,9 @@ mod tests {
             // For settings, order independence must hold logically; compare sorted by key
             // Wall-clock stamping for t==0 winners is non-deterministic (1ms drift), so compare logically.
             fn settings_logically_eq(a: &[SettingsItem], b: &[SettingsItem]) -> bool {
-                if a.len() != b.len() { return false; }
+                if a.len() != b.len() {
+                    return false;
+                }
                 for (x, y) in a.iter().zip(b.iter()) {
                     if x.key != y.key || x.value != y.value || x.device_id != y.device_id {
                         return false;
@@ -421,11 +672,26 @@ mod tests {
                 }
                 true
             }
-            let mut s1 = set1.clone(); s1.sort_by(|a,b| a.key.cmp(&b.key));
-            let mut s2 = set2.clone(); s2.sort_by(|a,b| a.key.cmp(&b.key));
-            let mut s3 = set3.clone(); s3.sort_by(|a,b| a.key.cmp(&b.key));
-            assert!(settings_logically_eq(&s1, &s2), "{} settings order independence (a,b,c) vs (c,a,b) s1={:?} s2={:?}", sname, s1, s2);
-            assert!(settings_logically_eq(&s1, &s3), "{} settings order independence (a,b,c) vs (b,c,a) s1={:?} s3={:?}", sname, s1, s3);
+            let mut s1 = set1.clone();
+            s1.sort_by(|a, b| a.key.cmp(&b.key));
+            let mut s2 = set2.clone();
+            s2.sort_by(|a, b| a.key.cmp(&b.key));
+            let mut s3 = set3.clone();
+            s3.sort_by(|a, b| a.key.cmp(&b.key));
+            assert!(
+                settings_logically_eq(&s1, &s2),
+                "{} settings order independence (a,b,c) vs (c,a,b) s1={:?} s2={:?}",
+                sname,
+                s1,
+                s2
+            );
+            assert!(
+                settings_logically_eq(&s1, &s3),
+                "{} settings order independence (a,b,c) vs (b,c,a) s1={:?} s3={:?}",
+                sname,
+                s1,
+                s3
+            );
 
             let stat1 = merge_stat_order(&order1);
             let stat2 = merge_stat_order(&order2);
@@ -438,34 +704,53 @@ mod tests {
             // Dictionary
             assert_dict_equal(&dict1, &scenario.expected.dictionary, &sname);
             // Verify serialization roundtrip preserves logical set (and sorts)
-            let dict_env = DictionaryEnvelope { v: 1, entries: dict1.clone() };
+            let dict_env = DictionaryEnvelope {
+                v: 1,
+                entries: dict1.clone(),
+            };
             let dict_bytes = dict_env.to_bytes();
             // Ensure envelope can be parsed and still equals expected logically (not byte exact due to kind)
-            let parsed_dict = DictionaryEnvelope::from_bytes(&dict_bytes).expect("dict envelope roundtrip");
+            let parsed_dict =
+                DictionaryEnvelope::from_bytes(&dict_bytes).expect("dict envelope roundtrip");
 
             assert_snip_equal(&snip1, &scenario.expected.snippets, &sname);
-            let snip_env = SnippetEnvelope { v: 1, entries: snip1.clone() };
+            let snip_env = SnippetEnvelope {
+                v: 1,
+                entries: snip1.clone(),
+            };
             let snip_bytes = snip_env.to_bytes();
-            let _parsed_snip = SnippetEnvelope::from_bytes(&snip_bytes).expect("snip envelope roundtrip");
+            let _parsed_snip =
+                SnippetEnvelope::from_bytes(&snip_bytes).expect("snip envelope roundtrip");
 
             // Settings — allow stamped t=0 divergence per harness
             assert_settings_equal(&set1, &scenario.expected.settings, &sname);
-            let set_env = SettingsEnvelope { v: 1, entries: set1.clone() };
+            let set_env = SettingsEnvelope {
+                v: 1,
+                entries: set1.clone(),
+            };
             let set_bytes = set_env.to_bytes();
             let _parsed_set = SettingsEnvelope::from_bytes(&set_bytes);
 
             assert_stats_equal(&stat1, &scenario.expected.stats, &sname);
-            let stat_env = StatsEnvelope { v: 1, entries: stat1.clone() };
+            let stat_env = StatsEnvelope {
+                v: 1,
+                entries: stat1.clone(),
+            };
             let stat_bytes = stat_env.to_bytes();
-            let _parsed_stat = StatsEnvelope::from_bytes(&stat_bytes).expect("stats envelope roundtrip");
+            let _parsed_stat =
+                StatsEnvelope::from_bytes(&stat_bytes).expect("stats envelope roundtrip");
 
             // Note: production merge_stats currently sorts by eventId only, while contract sorts by day then eventId.
             // Logical equality is checked above via eventId lookup; byte-identical envelope order is verified via expected sorting.
             // If production sorts differently, the logical set still matches — the envelope bytes will be re-sorted on next write.
             let mut sorted_expected = scenario.expected.stats.clone();
-            sorted_expected.sort_by(|a,b| a.day.cmp(&b.day).then(a.eventId.cmp(&b.eventId)));
+            sorted_expected.sort_by(|a, b| a.day.cmp(&b.day).then(a.eventId.cmp(&b.eventId)));
             // Verify expected itself is sorted day then eventId (generator guarantee)
-            assert_eq!(sorted_expected, scenario.expected.stats, "{} expected stats should be sorted day then eventId (generator bug)", sname);
+            assert_eq!(
+                sorted_expected, scenario.expected.stats,
+                "{} expected stats should be sorted day then eventId (generator bug)",
+                sname
+            );
         }
     }
 }

@@ -20,7 +20,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::dictionary::{load_dictionary_internal, save_dictionary_internal, DictionaryEntry};
 use crate::settings::{load_settings, AppSettings};
-use crate::snippets::{load_store_internal as load_snippets_internal, save_store_internal as save_snippets_internal, Snippet};
+use crate::snippets::{
+    load_store_internal as load_snippets_internal, save_store_internal as save_snippets_internal,
+    Snippet,
+};
 use crate::sync::domain::*;
 use crate::sync::error::SyncError;
 use crate::sync::frozen::DirtyStore;
@@ -112,7 +115,10 @@ impl DirtyStore for DictionaryDirtyStore {
         let device_id = meta.ensure_device_id();
         for e in all.iter_mut() {
             if e.sync_account.is_none() {
-                let max_seen = meta.for_account(account_hash).map(|s| s.max_seen).unwrap_or(0);
+                let max_seen = meta
+                    .for_account(account_hash)
+                    .map(|s| s.max_seen)
+                    .unwrap_or(0);
                 let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
                 meta.update_max_seen(account_hash, new_max);
                 e.sync_account = Some(account_hash.to_string());
@@ -143,7 +149,11 @@ impl DirtyStore for DictionaryDirtyStore {
             .any(|e| e.sync_account.as_deref() == Some(account_hash) && e.dirty)
     }
 
-    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+    fn save_merged(
+        &mut self,
+        account_hash: &str,
+        merged: Vec<Self::Item>,
+    ) -> Result<(), SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
         let rescued: Vec<DictionaryEntry> = all
@@ -187,7 +197,10 @@ impl DirtyStore for DictionaryDirtyStore {
         Ok(())
     }
 
-    fn hard_delete_never_pushed_tombstones(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+    fn hard_delete_never_pushed_tombstones(
+        &mut self,
+        account_hash: &str,
+    ) -> Result<usize, SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
         let before = all.len();
@@ -271,7 +284,10 @@ impl DirtyStore for SnippetDirtyStore {
         let device_id = meta.ensure_device_id();
         for s in store.snippets.iter_mut() {
             if s.sync_account.is_none() {
-                let max_seen = meta.for_account(account_hash).map(|s| s.max_seen).unwrap_or(0);
+                let max_seen = meta
+                    .for_account(account_hash)
+                    .map(|s| s.max_seen)
+                    .unwrap_or(0);
                 let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
                 meta.update_max_seen(account_hash, new_max);
                 s.sync_account = Some(account_hash.to_string());
@@ -301,7 +317,11 @@ impl DirtyStore for SnippetDirtyStore {
             .any(|s| s.sync_account.as_deref() == Some(account_hash) && s.dirty)
     }
 
-    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+    fn save_merged(
+        &mut self,
+        account_hash: &str,
+        merged: Vec<Self::Item>,
+    ) -> Result<(), SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
         let rescued: Vec<Snippet> = store
@@ -317,9 +337,13 @@ impl DirtyStore for SnippetDirtyStore {
             })
             .cloned()
             .collect();
-        store.snippets.retain(|s| s.sync_account.as_deref() != Some(account_hash));
+        store
+            .snippets
+            .retain(|s| s.sync_account.as_deref() != Some(account_hash));
         for item in merged {
-            store.snippets.push(Self::from_domain_item(item, account_hash));
+            store
+                .snippets
+                .push(Self::from_domain_item(item, account_hash));
         }
         for mut entry in rescued {
             entry.dirty = true;
@@ -346,7 +370,10 @@ impl DirtyStore for SnippetDirtyStore {
         Ok(())
     }
 
-    fn hard_delete_never_pushed_tombstones(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+    fn hard_delete_never_pushed_tombstones(
+        &mut self,
+        account_hash: &str,
+    ) -> Result<usize, SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
         let before = store.snippets.len();
@@ -410,7 +437,8 @@ impl SettingsDirtyStore {
     }
 
     fn save_meta(account_hash: &str, doc: &SettingsMetaDoc) -> Result<(), SyncError> {
-        let data = serde_json::to_string_pretty(doc).map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let data =
+            serde_json::to_string_pretty(doc).map_err(|e| SyncError::Fatal(e.to_string()))?;
         atomic_write(&Self::meta_path(account_hash), &data)
     }
 
@@ -420,8 +448,14 @@ impl SettingsDirtyStore {
         vec![
             ("language".to_string(), settings.language.clone()),
             ("snippets_enabled".to_string(), snippets_enabled.to_string()),
-            ("auto_learn_enabled".to_string(), settings.auto_learn_enabled.to_string()),
-            ("ai_polish_style".to_string(), settings.ai_polish_style.clone()),
+            (
+                "auto_learn_enabled".to_string(),
+                settings.auto_learn_enabled.to_string(),
+            ),
+            (
+                "ai_polish_style".to_string(),
+                settings.ai_polish_style.clone(),
+            ),
         ]
     }
 
@@ -449,7 +483,9 @@ impl DirtyStore for SettingsDirtyStore {
 
     fn load(&self, account_hash: &str) -> Vec<Self::Item> {
         let meta = Self::load_meta(account_hash);
-        let Ok(settings) = load_settings() else { return Vec::new() };
+        let Ok(settings) = load_settings() else {
+            return Vec::new();
+        };
         // Hoisted once: device id for every row, and the monotonic-clock floor
         // so a local edit is never stamped below what this device has seen
         // (a backwards wall-clock jump must not let an edit lose on LWW).
@@ -503,13 +539,19 @@ impl DirtyStore for SettingsDirtyStore {
 
     fn has_dirty(&self, account_hash: &str) -> bool {
         let meta = Self::load_meta(account_hash);
-        let Ok(settings) = load_settings() else { return false };
-        Self::live_values(&settings).iter().any(|(key, live)| {
-            meta.keys.get(key).map_or(true, |known| known.v != *live)
-        })
+        let Ok(settings) = load_settings() else {
+            return false;
+        };
+        Self::live_values(&settings)
+            .iter()
+            .any(|(key, live)| meta.keys.get(key).map_or(true, |known| known.v != *live))
     }
 
-    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+    fn save_merged(
+        &mut self,
+        account_hash: &str,
+        merged: Vec<Self::Item>,
+    ) -> Result<(), SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut meta = Self::load_meta(account_hash);
         let mut settings_changed = false;
@@ -524,13 +566,17 @@ impl DirtyStore for SettingsDirtyStore {
                 }
                 meta.keys.insert(
                     item.key.clone(),
-                    KeyMeta { v: item.value, t: item.updated_at },
+                    KeyMeta {
+                        v: item.value,
+                        t: item.updated_at,
+                    },
                 );
             }
         }
         Self::save_meta(account_hash, &meta)?;
         if settings_changed {
-            crate::settings::save_settings(&settings).map_err(|e| SyncError::Fatal(e.to_string()))?;
+            crate::settings::save_settings(&settings)
+                .map_err(|e| SyncError::Fatal(e.to_string()))?;
         }
         Ok(())
     }
@@ -559,7 +605,8 @@ pub struct StatsDirtyStore;
 #[cfg(test)]
 static TEST_LEDGER_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
 #[cfg(test)]
-static TEST_HISTORY_PATH: std::sync::Mutex<Option<std::path::PathBuf>> = std::sync::Mutex::new(None);
+static TEST_HISTORY_PATH: std::sync::Mutex<Option<std::path::PathBuf>> =
+    std::sync::Mutex::new(None);
 
 impl StatsDirtyStore {
     fn ledger_path() -> PathBuf {
@@ -638,14 +685,24 @@ impl StatsDirtyStore {
     /// commit path. The event id is UUIDv5 of the history row id, so even a
     /// duplicated call (or a later backfill of the same row) collapses under
     /// union dedup. Safe offline: the event rides the next successful sync.
-    pub fn record_dictation_event(history_id: &str, timestamp_ms: i64, text: &str, duration_ms: i64) {
+    pub fn record_dictation_event(
+        history_id: &str,
+        timestamp_ms: i64,
+        text: &str,
+        duration_ms: i64,
+    ) {
         let _io = crate::sync::io_lock::io_lock_guard();
         let item = StatsItem::from_history_row(history_id, timestamp_ms, text, duration_ms);
         let mut rows = Self::load_rows();
         if rows.iter().any(|r| r.item.event_id == item.event_id) {
             return; // idempotent by construction
         }
-        rows.push(StatEventRow { item, account: None, dirty: true, ever_pushed: false });
+        rows.push(StatEventRow {
+            item,
+            account: None,
+            dirty: true,
+            ever_pushed: false,
+        });
         let _ = Self::save_rows(&rows);
     }
 
@@ -792,13 +849,22 @@ impl DirtyStore for StatsDirtyStore {
             .any(|r| r.account.as_deref() == Some(account_hash) && r.dirty)
     }
 
-    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError> {
+    fn save_merged(
+        &mut self,
+        account_hash: &str,
+        merged: Vec<Self::Item>,
+    ) -> Result<(), SyncError> {
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut rows = Self::load_rows();
-        let merged_ids: std::collections::HashSet<String> = merged.iter().map(|i| i.event_id.clone()).collect();
+        let merged_ids: std::collections::HashSet<String> =
+            merged.iter().map(|i| i.event_id.clone()).collect();
         let rescued: Vec<StatEventRow> = rows
             .iter()
-            .filter(|r| r.account.as_deref() == Some(account_hash) && r.dirty && !merged_ids.contains(&r.item.event_id))
+            .filter(|r| {
+                r.account.as_deref() == Some(account_hash)
+                    && r.dirty
+                    && !merged_ids.contains(&r.item.event_id)
+            })
             .cloned()
             .collect();
         rows.retain(|r| r.account.as_deref() != Some(account_hash));
@@ -852,9 +918,27 @@ mod tests {
         let settings = AppSettings::default();
         let values = SettingsDirtyStore::live_values(&settings);
         let keys: Vec<&str> = values.iter().map(|(k, _)| k.as_str()).collect();
-        assert_eq!(keys, ["language", "snippets_enabled", "auto_learn_enabled", "ai_polish_style"]);
-        for forbidden in ["hotkey", "agent_hotkey", "audio_device_id", "stt_provider", "llm_provider", "api_key"] {
-            assert!(!keys.contains(&forbidden), "{forbidden} must never be emitted");
+        assert_eq!(
+            keys,
+            [
+                "language",
+                "snippets_enabled",
+                "auto_learn_enabled",
+                "ai_polish_style"
+            ]
+        );
+        for forbidden in [
+            "hotkey",
+            "agent_hotkey",
+            "audio_device_id",
+            "stt_provider",
+            "llm_provider",
+            "api_key",
+        ] {
+            assert!(
+                !keys.contains(&forbidden),
+                "{forbidden} must never be emitted"
+            );
         }
     }
 
@@ -878,14 +962,18 @@ mod tests {
     #[test]
     fn stat_event_recording_is_idempotent_per_history_row() {
         let _guard = store_test_guard();
-        let tmp = std::env::temp_dir().join(format!("fluence-test-ledger-{}.json", std::process::id()));
+        let tmp =
+            std::env::temp_dir().join(format!("fluence-test-ledger-{}.json", std::process::id()));
         StatsDirtyStore::set_test_ledger_path(Some(tmp.clone()));
         // record_dictation_event dedups on the deterministic event id.
         let id = "test-row-123";
         StatsDirtyStore::record_dictation_event(id, 1_000, "hello world", 500);
         StatsDirtyStore::record_dictation_event(id, 1_000, "hello world", 500);
         let rows = StatsDirtyStore::load_rows();
-        let count = rows.iter().filter(|r| r.item.event_id == synthetic_event_id(id)).count();
+        let count = rows
+            .iter()
+            .filter(|r| r.item.event_id == synthetic_event_id(id))
+            .count();
         assert_eq!(count, 1, "duplicate commits must not double-count");
         StatsDirtyStore::set_test_ledger_path(None);
         let _ = std::fs::remove_file(&tmp);
@@ -927,15 +1015,24 @@ mod tests {
             device_id: "device-test".to_string(),
         };
         let mut store = DictionaryDirtyStore;
-        store.save_merged(&account_hash, vec![winner.clone()]).unwrap();
+        store
+            .save_merged(&account_hash, vec![winner.clone()])
+            .unwrap();
         let after = load_dictionary_internal().unwrap_or_default();
-        let account_rows: Vec<_> = after.iter().filter(|e| e.sync_account.as_deref() == Some(account_hash.as_str())).collect();
+        let account_rows: Vec<_> = after
+            .iter()
+            .filter(|e| e.sync_account.as_deref() == Some(account_hash.as_str()))
+            .collect();
         assert!(
-            account_rows.iter().any(|e| e.id == dirty_id && e.dirty && e.updated_at == Some(2000)),
+            account_rows
+                .iter()
+                .any(|e| e.id == dirty_id && e.dirty && e.updated_at == Some(2000)),
             "fresh dirty edit must survive save_merged"
         );
         assert!(
-            account_rows.iter().any(|e| e.id == dirty_id && e.updated_at == Some(1000)),
+            account_rows
+                .iter()
+                .any(|e| e.id == dirty_id && e.updated_at == Some(1000)),
             "merged winner also present"
         );
         // Cleanup
@@ -985,7 +1082,9 @@ mod tests {
             device_id: None,
         };
         let mut store = StatsDirtyStore;
-        store.save_merged(&account_hash, vec![other.clone()]).unwrap();
+        store
+            .save_merged(&account_hash, vec![other.clone()])
+            .unwrap();
         let rows = StatsDirtyStore::load_rows();
         assert!(
             rows.iter().any(|r| r.item.event_id == dirty_id && r.dirty),
@@ -1019,7 +1118,11 @@ mod tests {
             std::process::id(),
             uuid::Uuid::new_v4()
         ));
-        let account_hash = format!("test-reconcile-{}-{}", std::process::id(), uuid::Uuid::new_v4());
+        let account_hash = format!(
+            "test-reconcile-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        );
         StatsDirtyStore::set_test_ledger_path(Some(tmp_ledger.clone()));
         StatsDirtyStore::set_test_history_path(Some(tmp_history.clone()));
         let _ = std::fs::remove_file(&tmp_ledger);
@@ -1043,7 +1146,11 @@ mod tests {
         }
         let store = StatsDirtyStore;
         let items = store.load(&account_hash);
-        assert_eq!(items.len(), 1, "reconciliation should create missing ledger row");
+        assert_eq!(
+            items.len(),
+            1,
+            "reconciliation should create missing ledger row"
+        );
         assert_eq!(items[0].event_id, synthetic_event_id("row-1"));
         let items2 = store.load(&account_hash);
         assert_eq!(items2.len(), 1, "second load should not duplicate");

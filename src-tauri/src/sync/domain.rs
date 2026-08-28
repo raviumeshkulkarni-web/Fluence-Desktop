@@ -276,7 +276,11 @@ pub struct StatsItem {
     pub words: Option<i64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chars: Option<i64>,
-    #[serde(rename = "durationMs", default, skip_serializing_if = "Option::is_none")]
+    #[serde(
+        rename = "durationMs",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
     pub duration_ms: Option<i64>,
     #[serde(rename = "updatedAt", default, skip_serializing_if = "Option::is_none")]
     pub updated_at: Option<i64>,
@@ -311,7 +315,12 @@ impl StatsItem {
     /// per history row (UUIDv5 of the row id) so even a duplicated commit
     /// path produces the SAME event id and union dedup absorbs it — exactly
     /// once counting by construction.
-    pub fn from_history_row(history_id: &str, timestamp_ms: i64, text: &str, duration_ms: i64) -> Self {
+    pub fn from_history_row(
+        history_id: &str,
+        timestamp_ms: i64,
+        text: &str,
+        duration_ms: i64,
+    ) -> Self {
         let day = chrono::DateTime::from_timestamp_millis(timestamp_ms)
             .map(|dt| dt.format("%Y-%m-%d").to_string())
             .unwrap_or_else(|| "1970-01-01".to_string());
@@ -396,7 +405,10 @@ mod tests {
         let good = dict("hello", "hi", 100);
         let mut bad = dict("world", "mundo", 200);
         bad.sync_id = "not-a-uuid".to_string();
-        let env = DictionaryEnvelope { v: 1, entries: vec![good, bad] };
+        let env = DictionaryEnvelope {
+            v: 1,
+            entries: vec![good, bad],
+        };
         let bytes = env.to_bytes();
         let parsed = DictionaryEnvelope::from_bytes(&bytes).expect("envelope parses");
         assert_eq!(parsed.entries.len(), 1, "invalid item skipped, valid kept");
@@ -405,7 +417,10 @@ mod tests {
 
     #[test]
     fn wrong_version_rejects_whole_envelope() {
-        let env = DictionaryEnvelope { v: 2, entries: vec![dict("a", "b", 1)] };
+        let env = DictionaryEnvelope {
+            v: 2,
+            entries: vec![dict("a", "b", 1)],
+        };
         assert!(DictionaryEnvelope::from_bytes(&env.to_bytes()).is_none());
     }
 
@@ -414,7 +429,10 @@ mod tests {
         let items: Vec<DictionaryItem> = (0..MAX_ENVELOPE_ITEMS + 1)
             .map(|i| dict(&format!("w{i}"), "x", 1))
             .collect();
-        let env = DictionaryEnvelope { v: 1, entries: items };
+        let env = DictionaryEnvelope {
+            v: 1,
+            entries: items,
+        };
         assert!(DictionaryEnvelope::from_bytes(&env.to_bytes()).is_none());
     }
 
@@ -431,9 +449,15 @@ mod tests {
             device_id: None,
         };
         assert!(ok.validate());
-        let absurd = StatsItem { words: Some(99_000_000), ..ok.clone() };
+        let absurd = StatsItem {
+            words: Some(99_000_000),
+            ..ok.clone()
+        };
         assert!(!absurd.validate());
-        let negative = StatsItem { duration_ms: Some(-5), ..ok };
+        let negative = StatsItem {
+            duration_ms: Some(-5),
+            ..ok
+        };
         assert!(!negative.validate());
     }
 
@@ -441,7 +465,10 @@ mod tests {
     fn fresh_event_id_is_deterministic_per_history_row() {
         let a = StatsItem::from_history_row("row-1", 1_000, "hello world", 500);
         let b = StatsItem::from_history_row("row-1", 1_000, "hello world", 500);
-        assert_eq!(a.event_id, b.event_id, "duplicate commits dedup by construction");
+        assert_eq!(
+            a.event_id, b.event_id,
+            "duplicate commits dedup by construction"
+        );
         let c = StatsItem::from_history_row("row-2", 1_000, "hello world", 500);
         assert_ne!(a.event_id, c.event_id);
     }
@@ -451,8 +478,18 @@ mod tests {
         let env = SettingsEnvelope {
             v: 1,
             entries: vec![
-                SettingsItem { key: "theme".into(), value: "dark".into(), updated_at: 1, device_id: "d".into() },
-                SettingsItem { key: "language".into(), value: "en".into(), updated_at: 1, device_id: "d".into() },
+                SettingsItem {
+                    key: "theme".into(),
+                    value: "dark".into(),
+                    updated_at: 1,
+                    device_id: "d".into(),
+                },
+                SettingsItem {
+                    key: "language".into(),
+                    value: "en".into(),
+                    updated_at: 1,
+                    device_id: "d".into(),
+                },
             ],
         };
         let parsed = SettingsEnvelope::from_bytes(&env.to_bytes()).expect("parses");
@@ -462,28 +499,47 @@ mod tests {
 
     #[test]
     fn android_canonical_fixtures_parse_and_roundtrip() {
-        let dict = DictionaryEnvelope::from_bytes(
-            include_bytes!("../../../examples/sync/v1/dictionary.json")).expect("dict fixture");
+        let dict = DictionaryEnvelope::from_bytes(include_bytes!(
+            "../../../examples/sync/v1/dictionary.json"
+        ))
+        .expect("dict fixture");
         assert_eq!(dict.entries.len(), 3);
-        let snip = SnippetEnvelope::from_bytes(
-            include_bytes!("../../../examples/sync/v1/snippets.json")).expect("snippet fixture");
+        let snip =
+            SnippetEnvelope::from_bytes(include_bytes!("../../../examples/sync/v1/snippets.json"))
+                .expect("snippet fixture");
         assert_eq!(snip.entries.len(), 2);
-        let set = SettingsEnvelope::from_bytes(
-            include_bytes!("../../../examples/sync/v1/settings.json")).expect("settings fixture");
+        let set =
+            SettingsEnvelope::from_bytes(include_bytes!("../../../examples/sync/v1/settings.json"))
+                .expect("settings fixture");
         assert_eq!(set.entries.len(), 5);
 
         let raw = include_bytes!("../../../examples/sync/v1/stats.json");
         let stats = StatsEnvelope::from_bytes(raw).expect("stats fixture");
         assert_eq!(stats.entries.len(), 2);
-        assert!(stats.entries.iter().any(|s| s.updated_at.is_none() && s.device_id.is_none()));
-        let first = stats.entries.iter().find(|s| s.event_id == "5f0c1a2b-3c4d-5e6f-8a9b-0c1d2e3f4a5b").unwrap();
+        assert!(stats
+            .entries
+            .iter()
+            .any(|s| s.updated_at.is_none() && s.device_id.is_none()));
+        let first = stats
+            .entries
+            .iter()
+            .find(|s| s.event_id == "5f0c1a2b-3c4d-5e6f-8a9b-0c1d2e3f4a5b")
+            .unwrap();
         assert_eq!(first.timestamp_ms, 1787184000123);
         assert!(stats.entries.iter().all(|s| s.validate()));
 
-        let mut bytes = StatsEnvelope { v: 1, entries: stats.entries.clone() }.to_bytes();
+        let mut bytes = StatsEnvelope {
+            v: 1,
+            entries: stats.entries.clone(),
+        }
+        .to_bytes();
         bytes.push(b'\n');
         let raw_lf: Vec<u8> = raw.iter().copied().filter(|b| *b != b'\r').collect();
-        assert_eq!(bytes.as_slice(), raw_lf.as_slice(), "canonical stats bytes must be stable");
+        assert_eq!(
+            bytes.as_slice(),
+            raw_lf.as_slice(),
+            "canonical stats bytes must be stable"
+        );
     }
 
     #[test]
@@ -492,7 +548,10 @@ mod tests {
         item.spoken = "😀".repeat(3000);
         assert_eq!(item.spoken.chars().count(), 3000);
         assert!(item.spoken.len() > 6000);
-        assert!(item.validate(), "3000-emoji spoken should pass codepoint cap");
+        assert!(
+            item.validate(),
+            "3000-emoji spoken should pass codepoint cap"
+        );
         let mut too_big = dict("a", "b", 100);
         too_big.spoken = "😀".repeat(4097);
         assert!(!too_big.validate(), "4097 chars should fail");

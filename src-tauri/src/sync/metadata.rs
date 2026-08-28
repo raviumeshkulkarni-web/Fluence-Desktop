@@ -198,12 +198,21 @@ mod tests {
     fn last_rev_per_account_isolated_and_cleared_on_switch() {
         let mut m = SyncMetadata::default();
         m.set_last_rev("acc1", "dictionary", "rev1".to_string());
-        assert_eq!(m.get_last_rev("acc1", "dictionary").as_deref(), Some("rev1"));
+        assert_eq!(
+            m.get_last_rev("acc1", "dictionary").as_deref(),
+            Some("rev1")
+        );
         assert_eq!(m.get_last_rev("acc2", "dictionary"), None);
         m.set_last_rev("acc2", "dictionary", "rev2".to_string());
-        assert_eq!(m.get_last_rev("acc2", "dictionary").as_deref(), Some("rev2"));
+        assert_eq!(
+            m.get_last_rev("acc2", "dictionary").as_deref(),
+            Some("rev2")
+        );
         // acc1 still has its rev
-        assert_eq!(m.get_last_rev("acc1", "dictionary").as_deref(), Some("rev1"));
+        assert_eq!(
+            m.get_last_rev("acc1", "dictionary").as_deref(),
+            Some("rev1")
+        );
         m.clear_last_rev("acc1");
         assert_eq!(m.get_last_rev("acc1", "dictionary"), None);
     }

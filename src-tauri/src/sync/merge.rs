@@ -40,12 +40,12 @@ where
 {
     let mut grouped: BTreeMap<K, Vec<T>> = BTreeMap::new();
     for item in local.iter().chain(remote.iter()) {
-        grouped.entry(business_key(item)).or_default().push(item.clone());
+        grouped
+            .entry(business_key(item))
+            .or_default()
+            .push(item.clone());
     }
-    let local_map: HashMap<K, T> = local
-        .iter()
-        .map(|i| (business_key(i), i.clone()))
-        .collect();
+    let local_map: HashMap<K, T> = local.iter().map(|i| (business_key(i), i.clone())).collect();
 
     let mut merged = Vec::new();
     let mut changed = false;
@@ -80,10 +80,7 @@ pub fn merge_dictionary(
 }
 
 /// Merge snippets: one winner per businessKey using pure LWW.
-pub fn merge_snippets(
-    local: &[SnippetItem],
-    remote: &[SnippetItem],
-) -> MergeOutcome<SnippetItem> {
+pub fn merge_snippets(local: &[SnippetItem], remote: &[SnippetItem]) -> MergeOutcome<SnippetItem> {
     merge_keyed(
         local,
         remote,
@@ -118,15 +115,23 @@ pub fn merge_settings(
             std::collections::hash_map::Entry::Occupied(mut e) => {
                 let existing = e.get();
                 let winner_is_item = if existing.updated_at == 0 && item.updated_at == 0 {
-                    cmp_winner(item.updated_at, &item.device_id, existing.updated_at, &existing.device_id)
-                        == std::cmp::Ordering::Greater
+                    cmp_winner(
+                        item.updated_at,
+                        &item.device_id,
+                        existing.updated_at,
+                        &existing.device_id,
+                    ) == std::cmp::Ordering::Greater
                 } else if existing.updated_at == 0 {
                     true
                 } else if item.updated_at == 0 {
                     false
                 } else {
-                    cmp_winner(item.updated_at, &item.device_id, existing.updated_at, &existing.device_id)
-                        == std::cmp::Ordering::Greater
+                    cmp_winner(
+                        item.updated_at,
+                        &item.device_id,
+                        existing.updated_at,
+                        &existing.device_id,
+                    ) == std::cmp::Ordering::Greater
                 };
                 if winner_is_item {
                     e.insert(item.clone());
@@ -161,7 +166,8 @@ pub fn merge_settings(
 pub fn merge_stats(local: &[StatsItem], remote: &[StatsItem]) -> MergeOutcome<StatsItem> {
     let mut map: HashMap<String, StatsItem> = HashMap::new();
     for item in local.iter().chain(remote.iter()) {
-        map.entry(item.event_id.clone()).or_insert_with(|| item.clone());
+        map.entry(item.event_id.clone())
+            .or_insert_with(|| item.clone());
     }
     let mut merged: Vec<StatsItem> = map.into_values().collect();
     merged.sort_by(|a, b| a.event_id.cmp(&b.event_id));
@@ -197,7 +203,13 @@ mod tests {
         }
     }
 
-    fn snippet(trigger: &str, expansion: &str, deleted: bool, updated_at: i64, device_id: &str) -> SnippetItem {
+    fn snippet(
+        trigger: &str,
+        expansion: &str,
+        deleted: bool,
+        updated_at: i64,
+        device_id: &str,
+    ) -> SnippetItem {
         SnippetItem {
             sync_id: uuid::Uuid::new_v4().to_string(),
             trigger: trigger.to_string(),
@@ -246,7 +258,10 @@ mod tests {
         let tomb = dict("hello", "hi", "correction", true, 150, "z");
         let ab = merge_dictionary(&[edit.clone()], &[tomb.clone()]);
         let ba = merge_dictionary(&[tomb], &[edit]);
-        assert_eq!(ab.merged[0].deleted_at.is_some(), ba.merged[0].deleted_at.is_some());
+        assert_eq!(
+            ab.merged[0].deleted_at.is_some(),
+            ba.merged[0].deleted_at.is_some()
+        );
         assert_eq!(ab.merged[0].device_id, ba.merged[0].device_id);
     }
 
@@ -256,7 +271,10 @@ mod tests {
         let b = dict("hello", "from-b", "correction", false, 100, "b");
         let outcome = merge_dictionary(&[a], &[b.clone()]);
         assert_eq!(outcome.merged[0].device_id, "b");
-        let outcome2 = merge_dictionary(&[b], &[dict("hello", "from-a", "correction", false, 100, "a")]);
+        let outcome2 = merge_dictionary(
+            &[b],
+            &[dict("hello", "from-a", "correction", false, 100, "a")],
+        );
         assert_eq!(outcome2.merged[0].device_id, "b");
     }
 
@@ -266,9 +284,18 @@ mod tests {
         let e1 = dict("w", "one", "correction", false, 100, "dev-1");
         let e2 = dict("w", "two", "correction", false, 200, "dev-2");
         let e3 = dict("w", "three", "correction", false, 300, "dev-3");
-        let r1 = merge_dictionary(&merge_dictionary(&[e1.clone()], &[e2.clone()]).merged, &[e3.clone()]);
-        let r2 = merge_dictionary(&merge_dictionary(&[e3.clone()], &[e1.clone()]).merged, &[e2.clone()]);
-        let r3 = merge_dictionary(&merge_dictionary(&[e2.clone()], &[e3.clone()]).merged, &[e1.clone()]);
+        let r1 = merge_dictionary(
+            &merge_dictionary(&[e1.clone()], &[e2.clone()]).merged,
+            &[e3.clone()],
+        );
+        let r2 = merge_dictionary(
+            &merge_dictionary(&[e3.clone()], &[e1.clone()]).merged,
+            &[e2.clone()],
+        );
+        let r3 = merge_dictionary(
+            &merge_dictionary(&[e2.clone()], &[e3.clone()]).merged,
+            &[e1.clone()],
+        );
         assert_eq!(r1.merged[0].corrected, "three");
         assert_eq!(r2.merged[0].corrected, "three");
         assert_eq!(r3.merged[0].corrected, "three");
@@ -282,7 +309,11 @@ mod tests {
         a.sync_id = uuid::Uuid::new_v4().to_string();
         b.sync_id = uuid::Uuid::new_v4().to_string();
         let outcome = merge_dictionary(&[a], &[b]);
-        assert_eq!(outcome.merged.len(), 1, "business-key dedup collapses duplicates");
+        assert_eq!(
+            outcome.merged.len(),
+            1,
+            "business-key dedup collapses duplicates"
+        );
     }
 
     #[test]
@@ -382,8 +413,14 @@ mod tests {
         let b = setting("language", "fr", SETTINGS_ADOPTION_EPOCH_MS, "b");
         let outcome = merge_settings(&[a.clone()], &[b.clone()]);
         assert_eq!(outcome.merged.len(), 1);
-        assert_eq!(outcome.merged[0].device_id, "b", "deviceId tie-breaks identical sentinels");
-        assert_eq!(outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS, "no re-stamp");
+        assert_eq!(
+            outcome.merged[0].device_id, "b",
+            "deviceId tie-breaks identical sentinels"
+        );
+        assert_eq!(
+            outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS,
+            "no re-stamp"
+        );
     }
 
     // ── Stats ───────────────────────────────────────────────────────────

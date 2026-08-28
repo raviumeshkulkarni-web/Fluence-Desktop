@@ -225,7 +225,10 @@ pub fn get_pending_suggestions() -> Result<Vec<SuggestionEntry>, String> {
 }
 
 /// Accept a suggestion: add to dictionary, mark as Accepted.
-pub fn accept_suggestion(id: &str, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn accept_suggestion(
+    id: &str,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     let _guard = SUGGESTION_LOCK.lock().map_err(|e| e.to_string())?;
 
     let mut database = load_from_disk().map_err(|e| e.to_string())?;
@@ -337,7 +340,10 @@ pub fn get_suggestions() -> Result<Vec<SuggestionEntry>, String> {
 }
 
 #[tauri::command]
-pub fn accept_suggestion_command(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn accept_suggestion_command(
+    id: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     accept_suggestion(&id, scheduler)
 }
 

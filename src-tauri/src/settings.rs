@@ -264,7 +264,10 @@ pub fn get_settings() -> Result<AppSettings, String> {
 }
 
 #[tauri::command]
-pub fn update_settings(settings: AppSettings, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn update_settings(
+    settings: AppSettings,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     save_settings(&settings).map_err(|e| e.to_string())?;
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())

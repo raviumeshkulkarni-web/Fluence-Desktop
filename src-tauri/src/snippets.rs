@@ -46,7 +46,9 @@ pub struct Snippet {
     pub quarantine_reason: Option<String>,
 }
 
-fn default_true_snip() -> bool { true }
+fn default_true_snip() -> bool {
+    true
+}
 
 impl Default for Snippet {
     fn default() -> Self {
@@ -294,7 +296,10 @@ pub fn get_snippets() -> Result<SnippetStore, String> {
 }
 
 #[tauri::command]
-pub fn set_snippets_enabled(enabled: bool, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn set_snippets_enabled(
+    enabled: bool,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     store.enabled = enabled;
@@ -305,7 +310,11 @@ pub fn set_snippets_enabled(enabled: bool, scheduler: tauri::State<'_, crate::sy
 }
 
 #[tauri::command]
-pub fn add_snippet(trigger: String, expansion: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<Snippet, String> {
+pub fn add_snippet(
+    trigger: String,
+    expansion: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<Snippet, String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
@@ -320,10 +329,18 @@ pub fn add_snippet(trigger: String, expansion: String, scheduler: tauri::State<'
     }
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
     let snippet = Snippet {
         id: uuid::Uuid::new_v4().to_string(),
         trigger,
@@ -348,7 +365,12 @@ pub fn add_snippet(trigger: String, expansion: String, scheduler: tauri::State<'
 }
 
 #[tauri::command]
-pub fn update_snippet(id: String, trigger: String, expansion: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn update_snippet(
+    id: String,
+    trigger: String,
+    expansion: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
@@ -364,14 +386,24 @@ pub fn update_snippet(id: String, trigger: String, expansion: String, scheduler:
     // Frozen v1.1: same syncId on edit
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
     let mut found = false;
     for s in store.snippets.iter_mut() {
         if s.id == id {
-            if s.deleted_at.is_some() { return Err("Cannot edit deleted snippet".to_string()); }
+            if s.deleted_at.is_some() {
+                return Err("Cannot edit deleted snippet".to_string());
+            }
             found = true;
             s.trigger = trigger.clone();
             s.expansion = expansion.clone();
@@ -391,15 +423,26 @@ pub fn update_snippet(id: String, trigger: String, expansion: String, scheduler:
 }
 
 #[tauri::command]
-pub fn delete_snippet(id: String, scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>) -> Result<(), String> {
+pub fn delete_snippet(
+    id: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    let account_hash = crate::settings::load_settings().ok().and_then(|s| s.sync_account_key).map(|e| crate::sync::metadata::account_hash_from_email(&e));
-    let max_seen = account_hash.as_deref().and_then(|h| meta.for_account(h).map(|s| s.max_seen)).unwrap_or(0);
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash { meta.update_max_seen(&h, new_max); }
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
     let mut to_hard_delete = false;
     for s in store.snippets.iter_mut() {
         if s.id == id {

@@ -163,8 +163,7 @@ fn migrate_v0_to_v1(conn: &Connection) -> Result<()> {
         iter.collect::<Result<Vec<_>, _>>()?
     };
     for (id, ts) in rows {
-        let ms = chrono::DateTime::parse_from_rfc3339(&ts)
-            .map_or(0, |dt| dt.timestamp_millis());
+        let ms = chrono::DateTime::parse_from_rfc3339(&ts).map_or(0, |dt| dt.timestamp_millis());
         tx.execute(
             "UPDATE history SET timestamp_ms = ?1 WHERE id = ?2",
             params![ms, id],
@@ -189,8 +188,7 @@ fn migrate_v1_to_v2(conn: &Connection) -> Result<()> {
         iter.collect::<Result<Vec<_>, _>>()?
     };
     for (id, ts) in rows {
-        let ms = chrono::DateTime::parse_from_rfc3339(&ts)
-            .map_or(0, |dt| dt.timestamp_millis());
+        let ms = chrono::DateTime::parse_from_rfc3339(&ts).map_or(0, |dt| dt.timestamp_millis());
         tx.execute(
             "UPDATE history SET timestamp_ms = ?1 WHERE id = ?2",
             params![ms, id],
@@ -221,7 +219,9 @@ fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
     // Check if sync columns exist
     let has_sync = {
         let mut stmt = conn.prepare("PRAGMA table_info(history)")?;
-        let cols: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(1))?.collect::<Result<Vec<_>, _>>()?;
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
         cols.contains(&"sync_state".to_string())
     };
     if !has_sync {
@@ -565,9 +565,8 @@ pub fn get_history_stats() -> Result<HistoryStats, String> {
 }
 
 fn weekly_activity(conn: &Connection, week_start_ms: i64) -> rusqlite::Result<Vec<String>> {
-    let mut stmt = conn.prepare(
-        "SELECT timestamp FROM history WHERE timestamp_ms >= ?1 AND deleted_at IS NULL",
-    )?;
+    let mut stmt = conn
+        .prepare("SELECT timestamp FROM history WHERE timestamp_ms >= ?1 AND deleted_at IS NULL")?;
     let rows = stmt.query_map(params![week_start_ms], |r| r.get::<_, String>(0))?;
     let mut timestamps = Vec::new();
     for ts in rows.flatten() {
@@ -625,12 +624,7 @@ mod tests {
         conn.execute(
             "INSERT INTO history (id, timestamp, text, timestamp_ms)
              VALUES (?1, ?2, ?3, ?4)",
-            params![
-                id,
-                "2024-04-18T16:00:00.123Z",
-                "hello",
-                1713456000123i64
-            ],
+            params![id, "2024-04-18T16:00:00.123Z", "hello", 1713456000123i64],
         )
         .unwrap();
     }
@@ -656,8 +650,17 @@ mod tests {
         assert!(cols.contains(&"model".to_string()));
         assert!(cols.contains(&"language".to_string()));
         // sync columns should be absent
-        for name in ["sync_state", "server_file_id", "sync_account", "quarantine_reason"] {
-            assert!(!cols.contains(&name.to_string()), "obsolete column {} should be dropped", name);
+        for name in [
+            "sync_state",
+            "server_file_id",
+            "sync_account",
+            "quarantine_reason",
+        ] {
+            assert!(
+                !cols.contains(&name.to_string()),
+                "obsolete column {} should be dropped",
+                name
+            );
         }
     }
 
@@ -723,13 +726,21 @@ mod tests {
         )
         .unwrap();
         run_migration(&conn).unwrap();
-        let v: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap();
+        let v: i64 = conn
+            .query_row("PRAGMA user_version", [], |r| r.get(0))
+            .unwrap();
         assert!(v >= 3);
         // After frozen migration, sync columns should be gone
         let cols = column_names(&conn, "history");
         assert!(!cols.contains(&"sync_state".to_string()));
         // timestamp_ms should be backfilled or at least not missing
-        let ms: i64 = conn.query_row("SELECT timestamp_ms FROM history WHERE id = 'id-zero'", [], |r| r.get(0)).unwrap();
+        let ms: i64 = conn
+            .query_row(
+                "SELECT timestamp_ms FROM history WHERE id = 'id-zero'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(ms > 0);
     }
 
@@ -855,7 +866,8 @@ mod tests {
     fn never_uploaded_delete_hard_deletes() {
         let conn = migrated_conn();
         insert_row(&conn, "id-1", None);
-        conn.execute("DELETE FROM history WHERE id = 'id-1'", []).unwrap();
+        conn.execute("DELETE FROM history WHERE id = 'id-1'", [])
+            .unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
             .unwrap();
@@ -867,7 +879,8 @@ mod tests {
         // Frozen v1.2: history stays local, delete is always hard delete
         let conn = migrated_conn();
         insert_row(&conn, "id-1", Some("file-1"));
-        conn.execute("DELETE FROM history WHERE id = 'id-1'", []).unwrap();
+        conn.execute("DELETE FROM history WHERE id = 'id-1'", [])
+            .unwrap();
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
@@ -885,7 +898,8 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.execute("DELETE FROM history WHERE id = 'id-f'", []).unwrap();
+        conn.execute("DELETE FROM history WHERE id = 'id-f'", [])
+            .unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
             .unwrap();
@@ -902,7 +916,8 @@ mod tests {
         )
         .unwrap();
 
-        conn.execute("DELETE FROM history WHERE id = 'id-own'", []).unwrap();
+        conn.execute("DELETE FROM history WHERE id = 'id-own'", [])
+            .unwrap();
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
             .unwrap();
@@ -913,13 +928,11 @@ mod tests {
     fn already_tombstoned_delete_is_noop() {
         let conn = migrated_conn();
         insert_row(&conn, "id-1", Some("file-1"));
-        conn.execute(
-            "UPDATE history SET deleted_at = 123 WHERE id = 'id-1'",
-            [],
-        )
-        .unwrap();
+        conn.execute("UPDATE history SET deleted_at = 123 WHERE id = 'id-1'", [])
+            .unwrap();
 
-        conn.execute("DELETE FROM history WHERE id = 'id-1'", []).unwrap();
+        conn.execute("DELETE FROM history WHERE id = 'id-1'", [])
+            .unwrap();
 
         let count: i64 = conn
             .query_row("SELECT COUNT(*) FROM history", [], |r| r.get(0))
@@ -935,7 +948,11 @@ mod tests {
 
         clear_history_rows(&conn, None).unwrap();
 
-        let count: i64 = conn.prepare("SELECT COUNT(*) FROM history").unwrap().query_row([], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM history")
+            .unwrap()
+            .query_row([], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0, "frozen: clear deletes all");
     }
 
@@ -1093,7 +1110,11 @@ mod tests {
 
         clear_history_rows(&conn, Some("me@example.com")).unwrap();
 
-        let count: i64 = conn.prepare("SELECT COUNT(*) FROM history").unwrap().query_row([], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .prepare("SELECT COUNT(*) FROM history")
+            .unwrap()
+            .query_row([], |r| r.get(0))
+            .unwrap();
         assert_eq!(count, 0, "frozen: clear deletes all history");
     }
 
@@ -1101,7 +1122,10 @@ mod tests {
     fn dictation_commit_records_exactly_one_stats_event() {
         // Every completed dictation must contribute exactly one account-level
         // stats event; a duplicated commit path collapses under union dedup.
-        let tmp = std::env::temp_dir().join(format!("fluence-test-ledger-hist-{}.json", std::process::id()));
+        let tmp = std::env::temp_dir().join(format!(
+            "fluence-test-ledger-hist-{}.json",
+            std::process::id()
+        ));
         crate::sync::stores::StatsDirtyStore::set_test_ledger_path(Some(tmp.clone()));
         let conn = Connection::open_in_memory().unwrap();
         run_migration(&conn).unwrap();

@@ -50,7 +50,10 @@ impl OAuthConfig {
 #[derive(Debug)]
 pub enum AuthError {
     Network(String),
-    Http { status: u16, body: String },
+    Http {
+        status: u16,
+        body: String,
+    },
     BadRedirect,
     BadResponse,
     InvalidState,
@@ -549,7 +552,10 @@ mod tests {
         // all) skips it. The Credential Manager round-trip is OS integration,
         // not unit-testable here.
         session.refresh_token = None;
-        assert!(session.has_valid_access_token(), "valid access token still authorizes");
+        assert!(
+            session.has_valid_access_token(),
+            "valid access token still authorizes"
+        );
         session.access_token = None;
         session.expires_at = None;
         assert!(!session.has_valid_access_token(), "no tokens at all");

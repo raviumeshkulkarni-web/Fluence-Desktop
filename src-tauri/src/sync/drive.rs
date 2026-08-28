@@ -47,7 +47,7 @@ const UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
 
 /// Hard cap on a domain payload we will read or write. Legitimate envelopes
 /// are tens of KB; anything near this bound is corruption or abuse.
-    pub const MAX_DOMAIN_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_DOMAIN_BYTES: usize = 8 * 1024 * 1024;
 
 /// URL for a multipart create against an upload base. Pure so the host and
 /// query are testable offline.
@@ -310,7 +310,9 @@ pub trait DomainDriveStore {
 
 /// Parse a domain listing page extracting `id`, `name` and `version`.
 /// Corrupt or partial pages are treated as failures (caller aborts before mutation).
-pub fn parse_domain_listing(json: &str) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
+pub fn parse_domain_listing(
+    json: &str,
+) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
     let value: serde_json::Value = match serde_json::from_str(json) {
         Ok(v) => v,
         Err(_) => return Err(SyncError::Rejected("corrupt domain listing".to_string())),
@@ -342,7 +344,9 @@ pub fn parse_domain_listing(json: &str) -> Result<(Vec<DomainFileMeta>, Option<S
             }
         }
     } else {
-        return Err(SyncError::Rejected("domain listing missing files".to_string()));
+        return Err(SyncError::Rejected(
+            "domain listing missing files".to_string(),
+        ));
     }
     Ok((files, next))
 }
@@ -361,9 +365,11 @@ impl GoogleDriveStore {
             name.replace('\'', "\\'"),
             parent
         );
-        let list_url =
-            url::Url::parse_with_params(&format!("{API_BASE}/files"), [("q", q.as_str()), ("spaces", APPDATA_FOLDER_ALIAS)])
-                .expect("valid url");
+        let list_url = url::Url::parse_with_params(
+            &format!("{API_BASE}/files"),
+            [("q", q.as_str()), ("spaces", APPDATA_FOLDER_ALIAS)],
+        )
+        .expect("valid url");
         let resp = self
             .bearer(reqwest::Method::GET, list_url.as_str())
             .send()
@@ -386,7 +392,10 @@ impl GoogleDriveStore {
             return Ok(first.file_id);
         }
         let create = self
-            .bearer(reqwest::Method::POST, &format!("{API_BASE}/files?fields=id"))
+            .bearer(
+                reqwest::Method::POST,
+                &format!("{API_BASE}/files?fields=id"),
+            )
             .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
             .send()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
@@ -395,12 +404,15 @@ impl GoogleDriveStore {
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
         classify_status_with_body(status, &body)?;
-        parse_id_from_response(&body).ok_or_else(|| SyncError::Retryable("folder create missing id".to_string()))
+        parse_id_from_response(&body)
+            .ok_or_else(|| SyncError::Retryable("folder create missing id".to_string()))
     }
 
     /// Simple id/name listing parser used for folder lookups (no version
     /// field required). Partial pages are failures.
-    fn parse_file_listing_lenient(json: &str) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
+    fn parse_file_listing_lenient(
+        json: &str,
+    ) -> Result<(Vec<DomainFileMeta>, Option<String>), SyncError> {
         let value: serde_json::Value = match serde_json::from_str(json) {
             Ok(v) => v,
             Err(_) => return Err(SyncError::Rejected("corrupt listing response".to_string())),
@@ -423,7 +435,9 @@ impl GoogleDriveStore {
                 }
             }
         } else {
-            return Err(SyncError::Rejected("listing response missing files".to_string()));
+            return Err(SyncError::Rejected(
+                "listing response missing files".to_string(),
+            ));
         }
         Ok((files, None))
     }
@@ -806,8 +820,9 @@ mod tests {
         assert_eq!(files[1].version, None);
         assert_eq!(next.as_deref(), Some("tok"));
 
-        let (numeric, _) = parse_domain_listing(r#"{"files":[{"id":"a","name":"x.json","version":42}]}"#)
-            .expect("numeric version parses");
+        let (numeric, _) =
+            parse_domain_listing(r#"{"files":[{"id":"a","name":"x.json","version":42}]}"#)
+                .expect("numeric version parses");
         assert_eq!(numeric[0].version.as_deref(), Some("42"));
     }
 
@@ -823,8 +838,14 @@ mod tests {
 
     #[test]
     fn parse_version_handles_string_number_and_garbage() {
-        assert_eq!(parse_version_from_response(r#"{"version":"9"}"#).as_deref(), Some("9"));
-        assert_eq!(parse_version_from_response(r#"{"version":9}"#).as_deref(), Some("9"));
+        assert_eq!(
+            parse_version_from_response(r#"{"version":"9"}"#).as_deref(),
+            Some("9")
+        );
+        assert_eq!(
+            parse_version_from_response(r#"{"version":9}"#).as_deref(),
+            Some("9")
+        );
         assert_eq!(parse_version_from_response(r#"{"id":"x"}"#), None);
         assert_eq!(parse_version_from_response("garbage"), None);
     }
@@ -835,7 +856,10 @@ mod tests {
             parse_id_from_response(r#"{"id":"folder-9","name":"fluence"}"#).as_deref(),
             Some("folder-9")
         );
-        assert_eq!(parse_id_from_response(r#"{"id":"file-7"}"#).as_deref(), Some("file-7"));
+        assert_eq!(
+            parse_id_from_response(r#"{"id":"file-7"}"#).as_deref(),
+            Some("file-7")
+        );
         assert!(parse_id_from_response("garbage").is_none());
         assert!(parse_id_from_response(r#"{"error":{"code":403}}"#).is_none());
         assert!(

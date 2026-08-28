@@ -48,12 +48,16 @@ pub trait DirtyStore {
     fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError>;
     fn has_dirty(&self, account_hash: &str) -> bool;
     /// Replace this account's rows with the merged winners.
-    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>) -> Result<(), SyncError>;
+    fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>)
+        -> Result<(), SyncError>;
     /// After a confirmed push every merged row is clean and pushed.
     fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError>;
     /// Drop locally-created tombstones that were never uploaded (nothing to
     /// propagate). Default: no-op (settings/stats have no tombstones).
-    fn hard_delete_never_pushed_tombstones(&mut self, account_hash: &str) -> Result<usize, SyncError> {
+    fn hard_delete_never_pushed_tombstones(
+        &mut self,
+        account_hash: &str,
+    ) -> Result<usize, SyncError> {
         let _ = account_hash;
         Ok(0)
     }
@@ -92,7 +96,8 @@ where
 
         // 2. Read remote state (all duplicate files merged; corrupt skipped).
         let files = drive.list_v1_files()?;
-        let mut domain_files: Vec<&DomainFileMeta> = files.iter().filter(|f| f.name == name).collect();
+        let mut domain_files: Vec<&DomainFileMeta> =
+            files.iter().filter(|f| f.name == name).collect();
         domain_files.sort_by(|a, b| a.file_id.cmp(&b.file_id));
         let preferred_file_id = domain_files.first().map(|m| m.file_id.as_str());
         let mut remote_items: Vec<T> = Vec::new();
@@ -220,9 +225,21 @@ pub fn sync_dictionary_domain(
         metadata,
         store,
         merge::merge_dictionary,
-        |items| DictionaryEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |items| {
+            DictionaryEnvelope {
+                v: ENVELOPE_V1,
+                entries: items.to_vec(),
+            }
+            .to_bytes()
+        },
         |bytes| DictionaryEnvelope::from_bytes(bytes).map(|e| e.entries),
-        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key()).then_with(|| a.sync_id.cmp(&b.sync_id))),
+        |items| {
+            items.sort_by(|a, b| {
+                a.business_key()
+                    .cmp(&b.business_key())
+                    .then_with(|| a.sync_id.cmp(&b.sync_id))
+            })
+        },
         |i| i.updated_at,
     )
 }
@@ -240,9 +257,21 @@ pub fn sync_snippet_domain(
         metadata,
         store,
         merge::merge_snippets,
-        |items| SnippetEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |items| {
+            SnippetEnvelope {
+                v: ENVELOPE_V1,
+                entries: items.to_vec(),
+            }
+            .to_bytes()
+        },
         |bytes| SnippetEnvelope::from_bytes(bytes).map(|e| e.entries),
-        |items| items.sort_by(|a, b| a.business_key().cmp(&b.business_key()).then_with(|| a.sync_id.cmp(&b.sync_id))),
+        |items| {
+            items.sort_by(|a, b| {
+                a.business_key()
+                    .cmp(&b.business_key())
+                    .then_with(|| a.sync_id.cmp(&b.sync_id))
+            })
+        },
         |i| i.updated_at,
     )
 }
@@ -260,7 +289,13 @@ pub fn sync_settings_domain(
         metadata,
         store,
         merge::merge_settings,
-        |items| SettingsEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |items| {
+            SettingsEnvelope {
+                v: ENVELOPE_V1,
+                entries: items.to_vec(),
+            }
+            .to_bytes()
+        },
         |bytes| SettingsEnvelope::from_bytes(bytes).map(|e| e.entries),
         |items| items.sort_by(|a, b| a.key.cmp(&b.key)),
         |i| i.updated_at,
@@ -280,7 +315,13 @@ pub fn sync_stats_domain(
         metadata,
         store,
         merge::merge_stats,
-        |items| StatsEnvelope { v: ENVELOPE_V1, entries: items.to_vec() }.to_bytes(),
+        |items| {
+            StatsEnvelope {
+                v: ENVELOPE_V1,
+                entries: items.to_vec(),
+            }
+            .to_bytes()
+        },
         |bytes| StatsEnvelope::from_bytes(bytes).map(|e| e.entries),
         |items| items.sort_by(|a, b| a.day.cmp(&b.day).then_with(|| a.event_id.cmp(&b.event_id))),
         |i| i.timestamp_ms,

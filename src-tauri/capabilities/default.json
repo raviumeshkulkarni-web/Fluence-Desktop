@@ -12,7 +12,7 @@
     "updater:default",
     "process:default",
     "process:allow-restart",
-    "dialog:default",
+    "dialog:allow-open",
     "fs:default"
   ]
 }

@@ -126,8 +126,8 @@ fn cache_entries(entries: Vec<DictionaryEntry>) -> Vec<CachedEntry> {
             }
             Err(e) => {
                 log::warn!(
-                    "Invalid regex pattern for spoken phrase '{}': {}",
-                    entry.spoken,
+                    "Invalid regex pattern for spoken phrase ({} chars): {}",
+                    entry.spoken.chars().count(),
                     e
                 );
             }

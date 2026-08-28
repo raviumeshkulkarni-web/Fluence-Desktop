@@ -55,9 +55,9 @@ pub fn extract_user_corrections(injected_text: &str, field_value: &str) -> Vec<C
         // Apply conservative filters (same rules as pipeline extraction)
         if !super::ui_automation::is_valid_correction(original_word, corrected_word) {
             log::debug!(
-                "[AutoLearn] Skipping correction '{}' → '{}': failed validation",
-                original_word,
-                corrected_word
+                "[AutoLearn] Skipping correction ({} chars → {} chars): failed validation",
+                original_word.chars().count(),
+                corrected_word.chars().count()
             );
             continue;
         }

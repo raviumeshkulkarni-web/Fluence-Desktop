@@ -180,9 +180,9 @@ fn process_substitution(deletes: &[String], inserts: &[String], candidates: &mut
         strsim::normalized_levenshtein(&spoken.to_lowercase(), &corrected.to_lowercase());
     if similarity < 0.40 {
         log::debug!(
-            "Skipping candidate '{}' → '{}': similarity {:.2} < 0.40",
-            spoken,
-            corrected,
+            "Skipping candidate ({} chars → {} chars): similarity {:.2} < 0.40",
+            spoken.chars().count(),
+            corrected.chars().count(),
             similarity
         );
         return;

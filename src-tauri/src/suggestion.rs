@@ -179,9 +179,9 @@ pub fn upsert_suggestions(candidates: Vec<crate::auto_learn::Candidate>) -> Resu
             // But do NOT reset Dismissed to Pending (respect user intent)
         } else if should_skip_new_candidate(&candidate_key, &dictionary_keys) {
             log::debug!(
-                "Skipping new suggestion '{}' → '{}': already in dictionary",
-                candidate.spoken,
-                candidate.corrected
+                "Skipping new suggestion ({} chars → {} chars): already in dictionary",
+                candidate.spoken.chars().count(),
+                candidate.corrected.chars().count()
             );
         } else {
             // New suggestion

@@ -745,6 +745,8 @@ pub async fn sync_sign_in(
     settings.sync_enabled = true;
     settings.sync_account_key = Some(email);
     crate::settings::save_settings(&settings).map_err(|e| e.to_string())?;
+    crate::dictionary::invalidate_cache();
+    crate::snippets::invalidate_cache();
 
     scheduler.command(SyncCommand::SignedIn);
     scheduler.emit_status();
@@ -766,6 +768,8 @@ pub fn sync_sign_out(
     let mut settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     settings.sync_account_key = None;
     crate::settings::save_settings(&settings).map_err(|e| e.to_string())?;
+    crate::dictionary::invalidate_cache();
+    crate::snippets::invalidate_cache();
 
     scheduler.command(SyncCommand::SignedOut);
     scheduler.emit_status();

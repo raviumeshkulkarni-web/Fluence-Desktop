@@ -114,6 +114,9 @@ pub(crate) fn save_dictionary_internal(entries: &[DictionaryEntry]) -> Result<()
     if let Ok(f) = fs::File::open(&path) {
         let _ = f.sync_all();
     }
+    // Sync imports write through this function too. Drop compiled rules so
+    // the next transcription uses the merged file immediately.
+    invalidate_cache();
     Ok(())
 }
 
@@ -145,10 +148,17 @@ pub fn apply_corrections(text: &str) -> String {
         Some(e) => e.clone(),
         None => {
             drop(cache);
+            let active_account = crate::sync::metadata::current_account_hash();
             let loaded: Vec<DictionaryEntry> = load_dictionary_internal()
                 .unwrap_or_default()
                 .into_iter()
                 .filter(|e| e.deleted_at.is_none() && e.is_enabled) // deleted never apply, disabled never apply
+                .filter(|e| {
+                    crate::sync::metadata::belongs_to_account(
+                        e.sync_account.as_deref(),
+                        active_account.as_deref(),
+                    )
+                })
                 .collect();
             let cached = cache_entries(loaded);
             let mut cache2 = DICTIONARY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
@@ -179,7 +189,7 @@ fn regex_escape(s: &str) -> String {
         .collect()
 }
 
-fn invalidate_cache() {
+pub(crate) fn invalidate_cache() {
     let mut cache = DICTIONARY_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *cache = None;
 }
@@ -257,8 +267,18 @@ fn live_entries(entries: Vec<DictionaryEntry>) -> Vec<DictionaryEntry> {
 
 #[tauri::command]
 pub fn get_dictionary() -> Result<Vec<DictionaryEntry>, String> {
+    let active = crate::sync::metadata::current_account_hash();
     Ok(live_entries(
-        load_dictionary_internal().map_err(|e| e.to_string())?,
+        load_dictionary_internal()
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .filter(|e| {
+                crate::sync::metadata::belongs_to_account(
+                    e.sync_account.as_deref(),
+                    active.as_deref(),
+                )
+            })
+            .collect(),
     ))
 }
 
@@ -272,12 +292,17 @@ pub fn add_dictionary_entry(
     let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let active_account = crate::sync::metadata::current_account_hash();
     // Frozen v1.1: businessKey = lower(trim(spoken)) must be unique among live+disabled (non-deleted)
     let bk = spoken.trim().to_lowercase();
-    if all_entries
-        .iter()
-        .any(|e| e.deleted_at.is_none() && e.spoken.trim().to_lowercase() == bk)
-    {
+    if all_entries.iter().any(|e| {
+        e.deleted_at.is_none()
+            && crate::sync::metadata::belongs_to_account(
+                e.sync_account.as_deref(),
+                active_account.as_deref(),
+            )
+            && e.spoken.trim().to_lowercase() == bk
+    }) {
         return Err(format!("Dictionary entry '{}' already exists", spoken));
     }
     let mut meta = crate::sync::metadata::SyncMetadata::load();
@@ -330,9 +355,16 @@ pub fn update_dictionary_entry(
     let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let active_account = crate::sync::metadata::current_account_hash();
     let bk = spoken.trim().to_lowercase();
     if all_entries.iter().any(|other| {
-        other.id != id && other.deleted_at.is_none() && other.spoken.trim().to_lowercase() == bk
+        other.id != id
+            && other.deleted_at.is_none()
+            && crate::sync::metadata::belongs_to_account(
+                other.sync_account.as_deref(),
+                active_account.as_deref(),
+            )
+            && other.spoken.trim().to_lowercase() == bk
     }) {
         return Err(format!("Dictionary entry '{}' already exists", spoken));
     }

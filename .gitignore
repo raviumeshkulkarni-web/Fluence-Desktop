@@ -36,6 +36,8 @@ Desktop.ini
 # Local dev logs
 .tauri-dev.log
 .tauri-dev.err.log
+dev-server.out.log
+dev-server.err.log
 
 # Local debug recordings
 src-tauri/debug_recordings/

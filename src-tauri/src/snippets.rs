@@ -121,6 +121,9 @@ pub(crate) fn save_store_internal(store: &SnippetStore) -> Result<()> {
     if let Ok(f) = fs::File::open(&path) {
         let _ = f.sync_all();
     }
+    // Sync imports write through this function too. Drop the runtime cache so
+    // the next transcription sees newly merged expansions immediately.
+    invalidate_cache();
     Ok(())
 }
 
@@ -136,7 +139,7 @@ fn cached_store() -> SnippetStore {
     store
 }
 
-fn invalidate_cache() {
+pub(crate) fn invalidate_cache() {
     let mut cache = STORE_CACHE.lock().unwrap_or_else(|e| e.into_inner());
     *cache = None;
 }
@@ -150,10 +153,17 @@ pub fn process_transcript(text: &str) -> String {
     if !store.enabled {
         return corrected;
     }
+    let active_account = crate::sync::metadata::current_account_hash();
     let live: Vec<Snippet> = store
         .snippets
         .into_iter()
         .filter(|s| s.deleted_at.is_none() && s.is_enabled) // deleted never expand, disabled never expand
+        .filter(|s| {
+            crate::sync::metadata::belongs_to_account(
+                s.sync_account.as_deref(),
+                active_account.as_deref(),
+            )
+        })
         .collect();
     expand_with(&corrected, &live)
 }
@@ -291,7 +301,14 @@ fn trigger_collides(snippets: &[Snippet], id: &str, trigger: &str) -> bool {
 #[tauri::command]
 pub fn get_snippets() -> Result<SnippetStore, String> {
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
-    store.snippets.retain(|s| s.deleted_at.is_none()); // live view only
+    let active = crate::sync::metadata::current_account_hash();
+    store.snippets.retain(|s| {
+        s.deleted_at.is_none()
+            && crate::sync::metadata::belongs_to_account(
+                s.sync_account.as_deref(),
+                active.as_deref(),
+            )
+    }); // live current-account view only
     Ok(store)
 }
 
@@ -318,10 +335,17 @@ pub fn add_snippet(
     let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
+    let active_account = crate::sync::metadata::current_account_hash();
     let live: Vec<Snippet> = store
         .snippets
         .iter()
-        .filter(|s| s.deleted_at.is_none())
+        .filter(|s| {
+            s.deleted_at.is_none()
+                && crate::sync::metadata::belongs_to_account(
+                    s.sync_account.as_deref(),
+                    active_account.as_deref(),
+                )
+        })
         .cloned()
         .collect();
     if trigger_collides(&live, "", &trigger) {
@@ -374,10 +398,17 @@ pub fn update_snippet(
     let _io = crate::sync::io_lock::io_lock_guard();
     let (trigger, expansion) = validate_snippet(&trigger, &expansion)?;
     let mut store = load_store_internal().map_err(|e| e.to_string())?;
+    let active_account = crate::sync::metadata::current_account_hash();
     let live: Vec<Snippet> = store
         .snippets
         .iter()
-        .filter(|s| s.deleted_at.is_none())
+        .filter(|s| {
+            s.deleted_at.is_none()
+                && crate::sync::metadata::belongs_to_account(
+                    s.sync_account.as_deref(),
+                    active_account.as_deref(),
+                )
+        })
         .cloned()
         .collect();
     if trigger_collides(&live, &id, &trigger) {

@@ -166,11 +166,35 @@ pub fn account_hash_from_email(email: &str) -> String {
     hex::encode(hash)
 }
 
+/// Account hash for the account currently selected in app settings.
+pub fn current_account_hash() -> Option<String> {
+    crate::settings::load_settings()
+        .ok()
+        .and_then(|settings| settings.sync_account_key)
+        .map(|email| account_hash_from_email(&email))
+}
+
+pub fn belongs_to_account(row_account: Option<&str>, active_account: Option<&str>) -> bool {
+    match (row_account, active_account) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(row), Some(active)) => row == active,
+    }
+}
+
 use sha2::Digest;
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn account_rows_are_scoped_without_hiding_legacy_rows() {
+        assert!(belongs_to_account(None, Some("account-a")));
+        assert!(belongs_to_account(Some("account-a"), Some("account-a")));
+        assert!(!belongs_to_account(Some("account-b"), Some("account-a")));
+        assert!(!belongs_to_account(Some("account-a"), None));
+    }
 
     #[test]
     fn device_id_generated_and_persisted() {

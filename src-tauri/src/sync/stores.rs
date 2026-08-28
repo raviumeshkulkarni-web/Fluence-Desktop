@@ -450,6 +450,16 @@ impl DirtyStore for SettingsDirtyStore {
     fn load(&self, account_hash: &str) -> Vec<Self::Item> {
         let meta = Self::load_meta(account_hash);
         let Ok(settings) = load_settings() else { return Vec::new() };
+        // Hoisted once: device id for every row, and the monotonic-clock floor
+        // so a local edit is never stamped below what this device has seen
+        // (a backwards wall-clock jump must not let an edit lose on LWW).
+        let global_meta = SyncMetadata::load();
+        let max_seen = global_meta
+            .for_account(account_hash)
+            .map(|s| s.max_seen)
+            .unwrap_or(0);
+        let (edit_now, _) = crate::sync::clock::monotonic_now(max_seen);
+        let device_id = global_meta.device_id;
         let mut out = Vec::new();
         for (key, live) in Self::live_values(&settings) {
             match meta.keys.get(&key) {
@@ -459,16 +469,17 @@ impl DirtyStore for SettingsDirtyStore {
                         key,
                         value: live,
                         updated_at: 0,
-                        device_id: SyncMetadata::load().device_id,
+                        device_id: device_id.clone(),
                     }]);
                 }
                 Some(known) if known.v != live => {
-                    // Local edit since last sync → dirty with fresh clock.
+                    // Local edit since last sync → dirty with a fresh clock
+                    // that still respects the persisted maxSeen floor.
                     out.push(SettingsItem {
                         key,
                         value: live,
-                        updated_at: crate::sync::clock::wall_now_ms(),
-                        device_id: SyncMetadata::load().device_id,
+                        updated_at: edit_now,
+                        device_id: device_id.clone(),
                     });
                 }
                 Some(known) => {
@@ -476,7 +487,7 @@ impl DirtyStore for SettingsDirtyStore {
                         key,
                         value: known.v.clone(),
                         updated_at: known.t,
-                        device_id: SyncMetadata::load().device_id,
+                        device_id: device_id.clone(),
                     });
                 }
             }

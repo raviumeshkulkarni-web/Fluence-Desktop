@@ -94,6 +94,13 @@ pub fn merge_snippets(
     )
 }
 
+/// Settings adoption sentinel — byte-identical to Android's `Merge.kt`
+/// (1700000000000L). Both platforms stamp a first-observed settings key with
+/// this same fixed epoch, so two simultaneous first observers tie-break by
+/// deviceId instead of racing wall clocks, and the shared envelope carries
+/// timestamps both sides interpret identically.
+const SETTINGS_ADOPTION_EPOCH_MS: i64 = 1_700_000_000_000;
+
 /// Settings merge: per-key LWW over the allowed keys only.
 pub fn merge_settings(
     local: &[SettingsItem],
@@ -129,7 +136,7 @@ pub fn merge_settings(
     }
     for v in map.values_mut() {
         if v.updated_at == 0 {
-            v.updated_at = crate::sync::clock::wall_now_ms();
+            v.updated_at = SETTINGS_ADOPTION_EPOCH_MS;
         }
     }
     let mut merged: Vec<SettingsItem> = map.into_values().collect();
@@ -361,7 +368,22 @@ mod tests {
         let outcome = merge_settings(&local, &remote);
         assert_eq!(outcome.merged.len(), 1);
         assert_eq!(outcome.merged[0].value, "en");
-        assert!(outcome.merged[0].updated_at > 0, "adoption sentinel must be stamped");
+        assert_eq!(
+            outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS,
+            "adoption sentinel must match Android's frozen stamp (1700000000000)"
+        );
+    }
+
+    #[test]
+    fn adoption_stamp_ties_again_resolve_by_device_id() {
+        // Two platforms first-observing the same key write the identical
+        // sentinel; a later re-merge must not re-stamp it.
+        let a = setting("language", "en", SETTINGS_ADOPTION_EPOCH_MS, "a");
+        let b = setting("language", "fr", SETTINGS_ADOPTION_EPOCH_MS, "b");
+        let outcome = merge_settings(&[a.clone()], &[b.clone()]);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(outcome.merged[0].device_id, "b", "deviceId tie-breaks identical sentinels");
+        assert_eq!(outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS, "no re-stamp");
     }
 
     // ── Stats ───────────────────────────────────────────────────────────

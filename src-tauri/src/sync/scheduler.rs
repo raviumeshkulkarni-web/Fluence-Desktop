@@ -35,7 +35,7 @@ use crate::sync::error::SyncError;
 
 /// Google OAuth client ID recorded in Exp 4 — public by design.
 pub const SYNC_CLIENT_ID: &str =
-    "236666538373-005rdohmcf6cgh0in10v5v8nhcc1m85k.apps.googleusercontent.com";
+    "236666538373-8s13ahi71df7q9soql435fk2fol6up86.apps.googleusercontent.com";
 /// Loopback redirect port validated in Exp 4.
 pub const SYNC_REDIRECT_PORT: u16 = 58611;
 /// Automatic pass cadence: one pass every 15 minutes while enabled + signed in (frozen v1.1).
@@ -697,17 +697,18 @@ pub fn sync_toggle(
     Ok(scheduler.status())
 }
 
-/// PKCE authorization-code sign-in: resolve the secret, open the browser,
-/// wait for the loopback redirect, exchange the code, persist the refresh
-/// token, record the account email, enable sync, and trigger an immediate
-/// pass. Blocks the caller until the user finishes in the browser.
+/// PKCE authorization-code sign-in: open the browser, wait for the loopback
+/// redirect, exchange the code, persist the refresh token, record the account
+/// email, enable sync, and trigger an immediate pass. Blocks the caller until
+/// the user finishes in the browser. A client secret is attached only when
+/// resolvable at runtime — a Desktop OAuth client is a public PKCE client and
+/// must be able to sign in without one.
 #[tauri::command]
 pub async fn sync_sign_in(
     app: AppHandle,
     scheduler: State<'_, Scheduler>,
 ) -> Result<SyncStatus, String> {
-    let secret = resolve_client_secret().map_err(|e| e.to_string())?;
-    let config = build_config(Some(secret));
+    let config = sync_config();
     let state = uuid::Uuid::new_v4().to_string();
     let verifier = auth::pkce_verifier();
     let challenge = auth::pkce_s256(&verifier);
@@ -1169,6 +1170,33 @@ mod tests {
 
         let without = build_config(None);
         assert!(without.client_secret.is_none());
+    }
+
+    #[test]
+    fn sign_in_never_requires_a_client_secret() {
+        // Regression (production hardening): `sync_sign_in` used
+        // `resolve_client_secret()?` and refused to start when no secret was
+        // present. End users have neither FLUENCE_SYNC_CLIENT_SECRET nor
+        // Fluence/sync-oauth.json, so the shipped desktop app could never sign
+        // in. A Desktop OAuth client is a public PKCE client: the token
+        // exchange must work with no secret, exactly like the background
+        // scheduler's `sync_config()` already did. The worst-case resolution
+        // (env and file both absent) must still produce a valid config.
+        let config = build_config(resolve_client_secret_from(None, None).ok());
+        assert!(config.client_secret.is_none(), "public client has no secret");
+        assert_eq!(config.client_id, SYNC_CLIENT_ID);
+        assert_eq!(
+            config.redirect_uri,
+            format!("http://localhost:{}/", SYNC_REDIRECT_PORT)
+        );
+        assert_eq!(
+            config.scope,
+            "https://www.googleapis.com/auth/drive.appdata"
+        );
+        // The authorization-code exchange for that config must omit the
+        // client_secret field entirely, as Google's public-client flow expects.
+        let body = auth::token_request_body(&config, "code-1", "verifier-1");
+        assert!(!body.iter().any(|(k, _)| k == "client_secret"));
     }
 
     #[test]

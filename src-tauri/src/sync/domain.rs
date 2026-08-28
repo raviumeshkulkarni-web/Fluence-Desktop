@@ -19,7 +19,7 @@ pub const ENVELOPE_V1: i32 = 1;
 /// Maximum records accepted in one envelope. Legitimate accounts hold tens to
 /// hundreds of dictionary words / snippets and thousands of stat events;
 /// anything beyond this bound is corruption or abuse.
-pub const MAX_ENVELOPE_ITEMS: usize = 10_000;
+pub const MAX_ENVELOPE_ITEMS: usize = 50_000;
 
 fn default_kind() -> String {
     "correction".to_string()

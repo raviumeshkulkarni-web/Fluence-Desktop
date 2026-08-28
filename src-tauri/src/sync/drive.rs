@@ -47,7 +47,7 @@ const UPLOAD_BASE: &str = "https://www.googleapis.com/upload/drive/v3";
 
 /// Hard cap on a domain payload we will read or write. Legitimate envelopes
 /// are tens of KB; anything near this bound is corruption or abuse.
-pub const MAX_DOMAIN_BYTES: usize = 1024 * 1024;
+    pub const MAX_DOMAIN_BYTES: usize = 8 * 1024 * 1024;
 
 /// URL for a multipart create against an upload base. Pure so the host and
 /// query are testable offline.
@@ -428,28 +428,40 @@ impl GoogleDriveStore {
         Ok((files, None))
     }
 
-    /// Multipart write (create or update) returning the post-write version.
+    /// Multipart/related write (create or update) returning the post-write
+    /// version. Drive's `uploadType=multipart` requires RFC 2387
+    /// `multipart/related`; a `multipart/form-data` body makes Drive drop the
+    /// metadata part, which for creates inside appDataFolder means a
+    /// parentless write => 403 insufficientFilePermissions.
     fn multipart_write(
         &mut self,
         method: reqwest::Method,
         url: String,
         name: &str,
         content: &[u8],
+        parent_folder_id: Option<&str>,
     ) -> Result<String, SyncError> {
-        let metadata = serde_json::json!({"name": name}).to_string();
-        let part_meta = reqwest::blocking::multipart::Part::text(metadata)
-            .mime_str("application/json")
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let part_bytes = reqwest::blocking::multipart::Part::bytes(content.to_vec())
-            .file_name(name.to_string())
-            .mime_str("application/json")
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        let form = reqwest::blocking::multipart::Form::new()
-            .part("metadata", part_meta)
-            .part("file", part_bytes);
+        let mut metadata = serde_json::json!({ "name": name });
+        if let Some(pid) = parent_folder_id {
+            metadata["parents"] = serde_json::json!([pid]);
+        }
+        let boundary = format!("fluence_{}", uuid::Uuid::new_v4().simple());
+        let mut body: Vec<u8> = Vec::with_capacity(content.len() + 512);
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n{metadata}\r\n--{boundary}\r\nContent-Type: application/json\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(content);
+        body.extend_from_slice(format!("\r\n--{boundary}--").as_bytes());
         let resp = self
             .bearer(method, &url)
-            .multipart(form)
+            .header(
+                reqwest::header::CONTENT_TYPE,
+                format!("multipart/related; boundary={boundary}"),
+            )
+            .body(body)
             .send()
             .map_err(|e| {
                 if e.is_timeout() {
@@ -606,18 +618,19 @@ impl DomainDriveStore for GoogleDriveStore {
                     update_media_url(&self.upload_base, &meta.file_id),
                     name,
                     content,
+                    None,
                 )
             }
             None => {
                 // File absent. Creating is always safe unless the caller
                 // expected to UPDATE an existing file whose row vanished
                 // between list and write — also fine: recreate.
-                let _ = v1_id;
                 self.multipart_write(
                     reqwest::Method::POST,
                     create_upload_url(&self.upload_base),
                     name,
                     content,
+                    Some(&v1_id),
                 )
             }
         }

@@ -2,6 +2,7 @@
 // Transcription history is platform-local and NEVER synchronizes.
 pub mod auth;
 pub mod clock;
+pub mod convergence;
 pub mod domain;
 pub mod drive;
 pub mod error;
@@ -11,4 +12,3 @@ pub mod merge;
 pub mod metadata;
 pub mod scheduler;
 pub mod stores;
-pub mod convergence;

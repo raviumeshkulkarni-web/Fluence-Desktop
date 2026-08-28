@@ -2,3 +2,7 @@
 # Windows checkouts with core.autocrlf=true otherwise rewrite them to CRLF,
 # breaking byte-exact roundtrip tests that compile them via include_bytes!.
 examples/sync/v1/*.json text eol=lf
+
+# Cargo.toml must stay LF: autocrlf would otherwise flip it into a perpetual
+# stat-only modification that Git reports as dirty on every checkout.
+src-tauri/Cargo.toml text eol=lf

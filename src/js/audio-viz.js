@@ -30,7 +30,7 @@ class AuraVisualizer {
     this.gatePrimed = false;
     this.gateOpen = false;
     this.onsetStreak = 0;
-    this.stuckStreak = 0;
+    this.silenceStreak = 0;
     this._rafId = null;
     this._isRunning = false;
     this._resize();
@@ -118,29 +118,46 @@ class AuraVisualizer {
     // Safety sanitize input in [0.0, 1.0]
     const raw = Math.max(0, Math.min(Number(rawAmplitude) || 0, 1.0));
 
-    // Noise gate (frontend-only; the Rust audio pipeline is frozen).
+    // Noise gate + relative meter (frontend-only; the Rust audio pipeline is
+    // frozen).
     //
-    // The backend maps RMS onto a dBFS-linear value in [0,1] spanning
-    // -75…-30 dBFS, so the same physical silence can sit anywhere from
-    // ~0.05 (clean laptop mic) to ~0.85 (boosted / AGC input, Windows Mic
-    // Boost). Any absolute threshold therefore fails on some machines.
-    // Instead we invert the map back to true dBFS and run a dual-time-
-    // constant differential meter (the broadcast PPM approach): a fast
-    // envelope follows the current level while a slow envelope learns the
-    // machine's ambient noise — whatever it is. The meter only opens when
-    // the level rises clearly above that ambience reference, so silence
-    // stays flat at ANY input volume and AGC hunting/stepping is absorbed
-    // as ambience, with zero per-machine tuning and no pipeline changes.
+    // The backend maps RMS onto an absolute dBFS-linear value in [0,1]
+    // spanning -75…-30 dBFS, so the same physical input can land anywhere
+    // from ~0.05 (clean laptop mic) to ~0.85 (boosted / AGC input, Windows
+    // Mic Boost) purely because of the device's capture gain. Any absolute
+    // threshold therefore fails on some machines, and the raw EMIT itself
+    // moves when the user changes the Windows input volume.
+    //
+    // Instead of gating against absolute levels, this inverts the map back to
+    // true dBFS and runs a differential meter whose reference is a
+    // continuously RE-ANCHORING noise floor — the broadcast-PPM approach,
+    // normalized the way professional mixers meter (relative to a learned
+    // floor, never absolute dBFS), so the absolute capture gain cancels out:
+    //   * signal near the floor (ambience)     → the floor re-anchors upward,
+    //     so raising the mic volume or an AGC gain pump becomes the NEW
+    //     reference instead of false "speech"
+    //   * signal BELOW the floor (quieting)    → the floor follows it down,
+    //     so it never rides high above true silence
+    //   * signal far above the floor (speech)  → the floor is frozen, so an
+    //     utterance can never inflate the reference
+    // Every decision is a dB DELTA from the floor, so the meter behaves
+    // identically at any input volume, on any device, no per-machine tuning.
     const db = raw * 45 - 75;
     const DIGITAL_SILENCE_DB = -72; // muted mic / empty-buffer emits
     const SPEECH_TOP_DB = -30;      // top of the backend telemetry window
-    const ONSET_DB = 9;
-    const CLOSE_DB = 5;
+    const ONSET_DB = 12;            // sustained rise above floor = speech
+    const CLOSE_DB = 4;             // fall back within this of floor = rest
+    const ANCHOR_DB = 6;            // |level − floor| ≤ this ⇒ ambience
+    const FLOOR_FOLLOW_UP = 0.03;   // floor re-anchor rate on rising ambience
+    const FLOOR_FOLLOW_DOWN = 0.10; // floor follow rate when level falls below it
+    const SILENCE_HOLD_COUNT = 5;   // consecutive dead-buffer frames to latch the gate shut
 
     // Priming (~0.8 s of live telemetry, digital zeros excluded): seed the
-    // ambient reference at the lower-quartile startup level so speaking
-    // through the first second or a hotkey chime cannot pin the reference
-    // to speech. Until primed the meter simply stays calm.
+    // floor at the lower-quartile startup level so speaking through the
+    // first second or a hotkey chime cannot pin the reference to speech.
+    // Until primed the meter simply stays calm. (Even a poor prime self-
+    // corrects within ~1-2 s afterwards, because the floor keeps
+    // re-anchoring.)
     if (!this.gatePrimed) {
       if (db > DIGITAL_SILENCE_DB) this.primeBuf.push(db);
       if (this.primeBuf.length >= 24) {
@@ -151,66 +168,58 @@ class AuraVisualizer {
       return;
     }
 
-    // Fast envelope (~60 ms); slow ambient tracker adapts quickly while the
-    // gate is closed (τ≈0.6 s, so AGC gain hunting lands on top of it) and
-    // freezes while open so utterances never raise it. Real speech always
-    // dips back to ambience between words, re-closing the gate; a negligible
-    // open-state creep is kept purely as a latch failsafe for hours-long
-    // steady machine states. Digital silence (mic muted, empty-buffer
-    // dropout) carries no ambience information — feeding it to the tracker
-    // would sink the reference and latch the meter open once audio returns,
-    // so it is skipped entirely.
+    // Fast envelope (~45 ms). The floor tracker now runs on EVERY live frame —
+    // open or closed — so ambient / gain / AGC changes re-anchor the
+    // reference within ~1-2 s instead of latching the meter open for the rest
+    // of the session. (The previous tracker only learned while the gate was
+    // closed and froze while it was open; a mid-session mic-volume raise then
+    // left the level permanently ≥ CLOSE_DB above the floor, which is exactly
+    // why the waveform kept reacting to silence and tracked the user's input
+    // volume.) Digital silence (mic muted, empty-buffer dropout) carries no
+    // ambience information; it merely latches the gate shut.
     this.fastDb += (db - this.fastDb) * 0.5;
     const live = db > DIGITAL_SILENCE_DB;
-    if (!this.gateOpen) {
-      if (live) {
-        this.slowDb += (this.fastDb - this.slowDb) * 0.055;
-        if (this.slowDb > this.fastDb) this.slowDb = this.fastDb;
+    if (live) {
+      const aboveFloor = this.fastDb - this.slowDb;
+      if (aboveFloor < 0) {
+        this.slowDb += aboveFloor * FLOOR_FOLLOW_DOWN;
+      } else if (aboveFloor < ANCHOR_DB) {
+        this.slowDb += aboveFloor * FLOOR_FOLLOW_UP;
       }
-    } else if (live) {
-      this.slowDb += (this.fastDb - this.slowDb) * 0.0005;
+      if (this.slowDb < -75) this.slowDb = -75;
+      this.silenceStreak = 0;
+    } else {
+      this.silenceStreak++;
+      if (this.silenceStreak >= SILENCE_HOLD_COUNT) {
+        this.gateOpen = false;
+        this.onsetStreak = 0;
+      }
     }
 
-    // Hysteresis: open on a sustained ≥9 dB rise above ambience, close when
-    // it falls back within 5 dB. The 3-event (~100 ms) onset debounce hides
-    // single-frame AGC pump spikes that real speech never produces.
+    // Hysteresis: open on a sustained ≥ ONSET_DB rise above the floor, close
+    // when the level falls back within CLOSE_DB. The 3-event (~100 ms) onset
+    // debounce hides single-frame AGC pump spikes that real speech never
+    // produces. A sustained but calm ambience (e.g. a raised mic volume that
+    // re-anchored the floor) sits below ONSET_DB and never opens the gate.
     const diff = this.fastDb - this.slowDb;
-    if (!this.gateOpen) {
+    if (live) {
       if (diff >= ONSET_DB) this.onsetStreak++;
       else this.onsetStreak = 0;
       if (this.onsetStreak >= 3) {
         this.gateOpen = true;
-        this.stuckStreak = 0;
-      } else {
-        // Solid speech through priming can pin slow to speech (all 24 samples
-        // loud): if level stays 6dB above ambience for >1s without opening,
-        // gently drift ambience down so it eventually opens. Frontend only.
-        if (live && diff >= 6) {
-          this.stuckStreak++;
-          if (this.stuckStreak > 30) {
-            this.slowDb -= 0.45;
-            if (this.slowDb < -75) this.slowDb = -75;
-          }
-        } else {
-          this.stuckStreak = 0;
-        }
+      } else if (this.gateOpen && diff < CLOSE_DB) {
+        this.gateOpen = false;
+        this.onsetStreak = 0;
       }
-    } else if (diff < CLOSE_DB) {
-      this.gateOpen = false;
-      this.onsetStreak = 0;
-      this.stuckStreak = 0;
-    } else {
-      this.stuckStreak = 0;
     }
 
     let normalized = 0;
-    if (this.gateOpen) {
-      // Relative loudness above the ambient reference, scaled to the
+    if (this.gateOpen && live) {
+      // Relative loudness above the re-anchored floor, scaled to the
       // headroom remaining up to full telemetry scale.
       const refDb = this.slowDb + ONSET_DB;
       const headroomDb = Math.max(3, SPEECH_TOP_DB - refDb);
       let rel = (this.fastDb - refDb) / headroomDb;
-      if (db <= DIGITAL_SILENCE_DB) rel = 0;
       rel = Math.max(0, Math.min(rel, 1));
 
       // Perceptual sqrt curve compresses residual motion toward zero while
@@ -262,7 +271,7 @@ class AuraVisualizer {
       this.gatePrimed = false;
       this.gateOpen = false;
       this.onsetStreak = 0;
-      this.stuckStreak = 0;
+      this.silenceStreak = 0;
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
@@ -274,7 +283,7 @@ class AuraVisualizer {
       this.gatePrimed = false;
       this.gateOpen = false;
       this.onsetStreak = 0;
-      this.stuckStreak = 0;
+      this.silenceStreak = 0;
       if (this._rafId === null) {
         this._isRunning = true;
         this._loop(performance.now());

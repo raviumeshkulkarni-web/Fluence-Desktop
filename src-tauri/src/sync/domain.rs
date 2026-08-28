@@ -482,7 +482,8 @@ mod tests {
 
         let mut bytes = StatsEnvelope { v: 1, entries: stats.entries.clone() }.to_bytes();
         bytes.push(b'\n');
-        assert_eq!(bytes.as_slice(), &raw[..], "canonical stats bytes must be stable");
+        let raw_lf: Vec<u8> = raw.iter().copied().filter(|b| *b != b'\r').collect();
+        assert_eq!(bytes.as_slice(), raw_lf.as_slice(), "canonical stats bytes must be stable");
     }
 
     #[test]

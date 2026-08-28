@@ -1576,6 +1576,9 @@ function setupSyncPage() {
       renderSyncStatus();
     } catch (err) {
       showToast('Sign-in failed: ' + String(err).replace(/^Error:\s*/, ''), 'error');
+      if (!syncStatus) syncStatus = {};
+      syncStatus.last_error = String(err);
+      renderSyncStatus();
       btn.disabled = false;
       btn.textContent = 'Sign in with Google';
     }
@@ -1659,6 +1662,27 @@ function renderSyncStatus() {
       if (label) label.textContent = 'Not signed in';
       if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
     }
+  }
+
+  // Persistent sign-in error — visible while signed out (task: under ACCOUNT row, id sync-signin-error)
+  let syncSignInErrorEl = document.getElementById('sync-signin-error');
+  if (!syncSignInErrorEl) {
+    syncSignInErrorEl = document.createElement('div');
+    syncSignInErrorEl.id = 'sync-signin-error';
+    syncSignInErrorEl.style.color = 'var(--color-error)';
+    syncSignInErrorEl.style.fontSize = '12px';
+    syncSignInErrorEl.style.lineHeight = '1.4';
+    syncSignInErrorEl.style.marginTop = '6px';
+    syncSignInErrorEl.setAttribute('role', 'alert');
+    const accountInfo = document.getElementById('sync-account-desc')?.parentElement;
+    if (accountInfo) accountInfo.appendChild(syncSignInErrorEl);
+  }
+  if (!signedIn && s.last_error) {
+    syncSignInErrorEl.textContent = String(s.last_error).replace(/^Error:\s*/, '');
+    syncSignInErrorEl.style.display = '';
+  } else {
+    syncSignInErrorEl.textContent = '';
+    syncSignInErrorEl.style.display = 'none';
   }
 
   if (!enabled) {

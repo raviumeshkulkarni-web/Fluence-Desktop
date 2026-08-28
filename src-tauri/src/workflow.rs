@@ -294,9 +294,9 @@ pub async fn finish_transcription_flow(
         {
             Ok(polished) => {
                 log::info!(
-                    "AI polished dictation from '{}' to '{}'",
-                    result.text,
-                    polished
+                    "AI polish succeeded: {} -> {} chars",
+                    result.text.chars().count(),
+                    polished.chars().count()
                 );
                 result.text = polished;
             }

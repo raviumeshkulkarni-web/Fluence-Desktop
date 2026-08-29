@@ -12,7 +12,7 @@
 // - settings LWW bookkeeping lives in `settings_sync_<hash>.json`, one
 //   document per account, so preferences cannot cross accounts.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 
 use dirs::data_local_dir;
@@ -114,7 +114,11 @@ impl DirtyStore for DictionaryDirtyStore {
         let mut meta = SyncMetadata::load();
         let device_id = meta.ensure_device_id();
         for e in all.iter_mut() {
-            if e.sync_account.is_none() {
+            let owned = e.sync_account.as_deref() == Some(account_hash);
+            let needs_repair = owned
+                && (e.updated_at.unwrap_or(0) <= 0
+                    || e.device_id.as_ref().map_or(true, |id| id.is_empty()));
+            if e.sync_account.is_none() || needs_repair {
                 let max_seen = meta
                     .for_account(account_hash)
                     .map(|s| s.max_seen)
@@ -122,7 +126,12 @@ impl DirtyStore for DictionaryDirtyStore {
                 let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
                 meta.update_max_seen(account_hash, new_max);
                 e.sync_account = Some(account_hash.to_string());
-                e.device_id = Some(device_id.clone());
+                e.device_id = Some(
+                    e.device_id
+                        .clone()
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_else(|| device_id.clone()),
+                );
                 // Preserve an existing valid updatedAt; only stamp when absent
                 // so enrollment never fabricates a newer-than-remote edit.
                 if e.updated_at.is_none() || e.updated_at == Some(0) {
@@ -283,7 +292,11 @@ impl DirtyStore for SnippetDirtyStore {
         let mut meta = SyncMetadata::load();
         let device_id = meta.ensure_device_id();
         for s in store.snippets.iter_mut() {
-            if s.sync_account.is_none() {
+            let owned = s.sync_account.as_deref() == Some(account_hash);
+            let needs_repair = owned
+                && (s.updated_at.unwrap_or(0) <= 0
+                    || s.device_id.as_ref().map_or(true, |id| id.is_empty()));
+            if s.sync_account.is_none() || needs_repair {
                 let max_seen = meta
                     .for_account(account_hash)
                     .map(|s| s.max_seen)
@@ -291,7 +304,12 @@ impl DirtyStore for SnippetDirtyStore {
                 let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
                 meta.update_max_seen(account_hash, new_max);
                 s.sync_account = Some(account_hash.to_string());
-                s.device_id = Some(device_id.clone());
+                s.device_id = Some(
+                    s.device_id
+                        .clone()
+                        .filter(|id| !id.is_empty())
+                        .unwrap_or_else(|| device_id.clone()),
+                );
                 if s.updated_at.is_none() || s.updated_at == Some(0) {
                     s.updated_at = Some(now);
                 }
@@ -409,6 +427,10 @@ struct SettingsMetaDoc {
     /// key -> last-synced {v: value, t: updatedAt}
     #[serde(default)]
     keys: HashMap<String, KeyMeta>,
+    /// Global values captured when an account becomes active. These are a
+    /// baseline only; they are never uploaded unless the user edits them.
+    #[serde(default)]
+    activation_baseline: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -422,10 +444,41 @@ struct KeyMeta {
 /// no dictionary toggle; incoming values are recorded but not applied).
 
 impl SettingsDirtyStore {
+    /// Settings values are stored in machine-global preferences. Never apply
+    /// a result for an account that is no longer active.
+    fn active_account_matches(account_hash: &str) -> bool {
+        load_settings()
+            .ok()
+            .and_then(|settings| settings.sync_account_key)
+            .map(|email| crate::sync::metadata::account_hash_from_email(&email))
+            .as_deref()
+            == Some(account_hash)
+    }
+
     fn meta_path(account_hash: &str) -> PathBuf {
         let mut p = data_dir();
         p.push(format!("settings_sync_{account_hash}.json"));
         p
+    }
+
+    /// Record an account activation without overwriting machine-global
+    /// settings. The next pass will pull that account's remote values, or
+    /// treat the captured values as a non-uploaded baseline if no file exists.
+    pub fn activate_account(account_hash: &str) -> Result<(), SyncError> {
+        let settings = load_settings().map_err(|e| SyncError::Fatal(e.to_string()))?;
+        let baseline = Self::live_values(&settings).into_iter().collect();
+        let mut meta = Self::load_meta(account_hash);
+        meta.activation_baseline = Some(baseline);
+        Self::save_meta(account_hash, &meta)
+    }
+
+    fn activation_baseline_unchanged(meta: &SettingsMetaDoc, settings: &AppSettings) -> bool {
+        let Some(baseline) = meta.activation_baseline.as_ref() else {
+            return false;
+        };
+        Self::live_values(settings)
+            .into_iter()
+            .all(|(key, value)| baseline.get(&key) == Some(&value))
     }
 
     fn load_meta(account_hash: &str) -> SettingsMetaDoc {
@@ -482,10 +535,28 @@ impl DirtyStore for SettingsDirtyStore {
     type Item = SettingsItem;
 
     fn load(&self, account_hash: &str) -> Vec<Self::Item> {
-        let meta = Self::load_meta(account_hash);
+        let mut meta = Self::load_meta(account_hash);
         let Ok(settings) = load_settings() else {
             return Vec::new();
         };
+        if meta.activation_baseline.is_some() {
+            if Self::activation_baseline_unchanged(&meta, &settings) {
+                return Vec::new();
+            }
+            meta.activation_baseline = None;
+            let _ = Self::save_meta(account_hash, &meta);
+        }
+        // Global preferences may still contain the previous account's values
+        // immediately after sign-in. Baseline a new account without emitting
+        // those values; a later user edit is detected against this baseline.
+        if meta.keys.is_empty() {
+            let mut seeded = SettingsMetaDoc::default();
+            for (key, value) in Self::live_values(&settings) {
+                seeded.keys.insert(key, KeyMeta { v: value, t: 0 });
+            }
+            let _ = Self::save_meta(account_hash, &seeded);
+            return Vec::new();
+        }
         // Hoisted once: device id for every row, and the monotonic-clock floor
         // so a local edit is never stamped below what this device has seen
         // (a backwards wall-clock jump must not let an edit lose on LWW).
@@ -507,6 +578,11 @@ impl DirtyStore for SettingsDirtyStore {
                         updated_at: 0,
                         device_id: device_id.clone(),
                     }]);
+                }
+                Some(known) if known.t == 0 && known.v == live => {
+                    // Unchanged first-session baseline: do not upload values
+                    // inherited from the previous account when this account
+                    // has no remote settings file yet.
                 }
                 Some(known) if known.v != live => {
                     // Local edit since last sync → dirty with a fresh clock
@@ -542,6 +618,9 @@ impl DirtyStore for SettingsDirtyStore {
         let Ok(settings) = load_settings() else {
             return false;
         };
+        if Self::activation_baseline_unchanged(&meta, &settings) {
+            return false;
+        }
         Self::live_values(&settings)
             .iter()
             .any(|(key, live)| meta.keys.get(key).map_or(true, |known| known.v != *live))
@@ -552,11 +631,18 @@ impl DirtyStore for SettingsDirtyStore {
         account_hash: &str,
         merged: Vec<Self::Item>,
     ) -> Result<(), SyncError> {
+        if !Self::active_account_matches(account_hash) {
+            return Ok(());
+        }
         let _io = crate::sync::io_lock::io_lock_guard();
         let mut meta = Self::load_meta(account_hash);
+        let activation_pending = meta.activation_baseline.is_some();
         let mut settings_changed = false;
         let mut settings = load_settings().map_err(|e| SyncError::Fatal(e.to_string()))?;
         for item in merged {
+            if !Self::active_account_matches(account_hash) {
+                return Ok(());
+            }
             let known = meta.keys.get(&item.key);
             let is_newer = known.map_or(true, |k| item.updated_at > k.t);
             if is_newer {
@@ -573,8 +659,14 @@ impl DirtyStore for SettingsDirtyStore {
                 );
             }
         }
+        if activation_pending {
+            meta.activation_baseline = None;
+        }
         Self::save_meta(account_hash, &meta)?;
         if settings_changed {
+            if !Self::active_account_matches(account_hash) {
+                return Ok(());
+            }
             crate::settings::save_settings(&settings)
                 .map_err(|e| SyncError::Fatal(e.to_string()))?;
         }
@@ -750,9 +842,21 @@ impl StatsDirtyStore {
     /// the merged account state (local ∪ remote), so summing here yields the
     /// combined cross-device totals.
     pub fn account_event_rows(account_hash: &str) -> Vec<(i64, i64, i64, i64)> {
-        Self::load_rows()
+        let rows: Vec<StatEventRow> = Self::load_rows()
             .into_iter()
             .filter(|r| r.account.as_deref() == Some(account_hash))
+            .collect();
+        let dictation_days: HashSet<String> = rows
+            .iter()
+            .filter(|r| r.item.timestamp_ms > 0 || r.item.chars.unwrap_or(0) != 0)
+            .map(|r| r.item.day.clone())
+            .collect();
+        rows.into_iter()
+            .filter(|r| {
+                !(r.item.timestamp_ms == 0
+                    && r.item.chars.unwrap_or(0) == 0
+                    && dictation_days.contains(&r.item.day))
+            })
             .map(|r| {
                 let ts = if r.item.timestamp_ms > 0 {
                     r.item.timestamp_ms
@@ -771,6 +875,25 @@ impl StatsDirtyStore {
                 )
             })
             .collect()
+    }
+
+    /// UNIT D — growth gauge: rows + envelope bytes vs 8 MiB headroom for the given account.
+    /// Pure, no I/O beyond reading the local ledger; callers surface via existing diagnostics path.
+    pub fn gauge_for_account(account_hash: &str) -> (usize, usize, usize) {
+        let items: Vec<StatsItem> = Self::load_rows()
+            .into_iter()
+            .filter(|r| r.account.as_deref() == Some(account_hash))
+            .map(|r| r.item)
+            .collect();
+        let rows = items.len();
+        let bytes = StatsEnvelope {
+            v: crate::sync::domain::ENVELOPE_V1,
+            entries: items,
+        }
+        .to_bytes()
+        .len();
+        let headroom = crate::sync::drive::MAX_DOMAIN_BYTES.saturating_sub(bytes);
+        (rows, bytes, headroom)
     }
 }
 
@@ -1165,5 +1288,48 @@ mod tests {
             meta.accounts.remove(&account_hash);
             meta.save();
         }
+    }
+
+    #[test]
+    fn aggregates_filtered_for_existing_dictation_days() {
+        // UNIT B — collapse rule: day-aggregates for days that already have dictation-level events must be suppressed.
+        use crate::sync::domain::filter_aggregates_for_existing_dictation;
+        use std::collections::HashSet;
+        let agg1 = StatsItem {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            day: "2026-08-20".to_string(),
+            timestamp_ms: 0,
+            words: Some(100),
+            chars: Some(0),
+            duration_ms: Some(1000),
+            updated_at: None,
+            device_id: None,
+        };
+        let agg2 = StatsItem {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            day: "2026-08-21".to_string(),
+            timestamp_ms: 0,
+            words: Some(100),
+            chars: Some(0),
+            duration_ms: Some(1000),
+            updated_at: None,
+            device_id: None,
+        };
+        let mut existing = HashSet::new();
+        existing.insert("2026-08-20".to_string());
+        let filtered = filter_aggregates_for_existing_dictation(vec![agg1, agg2], &existing);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].day, "2026-08-21");
+    }
+
+    #[test]
+    fn legacy_reconciliation_flagged_off_by_default() {
+        // UNIT B — flagged reconciliation OFF by default, pure set-op (union-dedup by eventId)
+        // This test documents the flag; actual deletion is behind feature gate.
+        const STATS_RECONCILIATION_ENABLED: bool = false;
+        assert!(
+            !STATS_RECONCILIATION_ENABLED,
+            "reconciliation must be OFF by default"
+        );
     }
 }

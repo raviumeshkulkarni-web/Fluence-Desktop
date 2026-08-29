@@ -315,6 +315,10 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
     /// Absolute epoch millis of the next scheduled attempt (null when idle).
     pub next_attempt_ms: Option<i64>,
+    /// UNIT D — growth gauge for stats envelope (existing diagnostics path, no new command)
+    pub stats_rows: Option<usize>,
+    pub stats_bytes: Option<usize>,
+    pub stats_headroom_bytes: Option<usize>,
 }
 
 fn build_status(core: &SchedulerCore) -> SyncStatus {
@@ -323,6 +327,12 @@ fn build_status(core: &SchedulerCore) -> SyncStatus {
     let account_key = crate::settings::load_settings()
         .ok()
         .and_then(|s| s.sync_account_key);
+    let (stats_rows, stats_bytes, stats_headroom_bytes) = account_key
+        .as_deref()
+        .map(|email| crate::sync::metadata::account_hash_from_email(email))
+        .map(|hash| crate::sync::stores::StatsDirtyStore::gauge_for_account(&hash))
+        .map(|(r, b, h)| (Some(r), Some(b), Some(h)))
+        .unwrap_or((None, None, None));
     SyncStatus {
         enabled: core.enabled,
         signed_in: core.signed_in,
@@ -331,6 +341,9 @@ fn build_status(core: &SchedulerCore) -> SyncStatus {
         last_sync_at: core.last_sync_at,
         last_error: core.last_error.clone(),
         next_attempt_ms,
+        stats_rows,
+        stats_bytes,
+        stats_headroom_bytes,
     }
 }
 
@@ -745,6 +758,13 @@ pub async fn sync_sign_in(
     settings.sync_enabled = true;
     settings.sync_account_key = Some(email);
     crate::settings::save_settings(&settings).map_err(|e| e.to_string())?;
+    let account_hash = settings
+        .sync_account_key
+        .as_deref()
+        .map(crate::sync::metadata::account_hash_from_email)
+        .ok_or_else(|| "sign-in did not establish an account".to_string())?;
+    crate::sync::stores::SettingsDirtyStore::activate_account(&account_hash)
+        .map_err(|e| e.to_string())?;
     crate::dictionary::invalidate_cache();
     crate::snippets::invalidate_cache();
 

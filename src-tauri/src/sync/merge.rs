@@ -161,20 +161,38 @@ pub fn merge_settings(
     MergeOutcome { merged, changed }
 }
 
-/// Stats merge: union dedup by eventId. Events are immutable facts — there is
-/// nothing to resolve; totals are summed at display time.
+/// Stats merge: union dedup by eventId. Normally duplicate event ids carry the
+/// same immutable fact; if damaged/old data disagrees, use the same deterministic
+/// LWW rule as Android so both platforms converge to one record.
 pub fn merge_stats(local: &[StatsItem], remote: &[StatsItem]) -> MergeOutcome<StatsItem> {
     let mut map: HashMap<String, StatsItem> = HashMap::new();
     for item in local.iter().chain(remote.iter()) {
-        map.entry(item.event_id.clone())
-            .or_insert_with(|| item.clone());
+        match map.entry(item.event_id.clone()) {
+            std::collections::hash_map::Entry::Vacant(entry) => {
+                entry.insert(item.clone());
+            }
+            std::collections::hash_map::Entry::Occupied(mut entry) => {
+                let existing = entry.get();
+                let existing_time = existing.updated_at.unwrap_or(0);
+                let item_time = item.updated_at.unwrap_or(0);
+                if cmp_winner(
+                    item_time,
+                    item.device_id.as_deref().unwrap_or(""),
+                    existing_time,
+                    existing.device_id.as_deref().unwrap_or(""),
+                ) == std::cmp::Ordering::Greater
+                {
+                    entry.insert(item.clone());
+                }
+            }
+        }
     }
     let mut merged: Vec<StatsItem> = map.into_values().collect();
-    merged.sort_by(|a, b| a.event_id.cmp(&b.event_id));
+    merged.sort_by(|a, b| a.day.cmp(&b.day).then_with(|| a.event_id.cmp(&b.event_id)));
     let changed = {
-        let local_ids: HashSet<_> = local.iter().map(|i| &i.event_id).collect();
-        let merged_ids: HashSet<_> = merged.iter().map(|i| &i.event_id).collect();
-        local_ids != merged_ids
+        let local_records: HashSet<StatsItem> = local.iter().cloned().collect();
+        let merged_records: HashSet<StatsItem> = merged.iter().cloned().collect();
+        local_records != merged_records
     };
     MergeOutcome { merged, changed }
 }

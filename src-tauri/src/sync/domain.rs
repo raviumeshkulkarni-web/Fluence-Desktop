@@ -12,7 +12,9 @@
 //   (`business_key()` derives from spoken/trigger) — never trusted from wire.
 // - Duplicate domain files on Drive are all fetched and merged by the engine.
 
+use serde::ser::{SerializeStruct, Serializer};
 use serde::{Deserialize, Serialize};
+use unicode_normalization::UnicodeNormalization;
 
 pub const ENVELOPE_V1: i32 = 1;
 
@@ -21,20 +23,23 @@ pub const ENVELOPE_V1: i32 = 1;
 /// anything beyond this bound is corruption or abuse.
 pub const MAX_ENVELOPE_ITEMS: usize = 50_000;
 
+/// F3 — far-future clock cap: records stamped >24h beyond wall clock are invalid (per-record skip, never whole-file).
+pub const CLOCK_SKEW_TOLERANCE_MS: i64 = 24 * 60 * 60 * 1000;
+
 fn default_kind() -> String {
     "correction".to_string()
 }
 
 // ── Dictionary ──────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct DictionaryItem {
     #[serde(rename = "syncId")]
     pub sync_id: String,
     pub spoken: String,
     pub corrected: String,
-    #[serde(default = "default_kind")]
-    pub kind: String, // correction | expansion
+    #[serde(default = "default_kind", skip_serializing)]
+    pub kind: String, // correction | expansion — internal only, never on wire (F1)
     #[serde(rename = "isEnabled")]
     pub is_enabled: bool,
     #[serde(rename = "deletedAt")]
@@ -45,11 +50,31 @@ pub struct DictionaryItem {
     pub device_id: String,
 }
 
+impl Serialize for DictionaryItem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // F1 — strict wire contract: {syncId, businessKey, spoken, corrected, isEnabled, updatedAt, deletedAt, deviceId}
+        // businessKey computed, kind never emitted, fixed order per frozen README
+        let mut s = serializer.serialize_struct("DictionaryItem", 8)?;
+        s.serialize_field("syncId", &self.sync_id)?;
+        s.serialize_field("businessKey", &self.business_key())?;
+        s.serialize_field("spoken", &self.spoken)?;
+        s.serialize_field("corrected", &self.corrected)?;
+        s.serialize_field("isEnabled", &self.is_enabled)?;
+        s.serialize_field("updatedAt", &self.updated_at)?;
+        s.serialize_field("deletedAt", &self.deleted_at)?;
+        s.serialize_field("deviceId", &self.device_id)?;
+        s.end()
+    }
+}
+
 impl DictionaryItem {
     /// Canonical identity — ALWAYS derived from content, never from any wire
-    /// field. Case-insensitive on the spoken form.
+    /// field. NFC-normalized + case-insensitive on the spoken form (symmetric cross-platform).
     pub fn business_key(&self) -> String {
-        self.spoken.trim().to_lowercase()
+        self.spoken.trim().nfc().collect::<String>().to_lowercase()
     }
 
     /// Compact fingerprint of the user-visible state, used for dirty checks.
@@ -72,6 +97,11 @@ impl DictionaryItem {
             return false;
         }
         if self.updated_at <= 0 {
+            return false;
+        }
+        // F3 — far-future cap: reject records stamped >24h beyond wall clock (per-record skip, never whole-file)
+        let now = chrono::Utc::now().timestamp_millis();
+        if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
             return false;
         }
         if let Some(d) = self.deleted_at {
@@ -99,7 +129,9 @@ pub struct DictionaryEnvelope {
 
 impl DictionaryEnvelope {
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+        let mut bytes = serde_json::to_vec(self).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
     }
 
     /// Lenient ingest: unknown fields ignored, invalid ITEMS skipped, only a
@@ -121,7 +153,7 @@ impl DictionaryEnvelope {
 
 // ── Snippets ────────────────────────────────────────────────────────────────
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 pub struct SnippetItem {
     #[serde(rename = "syncId")]
     pub sync_id: String,
@@ -137,10 +169,29 @@ pub struct SnippetItem {
     pub device_id: String,
 }
 
+impl Serialize for SnippetItem {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        // F1 — strict wire contract: {syncId, businessKey, trigger, expansion, isEnabled, updatedAt, deletedAt, deviceId}
+        let mut s = serializer.serialize_struct("SnippetItem", 8)?;
+        s.serialize_field("syncId", &self.sync_id)?;
+        s.serialize_field("businessKey", &self.business_key())?;
+        s.serialize_field("trigger", &self.trigger)?;
+        s.serialize_field("expansion", &self.expansion)?;
+        s.serialize_field("isEnabled", &self.is_enabled)?;
+        s.serialize_field("updatedAt", &self.updated_at)?;
+        s.serialize_field("deletedAt", &self.deleted_at)?;
+        s.serialize_field("deviceId", &self.device_id)?;
+        s.end()
+    }
+}
+
 impl SnippetItem {
-    /// Canonical identity — derived from the trigger content.
+    /// Canonical identity — derived from the trigger content. NFC-normalized + case-insensitive (symmetric).
     pub fn business_key(&self) -> String {
-        self.trigger.trim().to_lowercase()
+        self.trigger.trim().nfc().collect::<String>().to_lowercase()
     }
 
     pub fn canonical_dirty(&self) -> String {
@@ -152,6 +203,11 @@ impl SnippetItem {
             return false;
         }
         if self.device_id.is_empty() || self.updated_at <= 0 {
+            return false;
+        }
+        // F3 — far-future cap
+        let now = chrono::Utc::now().timestamp_millis();
+        if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
             return false;
         }
         if let Some(d) = self.deleted_at {
@@ -175,7 +231,9 @@ pub struct SnippetEnvelope {
 
 impl SnippetEnvelope {
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+        let mut bytes = serde_json::to_vec(self).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
@@ -228,6 +286,11 @@ impl SettingsItem {
         if self.updated_at <= 0 || self.device_id.is_empty() {
             return false;
         }
+        // F3 — far-future cap
+        let now = chrono::Utc::now().timestamp_millis();
+        if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
+            return false;
+        }
         self.value.len() <= 1024
     }
 }
@@ -241,7 +304,9 @@ pub struct SettingsEnvelope {
 
 impl SettingsEnvelope {
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+        let mut bytes = serde_json::to_vec(self).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
@@ -302,6 +367,13 @@ impl StatsItem {
         if self.timestamp_ms < 0 {
             return false;
         }
+        // F3 — far-future cap for stats: updatedAt > now+24h is invalid per-record (only Some, None stays valid)
+        if let Some(t) = self.updated_at {
+            let now = chrono::Utc::now().timestamp_millis();
+            if t > now + CLOCK_SKEW_TOLERANCE_MS {
+                return false;
+            }
+        }
         // Sanity: a single dictation cannot contribute absurd magnitudes.
         let words = self.words.unwrap_or(0);
         let chars = self.chars.unwrap_or(0);
@@ -350,6 +422,19 @@ pub fn synthetic_backfill_id(history_id: &str, account_hash: &str) -> String {
     uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, name.as_bytes()).to_string()
 }
 
+/// F2 — collapse rule primitive: filter day-aggregate StatsItems (timestamp_ms==0 && chars==0)
+/// where (day) already has dictation-level events. Pure and testable; used by the post-merge
+/// filter below AND keeps the flagged legacy reconciliation OFF (resurrection-unsafe).
+pub fn filter_aggregates_for_existing_dictation(
+    aggregates: Vec<StatsItem>,
+    existing_dictation_days: &std::collections::HashSet<String>,
+) -> Vec<StatsItem> {
+    aggregates
+        .into_iter()
+        .filter(|a| !existing_dictation_days.contains(&a.day))
+        .collect()
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct StatsEnvelope {
     pub v: i32,
@@ -359,7 +444,9 @@ pub struct StatsEnvelope {
 
 impl StatsEnvelope {
     pub fn to_bytes(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+        let mut bytes = serde_json::to_vec(self).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
     }
 
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
@@ -499,19 +586,73 @@ mod tests {
 
     #[test]
     fn android_canonical_fixtures_parse_and_roundtrip() {
-        let dict = DictionaryEnvelope::from_bytes(include_bytes!(
-            "../../../examples/sync/v1/dictionary.json"
-        ))
-        .expect("dict fixture");
+        // UNIT A — byte-gate for all four domains against canonical fixtures (frozen contract).
+        // Verifies: parse ok, counts, validation, and byte-identical re-serialization (exactly one trailing \n, CRLF-normalized).
+        let dict_raw = include_bytes!("../../../examples/sync/v1/dictionary.json");
+        let dict = DictionaryEnvelope::from_bytes(dict_raw).expect("dict fixture");
         assert_eq!(dict.entries.len(), 3);
-        let snip =
-            SnippetEnvelope::from_bytes(include_bytes!("../../../examples/sync/v1/snippets.json"))
-                .expect("snippet fixture");
+        // businessKey-then-syncId canonical order per frozen README: asap < gonna < teh
+        assert_eq!(dict.entries[0].business_key(), "asap");
+        assert_eq!(dict.entries[1].business_key(), "gonna");
+        assert_eq!(dict.entries[2].business_key(), "teh");
+        // F1 — strict byte-gate: dict/snips must be byte-identical to fixtures (businessKey, no kind, fixed order)
+        let dict_bytes = DictionaryEnvelope {
+            v: 1,
+            entries: dict.entries.clone(),
+        }
+        .to_bytes();
+        let dict_raw_lf: Vec<u8> = dict_raw.iter().copied().filter(|b| *b != b'\r').collect();
+        assert_eq!(
+            dict_bytes.as_slice(),
+            dict_raw_lf.as_slice(),
+            "canonical dict bytes must be stable"
+        );
+
+        let snip_raw = include_bytes!("../../../examples/sync/v1/snippets.json");
+        let snip = SnippetEnvelope::from_bytes(snip_raw).expect("snippet fixture");
         assert_eq!(snip.entries.len(), 2);
-        let set =
-            SettingsEnvelope::from_bytes(include_bytes!("../../../examples/sync/v1/settings.json"))
-                .expect("settings fixture");
+        assert_eq!(snip.entries[0].business_key(), "addr");
+        assert_eq!(snip.entries[1].business_key(), "brb");
+        let snip_bytes = SnippetEnvelope {
+            v: 1,
+            entries: snip.entries.clone(),
+        }
+        .to_bytes();
+        let snip_raw_lf: Vec<u8> = snip_raw.iter().copied().filter(|b| *b != b'\r').collect();
+        assert_eq!(
+            snip_bytes.as_slice(),
+            snip_raw_lf.as_slice(),
+            "canonical snippet bytes must be stable"
+        );
+
+        let set_raw = include_bytes!("../../../examples/sync/v1/settings.json");
+        let set = SettingsEnvelope::from_bytes(set_raw).expect("settings fixture");
         assert_eq!(set.entries.len(), 5);
+        // key-sorted per contract
+        assert_eq!(
+            set.entries
+                .iter()
+                .map(|e| e.key.as_str())
+                .collect::<Vec<_>>(),
+            vec![
+                "ai_polish_style",
+                "auto_learn_enabled",
+                "dictionary_enabled",
+                "language",
+                "snippets_enabled"
+            ]
+        );
+        let set_bytes = SettingsEnvelope {
+            v: 1,
+            entries: set.entries.clone(),
+        }
+        .to_bytes();
+        let set_raw_lf: Vec<u8> = set_raw.iter().copied().filter(|b| *b != b'\r').collect();
+        assert_eq!(
+            set_bytes.as_slice(),
+            set_raw_lf.as_slice(),
+            "canonical settings bytes must be stable"
+        );
 
         let raw = include_bytes!("../../../examples/sync/v1/stats.json");
         let stats = StatsEnvelope::from_bytes(raw).expect("stats fixture");
@@ -528,12 +669,11 @@ mod tests {
         assert_eq!(first.timestamp_ms, 1787184000123);
         assert!(stats.entries.iter().all(|s| s.validate()));
 
-        let mut bytes = StatsEnvelope {
+        let bytes = StatsEnvelope {
             v: 1,
             entries: stats.entries.clone(),
         }
         .to_bytes();
-        bytes.push(b'\n');
         let raw_lf: Vec<u8> = raw.iter().copied().filter(|b| *b != b'\r').collect();
         assert_eq!(
             bytes.as_slice(),
@@ -555,5 +695,142 @@ mod tests {
         let mut too_big = dict("a", "b", 100);
         too_big.spoken = "😀".repeat(4097);
         assert!(!too_big.validate(), "4097 chars should fail");
+    }
+
+    #[test]
+    fn business_key_nfc_normalized_cafe() {
+        // ITEM 1 — NFC: precomposed é (U+00E9) vs e + combining acute (U+0301) must yield same businessKey, merge dedups to one
+        let precomposed = "café"; // café with U+00E9
+        let decomposed = "cafe\u{0301}"; // cafe + U+0301
+        let a = dict(precomposed, "x", 100);
+        let b = dict(decomposed, "y", 100);
+        assert_eq!(
+            a.business_key(),
+            b.business_key(),
+            "NFC must normalize café variants"
+        );
+        // Also snippet
+        let s1 = SnippetItem {
+            sync_id: uuid::Uuid::new_v4().to_string(),
+            trigger: precomposed.to_string(),
+            expansion: "exp".to_string(),
+            is_enabled: true,
+            deleted_at: None,
+            updated_at: 100,
+            device_id: "d".to_string(),
+        };
+        let s2 = SnippetItem {
+            sync_id: uuid::Uuid::new_v4().to_string(),
+            trigger: decomposed.to_string(),
+            expansion: "exp2".to_string(),
+            is_enabled: true,
+            deleted_at: None,
+            updated_at: 200,
+            device_id: "d".to_string(),
+        };
+        assert_eq!(s1.business_key(), s2.business_key());
+        // Merge yields one winner (newer wins but only one key)
+        let m = crate::sync::merge::merge_dictionary(&[a.clone()], &[b.clone()]);
+        assert_eq!(
+            m.merged.len(),
+            1,
+            "NFC variants must collapse to one businessKey"
+        );
+        let ms = crate::sync::merge::merge_snippets(&[s1.clone()], &[s2.clone()]);
+        assert_eq!(ms.merged.len(), 1);
+    }
+
+    #[test]
+    fn future_stamped_record_skipped_per_record() {
+        // F3 — far-future cap: updatedAt > now+24h is invalid per-record, never whole-file
+        let now = chrono::Utc::now().timestamp_millis();
+        let future = now + CLOCK_SKEW_TOLERANCE_MS + 60_000;
+        let mut bad = dict("future", "bad", future);
+        // future must be rejected
+        assert!(!bad.validate(), "future stamp must be skipped");
+        // valid past still passes
+        let mut good = dict("hello", "hi", now - 1000);
+        assert!(good.validate());
+        // Envelope with one future + one valid: future skipped, valid kept, whole file parses
+        let env = DictionaryEnvelope {
+            v: 1,
+            entries: vec![good.clone(), bad.clone()],
+        };
+        let bytes = env.to_bytes();
+        let parsed = DictionaryEnvelope::from_bytes(&bytes).expect("envelope must parse");
+        assert_eq!(
+            parsed.entries.len(),
+            1,
+            "future record must be skipped, valid kept"
+        );
+        assert_eq!(parsed.entries[0].spoken, "hello");
+        // Snippet future also skipped
+        let mut s_bad = SnippetItem {
+            sync_id: uuid::Uuid::new_v4().to_string(),
+            trigger: "trig".to_string(),
+            expansion: "exp".to_string(),
+            is_enabled: true,
+            deleted_at: None,
+            updated_at: future,
+            device_id: "d".to_string(),
+        };
+        assert!(!s_bad.validate());
+        // Settings future also skipped
+        let mut set_bad = SettingsItem {
+            key: "language".to_string(),
+            value: "en".to_string(),
+            updated_at: future,
+            device_id: "d".to_string(),
+        };
+        assert!(!set_bad.validate());
+        // Stats future also skipped, None stays valid
+        let stats_bad = StatsItem {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            day: "2026-08-20".to_string(),
+            timestamp_ms: 0,
+            words: Some(10),
+            chars: Some(100),
+            duration_ms: Some(1000),
+            updated_at: Some(future),
+            device_id: Some("d".to_string()),
+        };
+        assert!(
+            !stats_bad.validate(),
+            "stats future updatedAt must be skipped"
+        );
+        let stats_good = StatsItem {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            day: "2026-08-20".to_string(),
+            timestamp_ms: 0,
+            words: Some(10),
+            chars: Some(100),
+            duration_ms: Some(1000),
+            updated_at: Some(now - 1000),
+            device_id: Some("d".to_string()),
+        };
+        assert!(stats_good.validate());
+        let stats_none = StatsItem {
+            event_id: uuid::Uuid::new_v4().to_string(),
+            day: "2026-08-20".to_string(),
+            timestamp_ms: 0,
+            words: Some(10),
+            chars: Some(100),
+            duration_ms: Some(1000),
+            updated_at: None,
+            device_id: None,
+        };
+        assert!(stats_none.validate(), "None updatedAt must remain valid");
+        let env_stats = StatsEnvelope {
+            v: 1,
+            entries: vec![stats_good.clone(), stats_bad.clone(), stats_none.clone()],
+        };
+        let bytes_stats = env_stats.to_bytes();
+        let parsed_stats =
+            StatsEnvelope::from_bytes(&bytes_stats).expect("stats envelope must parse");
+        assert_eq!(
+            parsed_stats.entries.len(),
+            2,
+            "future stats skipped, valid+None kept"
+        );
     }
 }

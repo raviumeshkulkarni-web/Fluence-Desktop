@@ -362,8 +362,8 @@ pub fn add_snippet(
         .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
         .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash {
-        meta.update_max_seen(&h, new_max);
+    if let Some(h) = account_hash.as_deref() {
+        meta.update_max_seen(h, new_max);
     }
     let snippet = Snippet {
         id: uuid::Uuid::new_v4().to_string(),
@@ -376,7 +376,7 @@ pub fn add_snippet(
         deleted_at: None,
         dirty: true,
         ever_pushed: false,
-        sync_account: None,
+        sync_account: account_hash,
         sync_state: None,
         server_file_id: None,
         quarantine_reason: None,
@@ -432,6 +432,12 @@ pub fn update_snippet(
     let mut found = false;
     for s in store.snippets.iter_mut() {
         if s.id == id {
+            if !crate::sync::metadata::belongs_to_account(
+                s.sync_account.as_deref(),
+                active_account.as_deref(),
+            ) {
+                return Err("Snippet belongs to another account".to_string());
+            }
             if s.deleted_at.is_some() {
                 return Err("Cannot edit deleted snippet".to_string());
             }
@@ -474,9 +480,16 @@ pub fn delete_snippet(
     if let Some(h) = account_hash {
         meta.update_max_seen(&h, new_max);
     }
+    let active_account = crate::sync::metadata::current_account_hash();
     let mut to_hard_delete = false;
     for s in store.snippets.iter_mut() {
         if s.id == id {
+            if !crate::sync::metadata::belongs_to_account(
+                s.sync_account.as_deref(),
+                active_account.as_deref(),
+            ) {
+                return Err("Snippet belongs to another account".to_string());
+            }
             if !s.ever_pushed {
                 to_hard_delete = true;
             } else {

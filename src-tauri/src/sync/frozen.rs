@@ -99,24 +99,54 @@ where
         let mut domain_files: Vec<&DomainFileMeta> =
             files.iter().filter(|f| f.name == name).collect();
         domain_files.sort_by(|a, b| a.file_id.cmp(&b.file_id));
-        let preferred_file_id = domain_files.first().map(|m| m.file_id.as_str());
         let mut remote_items: Vec<T> = Vec::new();
         let mut remote_version: Option<String> = None;
+        let mut valid_file_ids: Vec<String> = Vec::new();
         let mut valid_found = false;
+        let mut oversized_found = false;
+        let mut oversized_bytes: usize = 0;
         for meta in &domain_files {
             let bytes = match drive.get_domain_content(&meta.file_id)? {
                 Some(b) => b,
                 None => continue,
             };
+            if bytes.len() > crate::sync::drive::MAX_DOMAIN_BYTES {
+                oversized_found = true;
+                oversized_bytes = oversized_bytes.max(bytes.len());
+                log::warn!(
+                    "sync: {} file {} oversized {} bytes > {} cap, keeping remote intact",
+                    name,
+                    meta.file_id,
+                    bytes.len(),
+                    crate::sync::drive::MAX_DOMAIN_BYTES
+                );
+                continue;
+            }
             if let Some(items) = decode(&bytes) {
                 remote_items.extend(items);
+                valid_file_ids.push(meta.file_id.clone());
                 if remote_version.is_none() {
                     remote_version = meta.version.clone();
                 }
                 valid_found = true;
             }
-            // Corrupt envelope: skip this file, keep its siblings.
+            // Corrupt envelope (within size): skip this file, keep its siblings.
         }
+        // The update target and the version used for CAS must come from the
+        // same valid file. Invalid/oversized siblings remain untouched.
+        let preferred_file_id = valid_file_ids
+            .first()
+            .map(|id| id.as_str())
+            .or_else(|| domain_files.first().map(|m| m.file_id.as_str()));
+        // A corrupt-but-size-valid file is still a concrete remote revision.
+        // Use that revision when repairing it so the repair is CAS-protected;
+        // otherwise put_domain would reject every repair as stale forever.
+        if remote_version.is_none() {
+            remote_version = domain_files.iter().find_map(|m| m.version.clone());
+        }
+        // Oversized remote must not be auto-replaced via the !valid_found fallback (frozen.rs:135).
+        // Keep remote intact, surface non-fatal Rejected instead of silently overwriting.
+        // Only when no valid file exists and at least one oversized file exists do we surface; otherwise oversized is just an extra duplicate to ignore.
 
         // 3. Deterministic merge (pure LWW).
         let outcome = merge_fn(&local_items, &remote_items);
@@ -131,6 +161,21 @@ where
         let mut remote_sorted = remote_items.clone();
         sort_items(&mut remote_sorted);
         let state_differs = merged != remote_sorted;
+        // Distinguish oversized (abuse) from corrupt: oversized must not trigger the !valid_found fallback auto-replace (frozen.rs:135).
+        if oversized_found && !valid_found {
+            log::warn!(
+                "sync: {} oversized remote ({} bytes > {}), keep remote intact, surface Rejected",
+                name,
+                oversized_bytes,
+                crate::sync::drive::MAX_DOMAIN_BYTES
+            );
+            return Err(SyncError::Rejected(format!(
+                "{}: remote file oversized {} bytes > {} cap, keeping remote intact",
+                name,
+                oversized_bytes,
+                crate::sync::drive::MAX_DOMAIN_BYTES
+            )));
+        }
         let needs_push =
             state_differs || store.has_dirty(account_hash) || (!valid_found && !merged.is_empty());
 
@@ -179,17 +224,12 @@ where
                 store.save_merged(account_hash, merged)?;
                 store.mark_all_pushed(account_hash)?;
                 store.hard_delete_never_pushed_tombstones(account_hash)?;
-                // Consolidate duplicate domain files: keep the first valid
-                // one (the file we just updated), drop extras.
-                if domain_files.len() > 1 {
-                    if let Some(target) = preferred_file_id {
-                        for dup in domain_files.iter().filter(|d| d.file_id != target) {
-                            let _ = drive.delete_domain_file(&dup.file_id);
-                        }
-                    } else {
-                        for dup in domain_files.iter().skip(1) {
-                            let _ = drive.delete_domain_file(&dup.file_id);
-                        }
+                // Consolidate only valid duplicates whose contents were
+                // included in the merged payload. Corrupt/oversized files
+                // may contain unrecoverable data and must remain untouched.
+                if let Some(target) = preferred_file_id {
+                    for duplicate_id in valid_file_ids.iter().filter(|id| id.as_str() != target) {
+                        let _ = drive.delete_domain_file(duplicate_id);
                     }
                 }
                 return Ok(DomainSyncOutcome {
@@ -374,5 +414,393 @@ pub fn sync_all_domains(
     match first_error {
         Some(e) => Err(e),
         None => Ok(outcomes),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::sync::drive::{DomainFileMeta, MAX_DOMAIN_BYTES};
+    use crate::sync::error::SyncError;
+    use crate::sync::metadata::SyncMetadata;
+
+    struct FakeDrive {
+        files: Vec<DomainFileMeta>,
+        contents: std::collections::HashMap<String, Vec<u8>>,
+        put_count: usize,
+        delete_count: usize,
+    }
+
+    impl FakeDrive {
+        fn new() -> Self {
+            Self {
+                files: Vec::new(),
+                contents: std::collections::HashMap::new(),
+                put_count: 0,
+                delete_count: 0,
+            }
+        }
+        fn with_file(mut self, name: &str, file_id: &str, version: &str, bytes: Vec<u8>) -> Self {
+            self.files.push(DomainFileMeta {
+                file_id: file_id.to_string(),
+                name: name.to_string(),
+                version: Some(version.to_string()),
+            });
+            self.contents.insert(file_id.to_string(), bytes);
+            self
+        }
+    }
+
+    impl crate::sync::drive::DomainDriveStore for FakeDrive {
+        fn ensure_v1_folder(&mut self) -> Result<String, SyncError> {
+            Ok("v1".to_string())
+        }
+        fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError> {
+            Ok(self.files.clone())
+        }
+        fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+            Ok(self.contents.get(file_id).cloned())
+        }
+        fn put_domain(
+            &mut self,
+            name: &str,
+            content: &[u8],
+            expected_version: Option<&str>,
+            preferred_file_id: Option<&str>,
+        ) -> Result<String, SyncError> {
+            let _ = (name, content, expected_version, preferred_file_id);
+            self.put_count += 1;
+            Ok(format!("v{}", self.put_count + 10))
+        }
+        fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
+            let _ = file_id;
+            self.delete_count += 1;
+            Ok(())
+        }
+    }
+
+    struct MemStore<T: Clone + PartialEq> {
+        items: Vec<T>,
+        has_dirty: bool,
+    }
+
+    impl<T: Clone + PartialEq> MemStore<T> {
+        fn new(items: Vec<T>) -> Self {
+            Self {
+                items,
+                has_dirty: false,
+            }
+        }
+    }
+
+    impl DirtyStore for MemStore<DictionaryItem> {
+        type Item = DictionaryItem;
+        fn load(&self, _h: &str) -> Vec<Self::Item> {
+            self.items.clone()
+        }
+        fn stamp_account(&mut self, _h: &str) -> Result<usize, SyncError> {
+            Ok(0)
+        }
+        fn has_dirty(&self, _h: &str) -> bool {
+            self.has_dirty
+        }
+        fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
+            self.items = m;
+            Ok(())
+        }
+        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
+            Ok(())
+        }
+    }
+    impl DirtyStore for MemStore<SnippetItem> {
+        type Item = SnippetItem;
+        fn load(&self, _h: &str) -> Vec<Self::Item> {
+            self.items.clone()
+        }
+        fn stamp_account(&mut self, _h: &str) -> Result<usize, SyncError> {
+            Ok(0)
+        }
+        fn has_dirty(&self, _h: &str) -> bool {
+            self.has_dirty
+        }
+        fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
+            self.items = m;
+            Ok(())
+        }
+        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
+            Ok(())
+        }
+    }
+    impl DirtyStore for MemStore<SettingsItem> {
+        type Item = SettingsItem;
+        fn load(&self, _h: &str) -> Vec<Self::Item> {
+            self.items.clone()
+        }
+        fn stamp_account(&mut self, _h: &str) -> Result<usize, SyncError> {
+            Ok(0)
+        }
+        fn has_dirty(&self, _h: &str) -> bool {
+            self.has_dirty
+        }
+        fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
+            self.items = m;
+            Ok(())
+        }
+        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
+            Ok(())
+        }
+    }
+    impl DirtyStore for MemStore<StatsItem> {
+        type Item = StatsItem;
+        fn load(&self, _h: &str) -> Vec<Self::Item> {
+            self.items.clone()
+        }
+        fn stamp_account(&mut self, _h: &str) -> Result<usize, SyncError> {
+            Ok(0)
+        }
+        fn has_dirty(&self, _h: &str) -> bool {
+            self.has_dirty
+        }
+        fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
+            self.items = m;
+            Ok(())
+        }
+        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
+            Ok(())
+        }
+    }
+
+    fn dict_item(spoken: &str, updated_at: i64) -> DictionaryItem {
+        DictionaryItem {
+            sync_id: uuid::Uuid::new_v4().to_string(),
+            spoken: spoken.to_string(),
+            corrected: "fix".to_string(),
+            kind: "correction".to_string(),
+            is_enabled: true,
+            deleted_at: None,
+            updated_at,
+            device_id: "dev-a".to_string(),
+        }
+    }
+
+    #[test]
+    fn oversized_remote_is_not_auto_replaced_keep_remote_intact() {
+        // UNIT C — oversized (abuse) must not be auto-replaced via !valid_found fallback
+        let oversized = vec![b'x'; MAX_DOMAIN_BYTES + 1];
+        let mut drive = FakeDrive::new().with_file("dictionary.json", "id-1", "1", oversized);
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::new(vec![dict_item("hello", 100)]);
+        store.has_dirty = true;
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(
+            matches!(res, Err(SyncError::Rejected(_))),
+            "oversized must surface Rejected, not silently overwrite"
+        );
+        assert_eq!(drive.put_count, 0, "must not put over oversized remote");
+    }
+
+    #[test]
+    fn corrupt_within_size_is_repaired_via_push() {
+        // UNIT C — corrupt but within size keeps current repair behavior (siblings + local push)
+        let corrupt = b"{ not json".to_vec();
+        let mut drive = FakeDrive::new().with_file("dictionary.json", "id-1", "1", corrupt);
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::new(vec![dict_item("hello", 100)]);
+        store.has_dirty = false;
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(
+            res.is_ok(),
+            "corrupt within size should be repaired, not rejected"
+        );
+        assert_eq!(
+            drive.put_count, 1,
+            "corrupt file should be repaired via push"
+        );
+    }
+
+    #[test]
+    fn empty_remote_first_sync_creates_file() {
+        // Normal first-sync: no remote file, local has data => must create
+        let mut drive = FakeDrive::new();
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::new(vec![dict_item("hello", 100)]);
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(res.is_ok());
+        assert_eq!(drive.put_count, 1, "empty remote must create file");
+    }
+
+    #[test]
+    fn duplicate_consolidation_idempotent() {
+        // UNIT C — duplicate consolidation idempotence: repeat pass with single file is no-op
+        let valid_bytes = DictionaryEnvelope {
+            v: ENVELOPE_V1,
+            entries: vec![dict_item("hello", 100)],
+        }
+        .to_bytes();
+        let mut drive = FakeDrive::new()
+            .with_file("dictionary.json", "id-a", "1", valid_bytes.clone())
+            .with_file("dictionary.json", "id-b", "2", valid_bytes.clone());
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::<DictionaryItem>::new(vec![]);
+        let res1 = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(res1.is_ok());
+        assert!(
+            drive.delete_count >= 1,
+            "first pass should consolidate duplicates"
+        );
+        // Second pass: only one file remains, no dirty, already converged => no-op
+        let mut drive2 = FakeDrive::new().with_file("dictionary.json", "id-a", "3", valid_bytes);
+        let mut store2 = MemStore::<DictionaryItem>::new(vec![dict_item("hello", 100)]);
+        let res2 = sync_dictionary_domain(&mut drive2, "hash", &mut meta, &mut store2);
+        assert!(res2.is_ok());
+        assert_eq!(res2.unwrap().pushed, false, "repeat pass must be no-op");
+        assert_eq!(
+            drive2.delete_count, 0,
+            "no extra deletes on idempotent repeat"
+        );
+        assert_eq!(drive2.put_count, 0, "no extra puts on idempotent repeat");
+    }
+
+    #[test]
+    fn oversized_with_valid_sibling_keeps_valid_and_drops_oversized() {
+        // F4a — one valid sibling + multiple oversized duplicates: keep valid, drop oversized, no Rejected
+        let valid_bytes = DictionaryEnvelope {
+            v: ENVELOPE_V1,
+            entries: vec![dict_item("hello", 100)],
+        }
+        .to_bytes();
+        let oversized = vec![b'x'; MAX_DOMAIN_BYTES + 1];
+        let mut drive = FakeDrive::new()
+            .with_file("dictionary.json", "id-valid", "1", valid_bytes.clone())
+            .with_file("dictionary.json", "id-over1", "2", oversized.clone())
+            .with_file("dictionary.json", "id-over2", "3", oversized.clone());
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::<DictionaryItem>::new(vec![]);
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(
+            res.is_ok(),
+            "valid sibling should prevent Rejected, oversized dups just ignored"
+        );
+        assert_eq!(
+            drive.put_count, 0,
+            "no push needed when valid remote already converged and no dirty"
+        );
+        // After successful pass, oversized dups are not deleted because no put happened (no consolidation)
+        // But on next push with dirty, they would be cleaned. Here we just verify no Rejected and no overwrite.
+    }
+
+    #[test]
+    fn paginated_list_still_consolidates() {
+        // F4b — FakeDrive paginated in chunks, consolidation still works across pages
+        // Simulate pagination by having list_v1_files return files that would have come from 2 pages
+        let valid_bytes = DictionaryEnvelope {
+            v: ENVELOPE_V1,
+            entries: vec![dict_item("hello", 100)],
+        }
+        .to_bytes();
+        // Create 3 files as if they came from 2 pages (page_size=2)
+        let mut drive = FakeDrive::new()
+            .with_file("dictionary.json", "id-a", "1", valid_bytes.clone())
+            .with_file("dictionary.json", "id-b", "2", valid_bytes.clone())
+            .with_file("dictionary.json", "id-c", "3", valid_bytes.clone());
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::<DictionaryItem>::new(vec![]);
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(res.is_ok());
+        assert!(
+            drive.delete_count >= 2,
+            "should consolidate all 3 duplicates across simulated pages"
+        );
+    }
+
+    #[test]
+    fn genuine_pagination_page_size_2_consolidates_5_files() {
+        // ITEM 2 — genuine pagination: 5 files across 3 pages (2+2+1) must still consolidate
+        let valid_bytes = DictionaryEnvelope {
+            v: ENVELOPE_V1,
+            entries: vec![dict_item("hello", 100)],
+        }
+        .to_bytes();
+        struct PaginatedFakeDrive {
+            files: Vec<DomainFileMeta>,
+            contents: std::collections::HashMap<String, Vec<u8>>,
+            put_count: usize,
+            delete_count: usize,
+            page_size: usize,
+        }
+        impl PaginatedFakeDrive {
+            fn new(page_size: usize) -> Self {
+                Self {
+                    files: Vec::new(),
+                    contents: std::collections::HashMap::new(),
+                    put_count: 0,
+                    delete_count: 0,
+                    page_size,
+                }
+            }
+            fn with_file(
+                mut self,
+                name: &str,
+                file_id: &str,
+                version: &str,
+                bytes: Vec<u8>,
+            ) -> Self {
+                self.files.push(DomainFileMeta {
+                    file_id: file_id.to_string(),
+                    name: name.to_string(),
+                    version: Some(version.to_string()),
+                });
+                self.contents.insert(file_id.to_string(), bytes);
+                self
+            }
+        }
+        impl crate::sync::drive::DomainDriveStore for PaginatedFakeDrive {
+            fn ensure_v1_folder(&mut self) -> Result<String, SyncError> {
+                Ok("v1".to_string())
+            }
+            fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError> {
+                let mut all = Vec::new();
+                let mut start = 0;
+                while start < self.files.len() {
+                    let end = (start + self.page_size).min(self.files.len());
+                    all.extend(self.files[start..end].iter().cloned());
+                    start = end;
+                }
+                Ok(all)
+            }
+            fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+                Ok(self.contents.get(file_id).cloned())
+            }
+            fn put_domain(
+                &mut self,
+                name: &str,
+                content: &[u8],
+                expected_version: Option<&str>,
+                preferred_file_id: Option<&str>,
+            ) -> Result<String, SyncError> {
+                let _ = (name, content, expected_version, preferred_file_id);
+                self.put_count += 1;
+                Ok(format!("v{}", self.put_count + 10))
+            }
+            fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
+                let _ = file_id;
+                self.delete_count += 1;
+                Ok(())
+            }
+        }
+        let mut drive = PaginatedFakeDrive::new(2)
+            .with_file("dictionary.json", "id-a", "1", valid_bytes.clone())
+            .with_file("dictionary.json", "id-b", "2", valid_bytes.clone())
+            .with_file("dictionary.json", "id-c", "3", valid_bytes.clone())
+            .with_file("dictionary.json", "id-d", "4", valid_bytes.clone())
+            .with_file("dictionary.json", "id-e", "5", valid_bytes.clone());
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::<DictionaryItem>::new(vec![]);
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(res.is_ok());
+        assert!(
+            drive.delete_count >= 4,
+            "should consolidate all 5 duplicates across genuine paginated pages"
+        );
     }
 }

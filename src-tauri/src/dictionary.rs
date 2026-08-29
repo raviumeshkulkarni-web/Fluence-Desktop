@@ -317,8 +317,8 @@ pub fn add_dictionary_entry(
         .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
         .unwrap_or(0);
     let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
-    if let Some(h) = account_hash {
-        meta.update_max_seen(&h, new_max);
+    if let Some(h) = account_hash.as_deref() {
+        meta.update_max_seen(h, new_max);
     }
     let entry = DictionaryEntry {
         id: uuid::Uuid::new_v4().to_string(),
@@ -332,7 +332,7 @@ pub fn add_dictionary_entry(
         is_enabled: true,
         dirty: true,
         ever_pushed: false,
-        sync_account: None,
+        sync_account: account_hash,
         sync_state: None,
         server_file_id: None,
         quarantine_reason: None,
@@ -388,6 +388,12 @@ pub fn update_dictionary_entry(
     let mut found = false;
     for entry in all_entries.iter_mut() {
         if entry.id == id {
+            if !crate::sync::metadata::belongs_to_account(
+                entry.sync_account.as_deref(),
+                active_account.as_deref(),
+            ) {
+                return Err("Dictionary entry belongs to another account".to_string());
+            }
             if entry.deleted_at.is_some() {
                 return Err("Cannot edit a deleted entry".to_string());
             }
@@ -437,9 +443,16 @@ pub fn delete_dictionary_entry(
     if let Some(h) = account_hash {
         meta.update_max_seen(&h, new_max);
     }
+    let active_account = crate::sync::metadata::current_account_hash();
     let mut to_hard_delete = false;
     for entry in entries.iter_mut() {
         if entry.id == id {
+            if !crate::sync::metadata::belongs_to_account(
+                entry.sync_account.as_deref(),
+                active_account.as_deref(),
+            ) {
+                return Err("Dictionary entry belongs to another account".to_string());
+            }
             if !entry.ever_pushed {
                 // Never pushed → hard delete (everPushed distinguishes)
                 to_hard_delete = true;

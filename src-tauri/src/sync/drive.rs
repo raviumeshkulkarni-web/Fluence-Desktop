@@ -388,7 +388,11 @@ impl GoogleDriveStore {
         // Folder listings reuse the same parser shape (id/name); versions are
         // simply absent for folders.
         let (folders, _) = Self::parse_file_listing_lenient(&body)?;
-        if let Some(first) = folders.into_iter().find(|f| f.name == name) {
+        if let Some(first) = folders
+            .into_iter()
+            .filter(|f| f.name == name)
+            .min_by(|a, b| a.file_id.cmp(&b.file_id))
+        {
             return Ok(first.file_id);
         }
         let create = self
@@ -582,12 +586,6 @@ impl DomainDriveStore for GoogleDriveStore {
             .map(|b| b.to_vec())
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
         classify_status_with_body(status, &String::from_utf8_lossy(&bytes))?;
-        if bytes.len() > MAX_DOMAIN_BYTES {
-            return Err(SyncError::Rejected(format!(
-                "domain payload {} bytes exceeds cap",
-                bytes.len()
-            )));
-        }
         Ok(Some(bytes))
     }
 
@@ -848,6 +846,27 @@ mod tests {
         );
         assert_eq!(parse_version_from_response(r#"{"id":"x"}"#), None);
         assert_eq!(parse_version_from_response("garbage"), None);
+    }
+
+    #[test]
+    fn paginated_list_aggregates_across_pages() {
+        // ITEM 2 — verify list_v1_files pagination: two pages aggregated correctly
+        let page1 = r#"{"files":[{"id":"a","name":"dictionary.json","version":"1"},{"id":"b","name":"dictionary.json","version":"2"}],"nextPageToken":"tok123"}"#;
+        let (files1, next1) = parse_domain_listing(page1).expect("page1 parses");
+        assert_eq!(files1.len(), 2);
+        assert_eq!(next1.as_deref(), Some("tok123"));
+        let page2 = r#"{"files":[{"id":"c","name":"dictionary.json","version":"3"}]}"#;
+        let (files2, next2) = parse_domain_listing(page2).expect("page2 parses");
+        assert_eq!(files2.len(), 1);
+        assert_eq!(next2, None);
+        let mut all = files1;
+        all.extend(files2);
+        assert_eq!(all.len(), 3);
+        // Verify query includes pageToken when present
+        let q = list_v1_files_query("v1-id", Some("tok123"));
+        assert!(q.contains("pageToken=tok123"));
+        let q2 = list_v1_files_query("v1-id", None);
+        assert!(!q2.contains("pageToken"));
     }
 
     #[test]

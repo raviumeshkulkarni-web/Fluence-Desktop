@@ -171,7 +171,14 @@ impl DirtyStore for DictionaryDirtyStore {
                 e.sync_account.as_deref() == Some(account_hash)
                     && e.dirty
                     && match merged.iter().find(|m| m.sync_id == e.id) {
-                        Some(winner) => e.updated_at.unwrap_or(0) > winner.updated_at,
+                        Some(winner) => {
+                            crate::sync::clock::cmp_winner(
+                                e.updated_at.unwrap_or(0),
+                                e.device_id.as_deref().unwrap_or(""),
+                                winner.updated_at,
+                                &winner.device_id,
+                            ) == std::cmp::Ordering::Greater
+                        }
                         None => true,
                     }
             })
@@ -321,7 +328,14 @@ impl DirtyStore for SnippetDirtyStore {
                 s.sync_account.as_deref() == Some(account_hash)
                     && s.dirty
                     && match merged.iter().find(|m| m.sync_id == s.id) {
-                        Some(winner) => s.updated_at.unwrap_or(0) > winner.updated_at,
+                        Some(winner) => {
+                            crate::sync::clock::cmp_winner(
+                                s.updated_at.unwrap_or(0),
+                                s.device_id.as_deref().unwrap_or(""),
+                                winner.updated_at,
+                                &winner.device_id,
+                            ) == std::cmp::Ordering::Greater
+                        }
                         None => true,
                     }
             })
@@ -925,8 +939,35 @@ impl DirtyStore for StatsDirtyStore {
             })
             .cloned()
             .collect();
-        rows.retain(|r| r.account.as_deref() != Some(account_hash));
+        // Mid-pass LWW guard for present rows: if a local dirty row still
+        // wins tie (equal updatedAt, larger deviceId) keep it instead of
+        // clobbering with the merged winner — mirrors Android
+        // RoomStatV1Store.applyMergedAndClearDirty and dictionary rescue.
+        use std::collections::HashMap;
+        let dirty_by_id: HashMap<String, StatEventRow> = rows
+            .iter()
+            .filter(|r| r.account.as_deref() == Some(account_hash) && r.dirty)
+            .map(|r| (r.item.event_id.clone(), r.clone()))
+            .collect();
+        let mut filtered_merged = Vec::new();
+        let mut rescued_tie: Vec<StatEventRow> = Vec::new();
         for item in merged {
+            if let Some(local) = dirty_by_id.get(&item.event_id) {
+                let local_at = local.item.updated_at.unwrap_or(0);
+                let local_dev = local.item.device_id.as_deref().unwrap_or("");
+                let win_at = item.updated_at.unwrap_or(0);
+                let win_dev = item.device_id.as_deref().unwrap_or("");
+                if crate::sync::clock::cmp_winner(local_at, local_dev, win_at, win_dev)
+                    != std::cmp::Ordering::Less
+                {
+                    rescued_tie.push(local.clone());
+                    continue;
+                }
+            }
+            filtered_merged.push(item);
+        }
+        rows.retain(|r| r.account.as_deref() != Some(account_hash));
+        for item in filtered_merged {
             rows.push(StatEventRow {
                 item,
                 account: Some(account_hash.to_string()),
@@ -935,6 +976,11 @@ impl DirtyStore for StatsDirtyStore {
             });
         }
         for mut row in rescued {
+            row.dirty = true;
+            row.ever_pushed = false;
+            rows.push(row);
+        }
+        for mut row in rescued_tie {
             row.dirty = true;
             row.ever_pushed = false;
             rows.push(row);

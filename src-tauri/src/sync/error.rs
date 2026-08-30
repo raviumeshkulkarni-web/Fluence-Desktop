@@ -11,6 +11,11 @@ pub enum SyncError {
     AuthRequired,
     /// Transient failure (network, 429, 5xx, timeout). Safe to retry.
     Retryable(String),
+    /// 429 (or quota-shaped 403) that carried a `Retry-After` header. Same
+    /// retryable scheduling path as [`SyncError::Retryable`], but the header's
+    /// explicit delay must gate the next attempt (see scheduler.rs) so a
+    /// throttled API is not hammered before it says we may retry.
+    Throttled { retry_after_ms: Option<u64> },
     /// Permanent client rejection (malformed request, 4xx). Never retried
     /// with escalation; surfaced and retried at the normal cadence.
     Rejected(String),
@@ -32,6 +37,11 @@ impl fmt::Display for SyncError {
         match self {
             SyncError::AuthRequired => write!(f, "authentication required"),
             SyncError::Retryable(e) => write!(f, "retryable sync failure: {e}"),
+            SyncError::Throttled { retry_after_ms } => write!(
+                f,
+                "rate limited, retry after {}s",
+                retry_after_ms.map(|ms| ms / 1000).unwrap_or(0)
+            ),
             SyncError::Rejected(e) => write!(f, "rejected: {e}"),
             SyncError::Fatal(e) => write!(f, "fatal sync failure: {e}"),
             SyncError::NotOurs => write!(f, "remote resource is not ours (scope/account mismatch)"),

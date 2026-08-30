@@ -234,6 +234,52 @@ pub fn classify_status_with_body(status: u16, body: &str) -> Result<(), SyncErro
     }
 }
 
+/// Read a Drive `429 Retry-After` header into an explicit delay in ms.
+/// Drive sends integer seconds (RFC 7231 `Retry-After`); an HTTP-date form is
+/// intentionally ignored (cannot be mapped to a relative delay cheaply), the
+/// scheduler falls back to its exponential backoff in that case.
+///
+/// `None` when the header is absent, unparseable, or non-positive. Pure and
+/// offline-testable; feeds [`classify_status_with_response`].
+pub fn read_retry_after_ms(headers: &reqwest::header::HeaderMap) -> Option<u64> {
+    let value = headers
+        .get(reqwest::header::RETRY_AFTER)?
+        .to_str()
+        .ok()?
+        .trim();
+    let secs = value.parse::<u64>().ok()?;
+    if secs == 0 {
+        return None;
+    }
+    // Saturating mul so a hostile huge value cannot overflow.
+    Some(secs.saturating_mul(1000))
+}
+
+/// Classify a Drive response, honoring a `Retry-After` header on 429 as
+/// [`SyncError::Throttled`]. Every other status matches
+/// [`classify_status_with_body`] exactly.
+pub fn classify_status_with_response(
+    resp: &reqwest::blocking::Response,
+    status: u16,
+    body: &str,
+) -> Result<(), SyncError> {
+    classify_status_with_retry_after(status, read_retry_after_ms(resp.headers()), body)
+}
+
+/// Pure core of [`classify_status_with_response`]: a 429 with (or without) a
+/// `Retry-After` delay becomes [`SyncError::Throttled`]; every other status
+/// matches [`classify_status_with_body`] exactly. Offline-testable.
+fn classify_status_with_retry_after(
+    status: u16,
+    retry_after_ms: Option<u64>,
+    body: &str,
+) -> Result<(), SyncError> {
+    if status == 429 {
+        return Err(SyncError::Throttled { retry_after_ms });
+    }
+    classify_status_with_body(status, body)
+}
+
 /// Whether a Drive error reason denotes a transient quota/backend failure
 /// (same retryable path as 429). Pure, offline-testable.
 fn is_transient_403_reason(reason: &str) -> bool {
@@ -427,10 +473,11 @@ impl GoogleDriveStore {
                 .bearer_auth(token)
         })?;
         let status = resp.status().as_u16();
+        let retry_after_ms = read_retry_after_ms(resp.headers());
         let body = resp
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        classify_status_with_body(status, &body)?;
+        classify_status_with_retry_after(status, retry_after_ms, &body)?;
         // Folder listings reuse the same parser shape (id/name); versions are
         // simply absent for folders.
         let (folders, _) = Self::parse_file_listing_lenient(&body)?;
@@ -448,10 +495,11 @@ impl GoogleDriveStore {
                 .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
         })?;
         let status = create.status().as_u16();
+        let retry_after_ms = read_retry_after_ms(create.headers());
         let body = create
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        classify_status_with_body(status, &body)?;
+        classify_status_with_retry_after(status, retry_after_ms, &body)?;
         parse_id_from_response(&body)
             .ok_or_else(|| SyncError::Retryable("folder create missing id".to_string()))
     }
@@ -529,10 +577,11 @@ impl GoogleDriveStore {
                 .body(body_for_send.clone())
         })?;
         let status = resp.status().as_u16();
+        let retry_after_ms = read_retry_after_ms(resp.headers());
         let body = resp
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        classify_status_with_body(status, &body)?;
+        classify_status_with_retry_after(status, retry_after_ms, &body)?;
         if let Some(v) = parse_version_from_response(&body) {
             return Ok(v);
         }
@@ -547,10 +596,11 @@ impl GoogleDriveStore {
                     .bearer_auth(token)
             })?;
             let status = resp.status().as_u16();
+            let retry_after_ms = read_retry_after_ms(resp.headers());
             let body = resp
                 .text()
                 .map_err(|e| SyncError::Retryable(e.to_string()))?;
-            classify_status_with_body(status, &body)?;
+            classify_status_with_retry_after(status, retry_after_ms, &body)?;
             if let Some(v) = parse_version_from_response(&body) {
                 return Ok(v);
             }
@@ -587,10 +637,11 @@ impl DomainDriveStore for GoogleDriveStore {
                 return Ok(Vec::new());
             }
             let status = resp.status().as_u16();
+            let retry_after_ms = read_retry_after_ms(resp.headers());
             let body = resp
                 .text()
                 .map_err(|e| SyncError::Retryable(e.to_string()))?;
-            classify_status_with_body(status, &body)?;
+            classify_status_with_retry_after(status, retry_after_ms, &body)?;
             let (files, next) = parse_domain_listing(&body)?;
             all.extend(files);
             match next {
@@ -612,11 +663,12 @@ impl DomainDriveStore for GoogleDriveStore {
             return Ok(None);
         }
         let status = resp.status().as_u16();
+        let retry_after_ms = read_retry_after_ms(resp.headers());
         let bytes = resp
             .bytes()
             .map(|b| b.to_vec())
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
-        classify_status_with_body(status, &String::from_utf8_lossy(&bytes))?;
+        classify_status_with_retry_after(status, retry_after_ms, &String::from_utf8_lossy(&bytes))?;
         Ok(Some(bytes))
     }
 
@@ -696,7 +748,9 @@ impl DomainDriveStore for GoogleDriveStore {
                 .map_err(|e| SyncError::Retryable(e.to_string()))?;
             return Err(classify_forbidden(&body));
         }
-        classify_status(status)
+        // The body is only consumed for 403 above; the 429 branch of
+        // classify_status_with_response reads the Retry-After header only.
+        classify_status_with_response(&resp, status, "")
     }
 }
 
@@ -876,6 +930,49 @@ mod tests {
         assert_eq!(b.next_delay_ms(), 1500);
         assert_eq!(b.next_delay_ms(), 4500);
         assert_eq!(b.next_delay_ms(), 5000, "capped at 5000");
+    }
+
+    #[test]
+    fn read_retry_after_parses_integer_seconds() {
+        let mut h = reqwest::header::HeaderMap::new();
+        assert_eq!(read_retry_after_ms(&h), None, "absent header -> None");
+
+        h.insert(reqwest::header::RETRY_AFTER, "5".parse().unwrap());
+        assert_eq!(read_retry_after_ms(&h), Some(5_000));
+
+        h.insert(reqwest::header::RETRY_AFTER, "0".parse().unwrap());
+        assert_eq!(
+            read_retry_after_ms(&h),
+            None,
+            "zero (immediate) is not a delay"
+        );
+
+        h.insert(reqwest::header::RETRY_AFTER, "abc".parse().unwrap());
+        assert_eq!(read_retry_after_ms(&h), None, "non-numeric -> None");
+    }
+
+    #[test]
+    fn throttled_429_carries_the_retry_after_delay() {
+        // A 429 with a parsed delay surfaces Throttled { Some(delay) }.
+        assert!(matches!(
+            classify_status_with_retry_after(429, Some(5_000), ""),
+            Err(SyncError::Throttled {
+                retry_after_ms: Some(5_000)
+            })
+        ));
+        // A 429 with no usable header surfaces Throttled { None } (scheduler
+        // falls back to its exponential backoff).
+        assert!(matches!(
+            classify_status_with_retry_after(429, None, ""),
+            Err(SyncError::Throttled {
+                retry_after_ms: None
+            })
+        ));
+        // Non-429 statuses are unaffected (e.g. 500 stays Retryable).
+        assert!(matches!(
+            classify_status_with_retry_after(500, Some(5_000), ""),
+            Err(SyncError::Retryable(_))
+        ));
     }
 
     #[test]

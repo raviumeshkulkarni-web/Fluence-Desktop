@@ -64,6 +64,62 @@ pub trait DirtyStore {
 /// backs off and the next pass resumes from fresh state.
 const MAX_ATTEMPTS: usize = 4;
 
+/// Staleness-retry backoff bounds (ms). Small, because it only needs to break
+/// a tight GET->PUT livelock when two devices invalidate each other in the
+/// same window — it must not meaningfully slow the normal convergence path.
+const STALE_RETRY_BASE_MS: u64 = 50;
+const STALE_RETRY_MAX_MS: u64 = 600;
+
+/// Jittered backoff (ms) to wait before a StaleVersion retry. `attempt` is the
+/// 1-based attempt already consumed (so the first retry is attempt 2). Delay is
+/// `base * 2^(attempt-2)`, capped, jittered into [0.5x, 1.5x] via `rand` (a
+/// uniform-0..1 source). Attempt 1 performs no delay.
+///
+/// The jitter is the point: on a livelock both devices otherwise sleep the
+/// exact same amount and keep colliding in lockstep; spreading the wait breaks
+/// the thundering-herd and lets one device land a clean CAS.
+fn stale_retry_delay_ms(attempt: usize, rand: &mut impl FnMut() -> f64) -> u64 {
+    if attempt < 2 {
+        return 0;
+    }
+    let exp = STALE_RETRY_BASE_MS.saturating_mul(1u64 << (attempt - 2).min(5));
+    let base = exp.min(STALE_RETRY_MAX_MS);
+    let jitter = base as f64 * (0.5 + rand() * 1.0);
+    (jitter.round() as u64).min(STALE_RETRY_MAX_MS)
+}
+
+/// A cheap deterministic-ish jitter source seeded from the monotonic clock —
+/// good enough to de-correlate contending devices without pulling in `rand`.
+fn stale_retry_jitter_source() -> impl FnMut() -> f64 {
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x536e61f700000001);
+    let mut state = seed | 1;
+    move || {
+        // xorshift64*
+        state ^= state << 13;
+        state ^= state >> 7;
+        state ^= state << 17;
+        (state >> 11) as f64 / (1u64 << 53) as f64
+    }
+}
+
+/// Post-upload verification: re-list the domain and confirm the revision the
+/// PUT reported is actually the live remote version. Google Drive is eventually
+/// consistent, so a fresh write can briefly be invisible — that is treated as a
+/// "not yet verified" miss, not a data error. A transient listing failure is
+/// treated the same (conservative: we never claim pushed unless we saw it live).
+/// The caller keeps the rows dirty so the next pass re-heals.
+fn upload_is_live(name: &str, new_version: &str, drive: &mut dyn DomainDriveStore) -> bool {
+    match drive.list_v1_files() {
+        Ok(files) => files
+            .iter()
+            .any(|f| f.name == name && f.version.as_deref() == Some(new_version)),
+        Err(_) => false,
+    }
+}
+
 /// One generic domain sync pass. All four domains differ only in their item
 /// type, merge law, codec and ordering key — captured here as parameters.
 fn sync_domain<T>(
@@ -215,6 +271,21 @@ where
         // 7. Version-checked upload. StaleVersion loops back to step 2.
         match drive.put_domain(name, &bytes, remote_version.as_deref(), preferred_file_id) {
             Ok(new_version) => {
+                // 7b. Post-upload verification (backoff-tolerant, re-list
+                // version only). We never mark rows pushed / set last_rev
+                // unless the pushed revision is actually live; a miss keeps the
+                // rows dirty so the next pass re-heals. Drive's eventual
+                // consistency makes a transient miss expected and harmless.
+                if !upload_is_live(name, &new_version, drive) {
+                    log::debug!(
+                        "sync: {name} upload {new_version} not visible yet; leaving rows dirty (verification miss)"
+                    );
+                    return Ok(DomainSyncOutcome {
+                        pushed: false,
+                        merged: false,
+                        items_merged: merged.len(),
+                    });
+                }
                 metadata.set_last_rev(account_hash, name, new_version);
                 let count = merged.len();
                 store.save_merged(account_hash, merged)?;
@@ -236,7 +307,17 @@ where
                 });
             }
             Err(SyncError::StaleVersion(live)) => {
-                log::debug!("sync: {name} changed under us (live={live}); re-fetching");
+                log::debug!(
+                    "sync: {name} changed under us (live={live}); re-fetching (attempt {attempts})"
+                );
+                // Jittered backoff breaks the tight-loop livelock where two
+                // devices invalidate each other's CAS in lockstep.
+                if attempts >= 2 {
+                    let delay = stale_retry_delay_ms(attempts, &mut stale_retry_jitter_source());
+                    if delay > 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(delay));
+                    }
+                }
                 continue;
             }
             Err(e) => return Err(e),
@@ -461,13 +542,23 @@ mod tests {
         fn put_domain(
             &mut self,
             name: &str,
-            content: &[u8],
-            expected_version: Option<&str>,
+            _content: &[u8],
+            _expected_version: Option<&str>,
             preferred_file_id: Option<&str>,
         ) -> Result<String, SyncError> {
-            let _ = (name, content, expected_version, preferred_file_id);
             self.put_count += 1;
-            Ok(format!("v{}", self.put_count + 10))
+            let new_version = format!("v{}", self.put_count + 10);
+            let file_id = preferred_file_id
+                .map(|id| id.to_string())
+                .unwrap_or_else(|| format!("id-created-{}", self.put_count));
+            // Make the freshly written revision visible on the next list so
+            // post-upload verification (upload_is_live) passes, like a real Drive.
+            self.files.push(DomainFileMeta {
+                file_id,
+                name: name.to_string(),
+                version: Some(new_version.clone()),
+            });
+            Ok(new_version)
         }
         fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
             let _ = file_id;
@@ -612,6 +703,65 @@ mod tests {
         let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
         assert!(res.is_ok());
         assert_eq!(drive.put_count, 1, "empty remote must create file");
+    }
+
+    struct LaggingFakeDrive {
+        put_count: usize,
+    }
+    impl LaggingFakeDrive {
+        fn new() -> Self {
+            Self { put_count: 0 }
+        }
+    }
+    impl crate::sync::drive::DomainDriveStore for LaggingFakeDrive {
+        fn ensure_v1_folder(&mut self) -> Result<String, SyncError> {
+            Ok("v1".to_string())
+        }
+        fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError> {
+            // Never reflect a write (simulates Drive's eventual-consistency lag).
+            Ok(Vec::new())
+        }
+        fn get_domain_content(&mut self, _file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+            Ok(None)
+        }
+        fn put_domain(
+            &mut self,
+            _name: &str,
+            _content: &[u8],
+            _expected_version: Option<&str>,
+            _preferred_file_id: Option<&str>,
+        ) -> Result<String, SyncError> {
+            self.put_count += 1;
+            Ok(format!("v{}", self.put_count + 100))
+        }
+        fn delete_domain_file(&mut self, _file_id: &str) -> Result<(), SyncError> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn verification_miss_keeps_rows_unpushed_not_failed() {
+        // B-3: the PUT succeeded but the pushed revision is not yet visible on
+        // the next list (Drive eventual consistency). The pass must NOT report
+        // pushed nor set last_rev — it returns a non-pushed outcome so the next
+        // pass re-heals, instead of stamping a possibly-not-yet-live write as
+        // permanently pushed.
+        let mut drive = LaggingFakeDrive::new();
+        let mut meta = SyncMetadata::default();
+        let mut store = MemStore::new(vec![dict_item("hello", 100)]);
+        store.has_dirty = true;
+        let res = sync_dictionary_domain(&mut drive, "hash", &mut meta, &mut store);
+        assert!(res.is_ok(), "verification miss is not a hard error");
+        let out = res.unwrap();
+        assert_eq!(drive.put_count, 1, "the write happened");
+        assert!(
+            !out.pushed,
+            "must not report pushed when revision is not yet live"
+        );
+        assert!(
+            meta.get_last_rev("hash", DICT_FILE).is_none(),
+            "must not set last_rev on a verification miss"
+        );
     }
 
     #[test]
@@ -759,13 +909,22 @@ mod tests {
             fn put_domain(
                 &mut self,
                 name: &str,
-                content: &[u8],
-                expected_version: Option<&str>,
+                _content: &[u8],
+                _expected_version: Option<&str>,
                 preferred_file_id: Option<&str>,
             ) -> Result<String, SyncError> {
-                let _ = (name, content, expected_version, preferred_file_id);
                 self.put_count += 1;
-                Ok(format!("v{}", self.put_count + 10))
+                let new_version = format!("v{}", self.put_count + 10);
+                let file_id = preferred_file_id
+                    .map(|id| id.to_string())
+                    .unwrap_or_else(|| format!("id-created-{}", self.put_count));
+                // Reflect the write on the next list so post-upload verification passes.
+                self.files.push(DomainFileMeta {
+                    file_id,
+                    name: name.to_string(),
+                    version: Some(new_version.clone()),
+                });
+                Ok(new_version)
             }
             fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
                 let _ = file_id;
@@ -787,5 +946,51 @@ mod tests {
             drive.delete_count >= 4,
             "should consolidate all 5 duplicates across genuine paginated pages"
         );
+    }
+
+    #[test]
+    fn stale_retry_delay_grows_and_jitters_within_bounds() {
+        // Attempt 1 (no retry yet) must never sleep.
+        assert_eq!(stale_retry_delay_ms(1, &mut || 0.0), 0);
+        assert_eq!(stale_retry_delay_ms(1, &mut || 1.0), 0);
+
+        // Attempt 2 -> base 50ms, jittered into [25, 75] for rand in [0,1).
+        assert_eq!(stale_retry_delay_ms(2, &mut || 0.0), 25);
+        assert_eq!(stale_retry_delay_ms(2, &mut || 1.0), 75);
+
+        // Attempt 3 -> 100ms base -> [50, 150].
+        assert_eq!(stale_retry_delay_ms(3, &mut || 0.0), 50);
+        assert_eq!(stale_retry_delay_ms(3, &mut || 1.0), 150);
+
+        // Attempt 4 -> 200ms base -> [100, 300].
+        assert_eq!(stale_retry_delay_ms(4, &mut || 0.0), 100);
+        assert_eq!(stale_retry_delay_ms(4, &mut || 1.0), 300);
+
+        // The cap must hold no matter how many attempts accumulate.
+        let big = stale_retry_delay_ms(20, &mut || 1.0);
+        assert!(
+            big <= STALE_RETRY_MAX_MS,
+            "delay never exceeds the cap (got {big})"
+        );
+        for a in 2..=8 {
+            assert!(stale_retry_delay_ms(a, &mut || 1.0) <= STALE_RETRY_MAX_MS);
+            assert!(
+                stale_retry_delay_ms(a, &mut || 0.0) >= stale_retry_delay_ms(a, &mut || 1.0) / 3
+            );
+        }
+
+        // A real jitter source stays in range and is not constant (de-correlates).
+        let mut src = stale_retry_jitter_source();
+        let mut prev = src();
+        let mut varies = false;
+        for _ in 0..20 {
+            let v = src();
+            assert!((0.0..1.0).contains(&v));
+            if (v - prev).abs() > 1e-9 {
+                varies = true;
+            }
+            prev = v;
+        }
+        assert!(varies, "jitter source must produce varying values");
     }
 }

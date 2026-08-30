@@ -122,6 +122,10 @@ pub struct SchedulerCore {
     /// The delay gating the next attempt after a retryable failure (the value
     /// `next_delay_ms` returned; the backoff itself pre-steps for later).
     pub retry_delay_ms: u64,
+    /// An explicit `Retry-After` delay (ms) surfaced by a throttled Drive
+    /// response; consumed by the `Retryable` branch of [`SchedulerCore::finish`]
+    /// so a rate-limited API is honored rather than retried too eagerly.
+    pending_retry_after_ms: Option<u64>,
     pub debounce_until_ms: Option<i64>,
 }
 
@@ -143,8 +147,15 @@ impl SchedulerCore {
             ),
             backoff_active: false,
             retry_delay_ms: SYNC_BACKOFF_BASE_MS,
+            pending_retry_after_ms: None,
             debounce_until_ms: None,
         }
+    }
+
+    /// Record an explicit `Retry-After` delay (ms) from a throttled response,
+    /// to be honored by the next [`SchedulerCore::finish`] retryable branch.
+    pub fn note_retry_after(&mut self, ms: Option<u64>) {
+        self.pending_retry_after_ms = ms;
     }
 
     pub fn apply(&mut self, cmd: &SyncCommand) {
@@ -272,8 +283,14 @@ impl SchedulerCore {
             }
             PassOutcomeKind::Retryable => {
                 // `next_delay_ms` returns the delay for the NEXT attempt and
-                // pre-steps the backoff for a further failure.
-                self.retry_delay_ms = self.backoff.next_delay_ms();
+                // pre-steps the backoff for a further failure. When the
+                // response carried an explicit `Retry-After`, wait at least
+                // that long too (never sooner than the header demands).
+                let next = self.backoff.next_delay_ms();
+                self.retry_delay_ms = self
+                    .pending_retry_after_ms
+                    .take()
+                    .map_or(next, |r| next.max(r));
                 self.backoff_active = true;
                 self.last_error = error;
             }
@@ -430,8 +447,15 @@ fn scheduler_thread(app: AppHandle, core: Arc<Mutex<SchedulerCore>>, rx: Receive
 }
 
 /// Map a finished pass to the scheduling outcome. Extracted so both the
-/// thread and the tests share one classification.
-fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Option<String>) {
+/// thread and the tests share one classification. The third element is the
+/// optional explicit `Retry-After` delay (ms) to honor on a retryable pass.
+fn classify_pass(
+    result: Result<SyncOutcome, SyncError>,
+) -> (PassOutcomeKind, Option<String>, Option<u64>) {
+    let retry_hint = |e: &SyncError| match e {
+        SyncError::Throttled { retry_after_ms } => *retry_after_ms,
+        _ => None,
+    };
     match result {
         Ok(outcome) if outcome.retryable_failures > 0 => (
             PassOutcomeKind::Retryable,
@@ -439,6 +463,7 @@ fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Op
                 "{} retryable operation(s) failed this pass",
                 outcome.retryable_failures
             )),
+            None,
         ),
         Ok(outcome) if outcome.rejected_failures > 0 => (
             PassOutcomeKind::Rejected,
@@ -446,17 +471,29 @@ fn classify_pass(result: Result<SyncOutcome, SyncError>) -> (PassOutcomeKind, Op
                 "{} operation(s) permanently rejected this pass",
                 outcome.rejected_failures
             )),
+            None,
         ),
-        Ok(_) => (PassOutcomeKind::Success, None),
-        Err(SyncError::AuthRequired) => (
-            PassOutcomeKind::AuthRequired,
-            Some("authentication required — sign in again".to_string()),
-        ),
-        Err(SyncError::StaleVersion(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
-        Err(SyncError::Retryable(e)) => (PassOutcomeKind::Retryable, Some(e.to_string())),
-        Err(SyncError::Rejected(e)) => (PassOutcomeKind::Rejected, Some(e.to_string())),
-        Err(SyncError::Fatal(e)) => (PassOutcomeKind::Fatal, Some(e.to_string())),
-        Err(SyncError::NotOurs) => (PassOutcomeKind::Fatal, Some(SyncError::NotOurs.to_string())),
+        Ok(_) => (PassOutcomeKind::Success, None, None),
+        Err(e) => match e {
+            SyncError::AuthRequired => (
+                PassOutcomeKind::AuthRequired,
+                Some("authentication required — sign in again".to_string()),
+                None,
+            ),
+            SyncError::StaleVersion(e) => (PassOutcomeKind::Retryable, Some(e.to_string()), None),
+            SyncError::Retryable(e) => (PassOutcomeKind::Retryable, Some(e.to_string()), None),
+            SyncError::Throttled { .. } => {
+                let hint = retry_hint(&e);
+                (PassOutcomeKind::Retryable, Some(e.to_string()), hint)
+            }
+            SyncError::Rejected(e) => (PassOutcomeKind::Rejected, Some(e.to_string()), None),
+            SyncError::Fatal(e) => (PassOutcomeKind::Fatal, Some(e.to_string()), None),
+            SyncError::NotOurs => (
+                PassOutcomeKind::Fatal,
+                Some(SyncError::NotOurs.to_string()),
+                None,
+            ),
+        },
     }
 }
 
@@ -468,17 +505,18 @@ where
     F: FnOnce() -> Result<SyncOutcome, SyncError>,
 {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(pass));
-    let (kind, error) = match result {
+    let (kind, error, retry_after_ms) = match result {
         Ok(r) => classify_pass(r),
         Err(_) => (
             PassOutcomeKind::Fatal,
-            Some("sync pass crashed internally — automatic scheduling is paused; use \"Sync now\" to retry".to_string()),
+            Some("sync pass crashed internally - automatic scheduling is paused; use \"Sync now\" to retry".to_string()),
+            None,
         ),
     };
     let now_ms = chrono::Utc::now().timestamp_millis();
-    core.lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .finish(kind, error, now_ms);
+    let mut core = core.lock().unwrap_or_else(|e| e.into_inner());
+    core.note_retry_after(retry_after_ms);
+    core.finish(kind, error, now_ms);
 }
 
 // ---------------------------------------------------------------------------
@@ -1320,36 +1358,78 @@ mod tests {
     fn classify_pass_maps_every_engine_result() {
         assert_eq!(
             classify_pass(Ok(ok_outcome(0))),
-            (PassOutcomeKind::Success, None)
+            (PassOutcomeKind::Success, None, None)
         );
-        let (kind, err) = classify_pass(Ok(ok_outcome(3)));
+        let (kind, err, _) = classify_pass(Ok(ok_outcome(3)));
         assert_eq!(kind, PassOutcomeKind::Retryable);
         assert!(err.unwrap().contains("3 retryable"));
 
-        let (kind, err) = classify_pass(Ok(SyncOutcome {
+        let (kind, err, _) = classify_pass(Ok(SyncOutcome {
             rejected_failures: 2,
             ..SyncOutcome::default()
         }));
         assert_eq!(kind, PassOutcomeKind::Rejected);
         assert!(err.unwrap().contains("2 operation(s) permanently rejected"));
 
-        let (kind, _) = classify_pass(Err(SyncError::Rejected("permanent 400".into())));
+        let (kind, _, _) = classify_pass(Err(SyncError::Rejected("permanent 400".into())));
         assert_eq!(kind, PassOutcomeKind::Rejected);
 
         assert_eq!(
             classify_pass(Err(SyncError::AuthRequired)),
             (
                 PassOutcomeKind::AuthRequired,
-                Some("authentication required — sign in again".to_string())
+                Some("authentication required — sign in again".to_string()),
+                None
             )
         );
-        let (kind, _) = classify_pass(Err(SyncError::Retryable("boom".into())));
+        let (kind, _, _) = classify_pass(Err(SyncError::Retryable("boom".into())));
         assert_eq!(kind, PassOutcomeKind::Retryable);
-        let (kind, _) = classify_pass(Err(SyncError::Fatal("nope".into())));
+        let (kind, _, _) = classify_pass(Err(SyncError::Fatal("nope".into())));
         assert_eq!(kind, PassOutcomeKind::Fatal);
         // 403 drive.file → NotOurs → fatal latch; never retried automatically.
-        let (kind, _) = classify_pass(Err(SyncError::NotOurs));
+        let (kind, _, _) = classify_pass(Err(SyncError::NotOurs));
         assert_eq!(kind, PassOutcomeKind::Fatal);
+    }
+
+    #[test]
+    fn throttled_error_surfaces_retry_after_hint() {
+        let (kind, err, hint) = classify_pass(Err(SyncError::Throttled {
+            retry_after_ms: Some(5_000),
+        }));
+        assert_eq!(kind, PassOutcomeKind::Retryable);
+        assert!(err.unwrap().contains("rate limited"));
+        assert_eq!(hint, Some(5_000), "the Retry-After delay is surfaced");
+
+        // A 429 without a usable header falls back to a plain retryable.
+        let (kind, _, hint) = classify_pass(Err(SyncError::Throttled {
+            retry_after_ms: None,
+        }));
+        assert_eq!(kind, PassOutcomeKind::Retryable);
+        assert_eq!(hint, None);
+    }
+
+    #[test]
+    fn retry_after_header_is_honored_by_the_backoff() {
+        // When Drive says "retry after 5s" on the first 429, the scheduler must
+        // wait at least 5s — not the 1s base backoff — before the next attempt.
+        let mut c = core();
+        assert!(c.take_run(NOW));
+        c.note_retry_after(Some(5_000));
+        c.finish(PassOutcomeKind::Retryable, Some("rate limited".into()), NOW);
+        assert_eq!(
+            c.retry_delay_ms, 5_000,
+            "Retry-After dominates the base backoff (1s)"
+        );
+
+        // A later retry with no hint uses the (now doubled) backoff normally,
+        // proving the hint is consumed once and not sticky.
+        assert!(!c.take_run(NOW + 4_999));
+        assert!(c.take_run(NOW + 5_000));
+        c.finish(PassOutcomeKind::Retryable, Some("boom".into()), NOW + 5_000);
+        assert_eq!(
+            c.retry_delay_ms, 2_000,
+            "no hint → normal exponential backoff"
+        );
     }
 
     #[test]

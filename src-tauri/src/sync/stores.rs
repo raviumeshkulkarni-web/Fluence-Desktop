@@ -186,43 +186,15 @@ impl DirtyStore for DictionaryDirtyStore {
             entry.ever_pushed = false;
             all.push(entry);
         }
-        save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))
-    }
-
-    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
-        let mut touched = false;
-        for e in all.iter_mut() {
-            if e.sync_account.as_deref() == Some(account_hash) {
-                e.ever_pushed = true;
-                e.dirty = false;
-                touched = true;
-            }
-        }
-        if touched {
-            save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))?;
-        }
-        Ok(())
-    }
-
-    fn hard_delete_never_pushed_tombstones(
-        &mut self,
-        account_hash: &str,
-    ) -> Result<usize, SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        let mut all = load_dictionary_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
-        let before = all.len();
+        // Fold the never-pushed tombstone purge into the same write as the
+        // merge+clean. A separate load→mutate→write pass could stamp a local
+        // edit made meanwhile as pushed without it ever reaching the server.
         all.retain(|e| {
             !(e.sync_account.as_deref() == Some(account_hash)
                 && e.deleted_at.is_some()
                 && !e.ever_pushed)
         });
-        let removed = before - all.len();
-        if removed > 0 {
-            save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))?;
-        }
-        Ok(removed)
+        save_dictionary_internal(&all).map_err(|e| SyncError::Fatal(e.to_string()))
     }
 }
 
@@ -368,43 +340,12 @@ impl DirtyStore for SnippetDirtyStore {
             entry.ever_pushed = false;
             store.snippets.push(entry);
         }
-        save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))
-    }
-
-    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
-        let mut touched = false;
-        for s in store.snippets.iter_mut() {
-            if s.sync_account.as_deref() == Some(account_hash) {
-                s.ever_pushed = true;
-                s.dirty = false;
-                touched = true;
-            }
-        }
-        if touched {
-            save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))?;
-        }
-        Ok(())
-    }
-
-    fn hard_delete_never_pushed_tombstones(
-        &mut self,
-        account_hash: &str,
-    ) -> Result<usize, SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        let mut store = load_snippets_internal().map_err(|e| SyncError::Fatal(e.to_string()))?;
-        let before = store.snippets.len();
         store.snippets.retain(|s| {
             !(s.sync_account.as_deref() == Some(account_hash)
                 && s.deleted_at.is_some()
                 && !s.ever_pushed)
         });
-        let removed = before - store.snippets.len();
-        if removed > 0 {
-            save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))?;
-        }
-        Ok(removed)
+        save_snippets_internal(&store).map_err(|e| SyncError::Fatal(e.to_string()))
     }
 }
 
@@ -670,12 +611,6 @@ impl DirtyStore for SettingsDirtyStore {
             crate::settings::save_settings(&settings)
                 .map_err(|e| SyncError::Fatal(e.to_string()))?;
         }
-        Ok(())
-    }
-
-    fn mark_all_pushed(&mut self, _account_hash: &str) -> Result<(), SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        // Meta document already reflects pushed state after save_merged.
         Ok(())
     }
 }
@@ -1013,23 +948,6 @@ impl DirtyStore for StatsDirtyStore {
         }
         Ok(())
     }
-
-    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError> {
-        let _io = crate::sync::io_lock::io_lock_guard();
-        let mut rows = Self::load_rows();
-        let mut touched = false;
-        for row in rows.iter_mut() {
-            if row.account.as_deref() == Some(account_hash) {
-                row.dirty = false;
-                row.ever_pushed = true;
-                touched = true;
-            }
-        }
-        if touched {
-            Self::save_rows(&rows)?;
-        }
-        Ok(())
-    }
 }
 
 #[cfg(test)]
@@ -1161,6 +1079,126 @@ mod tests {
         // Cleanup
         let mut cleanup = load_dictionary_internal().unwrap_or_default();
         cleanup.retain(|e| e.sync_account.as_deref() != Some(account_hash.as_str()));
+        let _ = save_dictionary_internal(&cleanup);
+    }
+
+    #[test]
+    fn save_merged_atomically_cleans_winners_and_purges_unpushed_tombstones() {
+        let account_hash = format!(
+            "test-dict-atomic-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        );
+        let other_hash = format!(
+            "test-dict-other-{}-{}",
+            std::process::id(),
+            uuid::Uuid::new_v4()
+        );
+        let leader_id = uuid::Uuid::new_v4().to_string();
+        let tombstone = DictionaryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            spoken: "deletedlocal".to_string(),
+            corrected: String::new(),
+            kind: "correction".to_string(),
+            created_at: Some(500),
+            deleted_at: Some(600),
+            updated_at: Some(600),
+            device_id: Some("device-test".to_string()),
+            is_enabled: false,
+            dirty: true,
+            ever_pushed: false,
+            sync_account: Some(account_hash.clone()),
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        };
+        let dirty = DictionaryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            spoken: "testspoken".to_string(),
+            corrected: "testcorrected".to_string(),
+            kind: "correction".to_string(),
+            created_at: Some(1000),
+            deleted_at: None,
+            updated_at: Some(2900),
+            device_id: Some("device-test".to_string()),
+            is_enabled: true,
+            dirty: true,
+            ever_pushed: false,
+            sync_account: Some(account_hash.clone()),
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        };
+        let other_tomb = DictionaryEntry {
+            id: uuid::Uuid::new_v4().to_string(),
+            spoken: "otherdeleted".to_string(),
+            corrected: String::new(),
+            kind: "correction".to_string(),
+            created_at: Some(500),
+            deleted_at: Some(600),
+            updated_at: Some(600),
+            device_id: Some("device-other".to_string()),
+            is_enabled: false,
+            dirty: true,
+            ever_pushed: false,
+            sync_account: Some(other_hash.clone()),
+            sync_state: None,
+            server_file_id: None,
+            quarantine_reason: None,
+        };
+        let mut all = load_dictionary_internal().unwrap_or_default();
+        all.push(tombstone.clone());
+        all.push(dirty.clone());
+        all.push(other_tomb.clone());
+        save_dictionary_internal(&all).unwrap();
+        let winner = DictionaryItem {
+            sync_id: leader_id.clone(),
+            spoken: "testspoken".to_string(),
+            corrected: "oldcorrected".to_string(),
+            kind: "correction".to_string(),
+            is_enabled: true,
+            deleted_at: None,
+            updated_at: 1500,
+            device_id: "device-test".to_string(),
+        };
+        let mut store = DictionaryDirtyStore;
+        store
+            .save_merged(&account_hash, vec![winner.clone()])
+            .unwrap();
+        let after = load_dictionary_internal().unwrap_or_default();
+        let winner_row = after
+            .iter()
+            .find(|e| e.sync_account.as_deref() == Some(account_hash.as_str()) && e.id == leader_id)
+            .expect("merged winner must be present");
+        assert!(
+            !winner_row.dirty,
+            "winner must be clean after a single merge write"
+        );
+        assert!(
+            winner_row.ever_pushed,
+            "winner must be pushed after a single merge write"
+        );
+        assert!(winner_row.updated_at == Some(1500));
+        assert!(
+            after
+                .iter()
+                .any(|e| e.id == dirty.id && e.dirty && !e.ever_pushed),
+            "fresh dirty edit must stay dirty and unpushed (never force-stamped by a second pass)"
+        );
+        assert!(
+            !after.iter().any(|e| e.id == tombstone.id),
+            "this account's never-pushed tombstone must be purged in the same write"
+        );
+        assert!(
+            after.iter().any(|e| e.id == other_tomb.id),
+            "another account's tombstone must be untouched"
+        );
+        // Cleanup
+        let mut cleanup = load_dictionary_internal().unwrap_or_default();
+        cleanup.retain(|e| {
+            e.sync_account.as_deref() != Some(account_hash.as_str())
+                && e.sync_account.as_deref() != Some(other_hash.as_str())
+        });
         let _ = save_dictionary_internal(&cleanup);
     }
 

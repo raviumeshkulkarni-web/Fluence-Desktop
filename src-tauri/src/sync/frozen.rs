@@ -36,8 +36,13 @@ pub struct DomainSyncOutcome {
 }
 
 /// Local store seam for one domain. After a successful PUT the engine replaces
-/// the account's local set with the merged winners (`save_merged`) and marks
-/// them clean (`mark_all_pushed`) — one transactional write per domain.
+/// the account's local set with the merged winners via `save_merged`.
+///
+/// `save_merged` performs the replace, the clean/pushed mark and the
+/// never-pushed-tombstone purge in ONE transactional write per domain. A single
+/// write is essential: a second load→mutate→write pass would stamp any local
+/// edit made in between as pushed without it ever reaching the server, and that
+/// silently-clean row would never be rescued again (it looks pushed).
 pub trait DirtyStore {
     type Item: Clone + PartialEq;
 
@@ -47,20 +52,11 @@ pub trait DirtyStore {
     /// enrollment). Returns how many rows were stamped.
     fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError>;
     fn has_dirty(&self, account_hash: &str) -> bool;
-    /// Replace this account's rows with the merged winners.
+    /// Replace this account's rows with the merged winners, mark them clean and
+    /// pushed, and purge never-pushed tombstones — atomically, under the io
+    /// lock.
     fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>)
         -> Result<(), SyncError>;
-    /// After a confirmed push every merged row is clean and pushed.
-    fn mark_all_pushed(&mut self, account_hash: &str) -> Result<(), SyncError>;
-    /// Drop locally-created tombstones that were never uploaded (nothing to
-    /// propagate). Default: no-op (settings/stats have no tombstones).
-    fn hard_delete_never_pushed_tombstones(
-        &mut self,
-        account_hash: &str,
-    ) -> Result<usize, SyncError> {
-        let _ = account_hash;
-        Ok(0)
-    }
 }
 
 /// Maximum GET->MERGE->PUT cycles per domain per pass. Attempt 1 plus three
@@ -222,8 +218,9 @@ where
                 metadata.set_last_rev(account_hash, name, new_version);
                 let count = merged.len();
                 store.save_merged(account_hash, merged)?;
-                store.mark_all_pushed(account_hash)?;
-                store.hard_delete_never_pushed_tombstones(account_hash)?;
+                // save_merged is a single transactional write: merge, clean
+                // mark and tombstone purge happen together, so a local edit
+                // landing concurrently can never be wrongly stamped as pushed.
                 // Consolidate only valid duplicates whose contents were
                 // included in the merged payload. Corrupt/oversized files
                 // may contain unrecoverable data and must remain untouched.
@@ -508,9 +505,6 @@ mod tests {
             self.items = m;
             Ok(())
         }
-        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
-            Ok(())
-        }
     }
     impl DirtyStore for MemStore<SnippetItem> {
         type Item = SnippetItem;
@@ -525,9 +519,6 @@ mod tests {
         }
         fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
             self.items = m;
-            Ok(())
-        }
-        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
             Ok(())
         }
     }
@@ -546,9 +537,6 @@ mod tests {
             self.items = m;
             Ok(())
         }
-        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
-            Ok(())
-        }
     }
     impl DirtyStore for MemStore<StatsItem> {
         type Item = StatsItem;
@@ -563,9 +551,6 @@ mod tests {
         }
         fn save_merged(&mut self, _h: &str, m: Vec<Self::Item>) -> Result<(), SyncError> {
             self.items = m;
-            Ok(())
-        }
-        fn mark_all_pushed(&mut self, _h: &str) -> Result<(), SyncError> {
             Ok(())
         }
     }

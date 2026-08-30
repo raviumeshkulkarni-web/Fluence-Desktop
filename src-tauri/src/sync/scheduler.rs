@@ -515,7 +515,21 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         return Err(SyncError::AuthRequired);
     }
     let token = ensure_access_token(&mut session)?;
+    // Silent 401 recovery: when Drive rejects the access token mid-pass,
+    // refresh it once through the stored refresh token and retry the request.
+    // A refresh-grant rejection (revoked/expired refresh token) surfaces
+    // AuthRequired so the pass stops — the user must reconnect. The session
+    // is shared through Rc<RefCell> so the refresher closure can outlive the
+    // local binding and still adopt rotated refresh tokens.
+    let session_cell = std::rc::Rc::new(std::cell::RefCell::new(session));
     let mut drive = GoogleDriveStore::new(token);
+    {
+        let cell = std::rc::Rc::clone(&session_cell);
+        drive.set_token_refresher(Box::new(move |_| {
+            let mut session = cell.borrow_mut();
+            refresh_access_token_silently(&mut session)
+        }));
+    }
     let mut metadata = crate::sync::metadata::SyncMetadata::load();
     // Account switch: update the active-account marker so per-account
     // bookkeeping (lastRev) partitions correctly.
@@ -563,10 +577,22 @@ fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
     if let Some(token) = session.access_token() {
         return Ok(token.to_string());
     }
-    let Some(refresh) = session.refresh_token.clone() else {
-        return Err(SyncError::AuthRequired);
+    refresh_access_token_silently(session)
+}
+
+/// Refresh the Drive access token with the session's stored refresh token.
+/// Shared by the pass-start `ensure_access_token` and the drive layer's
+/// single silent 401 recovery: both must recover ordinary token expiry
+/// without any user motion, and both must stop (AuthRequired) the moment the
+/// refresh grant itself is rejected (revoked/expired refresh token).
+fn refresh_access_token_silently(session: &mut AuthSession) -> Result<String, SyncError> {
+    let (config, refresh) = {
+        let config = session.config.clone();
+        let Some(refresh) = session.refresh_token.clone() else {
+            return Err(SyncError::AuthRequired);
+        };
+        (config, refresh)
     };
-    let config = session.config.clone();
     match tauri::async_runtime::block_on(auth::refresh_access_token(
         &config,
         &crate::http_client::CLIENT,

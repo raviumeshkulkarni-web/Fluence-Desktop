@@ -2,7 +2,8 @@
 //
 // Implements the `DomainDriveStore` trait against the Drive v3 API using the
 // shared reqwest blocking client. Error mapping:
-// - `401`                  -> `AuthRequired` (reauth)
+// - `401`                  -> one silent token refresh + request retry, then
+//                             `AuthRequired` (reauth) if still rejected
 // - `403`                  -> quota/transient reason -> `Retryable`; other
 //                            reasons -> `NotOurs`; unparseable body fails
 //                            safe to `Retryable` (see `classify_forbidden`)
@@ -105,12 +106,20 @@ impl Backoff {
     }
 }
 
+/// A hook that re-issues a Drive access token after a 401. Implementations
+/// refresh through the OAuth session's stored refresh token; a permanent
+/// rejection (revoked refresh token, account removed) returns
+/// `AuthRequired` so the pass stops instead of looping.
+pub type TokenRefresher = Box<dyn FnMut(&str) -> Result<String, SyncError>>;
+
 /// The active account's Drive connection. Holds a memory-only access token;
 /// failures are classified by [`classify_status`]. Uses the blocking client
 /// because the domain engine runs on a worker thread.
 pub struct GoogleDriveStore {
     client: reqwest::blocking::Client,
     access_token: String,
+    /// Optional silent token recovery for a single 401 retry per pass.
+    token_refresher: Option<TokenRefresher>,
     /// Cached appDataFolder/fluence/v1 folder id.
     v1_folder_id: Option<String>,
     /// Upload host for multipart writes.
@@ -131,15 +140,57 @@ impl GoogleDriveStore {
                 .build()
                 .expect("Failed to build blocking Drive client"),
             access_token,
+            token_refresher: None,
             v1_folder_id: None,
             upload_base,
         }
     }
 
-    fn bearer(&self, method: reqwest::Method, url: &str) -> reqwest::blocking::RequestBuilder {
-        self.client
-            .request(method, url)
-            .bearer_auth(&self.access_token)
+    /// Arm the one-silent-refresh-401-recovery for this pass.
+    pub fn set_token_refresher(&mut self, refresher: TokenRefresher) {
+        self.token_refresher = Some(refresher);
+    }
+
+    /// Build, send, and (once per store) silently recover a 401 by refreshing
+    /// the access token and replaying the request with the fresh token. The
+    /// keyed retry is transport-level: `build` receives the CURRENT bearer
+    /// token so a replay naturally uses the refreshed one. A second 401 (or
+    /// any non-401) is returned untouched so the caller's status
+    /// classification maps it exactly as before — `AuthRequired` for 401.
+    fn send<B>(&mut self, build: B) -> Result<reqwest::blocking::Response, SyncError>
+    where
+        B: Fn(&reqwest::blocking::Client, &str) -> reqwest::blocking::RequestBuilder,
+    {
+        let mut attempts = 0;
+        loop {
+            let resp = build(&self.client, &self.access_token)
+                .send()
+                .map_err(transport_err)?;
+            if resp.status() != reqwest::StatusCode::UNAUTHORIZED {
+                return Ok(resp);
+            }
+            attempts += 1;
+            if attempts > 1 {
+                // Still unauthorized after the one silent refresh — hand the
+                // 401 back; the caller's classification surfaces AuthRequired.
+                return Ok(resp);
+            }
+            let Some(refresher) = self.token_refresher.as_mut() else {
+                return Ok(resp);
+            };
+            let fresh = refresher(&self.access_token)?;
+            self.access_token = fresh;
+        }
+    }
+}
+
+/// Map a reqwest transport error to the engine's retryable kind. Timeouts and
+/// connect failures are transient; the scheduler backs off and retries.
+fn transport_err(e: reqwest::Error) -> SyncError {
+    if e.is_timeout() {
+        SyncError::Retryable("timeout".to_string())
+    } else {
+        SyncError::Retryable(e.to_string())
     }
 }
 
@@ -370,16 +421,11 @@ impl GoogleDriveStore {
             [("q", q.as_str()), ("spaces", APPDATA_FOLDER_ALIAS)],
         )
         .expect("valid url");
-        let resp = self
-            .bearer(reqwest::Method::GET, list_url.as_str())
-            .send()
-            .map_err(|e| {
-                if e.is_timeout() {
-                    SyncError::Retryable("timeout".to_string())
-                } else {
-                    SyncError::Retryable(e.to_string())
-                }
-            })?;
+        let resp = self.send(|client, token| {
+            client
+                .request(reqwest::Method::GET, list_url.as_str())
+                .bearer_auth(token)
+        })?;
         let status = resp.status().as_u16();
         let body = resp
             .text()
@@ -395,14 +441,12 @@ impl GoogleDriveStore {
         {
             return Ok(first.file_id);
         }
-        let create = self
-            .bearer(
-                reqwest::Method::POST,
-                &format!("{API_BASE}/files?fields=id"),
-            )
-            .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
-            .send()
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let create = self.send(|client, token| {
+            client
+                .request(reqwest::Method::POST, API_BASE.to_string() + "/files?fields=id")
+                .bearer_auth(token)
+                .json(&serde_json::json!({"name": name, "mimeType": FOLDER_MIME, "parents": [parent]}))
+        })?;
         let status = create.status().as_u16();
         let body = create
             .text()
@@ -473,21 +517,17 @@ impl GoogleDriveStore {
         );
         body.extend_from_slice(content);
         body.extend_from_slice(format!("\r\n--{boundary}--").as_bytes());
-        let resp = self
-            .bearer(method, &url)
-            .header(
-                reqwest::header::CONTENT_TYPE,
-                format!("multipart/related; boundary={boundary}"),
-            )
-            .body(body)
-            .send()
-            .map_err(|e| {
-                if e.is_timeout() {
-                    SyncError::Retryable("timeout".to_string())
-                } else {
-                    SyncError::Retryable(e.to_string())
-                }
-            })?;
+        let body_for_send = body.clone();
+        let resp = self.send(|client, token| {
+            client
+                .request(method.clone(), &url)
+                .bearer_auth(token)
+                .header(
+                    reqwest::header::CONTENT_TYPE,
+                    format!("multipart/related; boundary={boundary}"),
+                )
+                .body(body_for_send.clone())
+        })?;
         let status = resp.status().as_u16();
         let body = resp
             .text()
@@ -501,10 +541,11 @@ impl GoogleDriveStore {
         let id = parse_id_from_response(&body);
         if let Some(id) = id {
             let meta_url = format!("{API_BASE}/files/{id}?fields=version");
-            let resp = self
-                .bearer(reqwest::Method::GET, &meta_url)
-                .send()
-                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            let resp = self.send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &meta_url)
+                    .bearer_auth(token)
+            })?;
             let status = resp.status().as_u16();
             let body = resp
                 .text()
@@ -537,16 +578,11 @@ impl DomainDriveStore for GoogleDriveStore {
         let mut page_token: Option<String> = None;
         loop {
             let url = list_v1_files_query(&v1_id, page_token.as_deref());
-            let resp = self
-                .bearer(reqwest::Method::GET, &url)
-                .send()
-                .map_err(|e| {
-                    if e.is_timeout() {
-                        SyncError::Retryable("timeout".to_string())
-                    } else {
-                        SyncError::Retryable(e.to_string())
-                    }
-                })?;
+            let resp = self.send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })?;
             if resp.status().as_u16() == 404 {
                 return Ok(Vec::new());
             }
@@ -567,16 +603,11 @@ impl DomainDriveStore for GoogleDriveStore {
 
     fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
         let url = format!("{API_BASE}/files/{file_id}?alt=media");
-        let resp = self
-            .bearer(reqwest::Method::GET, &url)
-            .send()
-            .map_err(|e| {
-                if e.is_timeout() {
-                    SyncError::Retryable("timeout".to_string())
-                } else {
-                    SyncError::Retryable(e.to_string())
-                }
-            })?;
+        let resp = self.send(|client, token| {
+            client
+                .request(reqwest::Method::GET, &url)
+                .bearer_auth(token)
+        })?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(None);
         }
@@ -650,10 +681,11 @@ impl DomainDriveStore for GoogleDriveStore {
 
     fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError> {
         let url = format!("{API_BASE}/files/{file_id}");
-        let resp = self
-            .bearer(reqwest::Method::DELETE, &url)
-            .send()
-            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        let resp = self.send(|client, token| {
+            client
+                .request(reqwest::Method::DELETE, &url)
+                .bearer_auth(token)
+        })?;
         if resp.status() == reqwest::StatusCode::NOT_FOUND {
             return Ok(());
         }
@@ -671,6 +703,155 @@ impl DomainDriveStore for GoogleDriveStore {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::io::{Read, Write};
+
+    /// A tiny loopback server that answers `status_for(attempt)` requests and
+    /// then closes. Connection-through-close forces reqwest to open a fresh
+    /// TCP connection per request, so each retry lands as a new accept.
+    fn loopback_server(
+        responses: Vec<(u16, &'static str)>,
+    ) -> (std::net::SocketAddr, std::thread::JoinHandle<()>) {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let addr = listener.local_addr().unwrap();
+        let handle = std::thread::spawn(move || {
+            for (status, body) in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buf = [0u8; 4096];
+                let mut head = Vec::new();
+                loop {
+                    let n = stream.read(&mut buf).unwrap();
+                    if n == 0 {
+                        break;
+                    }
+                    head.extend_from_slice(&buf[..n]);
+                    if head.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                write!(
+                    stream,
+                    "HTTP/1.1 {status} {reason}\r\nContent-Length: {len}\r\nConnection: close\r\n\r\n{body}",
+                    reason = if status == 401 { "Unauthorized" } else if status == 400 { "Bad Request" } else { "OK" },
+                    len = body.len(),
+                )
+                .unwrap();
+            }
+        });
+        (addr, handle)
+    }
+
+    #[test]
+    fn send_retries_once_with_silent_token_refresh_on_401() {
+        let (addr, server) = loopback_server(vec![(401, ""), (200, "ok")]);
+        let url = format!("http://{addr}/fluency?alt=media");
+        let mut store = GoogleDriveStore::with_upload_base(
+            "stale-token".to_string(),
+            "http://127.0.0.1:0".to_string(),
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let calls_for_closure = std::rc::Rc::clone(&calls);
+        store.set_token_refresher(Box::new(move |old: &str| {
+            assert_eq!(old, "stale-token", "refresher receives the rejected token");
+            calls_for_closure.set(calls_for_closure.get() + 1);
+            Ok("fresh-token".to_string())
+        }));
+
+        let resp = store
+            .send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::OK);
+        assert_eq!(calls.get(), 1, "exactly one silent refresh");
+        assert_eq!(
+            store.access_token, "fresh-token",
+            "store adopts the fresh token"
+        );
+    }
+
+    #[test]
+    fn send_surfaces_401_after_one_refresh_without_looping() {
+        let (addr, server) = loopback_server(vec![(401, ""), (401, "")]);
+        let url = format!("http://{addr}/fluency?alt=media");
+        let mut store = GoogleDriveStore::with_upload_base(
+            "stale-token".to_string(),
+            "http://127.0.0.1:0".to_string(),
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let calls_for_closure = std::rc::Rc::clone(&calls);
+        store.set_token_refresher(Box::new(move |_old: &str| {
+            calls_for_closure.set(calls_for_closure.get() + 1);
+            Ok("fresh-token".to_string())
+        }));
+
+        let resp = store
+            .send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(
+            resp.status(),
+            reqwest::StatusCode::UNAUTHORIZED,
+            "still-401 after one refresh surfaces so the caller maps AuthRequired"
+        );
+        assert_eq!(
+            calls.get(),
+            1,
+            "a rejected re-auth loops to AuthRequired, never spins"
+        );
+    }
+
+    #[test]
+    fn send_without_refresher_passes_401_through_untouched() {
+        let (addr, server) = loopback_server(vec![(401, "")]);
+        let url = format!("http://{addr}/fluency?alt=media");
+        let mut store = GoogleDriveStore::with_upload_base(
+            "stale-token".to_string(),
+            "http://127.0.0.1:0".to_string(),
+        );
+        let resp = store
+            .send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::UNAUTHORIZED);
+    }
+
+    #[test]
+    fn send_does_not_refresh_on_non_401_status() {
+        let (addr, server) = loopback_server(vec![(400, "bad")]);
+        let url = format!("http://{addr}/fluency?alt=media");
+        let mut store = GoogleDriveStore::with_upload_base(
+            "stale-token".to_string(),
+            "http://127.0.0.1:0".to_string(),
+        );
+        let calls = std::rc::Rc::new(std::cell::Cell::new(0usize));
+        let calls_for_closure = std::rc::Rc::clone(&calls);
+        store.set_token_refresher(Box::new(move |_old: &str| {
+            calls_for_closure.set(calls_for_closure.get() + 1);
+            Ok("should-not-be-used".to_string())
+        }));
+
+        let resp = store
+            .send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })
+            .unwrap();
+        server.join().unwrap();
+        assert_eq!(resp.status(), reqwest::StatusCode::BAD_REQUEST);
+        assert_eq!(calls.get(), 0, "refresh is reserved for 401 responses");
+    }
 
     #[test]
     fn backoff_doubles_up_to_cap_and_resets() {

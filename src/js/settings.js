@@ -745,29 +745,28 @@ async function loadDashboardStats() {
       animateStatValue('stat-total-words', totalWords.toLocaleString());
     }
 
-    // Time saved from backend stats (estimated typing time: ~40 WPM average)
-    const typingMinutesSaved = totalWords / 40;
-    const savedHours = typingMinutesSaved / 60;
-    if (savedHours >= 1) {
-      animateStatValue('stat-time-saved', savedHours.toFixed(1) + 'h');
-    } else {
-      animateStatValue('stat-time-saved', Math.round(typingMinutesSaved) + 'm');
+    // Converts a millisecond duration into a readable "Xh Ym" / "Ym" label.
+    function formatDurationMs(ms) {
+      if (!(ms > 0)) {
+        return '0m';
+      }
+      const totalMinutes = Math.round(ms / 60000);
+      const hours = Math.floor(totalMinutes / 60);
+      const minutes = totalMinutes % 60;
+      if (hours > 0) {
+        return minutes > 0 ? `${hours}h ${minutes}m` : `${hours}h`;
+      }
+      return `${minutes}m`;
     }
+
+    // Time saved from backend stats (estimated typing time: ~40 WPM average)
+    animateStatValue('stat-time-saved', formatDurationMs((totalWords / 40) * 60000));
 
     // Dictation time (actual recording duration)
-    const dictationHours = bStats.total_duration_ms / 3600000;
-    if (dictationHours >= 1) {
-      animateStatValue('stat-dictation-time', dictationHours.toFixed(1) + 'h');
-    } else {
-      animateStatValue('stat-dictation-time', Math.round(bStats.total_duration_ms / 60000) + 'm');
-    }
+    animateStatValue('stat-dictation-time', formatDurationMs(bStats.total_duration_ms));
 
-    const monthlyHoursSaved = (monthlyWords / 40 / 60);
-    if (monthlyHoursSaved >= 1) {
-      animateStatValue('stat-monthly-saved', monthlyHoursSaved.toFixed(1) + 'h');
-    } else {
-      animateStatValue('stat-monthly-saved', Math.round(monthlyWords / 40) + 'm');
-    }
+    const monthlySavedMs = (monthlyWords / 40 / 60) * 3600000;
+    animateStatValue('stat-monthly-saved', formatDurationMs(monthlySavedMs));
 
     // Weekly activity bar chart — UTC Monday boundary comes from the backend
     // (identical across devices/timezones and matches the weekly header).
@@ -1625,7 +1624,7 @@ function describeSyncError(raw) {
   if (/timeout|network|connection|dns/.test(m)) return 'Connection issue — will retry automatically';
   if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached — pausing briefly';
   if (/rejected|exceeds|too large/.test(m)) return 'Sync data exceeds size limits';
-  if (/auth|credential|sign in again/.test(m)) return 'Session expired — please sign in again';
+  if (/auth|credential|sign in again/.test(m)) return 'Google Drive access needs reauthorization';
   return 'Sync error — will retry';
 }
 
@@ -1651,17 +1650,20 @@ function renderSyncStatus() {
     if (label) label.textContent = account;
     if (desc) desc.textContent = 'Signed in. Your data syncs privately to your personal Drive folder.';
   } else {
-    if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
-    if (signOutBtn) signOutBtn.style.display = 'none';
     if (account) {
-      // Backend flipped signed_in=false while an account key remains set
-      // (PassOutcomeKind::AuthRequired): the session expired mid-use.
-      if (label) label.textContent = 'Session expired';
-      if (desc) desc.textContent = 'Your Google session ended — sign in again to resume syncing.';
+      // PassOutcomeKind::AuthRequired narrowed signed_in to false while the
+      // account key remains set: Drive reauthorization (consent revoked,
+      // account removed) is genuinely needed. The sign-in button relabels to
+      // the one-tap reconnect action.
+      if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Reconnect Google Drive'; }
+      if (label) label.textContent = 'Reconnect required';
+      if (desc) desc.textContent = `Google Drive access needs reauthorization — reconnect${account ? ' as ' + account : ''} to resume syncing.`;
     } else {
+      if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
       if (label) label.textContent = 'Not signed in';
       if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
     }
+    if (signOutBtn) signOutBtn.style.display = 'none';
   }
 
   // Persistent sign-in error — visible while signed out (task: under ACCOUNT row, id sync-signin-error)
@@ -1678,7 +1680,7 @@ function renderSyncStatus() {
     if (accountInfo) accountInfo.appendChild(syncSignInErrorEl);
   }
   if (!signedIn && s.last_error) {
-    syncSignInErrorEl.textContent = String(s.last_error).replace(/^Error:\s*/, '');
+    syncSignInErrorEl.textContent = describeSyncError(s.last_error);
     syncSignInErrorEl.style.display = '';
   } else {
     syncSignInErrorEl.textContent = '';

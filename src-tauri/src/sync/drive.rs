@@ -118,7 +118,13 @@ pub type TokenRefresher = Box<dyn FnMut(&str) -> Result<String, SyncError>>;
 /// internet is unaffected. Format: {"remaining":2,"status":429,"retry_after_secs":2,"is_timeout":false}
 /// If `remaining` >0 the fault is consumed (decremented) and the requested
 /// error is returned. Absent/malformed file = no fault.
+///
+/// DIRECT PRODUCTION: gated to debug builds only — release builds never read
+/// the file, so `PRODUCTION` is not affected by a stray `__fault.json`.
 fn maybe_inject_fault(op: &str) -> Option<SyncError> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
     let data_dir = crate::sync::stores::data_dir();
     let path = data_dir.join("__fault.json");
     let raw = std::fs::read_to_string(&path).ok()?;
@@ -128,6 +134,12 @@ fn maybe_inject_fault(op: &str) -> Option<SyncError> {
         if filter != op && filter != "send" && filter != "any" {
             return None;
         }
+    }
+    // corrupt/duplicate faults are handled by separate helpers, not as SyncError
+    if v.get("corrupt").and_then(|x| x.as_bool()).unwrap_or(false)
+        || v.get("duplicate").and_then(|x| x.as_bool()).unwrap_or(false)
+    {
+        return None;
     }
     let remaining = v.get("remaining").and_then(|x| x.as_u64()).unwrap_or(1);
     if remaining == 0 {
@@ -158,6 +170,88 @@ fn maybe_inject_fault(op: &str) -> Option<SyncError> {
     };
     log::warn!("FAULT INJECTED op={} remaining={} -> {:?}", op, remaining, injected);
     Some(injected)
+}
+
+/// Corrupt-body injection: makes `get_domain_content` return malformed bytes
+/// instead of the real Drive content. Format: {"remaining":1,"op":"get_domain_content","corrupt":true,"corrupt_body":"not json"}
+/// If `corrupt_body` absent, defaults to `b"corrupt"` (invalid JSON). Consumes `remaining`.
+/// DIRECT PRODUCTION: debug-only.
+fn maybe_inject_corrupt_body(op: &str) -> Option<Vec<u8>> {
+    if !cfg!(debug_assertions) {
+        return None;
+    }
+    let data_dir = crate::sync::stores::data_dir();
+    let path = data_dir.join("__fault.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    if !v.get("corrupt").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return None;
+    }
+    if let Some(filter) = v.get("op").and_then(|x| x.as_str()) {
+        if filter != op && filter != "any" {
+            return None;
+        }
+    }
+    let remaining = v.get("remaining").and_then(|x| x.as_u64()).unwrap_or(1);
+    if remaining == 0 {
+        return None;
+    }
+    let mut new_v = v.clone();
+    if let Some(obj) = new_v.as_object_mut() {
+        obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
+        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        if remaining - 1 == 0 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    let body = v
+        .get("corrupt_body")
+        .and_then(|x| x.as_str())
+        .unwrap_or("corrupt");
+    log::warn!("FAULT INJECTED corrupt_body op={} remaining={} body={:?}", op, remaining, body);
+    Some(body.as_bytes().to_vec())
+}
+
+/// Duplicate-file injection: makes `list_v1_files` return an extra file with
+/// the same name but different id/version, simulating Drive's duplicate.
+/// Format: {"remaining":1,"op":"list_v1_files","duplicate":true,"duplicate_name":"dictionary.json"}
+/// DIRECT PRODUCTION: debug-only.
+fn maybe_inject_duplicate(op: &str) -> bool {
+    if !cfg!(debug_assertions) {
+        return false;
+    }
+    let data_dir = crate::sync::stores::data_dir();
+    let path = data_dir.join("__fault.json");
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let v: serde_json::Value = match serde_json::from_str(&raw) {
+        Ok(v) => v,
+        Err(_) => return false,
+    };
+    if !v.get("duplicate").and_then(|x| x.as_bool()).unwrap_or(false) {
+        return false;
+    }
+    if let Some(filter) = v.get("op").and_then(|x| x.as_str()) {
+        if filter != op && filter != "any" {
+            return false;
+        }
+    }
+    let remaining = v.get("remaining").and_then(|x| x.as_u64()).unwrap_or(1);
+    if remaining == 0 {
+        return false;
+    }
+    let mut new_v = v.clone();
+    if let Some(obj) = new_v.as_object_mut() {
+        obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
+        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        if remaining - 1 == 0 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    log::warn!("FAULT INJECTED duplicate op={} remaining={}", op, remaining);
+    true
 }
 
 /// The active account's Drive connection. Holds a memory-only access token;
@@ -678,6 +772,7 @@ impl DomainDriveStore for GoogleDriveStore {
         if let Some(e) = maybe_inject_fault("list_v1_files") {
             return Err(e);
         }
+        let is_duplicate_test = maybe_inject_duplicate("list_v1_files");
         let v1_id = self.ensure_v1_folder()?;
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
@@ -704,12 +799,74 @@ impl DomainDriveStore for GoogleDriveStore {
                 None => break,
             }
         }
+        if is_duplicate_test {
+            // Simulate Drive returning two files with same name but different ids/versions.
+            // The engine must fetch both, merge their entries, and not lose records.
+            if let Some(first) = all.iter().find(|f| f.name == DICT_FILE).cloned() {
+                let dup = DomainFileMeta {
+                    file_id: format!("{}-dup", first.file_id),
+                    name: first.name.clone(),
+                    version: Some("999".to_string()),
+                };
+                log::warn!("FAULT INJECTED duplicate list_v1_files: cloning {} -> {}", first.file_id, dup.file_id);
+                all.push(dup);
+            } else if !all.is_empty() {
+                let first = all[0].clone();
+                let dup = DomainFileMeta {
+                    file_id: format!("{}-dup", first.file_id),
+                    name: first.name.clone(),
+                    version: Some("999".to_string()),
+                };
+                log::warn!("FAULT INJECTED duplicate list_v1_files: cloning {} -> {}", first.file_id, dup.file_id);
+                all.push(dup);
+            } else {
+                // No existing files — create a synthetic duplicate pair for the test.
+                // Engine should handle two valid files with same name.
+                let dup1 = DomainFileMeta {
+                    file_id: "dup-1".to_string(),
+                    name: DICT_FILE.to_string(),
+                    version: Some("1".to_string()),
+                };
+                let dup2 = DomainFileMeta {
+                    file_id: "dup-2".to_string(),
+                    name: DICT_FILE.to_string(),
+                    version: Some("2".to_string()),
+                };
+                log::warn!("FAULT INJECTED duplicate list_v1_files: synthetic pair dup-1/dup-2");
+                all.push(dup1);
+                all.push(dup2);
+            }
+        }
         Ok(all)
     }
 
     fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
         if let Some(e) = maybe_inject_fault("get_domain_content") {
             return Err(e);
+        }
+        if let Some(corrupt) = maybe_inject_corrupt_body("get_domain_content") {
+            return Ok(Some(corrupt));
+        }
+        // Synthetic duplicate content: when list_v1_files injected a dup file,
+        // return a valid but distinct dictionary envelope for that dup id.
+        // DIRECT PRODUCTION: debug-only — release never returns synthetic data.
+        if cfg!(debug_assertions) && (file_id.ends_with("-dup") || file_id.starts_with("dup-")) {
+            let dup_content = serde_json::json!({
+                "v": 1,
+                "entries": [{
+                    "syncId": "00000000-0000-4000-8000-000000000001",
+                    "businessKey": "duplicateTest",
+                    "spoken": "duplicateTest",
+                    "corrected": "DuplicateAA",
+                    "isEnabled": true,
+                    "updatedAt": 1788100000000i64,
+                    "deletedAt": null,
+                    "deviceId": "dup-device-0000"
+                }]
+            });
+            let bytes = serde_json::to_vec(&dup_content).unwrap();
+            log::warn!("DUPLICATE INJECTED get_domain_content file_id={} returning synthetic valid", file_id);
+            return Ok(Some(bytes));
         }
         let url = format!("{API_BASE}/files/{file_id}?alt=media");
         let resp = self.send(|client, token| {

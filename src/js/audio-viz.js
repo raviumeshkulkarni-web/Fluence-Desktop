@@ -31,6 +31,9 @@ class AuraVisualizer {
     this.gateOpen = false;
     this.onsetStreak = 0;
     this.silenceStreak = 0;
+    this.quietStreak = 0;
+    this.hist = [];              // fastDb window for envelope-modulation spread
+    this.spread = 0;             // dB spread across hist (speech ~modulated)
     this._rafId = null;
     this._isRunning = false;
     this._resize();
@@ -144,25 +147,42 @@ class AuraVisualizer {
     // identically at any input volume, on any device, no per-machine tuning.
     const db = raw * 45 - 75;
     const DIGITAL_SILENCE_DB = -72; // muted mic / empty-buffer emits
-    const SPEECH_TOP_DB = -30;      // top of the backend telemetry window
-    const ONSET_DB = 12;            // sustained rise above floor = speech
+    const ONSET_DB = 11;            // level onset above floor = speech key
     const CLOSE_DB = 4;             // fall back within this of floor = rest
-    const ANCHOR_DB = 6;            // |level − floor| ≤ this ⇒ ambience
-    const FLOOR_FOLLOW_UP = 0.03;   // floor re-anchor rate on rising ambience
     const FLOOR_FOLLOW_DOWN = 0.10; // floor follow rate when level falls below it
     const SILENCE_HOLD_COUNT = 5;   // consecutive dead-buffer frames to latch the gate shut
+    // Modulation gate (why the plain ONSET_DB gate goes deaf at t=0): when a
+    // recording starts straight into continuous speech the prime window seeds
+    // the floor AT speech level, so a plain level-relative onset can never
+    // fire and the floor even creeps up onto the utterance — the meter stays
+    // flat until the FIRST pause re-anchors it and re-speech triggers, which
+    // is exactly the reported 5-10 s dead waveform. Speech is not just
+    // louder than the floor, it MODULATES rhythmically (~syllabic envelope),
+    // while raised/steady ambience and mic-volume raises barely move. So the
+    // open key is level-onset OR envelope spread; both measured in dB deltas
+    // from the floor so gain cancels out.
+    const MOD_HIST = 15;        // ~0.5 s fastDb window for spread
+    const MOD_OPEN = 4.5;       // spread ⇒ speech-like modulation
+    const MOD_CLOSE = 3.0;      // spread below this ⇒ steady/quiet
+    const OPEN_STREAK = 2;      // speech-key frames to open the gate (~70 ms)
+    const CLOSE_STREAK = 4;     // quiet+returned-frames to latch shut (~130 ms)
+    const SPEECH_SPAN_DB = 28;  // floor→full-meter span for display
+    const FLOOR_UP_FAST = 0.045;// floor re-anchor rate during steady stretches
 
     // Priming (~0.8 s of live telemetry, digital zeros excluded): seed the
-    // floor at the lower-quartile startup level so speaking through the
-    // first second or a hotkey chime cannot pin the reference to speech.
-    // Until primed the meter simply stays calm. (Even a poor prime self-
-    // corrects within ~1-2 s afterwards, because the floor keeps
-    // re-anchoring.)
+    // floor BELOW the lowest observed live level (-55 dBFS floor) so speaking
+    // through the first second or a hotkey chime can never pin the reference
+    // onto the utterance (the committed lower-quartile seed does exactly that
+    // when a recording starts straight into continuous speech, and the meter
+    // stays flat until the user's first pause). A loud-but-steady ambience
+    // still re-anchors afterwards because spread stays negligible and the
+    // floor follows the steady level up. Until primed the meter stays calm.
     if (!this.gatePrimed) {
       if (db > DIGITAL_SILENCE_DB) this.primeBuf.push(db);
       if (this.primeBuf.length >= 24) {
         this.primeBuf.sort((a, b) => a - b);
-        this.slowDb = this.fastDb = this.primeBuf[this.primeBuf.length >> 2];
+        this.slowDb = Math.min(this.primeBuf[0], -55);
+        this.fastDb = this.slowDb;
         this.gatePrimed = true;
       }
       return;
@@ -179,12 +199,34 @@ class AuraVisualizer {
     // ambience information; it merely latches the gate shut.
     this.fastDb += (db - this.fastDb) * 0.5;
     const live = db > DIGITAL_SILENCE_DB;
+
+    // Envelope-modulation spread over the recent fastDb window. Speech has a
+    // pronounced syllabic envelope (spread well past MOD_OPEN on ~0.5 s), while
+    // steady ambience / mic-volume changes barely move the envelope.
+    this.hist.push(this.fastDb);
+    if (this.hist.length > MOD_HIST) this.hist.shift();
+    let spread = 0;
+    if (this.hist.length >= MOD_HIST) {
+      let mn = Infinity, mx = -Infinity;
+      for (const v of this.hist) { if (v < mn) mn = v; if (v > mx) mx = v; }
+      spread = mx - mn;
+    }
+    this.spread = spread;
+
     if (live) {
       const aboveFloor = this.fastDb - this.slowDb;
+      // Floor re-anchors down fast when level falls below it, and follows a
+      // RISING level up only while the envelope is steady (< MOD_CLOSE) — a
+      // loud-but-calm ambience, a mic-volume raise, or an AGC gain pump
+      // becomes the new reference instead of false "speech". During speech the
+      // envelope modulates so the floor freezes, letting the rise show as
+      // signal instead of inflating the reference onto the utterance (which is
+      // what made the pre-fix meter track the user's input volume and stay
+      // flat on continuous speech).
       if (aboveFloor < 0) {
         this.slowDb += aboveFloor * FLOOR_FOLLOW_DOWN;
-      } else if (aboveFloor < ANCHOR_DB) {
-        this.slowDb += aboveFloor * FLOOR_FOLLOW_UP;
+      } else if (spread < MOD_CLOSE) {
+        this.slowDb += aboveFloor * FLOOR_UP_FAST;
       }
       if (this.slowDb < -75) this.slowDb = -75;
       this.silenceStreak = 0;
@@ -193,37 +235,38 @@ class AuraVisualizer {
       if (this.silenceStreak >= SILENCE_HOLD_COUNT) {
         this.gateOpen = false;
         this.onsetStreak = 0;
+        this.quietStreak = 0;
       }
     }
 
-    // Hysteresis: open on a sustained ≥ ONSET_DB rise above the floor, close
-    // when the level falls back within CLOSE_DB. The 3-event (~100 ms) onset
-    // debounce hides single-frame AGC pump spikes that real speech never
-    // produces. A sustained but calm ambience (e.g. a raised mic volume that
-    // re-anchored the floor) sits below ONSET_DB and never opens the gate.
+    // Hysteresis: open on a level rise near/above ONSET_DB above the floor OR on
+    // speech-like envelope modulation (spread ≥ MOD_OPEN) — either sustained
+    // for OPEN_STREAK (~70 ms). The modulation key is what unwedges a
+    // recording that starts straight into continuous speech, where the level
+    // rise over the seeded floor alone stays just shy of ONSET_DB. Close when
+    // the level returns near the floor AND the envelope goes steady for
+    // CLOSE_STREAK (~130 ms): that is real rest, not a pause in speech.
     const diff = this.fastDb - this.slowDb;
-    if (live) {
-      if (diff >= ONSET_DB) this.onsetStreak++;
-      else this.onsetStreak = 0;
-      if (this.onsetStreak >= 3) {
-        this.gateOpen = true;
-      } else if (this.gateOpen && diff < CLOSE_DB) {
+    const speechKey = live && (diff >= ONSET_DB || (spread >= MOD_OPEN && diff > 0));
+    if (speechKey) this.onsetStreak++;
+    else this.onsetStreak = 0;
+    if (this.onsetStreak >= OPEN_STREAK) this.gateOpen = true;
+    if (this.gateOpen) {
+      if (live && diff < CLOSE_DB && spread < MOD_CLOSE) this.quietStreak++;
+      else this.quietStreak = 0;
+      if (this.quietStreak >= CLOSE_STREAK) {
         this.gateOpen = false;
         this.onsetStreak = 0;
+        this.quietStreak = 0;
       }
     }
 
     let normalized = 0;
     if (this.gateOpen && live) {
-      // Relative loudness above the re-anchored floor, scaled to the
-      // headroom remaining up to full telemetry scale.
-      const refDb = this.slowDb + ONSET_DB;
-      const headroomDb = Math.max(3, SPEECH_TOP_DB - refDb);
-      let rel = (this.fastDb - refDb) / headroomDb;
+      // Level relative to the re-anchored floor with a 3 dB knee, scaled over
+      // a fixed floor→full-scale span, then perceptual sqrt.
+      let rel = (this.fastDb - this.slowDb - 3) / SPEECH_SPAN_DB;
       rel = Math.max(0, Math.min(rel, 1));
-
-      // Perceptual sqrt curve compresses residual motion toward zero while
-      // keeping quiet speech visible.
       normalized = Math.sqrt(rel);
     }
 
@@ -272,6 +315,9 @@ class AuraVisualizer {
       this.gateOpen = false;
       this.onsetStreak = 0;
       this.silenceStreak = 0;
+      this.quietStreak = 0;
+      this.hist = [];
+      this.spread = 0;
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
@@ -284,6 +330,9 @@ class AuraVisualizer {
       this.gateOpen = false;
       this.onsetStreak = 0;
       this.silenceStreak = 0;
+      this.quietStreak = 0;
+      this.hist = [];
+      this.spread = 0;
       if (this._rafId === null) {
         this._isRunning = true;
         this._loop(performance.now());

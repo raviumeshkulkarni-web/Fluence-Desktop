@@ -28,6 +28,10 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     let screen_size = monitor.size();
     let scale = monitor.scale_factor();
 
+    // Fixed window size — positioning matches pre-bubble baseline so the
+    // bubble is not clipped by the taskbar. Hitbox fix is CSS-only
+    // (body pointer-events:none, overlay-root pointer-events:auto) so the
+    // transparent 260×146 frame is click-through and does not need HWND resize.
     let win_width = 260.0;
     let win_height = 146.0;
     let margin = 20.0;
@@ -57,6 +61,20 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     win.show().map_err(|e| e.to_string())?;
     // Notify overlay frontend to start the waveform animation loop
     let _ = win.emit("window-visibility", true);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn set_overlay_style(app: AppHandle, style: String) -> Result<(), String> {
+    let _win = get_overlay_window(&app).ok_or("Overlay window not found")?;
+    // BUG-02: keep HWND at fixed 260×146 for correct taskbar clearance and
+    // shadow room. Visual style is CSS-only; hitbox is fixed via
+    // body{pointer-events:none} + .overlay-root{pointer-events:auto}.
+    // Keeping this command is backward-compat for JS that calls it.
+    log::debug!(
+        "set_overlay_style called: {} — HWND size unchanged (CSS hitbox fix)",
+        style
+    );
     Ok(())
 }
 

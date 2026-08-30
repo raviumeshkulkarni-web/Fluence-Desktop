@@ -60,6 +60,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setupEventListeners();
   setupDiscardButton();
   setupRetryButton();
+  setupHotkeyBusyFeedback();
   // Reset synchronously before any awaits so a hotkey that fires while the
   // settings fetch is in flight never observes a stale state (which would
   // make applyAppInfo skip the pill for that session).
@@ -95,7 +96,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
-      applyOverlayStyle(prefs.overlayStyle);
+      await applyOverlayStyle(prefs.overlayStyle);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -149,7 +150,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
-      applyOverlayStyle(prefs.overlayStyle);
+      await applyOverlayStyle(prefs.overlayStyle);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -183,7 +184,10 @@ async function setupEventListeners() {
   });
 
   // Live amplitude data from Rust audio stream
+  // BUG-14: ignore waveform work when overlay not in recording (saves JS work after hide)
   await listen('audio-amplitude', (evt) => {
+    if (currentState !== 'recording' && currentState !== 'agent') return;
+    if (!overlayRoot || !overlayRoot.classList.contains('active')) return;
     let raw = evt.payload;
     if (typeof raw === 'object' && raw !== null) {
       raw = raw.payload ?? raw.value ?? 0;
@@ -327,11 +331,18 @@ function setOverlayCorner(position) {
   }
 }
 
-function applyOverlayStyle(style) {
+async function applyOverlayStyle(style) {
   if (!overlayRoot) return;
   overlayRoot.classList.remove('style-full', 'style-compact', 'style-bubble');
   const normalized = (style === 'compact' || style === 'bubble') ? style : 'full';
   overlayRoot.classList.add(`style-${normalized}`);
+  // Keep body layout in sync so the bubble/compact windows center their content
+  // (see overlay.css body.style-bubble / body.style-compact).
+  document.body.classList.remove('style-full', 'style-compact', 'style-bubble');
+  document.body.classList.add(`style-${normalized}`);
+  // BUG-02: keep OS window hitbox in sync with visuals (bubble 76x76, compact 176x68, full 260x146).
+  // Await the resize so show_overlay positions using the actual window size.
+  await invoke('set_overlay_style', { style: normalized }).catch(()=>{});
 }
 
 // ── Status Message + Retry ──────────────────────────────────────
@@ -411,6 +422,9 @@ function playCompletionChime() {
     gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
     gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
     gain.connect(chimeCtx.destination);
+    // BUG-13: disconnect graph after chime to avoid AudioContext node accumulation
+    const cleanupDelayMs = 700;
+    setTimeout(() => { try { gain.disconnect(); } catch {} }, cleanupDelayMs);
     [523.25, 659.25].forEach((freq, i) => {
       const osc = chimeCtx.createOscillator();
       osc.type = 'sine';
@@ -418,6 +432,7 @@ function playCompletionChime() {
       osc.connect(gain);
       osc.start(t0 + i * 0.11);
       osc.stop(t0 + i * 0.11 + 0.3);
+      // Nodes are garbage-collected after stop + gain disconnect
     });
   } catch (err) {
     console.warn('Completion chime failed:', err);
@@ -495,8 +510,15 @@ async function stopAndTranscribe(agentMode, sessionId) {
         invoke('stop_and_transcribe_recording'),
         invoke('get_settings'),
       ]);
+      // BUG-06: differentiate empty/silence from error — show brief feedback, not silent vanish
       if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
-        await fadeAndHide(sessionId);
+        if (isSessionActive(sessionId)) {
+          // Very short recordings (<200ms) are already discarded by audio pipeline as accidental press
+          // Silence gets a gentle hint, not an error red X
+          setState('error');
+          setStatusMessage('No speech detected');
+          scheduleAutoDismiss(1500);
+        }
         return;
       }
 
@@ -530,7 +552,11 @@ async function runSttFlow(sessionId, retry = false) {
 
     const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
     if (!result.text || !result.text.trim() || !hasAlphanumeric) {
-      await fadeAndHide(sessionId);
+      if (isSessionActive(sessionId)) {
+        setState('error');
+        setStatusMessage('No speech detected');
+        scheduleAutoDismiss(1500);
+      }
       return;
     }
 
@@ -660,9 +686,39 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     console.error('Agent Error:', err);
     if (!isSessionActive(sessionId)) return;
     setState('error');
-    setStatusMessage('Failed');
-    scheduleAutoDismiss(2000);
+    // BUG-01: actionable error mapping — never show generic Failed alone
+    const msg = String(err || '');
+    if (msg.includes('Missing API key')) {
+      setStatusMessage('Missing LLM key');
+    } else if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) {
+      setStatusMessage('LLM auth failed');
+    } else if (msg.includes('LLM rate limited') || msg.includes('429')) {
+      setStatusMessage('Rate limited — retry');
+    } else if (msg.includes('LLM provider unavailable') || msg.includes('500') || msg.includes('502') || msg.includes('503')) {
+      setStatusMessage('LLM unavailable');
+    } else if (msg.includes('Network error') || msg.includes('Connection failed') || msg.includes('timed out')) {
+      setStatusMessage('Network error');
+    } else if (msg.includes('Action parse error') || msg.includes('Empty response')) {
+      setStatusMessage('Agent parse failed');
+    } else if (msg.includes('Clipboard') || msg.includes('No speech')) {
+      setStatusMessage('No selection');
+    } else {
+      setStatusMessage('Agent failed');
+    }
+    scheduleAutoDismiss(2500);
   }
+}
+
+// Hotkey busy feedback (BUG-05)
+async function setupHotkeyBusyFeedback() {
+  await listen('hotkey-busy', (evt) => {
+    console.warn('Hotkey busy:', evt.payload);
+    if (currentState === 'recording' || currentState === 'agent' || currentState === 'transcribing' || currentState === 'agent_transcribing') {
+      // already busy recording — gentle hint, not error
+      setStatusMessage('Recording busy');
+      scheduleAutoDismiss(1200);
+    }
+  });
 }
 
 // ── State Management ────────────────────────────────────────────

@@ -21,7 +21,9 @@ body {
   justify-content: center;
   padding-top: 46px;
   position: relative;
-  -webkit-app-region: drag;
+  /* BUG-02: transparent area must not steal clicks. Only the orb/card is draggable */
+  -webkit-app-region: no-drag;
+  pointer-events: none;
 }
 
 /* ── Card Root ─────────────────────────────────────────────────── */
@@ -47,6 +49,9 @@ body {
   opacity: 0;
   scale: 0.95;
   will-change: transform, opacity;
+  /* BUG-02: only the visible card/bubble is interactive and draggable */
+  -webkit-app-region: drag;
+  pointer-events: auto;
 
   transition:
     width 120ms ease-out,

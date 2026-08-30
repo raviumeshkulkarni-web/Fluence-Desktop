@@ -481,8 +481,26 @@ pub fn import_dictionary(
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<usize, String> {
     let _io = crate::sync::io_lock::io_lock_guard();
-    let new_entries: Vec<DictionaryEntry> =
+    let mut new_entries: Vec<DictionaryEntry> =
         serde_json::from_str(&json_data).map_err(|e| e.to_string())?;
+    // Stamp imports to the active account so they don't become global `None` rows visible to any account.
+    let active_account = crate::sync::metadata::current_account_hash();
+    if let Some(hash) = active_account.clone() {
+        let mut meta = crate::sync::metadata::SyncMetadata::load();
+        let device_id = meta.ensure_device_id();
+        let max_seen = meta.for_account(&hash).map(|s| s.max_seen).unwrap_or(0);
+        let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+        meta.update_max_seen(&hash, new_max);
+        for e in new_entries.iter_mut() {
+            if e.sync_account.is_none() {
+                e.sync_account = Some(hash.clone());
+                e.updated_at = Some(now);
+                e.device_id = Some(device_id.clone());
+                e.dirty = true;
+                e.ever_pushed = false;
+            }
+        }
+    }
     let existing = load_dictionary_internal().map_err(|e| e.to_string())?;
     let (merged, added) = merge_dictionary_entries(&existing, new_entries);
     save_dictionary_internal(&merged).map_err(|e| e.to_string())?;
@@ -493,7 +511,17 @@ pub fn import_dictionary(
 
 #[tauri::command]
 pub fn export_dictionary() -> Result<String, String> {
-    let entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let active = crate::sync::metadata::current_account_hash();
+    let entries: Vec<DictionaryEntry> = load_dictionary_internal()
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .filter(|e| {
+            crate::sync::metadata::belongs_to_account(
+                e.sync_account.as_deref(),
+                active.as_deref(),
+            )
+        })
+        .collect();
     serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())
 }
 

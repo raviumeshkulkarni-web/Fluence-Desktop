@@ -246,7 +246,9 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 
     // 1. Try the specific target requested
     if let Ok(key) = read_credential(&target) {
-        return Ok(key);
+        if !key.trim().is_empty() {
+            return Ok(key);
+        }
     }
 
     // 2. Fallback: If it's a provider-specific target, check the legacy global slot
@@ -261,19 +263,70 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 
         if let Some(base_target) = base {
             if let Ok(legacy_key) = read_credential(base_target) {
-                log::info!(
-                    "Found legacy key in global slot, using for: {} (legacy fallback, not auto-migrating)",
-                    target
-                );
-                // Do NOT auto-migrate to per-preset slot: prevents cross-preset contamination
-                // (e.g., global openai key being persisted as groq). User should re-save per-preset explicitly.
-                return Ok(legacy_key);
+                if !legacy_key.trim().is_empty() {
+                    log::info!(
+                        "Found legacy key in global slot, using for: {} (legacy fallback, not auto-migrating)",
+                        target
+                    );
+                    // Do NOT auto-migrate to per-preset slot: prevents cross-preset contamination
+                    // (e.g., global openai key being persisted as groq). User should re-save per-preset explicitly.
+                    return Ok(legacy_key);
+                }
+            }
+        }
+
+        // 2b. Android-compatible Groq fallback: LLM and STT groq share a single user key.
+        // If LLM_ApiKey/groq is missing, try STT_ApiKey/groq and vice versa.
+        // This is safe only for the canonical "groq" preset - custom presets remain isolated.
+        let groq_llm = format!("{}/groq", LLM_API_KEY_TARGET);
+        let groq_stt = format!("{}/groq", STT_API_KEY_TARGET);
+        if target == groq_llm {
+            if let Ok(k) = read_credential(&groq_stt) {
+                if !k.trim().is_empty() {
+                    log::info!("Groq LLM key missing, using STT groq key as fallback");
+                    return Ok(k);
+                }
+            }
+            if let Ok(k) = read_credential(LLM_API_KEY_TARGET) {
+                if !k.trim().is_empty() {
+                    return Ok(k);
+                }
+            }
+        } else if target == groq_stt {
+            if let Ok(k) = read_credential(&groq_llm) {
+                if !k.trim().is_empty() {
+                    log::info!("Groq STT key missing, using LLM groq key as fallback");
+                    return Ok(k);
+                }
             }
         }
     }
 
     // 3. Final attempt at the raw target (or return the read error)
     read_credential(&target).map_err(|e| e.to_string())
+}
+
+/// Helper for Agent/LLM paths: returns a user-facing error for missing credentials
+pub fn get_llm_api_key_or_err(preset: &str) -> Result<String, String> {
+    let target = get_llm_target(preset);
+    match get_api_key(target.clone()) {
+        Ok(k) if !k.trim().is_empty() => Ok(k),
+        _ => Err(format!(
+            "Missing API key for LLM provider '{}'. Open Settings → Providers → LLM → Save key.",
+            preset
+        )),
+    }
+}
+
+pub fn get_stt_api_key_or_err(preset: &str) -> Result<String, String> {
+    let target = get_stt_target(preset);
+    match get_api_key(target.clone()) {
+        Ok(k) if !k.trim().is_empty() => Ok(k),
+        _ => Err(format!(
+            "Missing API key for STT provider '{}'. Open Settings → Providers → STT → Save key.",
+            preset
+        )),
+    }
 }
 
 #[tauri::command]

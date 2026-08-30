@@ -12,6 +12,9 @@ pub struct TranscriptionFlowResult {
     pub raw_text: String,
     pub duration_ms: u64,
     pub provider: String,
+    /// True if AI polish was requested but fell back to raw (BUG-10)
+    #[serde(default)]
+    pub polish_fallback: bool,
 }
 
 enum PendingAudio {
@@ -134,6 +137,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             raw_text: String::new(),
             duration_ms: start_time.elapsed().as_millis() as u64,
             provider: settings.stt_provider.preset,
+            polish_fallback: false,
         });
     };
 
@@ -155,6 +159,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         raw_text,
         duration_ms: start_time.elapsed().as_millis() as u64,
         provider: settings.stt_provider.preset,
+        polish_fallback: false,
     })
 }
 
@@ -299,8 +304,10 @@ pub async fn finish_transcription_flow(
                     polished.chars().count()
                 );
                 result.text = polished;
+                result.polish_fallback = false;
             }
             Err(e) => {
+                result.polish_fallback = true;
                 log::warn!("AI polish failed: {}, pasting raw transcription instead", e);
             }
         }
@@ -379,5 +386,6 @@ pub async fn retry_transcription_flow(
         raw_text,
         duration_ms: start_time.elapsed().as_millis() as u64,
         provider: settings.stt_provider.preset,
+        polish_fallback: false,
     })
 }

@@ -213,6 +213,7 @@ pub fn run() {
             // Overlay
             overlay::show_overlay,
             overlay::hide_overlay,
+            overlay::set_overlay_style,
             overlay::show_main_window,
             overlay::show_wizard_window,
             overlay::close_wizard,

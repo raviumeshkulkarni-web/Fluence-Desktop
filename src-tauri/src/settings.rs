@@ -268,7 +268,15 @@ pub fn update_settings(
     settings: AppSettings,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    let old_account = load_settings().ok().and_then(|s| s.sync_account_key);
     save_settings(&settings).map_err(|e| e.to_string())?;
+    // Account switch via any path (frontend, file, scheduler) must drop
+    // compiled caches that were keyed to the previous account — otherwise
+    // W1/W8 stale-cache shows foreign snippets/dictionary until next write.
+    if old_account != settings.sync_account_key {
+        crate::dictionary::invalidate_cache();
+        crate::snippets::invalidate_cache();
+    }
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())
 }

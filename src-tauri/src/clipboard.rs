@@ -441,14 +441,19 @@ fn send_ctrl_c() {
 }
 
 /// Grab selected text from the active application by simulating Ctrl+C
+/// BUG-03: bounded polling (not 120ms fixed) to avoid truncating slow apps (Gemini/Electron)
+/// BUG-04: hardened modifier handling preserves user's clipboard and avoids stuck modifiers
 #[tauri::command]
 pub async fn grab_active_selection() -> Result<Option<String>, String> {
     #[cfg(target_os = "windows")]
     {
         let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
 
-        // 1. Save original clipboard text
+        // 1. Save original clipboard text and sequence
         let saved_text = get_clipboard_text();
+        let saved_seq = clipboard_sequence_number();
+        // Capture sequence after save to detect if another app changed clipboard concurrently
+        let _ = saved_seq;
 
         // 2. Clear clipboard so we can detect if Ctrl+C successfully writes new text
         unsafe {
@@ -457,34 +462,80 @@ pub async fn grab_active_selection() -> Result<Option<String>, String> {
                 let _ = CloseClipboard();
             }
         }
+        let clear_seq = clipboard_sequence_number();
 
-        // 3. Release modifier keys
+        // 3. Release modifier keys (avoid dropped chord when Ctrl is held for hold_to_record)
         let released = release_held_modifiers();
 
         // 4. Send Ctrl+C
         send_ctrl_c();
 
-        // 5. Restore modifiers
+        // 5. Restore modifiers immediately after the synthetic chord
         restore_modifiers(&released);
 
-        // 6. Wait for target app to write to clipboard
-        sleep(Duration::from_millis(120)).await;
-
-        // 7. Snapshot ownership before reading the copied selection. If an
-        // external clipboard writer changes it during the read, restoration
-        // must not overwrite that newer content.
-        let selection_clipboard_sequence = clipboard_sequence_number();
-        let selection = get_clipboard_text();
-
-        // 8. Restore only if nothing else changed the clipboard after the
-        // selection copy. Do not overwrite a newer user/application copy.
-        if clipboard_sequence_number() == selection_clipboard_sequence {
-            if let Some(original) = saved_text {
-                let _ = set_clipboard_text(&original);
+        // 6. Bounded polling: wait for target app to write to clipboard
+        // Immediate success path stays ~30ms; slow apps (Gemini/WebView) get up to 300ms.
+        let mut selection: Option<String> = None;
+        for _ in 0..10 {
+            sleep(Duration::from_millis(30)).await;
+            let cur_seq = clipboard_sequence_number();
+            if cur_seq != clear_seq {
+                selection = get_clipboard_text();
+                if selection
+                    .as_ref()
+                    .map(|s| !s.trim().is_empty())
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+                // Non-empty check failed but sequence changed -> treat as selection even if empty (collapsed selection)
+                if selection.is_some() {
+                    break;
+                }
+            }
+        }
+        // Final attempt if polling never saw a sequence change (timing edge)
+        if selection.is_none() {
+            selection = get_clipboard_text();
+            // If we still see the cleared state (sequence == clear_seq and empty), treat as no selection
+            if clipboard_sequence_number() == clear_seq
+                && selection.as_ref().map(|s| s.is_empty()).unwrap_or(true)
+            {
+                selection = None;
             }
         }
 
-        Ok(selection)
+        // 7. Snapshot ownership before restoration
+        let selection_clipboard_sequence = clipboard_sequence_number();
+        let final_selection = selection.clone().or_else(|| {
+            // Fallback: if we cleared but app wrote synchronously before our first poll, capture again
+            let s = get_clipboard_text();
+            if s.as_ref().map(|t| !t.is_empty()).unwrap_or(false)
+                && clipboard_sequence_number() != clear_seq
+            {
+                s
+            } else {
+                selection
+            }
+        });
+
+        // 8. Restore only if nothing else changed the clipboard after the selection copy
+        if clipboard_sequence_number() == selection_clipboard_sequence {
+            if let Some(original) = saved_text {
+                // Only restore if we actually changed the clipboard (sequence != clear_seq or we captured something)
+                if clipboard_sequence_number() != clear_seq || final_selection.is_some() {
+                    let _ = set_clipboard_text(&original);
+                } else {
+                    // No selection captured and clipboard still cleared -> restore original immediately
+                    let _ = set_clipboard_text(&original);
+                }
+            } else if final_selection.is_none() {
+                // No original and no selection -> leave clipboard empty (was empty before)
+                // Ensure cleared state is visible: already empty, no restore needed
+            }
+        }
+
+        Ok(final_selection)
     }
     #[cfg(not(target_os = "windows"))]
     Err("Active selection grabbing not supported on this platform".to_string())

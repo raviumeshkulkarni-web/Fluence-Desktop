@@ -1573,6 +1573,12 @@ function setupSyncPage() {
       showToast('Signed in as ' + (status?.account_key || 'your Google account'), 'success');
       syncStatus = status;
       renderSyncStatus();
+      // Signing in (or switching accounts) changes which account's rows are
+      // visible: refresh the dictionary/snippets lists so the table no longer
+      // shows the previously-active account's rows (which the delete guard
+      // would otherwise block as "belongs to another account").
+      loadDictionary();
+      loadSnippets();
     } catch (err) {
       showToast('Sign-in failed: ' + String(err).replace(/^Error:\s*/, ''), 'error');
       if (!syncStatus) syncStatus = {};
@@ -1588,6 +1594,10 @@ function setupSyncPage() {
       await invoke('sync_sign_out');
       showToast('Signed out. Existing sync data stays in Drive.', 'success');
       loadSyncPage();
+      // After sign-out every row becomes foreign (no active account): refresh
+      // the lists so the tables no longer show the previous account's rows.
+      loadDictionary();
+      loadSnippets();
     } catch (err) {
       showToast('Sign-out failed: ' + err, 'error');
     }
@@ -2081,7 +2091,9 @@ function renderHistoryItem(entry, container) {
 
   const timeStr = formatHistoryTimestamp(entry.timestamp);
   const titleAttr = escapeHtml(date.toLocaleString());
-  const foreign = !!entry.sync_account && entry.sync_account !== (currentSettings?.sync_account_key || null);
+  // History is device-local and not account-scoped (sync_account dropped in v2->v3).
+  // Never hide delete behind a hash-vs-email mismatch.
+  const foreign = false;
 
   div.innerHTML = `
     <div class="history-item-header">

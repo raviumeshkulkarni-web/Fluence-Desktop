@@ -132,22 +132,34 @@ mod tests {
 
     #[test]
     fn quotes_plain_path() {
-        assert_eq!(format_run_value(r"C:\Program Files\Fluence\fluence.exe"), "\"C:\\Program Files\\Fluence\\fluence.exe\"");
+        assert_eq!(
+            format_run_value(r"C:\Program Files\Fluence\fluence.exe"),
+            "\"C:\\Program Files\\Fluence\\fluence.exe\""
+        );
     }
 
     #[test]
     fn does_not_double_quote() {
-        assert_eq!(format_run_value(r#""C:\Program Files\Fluence\fluence.exe""#), r#""C:\Program Files\Fluence\fluence.exe""#);
+        assert_eq!(
+            format_run_value(r#""C:\Program Files\Fluence\fluence.exe""#),
+            r#""C:\Program Files\Fluence\fluence.exe""#
+        );
     }
 
     #[test]
     fn trims_surrounding_whitespace() {
-        assert_eq!(format_run_value("  C:\\Fluence\\fluence.exe  "), "\"C:\\Fluence\\fluence.exe\"");
+        assert_eq!(
+            format_run_value("  C:\\Fluence\\fluence.exe  "),
+            "\"C:\\Fluence\\fluence.exe\""
+        );
     }
 
     #[test]
     fn quirkless_single_component_path_is_quoted_too() {
         // Even space-free paths get quoted: harmless and keeps the format uniform.
-        assert_eq!(format_run_value(r"C:\Fluence\fluence.exe"), "\"C:\\Fluence\\fluence.exe\"");
+        assert_eq!(
+            format_run_value(r"C:\Fluence\fluence.exe"),
+            "\"C:\\Fluence\\fluence.exe\""
+        );
     }
 }

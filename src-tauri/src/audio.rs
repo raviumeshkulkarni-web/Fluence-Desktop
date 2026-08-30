@@ -62,14 +62,17 @@ pub fn list_audio_devices() -> Result<Vec<String>, String> {
 /// Start recording from the microphone
 #[tauri::command]
 pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Result<(), String> {
-    // If a previous recording is currently stopping/flushing, wait for it to finish
+    // BUG-08: wait longer for prior stop-drain to finish to avoid Already recording race on rapid toggle
+    // Previous 100ms was insufficient when drain needed 200ms + 2 callbacks. 250ms covers the worst case.
     let start_wait = std::time::Instant::now();
-    while RECORDING.load(Ordering::SeqCst) && start_wait.elapsed().as_millis() < 100 {
+    while RECORDING.load(Ordering::SeqCst) && start_wait.elapsed().as_millis() < 250 {
         tokio::time::sleep(std::time::Duration::from_millis(20)).await;
     }
 
     if RECORDING.load(Ordering::SeqCst) {
-        return Err("Already recording".to_string());
+        // BUG-05/08: surface stuck state instead of silently returning
+        log::warn!("start_recording rejected: still recording after 250ms busy-wait");
+        return Err("Already recording — please wait a moment and retry".to_string());
     }
 
     RECORDING.store(true, Ordering::SeqCst);

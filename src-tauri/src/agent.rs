@@ -68,11 +68,19 @@ fn validate_action(action: &AgentAction) -> Result<(), String> {
 
 #[tauri::command]
 pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, String> {
+    if req.voice_command.trim().is_empty() {
+        return Err("Voice command is empty — try speaking again".into());
+    }
     if req.voice_command.len() > MAX_VOICE_COMMAND_LEN {
         return Err("Voice command exceeds maximum length".into());
     }
     if req.clipboard_context.len() > MAX_CLIPBOARD_CONTEXT_LEN {
         return Err("Clipboard context exceeds maximum length".into());
+    }
+    if req.api_key.trim().is_empty() {
+        return Err(
+            "Missing API key for LLM provider. Open Settings → Providers → LLM → Save key.".into(),
+        );
     }
     if req.api_key.len() > MAX_API_KEY_LEN {
         return Err("API key exceeds maximum length".into());
@@ -109,6 +117,25 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
+        // Classify common cases for actionable UI — never log the api_key or clipboard content
+        if status.as_u16() == 401 || status.as_u16() == 403 {
+            return Err(format!(
+                "LLM auth failed ({}). Check Providers → LLM API key and model. {}",
+                status, text
+            ));
+        }
+        if status.as_u16() == 429 {
+            return Err(format!(
+                "LLM rate limited (429). Wait a moment and retry. {}",
+                text
+            ));
+        }
+        if status.as_u16() >= 500 {
+            return Err(format!(
+                "LLM provider unavailable ({}). Retry shortly. {}",
+                status, text
+            ));
+        }
         return Err(format!("LLM API error {}: {}", status, text));
     }
 
@@ -137,8 +164,11 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
         .map(|c| c.message.content)
         .ok_or_else(|| "Empty response from LLM".to_string())?;
 
-    let action: AgentAction = serde_json::from_str(&content)
-        .map_err(|e| format!("Action parse error: {}: {}", e, content))?;
+    let action: AgentAction = serde_json::from_str(&content).map_err(|e| {
+        // Truncate raw LLM output in error to avoid leaking large clipboard echoes
+        let snippet: String = content.chars().take(300).collect();
+        format!("Action parse error: {} — LLM returned: {}", e, snippet)
+    })?;
     validate_action(&action)?;
 
     Ok(action)

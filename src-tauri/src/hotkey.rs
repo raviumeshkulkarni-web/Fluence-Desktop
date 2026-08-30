@@ -150,6 +150,14 @@ fn handle_hotkey_event(
                             "Ignoring {} start because another recording mode is active",
                             start_event
                         );
+                        // BUG-05: surface busy state for diagnostics
+                        let _ = app.emit(
+                            "hotkey-busy",
+                            serde_json::json!({
+                                "requested": start_event,
+                                "active_owner": ACTIVE_RECORDING_OWNER.load(Ordering::SeqCst)
+                            }),
+                        );
                         return;
                     }
                     is_recording.store(true, Ordering::SeqCst);
@@ -180,6 +188,13 @@ fn handle_hotkey_event(
                         log::debug!(
                             "Ignoring {} start because another recording mode is active",
                             start_event
+                        );
+                        let _ = app.emit(
+                            "hotkey-busy",
+                            serde_json::json!({
+                                "requested": start_event,
+                                "active_owner": ACTIVE_RECORDING_OWNER.load(Ordering::SeqCst)
+                            }),
                         );
                         return;
                     }

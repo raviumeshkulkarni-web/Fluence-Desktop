@@ -5,7 +5,7 @@
 Fluence is a Windows-focused Tauri v2 desktop app. Frontend HTML lives in `src/` (`index.html`, `overlay.html`, `wizard.html`), with view-specific JavaScript in `src/js/` and styles in `src/css/`. Rust backend code is in `src-tauri/src/`; important modules include `audio.rs`, `transcribe.rs`, `workflow.rs`, `overlay.rs`, `clipboard.rs`, `settings.rs`, and `tray.rs`. Tauri configuration and permissions are in `src-tauri/tauri.conf.json` and `src-tauri/capabilities/`. App icons are under `src-tauri/icons/`, while README screenshots are in `docs/assets/`.
 
 ## Build, Test, and Development Commands
-
+-  Cargo and Rust toolchain are installed in project directory. You will not clutter system directory. Whatever cache and logs you have to build, everything will be done in project directory.
 - `npm install`: install Node/Tauri CLI dependencies from `package-lock.json`.
 - `npm run dev`: start the Tauri development app.
 - `npm run build`: build production Windows bundles under `src-tauri/target/release/bundle/`.

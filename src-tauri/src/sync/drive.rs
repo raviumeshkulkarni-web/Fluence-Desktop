@@ -112,6 +112,54 @@ impl Backoff {
 /// `AuthRequired` so the pass stops instead of looping.
 pub type TokenRefresher = Box<dyn FnMut(&str) -> Result<String, SyncError>>;
 
+/// Test-only fault injection: when `__fault.json` exists in the Fluence data dir,
+/// the next Drive operation can be forced to fail without touching the network.
+/// This is hotspot-safe: only Fluence's Drive client reads it, the agent's own
+/// internet is unaffected. Format: {"remaining":2,"status":429,"retry_after_secs":2,"is_timeout":false}
+/// If `remaining` >0 the fault is consumed (decremented) and the requested
+/// error is returned. Absent/malformed file = no fault.
+fn maybe_inject_fault(op: &str) -> Option<SyncError> {
+    let data_dir = crate::sync::stores::data_dir();
+    let path = data_dir.join("__fault.json");
+    let raw = std::fs::read_to_string(&path).ok()?;
+    let v: serde_json::Value = serde_json::from_str(&raw).ok()?;
+    // op filter: if fault specifies "op", only inject for matching op
+    if let Some(filter) = v.get("op").and_then(|x| x.as_str()) {
+        if filter != op && filter != "send" && filter != "any" {
+            return None;
+        }
+    }
+    let remaining = v.get("remaining").and_then(|x| x.as_u64()).unwrap_or(1);
+    if remaining == 0 {
+        return None;
+    }
+    // consume one
+    let mut new_v = v.clone();
+    if let Some(obj) = new_v.as_object_mut() {
+        obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
+        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        if remaining - 1 == 0 {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+    let status = v.get("status").and_then(|x| x.as_u64()).unwrap_or(429) as u16;
+    let retry_after = v.get("retry_after_secs").and_then(|x| x.as_u64());
+    let is_timeout = v.get("is_timeout").and_then(|x| x.as_bool()).unwrap_or(false);
+    let injected = if is_timeout {
+        SyncError::Retryable(format!("injected timeout for {op}"))
+    } else if status == 429 {
+        SyncError::Throttled { retry_after_ms: retry_after.map(|s| s * 1000) }
+    } else if status == 401 {
+        SyncError::AuthRequired
+    } else if (500..=599).contains(&status) {
+        SyncError::Retryable(format!("injected Drive HTTP {status} for {op}"))
+    } else {
+        SyncError::Retryable(format!("injected fault {status} for {op}"))
+    };
+    log::warn!("FAULT INJECTED op={} remaining={} -> {:?}", op, remaining, injected);
+    Some(injected)
+}
+
 /// The active account's Drive connection. Holds a memory-only access token;
 /// failures are classified by [`classify_status`]. Uses the blocking client
 /// because the domain engine runs on a worker thread.
@@ -161,6 +209,10 @@ impl GoogleDriveStore {
     where
         B: Fn(&reqwest::blocking::Client, &str) -> reqwest::blocking::RequestBuilder,
     {
+        if let Some(e) = maybe_inject_fault("send") {
+            log::warn!("FAULT INJECTED send -> {:?}", e);
+            return Err(e);
+        }
         let mut attempts = 0;
         loop {
             let resp = build(&self.client, &self.access_token)
@@ -623,6 +675,9 @@ impl DomainDriveStore for GoogleDriveStore {
     }
 
     fn list_v1_files(&mut self) -> Result<Vec<DomainFileMeta>, SyncError> {
+        if let Some(e) = maybe_inject_fault("list_v1_files") {
+            return Err(e);
+        }
         let v1_id = self.ensure_v1_folder()?;
         let mut all = Vec::new();
         let mut page_token: Option<String> = None;
@@ -653,6 +708,9 @@ impl DomainDriveStore for GoogleDriveStore {
     }
 
     fn get_domain_content(&mut self, file_id: &str) -> Result<Option<Vec<u8>>, SyncError> {
+        if let Some(e) = maybe_inject_fault("get_domain_content") {
+            return Err(e);
+        }
         let url = format!("{API_BASE}/files/{file_id}?alt=media");
         let resp = self.send(|client, token| {
             client
@@ -679,6 +737,9 @@ impl DomainDriveStore for GoogleDriveStore {
         expected_version: Option<&str>,
         preferred_file_id: Option<&str>,
     ) -> Result<String, SyncError> {
+        if let Some(e) = maybe_inject_fault("put_domain") {
+            return Err(e);
+        }
         if content.len() > MAX_DOMAIN_BYTES {
             return Err(SyncError::Rejected(format!(
                 "refusing to upload {} byte domain payload",

@@ -29,7 +29,7 @@ use crate::sync::error::SyncError;
 use crate::sync::frozen::DirtyStore;
 use crate::sync::metadata::SyncMetadata;
 
-fn data_dir() -> PathBuf {
+pub(crate) fn data_dir() -> PathBuf {
     let mut p = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     p.push("Fluence");
     p

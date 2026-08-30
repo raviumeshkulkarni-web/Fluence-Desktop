@@ -575,6 +575,10 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         if metadata.last_account_hash.as_deref() != Some(&hash) {
             metadata.last_account_hash = Some(hash.clone());
             metadata.save();
+            // Same stale-cache class as dictionary.rs W1 — compiled caches
+            // keyed to the previous account must be dropped immediately.
+            crate::dictionary::invalidate_cache();
+            crate::snippets::invalidate_cache();
         }
     }
     let Some(hash) = account_hash else {

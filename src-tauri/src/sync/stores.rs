@@ -1022,6 +1022,7 @@ mod tests {
 
     #[test]
     fn save_merged_preserves_fresh_concurrent_edit() {
+        let _guard = store_test_guard();
         let account_hash = format!("test-dict-{}-{}", std::process::id(), uuid::Uuid::new_v4());
         // Prepare a dirty entry newer than the merged winner
         let dirty_id = uuid::Uuid::new_v4().to_string();
@@ -1084,6 +1085,7 @@ mod tests {
 
     #[test]
     fn save_merged_atomically_cleans_winners_and_purges_unpushed_tombstones() {
+        let _guard = store_test_guard();
         let account_hash = format!(
             "test-dict-atomic-{}-{}",
             std::process::id(),

@@ -789,7 +789,6 @@ async function loadDashboardStats() {
     });
 
     const maxCount = Math.max(...dayCounts, 1);
-    let chartTotal = 0;
     for (let i = 0; i < 7; i++) {
       const bar = document.getElementById(`chart-bar-${i}`);
       const countEl = document.getElementById(`chart-count-${i}`);
@@ -798,8 +797,7 @@ async function loadDashboardStats() {
         bar.style.transform = `scaleY(${factor})`;
         bar.classList.toggle('animated', dayCounts[i] > 0);
       }
-      if (countEl) countEl.textContent = dayCounts[i];
-      chartTotal += dayCounts[i];
+      if (countEl) countEl.textContent = dayCounts[i] > 0 ? String(dayCounts[i]) : '';
     }
     const weeklyHoursSaved = (weeklyWords / 40 / 60);
     const weeklyDictationHours = (weeklyDurationMs / 3600000);

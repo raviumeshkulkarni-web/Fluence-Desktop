@@ -709,7 +709,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .chart-bar-count {
-  font-family: var(--font-label);
+  font-family: var(--font-mono, monospace);
   font-size: 11px;
   font-weight: 500;
   color: var(--color-on-surface-variant);
@@ -721,7 +721,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .chart-bar-col span {
-  font-family: var(--font-label);
+  font-family: var(--font-mono, monospace);
   font-size: 10px;
   color: var(--color-on-surface-variant);
   flex-shrink: 0;

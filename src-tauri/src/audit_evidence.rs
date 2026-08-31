@@ -796,7 +796,14 @@ mod tests {
         let has_dialog_open = perms
             .iter()
             .any(|v| v.as_str() == Some("dialog:allow-open"));
-        assert!(has_fs_default, "fs:default retained - read-only scope required for settings import of an arbitrary user-picked JSON path");
+        // Hardened: fs:default removed, replaced with scoped fs:allow-* + fs:scope for $APPDATA/$APPLOCALDATA/$APPCONFIG
+        let has_fs_allow_read = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read") || v.as_str() == Some("fs:allow-read"));
+        let has_fs_allow_write = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write") || v.as_str() == Some("fs:allow-write"));
+        let has_fs_scope = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
+        assert!(!has_fs_default, "fs:default must be removed — use scoped fs:allow-* + fs:scope for hardening");
+        assert!(has_fs_allow_read, "fs:allow-read with scoped allow required");
+        assert!(has_fs_allow_write, "fs:allow-write with scoped allow required");
+        assert!(has_fs_scope, "fs:scope with explicit $APPDATA/$APPLOCALDATA/$APPCONFIG allow required");
         assert!(
             !has_dialog_default,
             "dialog:default remains granted - should be narrowed"
@@ -805,6 +812,6 @@ mod tests {
             has_dialog_open,
             "dialog:allow-open present - only dialog.open() is used (settings import)"
         );
-        println!("[HARDENING] VERIFIED FIXED: dialog narrowed to dialog:allow-open; fs:default retained with justification (settings import)");
+        println!("[HARDENING] VERIFIED FIXED: dialog narrowed to dialog:allow-open; fs:default removed, scoped fs:allow-* + fs:scope present");
     }
 }

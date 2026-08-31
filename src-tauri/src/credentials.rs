@@ -8,7 +8,7 @@ use windows::{
     core::{PCWSTR, PWSTR},
     Win32::Security::Credentials::{
         CredDeleteW, CredFree, CredReadW, CredWriteW, CREDENTIALW, CRED_FLAGS,
-        CRED_PERSIST_LOCAL_MACHINE, CRED_TYPE_GENERIC,
+        CRED_PERSIST_ENTERPRISE, CRED_TYPE_GENERIC,
     },
 };
 
@@ -36,6 +36,10 @@ fn to_wide(s: &str) -> Vec<u16> {
 }
 
 /// Store an API key in Windows Credential Manager
+/// Note: existing credentials written with CRED_PERSIST_LOCAL_MACHINE remain
+/// machine-visible until the next successful `store_credential` for that target,
+/// which rewrites them as CRED_PERSIST_ENTERPRISE (per-user/per-enterprise).
+/// No automatic migration is performed — the window closes on first re-save/re-auth.
 #[cfg(target_os = "windows")]
 pub fn store_credential(target: &str, username: &str, secret: &str) -> Result<()> {
     let target_wide = to_wide(target);
@@ -50,7 +54,7 @@ pub fn store_credential(target: &str, username: &str, secret: &str) -> Result<()
         LastWritten: windows::Win32::Foundation::FILETIME::default(),
         CredentialBlobSize: secret_bytes.len() as u32,
         CredentialBlob: secret_bytes.as_ptr() as *mut u8,
-        Persist: CRED_PERSIST_LOCAL_MACHINE,
+        Persist: CRED_PERSIST_ENTERPRISE,
         AttributeCount: 0,
         Attributes: std::ptr::null_mut(),
         TargetAlias: PWSTR::null(),
@@ -140,22 +144,25 @@ pub fn delete_sync_refresh_token() -> Result<()> {
     delete_credential(SYNC_REFRESH_TOKEN_TARGET)
 }
 
+fn sanitize_preset(preset: &str) -> String {
+    // Whitelist: only a-z0-9_ after lowercasing and space→underscore.
+    // Prevents `../` or `a/b/c` style preset injecting extra path segments
+    // that would still pass validate_credential_target (which only checks `..`).
+    let lowered = preset.to_lowercase().replace(' ', "_");
+    lowered
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .collect()
+}
+
 /// Generate a provider-specific target for STT keys
 pub fn get_stt_target(preset: &str) -> String {
-    format!(
-        "{}/{}",
-        STT_API_KEY_TARGET,
-        preset.to_lowercase().replace(' ', "_")
-    )
+    format!("{}/{}", STT_API_KEY_TARGET, sanitize_preset(preset))
 }
 
 /// Generate a provider-specific target for LLM keys
 pub fn get_llm_target(preset: &str) -> String {
-    format!(
-        "{}/{}",
-        LLM_API_KEY_TARGET,
-        preset.to_lowercase().replace(' ', "_")
-    )
+    format!("{}/{}", LLM_API_KEY_TARGET, sanitize_preset(preset))
 }
 
 // Tauri commands

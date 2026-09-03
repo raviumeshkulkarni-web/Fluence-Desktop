@@ -31,6 +31,11 @@ let retryTimer = null;
 let nextSessionId = 0;
 let activeSessionId = 0;
 let chimeCtx = null;
+// Agent-mode hardening state (agent path only — the STT flow never reads these)
+let agentRequestSeq = 0;
+let agentRetryContext = null;
+let lastAgentStartAt = 0;
+const AGENT_LLM_WATCHDOG_MS = 25000;
 
 function beginSession() {
   activeSessionId = ++nextSessionId;
@@ -51,6 +56,8 @@ function resetTransientUi() {
   hideRecHint();
   setStatusMessage('');
   hideAppPill();
+  // A new recording invalidates any cached agent retry (A2).
+  agentRetryContext = null;
 }
 
 // ── Initialization ──────────────────────────────────────────────
@@ -132,6 +139,12 @@ async function setupEventListeners() {
   // Hotkey events from Rust (Agent Mode)
   await listen('hotkey-start-agent-recording', async () => {
     console.log('hotkey-start-agent-recording event received');
+    // Debounce (A4): a duplicate start arriving <300ms into an agent
+    // recording is a hotkey bounce, not intent — dropping it protects the
+    // just-started capture. Starts in any other state proceed normally.
+    const now = Date.now();
+    if (currentState === 'agent' && now - lastAgentStartAt < 300) return;
+    lastAgentStartAt = now;
     const sessionId = beginSession();
     resetTransientUi();
     setState('agent');
@@ -382,6 +395,16 @@ function setupRetryButton() {
       setStatusMessage('');
       const sessionId = activeSessionId;
       if (!isSessionActive(sessionId)) return;
+      // Agent retry (A2): re-send the cached LLM request on the still-active
+      // session instead of forcing a re-record. STT path below is unchanged.
+      if (agentRetryContext && agentRetryContext.sessionId === sessionId) {
+        const ctx = agentRetryContext;
+        agentRetryContext = null;
+        setState('agent_transcribing');
+        if (recLabel) recLabel.textContent = 'PROCESSING';
+        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId);
+        return;
+      }
       setState('transcribing');
       if (recLabel) recLabel.textContent = 'PROCESSING';
        await runSttFlow(sessionId, true);
@@ -446,6 +469,11 @@ function setupDiscardButton() {
     cardDiscard.addEventListener('click', async (e) => {
       e.stopPropagation();
       stopTimer();
+      // NOTE (A10): beginSession() invalidates any in-flight agent/transcription
+      // session; its late result is dropped by isSessionActive guards. An
+      // orphaned backend LLM request (if any) still runs to completion but can
+      // no longer touch UI, clipboard, or history. Accepted behavior — true
+      // backend cancellation is Class B (needs explicit approval).
       const sessionId = beginSession();
       resetTransientUi();
       try {
@@ -594,8 +622,29 @@ async function runSttFlow(sessionId, retry = false) {
   }
 }
 
+// Agent error → user-facing status label (pure function — no DOM, so it can
+// be unit-tested in Node; the STT flow never calls it).
+function mapAgentErrorToStatus(err) {
+  const msg = String(err || '');
+  if (msg.includes('Agent timed out')) return { label: 'LLM timed out', retryable: true };
+  if (msg.includes('Missing API key')) return { label: 'Missing LLM key', retryable: false };
+  if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) return { label: 'LLM auth failed', retryable: false };
+  if (msg.includes('Invalid URL') || msg.includes('HTTPS')) return { label: 'Check LLM URL', retryable: false };
+  if (msg.includes('404') || msg.includes('400') || msg.includes('model')) return { label: 'Check LLM model', retryable: false };
+  if (msg.includes('LLM rate limited') || msg.includes('429')) return { label: 'Rate limited — retry', retryable: true };
+  if (msg.includes('LLM provider unavailable') || msg.includes('500') || msg.includes('502') || msg.includes('503')) return { label: 'LLM unavailable', retryable: true };
+  if (msg.includes('timed out') || msg.includes('timeout') || msg.includes('Network error') || msg.includes('Connection failed')) return { label: 'Network error', retryable: true };
+  if (msg.includes('Action parse error') || msg.includes('Empty response')) return { label: 'Agent parse failed', retryable: true };
+  if (msg.includes('Clipboard') || msg.includes('No speech')) return { label: 'No selection', retryable: false };
+  return { label: 'Agent failed', retryable: true };
+}
+
 async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId) {
   if (!isSessionActive(sessionId)) return;
+  // Function scope (NOT inside try): the catch block below caches this for
+  // Retry, and try-block `let`s are invisible to catch. Params are already
+  // function-scoped, so only this one needs hoisting.
+  let clipboardCtx = '';
   try {
     const llmPreset = settings.llm_provider.preset || 'groq';
     const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
@@ -604,7 +653,6 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     }).catch(() => '');
     if (!isSessionActive(sessionId)) return;
 
-    let clipboardCtx = '';
     let grabbed = false;
     if (settings.auto_grab_highlight !== false) {
       if (preGrabbedSelection && preGrabbedSelection.trim()) {
@@ -622,15 +670,43 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       }
     }
 
-    const action = await invoke('execute_agent_command', {
+    const agentRequestId = `agent-${++agentRequestSeq}-${Date.now()}`;
+    const agentInvoke = invoke('execute_agent_command', {
       req: {
         base_url: settings.llm_provider.base_url,
         api_key: llmKey || '',
         model: settings.llm_provider.model,
         voice_command: voiceCommand,
         clipboard_context: clipboardCtx,
+        request_id: agentRequestId,
       }
     });
+    // Watchdog (A3): the backend caps at 20s; if the IPC promise never
+    // settles, fail deterministically instead of sticking on PROCESSING.
+    // A late arrival is dropped by the isSessionActive guards below.
+    let agentTimeoutId = null;
+    const agentTimeout = new Promise((_, reject) => {
+      agentTimeoutId = setTimeout(() => reject(new Error('Agent timed out — retry')), AGENT_LLM_WATCHDOG_MS);
+    });
+    let action;
+    try {
+      action = await Promise.race([agentInvoke, agentTimeout]);
+    } finally {
+      if (agentTimeoutId) clearTimeout(agentTimeoutId);
+    }
+
+    if (!isSessionActive(sessionId)) return;
+
+    // Defensive (A7): the backend whitelists actions and rejects blank
+    // content, but never present a silent no-op as success if anything
+    // slips through — route it to the parse-failure branch instead.
+    if (action.action === 'insert' || action.action === 'rewrite') {
+      if (!action.content || !action.content.trim()) {
+        throw new Error('Empty response from LLM');
+      }
+    } else if (!['copy', 'delete_chars', 'select_all', 'submit'].includes(action.action)) {
+      throw new Error(`Action parse error: unknown action '${action.action}'`);
+    }
 
     if (!isSessionActive(sessionId)) return;
 
@@ -644,6 +720,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       setState('success');
       setStatusMessage('Copied');
       playCompletionChime();
+      agentRetryContext = null;
       await new Promise(r => setTimeout(r, 900));
       await fadeAndHide(sessionId);
     } else {
@@ -671,6 +748,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       setState('success');
       setStatusMessage(executed ? 'Executed' : 'Done');
       playCompletionChime();
+      agentRetryContext = null;
       await new Promise(r => setTimeout(r, 800));
       await fadeAndHide(sessionId);
     }
@@ -686,26 +764,16 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     console.error('Agent Error:', err);
     if (!isSessionActive(sessionId)) return;
     setState('error');
-    // BUG-01: actionable error mapping — never show generic Failed alone
-    const msg = String(err || '');
-    if (msg.includes('Missing API key')) {
-      setStatusMessage('Missing LLM key');
-    } else if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) {
-      setStatusMessage('LLM auth failed');
-    } else if (msg.includes('LLM rate limited') || msg.includes('429')) {
-      setStatusMessage('Rate limited — retry');
-    } else if (msg.includes('LLM provider unavailable') || msg.includes('500') || msg.includes('502') || msg.includes('503')) {
-      setStatusMessage('LLM unavailable');
-    } else if (msg.includes('Network error') || msg.includes('Connection failed') || msg.includes('timed out')) {
-      setStatusMessage('Network error');
-    } else if (msg.includes('Action parse error') || msg.includes('Empty response')) {
-      setStatusMessage('Agent parse failed');
-    } else if (msg.includes('Clipboard') || msg.includes('No speech')) {
-      setStatusMessage('No selection');
-    } else {
-      setStatusMessage('Agent failed');
+    // Actionable error mapping (A1) — never show generic Failed alone.
+    // Retryable failures cache the attempt so Retry re-sends the LLM request
+    // without forcing a re-record (A2); config errors offer no retry.
+    const { label, retryable } = mapAgentErrorToStatus(err);
+    setStatusMessage(label);
+    if (retryable) {
+      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId };
+      showRetry();
     }
-    scheduleAutoDismiss(2500);
+    scheduleAutoDismiss(4000);
   }
 }
 

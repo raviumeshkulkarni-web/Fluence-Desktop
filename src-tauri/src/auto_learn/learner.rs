@@ -1,4 +1,4 @@
-// Fluence Windows — Learner
+// Fluence Windows - Learner
 // Saves extracted correction candidates to the suggestion system.
 // Uses the existing suggestion infrastructure (frequency tracking,
 // dismiss handling, atomic writes) rather than writing directly

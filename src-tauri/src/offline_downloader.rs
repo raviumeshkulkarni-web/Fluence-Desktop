@@ -1,4 +1,4 @@
-// Fluence Windows — Offline Asset Downloader
+// Fluence Windows - Offline Asset Downloader
 // Downloads and extracts sherpa-onnx binaries and SenseVoice model files.
 
 use anyhow::{anyhow, Context, Result};
@@ -38,7 +38,7 @@ pub(crate) struct SherpaManifest {
 
 pub(crate) static MANIFEST: Lazy<SherpaManifest> = Lazy::new(|| {
     serde_json::from_str(include_str!("../sherpa-manifest.json"))
-        .expect("Failed to parse sherpa-manifest.json — this file must exist at src-tauri/sherpa-manifest.json")
+        .expect("Failed to parse sherpa-manifest.json - this file must exist at src-tauri/sherpa-manifest.json")
 });
 
 /// Look up a download entry by filename. Fails fast if missing.
@@ -532,7 +532,7 @@ pub fn delete_offline_model() -> Result<u64, String> {
 // ── Moonshine v2 streaming (small/medium) ────────────────────────
 // Clone of the Moonshine v1 flow, but per-file downloads (no archive).
 // The sidecar runtime (moonshine-v2-server.exe + onnxruntime.dll) SHIPS
-// WITH THE APP INSTALLER (Tauri externalBin) or a dev build tree — it is
+// WITH THE APP INSTALLER (Tauri externalBin) or a dev build tree - it is
 // deliberately NOT part of the model download and NOT expected in the
 // model dir. Model readiness therefore covers the 8 model files only;
 // runtime resolution + hash gating happen at spawn time in
@@ -1018,7 +1018,7 @@ mod tests {
             sparse_file(&file.name, file.bytes);
         }
         assert!(!check_moonshine_v2_files_exist(&scratch, manifest));
-        // All eight at exact pinned sizes — WITHOUT any sidecar runtime
+        // All eight at exact pinned sizes - WITHOUT any sidecar runtime
         // present, and including the 512-byte streaming_config.json: ready.
         // A completed download must report Installed.
         let last = &manifest.files[7];

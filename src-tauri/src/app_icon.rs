@@ -1,11 +1,11 @@
-// Fluence Windows — Foreground app icon extraction (Windows only)
+// Fluence Windows - Foreground app icon extraction (Windows only)
 // Raycast-style: when the recording overlay appears, it shows the icon + name
 // of the app that currently owns the foreground so users instantly know what
 // they are dictating into.
 //
 // Isolation contract: this module is 100% additive. It introduces no shared
 // state, never touches the audio/clipboard/hotkey hot paths, and fails closed
-// (returns None) on every error path — the overlay simply hides the icon chip.
+// (returns None) on every error path - the overlay simply hides the icon chip.
 
 use std::mem::size_of;
 use std::path::Path;
@@ -38,7 +38,7 @@ pub struct ForegroundAppInfo {
     pub icon_data_url: String,
 }
 
-/// Tauri command — resolve the app currently owning the foreground and return
+/// Tauri command - resolve the app currently owning the foreground and return
 /// its display name plus a base64 PNG data URL for its large icon.
 ///
 /// Returns `None` whenever the foreground app cannot be identified (including
@@ -68,7 +68,7 @@ fn resolve_foreground_app() -> Result<ForegroundAppInfo, String> {
         return Err("foreground window has no owning process".into());
     }
     if pid == unsafe { GetCurrentProcessId() } {
-        // Fluence's own window — never show our own icon.
+        // Fluence's own window - never show our own icon.
         return Err("foreground window belongs to Fluence".into());
     }
 

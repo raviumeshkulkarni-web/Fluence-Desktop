@@ -1,4 +1,4 @@
-// Convergence harness — property test for frozen v1.2.1
+// Convergence harness - property test for frozen v1.2.1
 // Generator: WINDOWS/examples/sync/convergence/generate_convergence.py  (deterministic 30 scenarios)
 // Tests assert: identical final state regardless of merge order, exactly-once stats, no resurrection, byte-identical envelopes (logical compare).
 // Reference semantics (must match generator):
@@ -6,7 +6,7 @@
 //   settings: per key winner: t==0 special (exactly one zero -> other wins; both 0 -> max deviceId; else max updatedAt tie->max deviceId), then if winner.updatedAt==0 stamp 1700000000000, sort by key
 //   stats: union by eventId, sort day then eventId
 //
-// Production code divergence is a FINDING — do NOT patch merge.rs to pass.
+// Production code divergence is a FINDING - do NOT patch merge.rs to pass.
 
 use std::collections::HashMap;
 
@@ -222,7 +222,7 @@ mod tests {
         DictionaryEnvelope, SettingsEnvelope, SnippetEnvelope, StatsEnvelope,
     };
 
-    // 30 scenarios — explicit include_bytes! per harness spec
+    // 30 scenarios - explicit include_bytes! per harness spec
     const SCENARIOS: &[&[u8]] = &[
         include_bytes!(concat!(
             env!("CARGO_MANIFEST_DIR"),
@@ -722,7 +722,7 @@ mod tests {
             let _parsed_snip =
                 SnippetEnvelope::from_bytes(&snip_bytes).expect("snip envelope roundtrip");
 
-            // Settings — allow stamped t=0 divergence per harness
+            // Settings - allow stamped t=0 divergence per harness
             assert_settings_equal(&set1, &scenario.expected.settings, &sname);
             let set_env = SettingsEnvelope {
                 v: 1,
@@ -742,7 +742,7 @@ mod tests {
 
             // Note: production merge_stats currently sorts by eventId only, while contract sorts by day then eventId.
             // Logical equality is checked above via eventId lookup; byte-identical envelope order is verified via expected sorting.
-            // If production sorts differently, the logical set still matches — the envelope bytes will be re-sorted on next write.
+            // If production sorts differently, the logical set still matches - the envelope bytes will be re-sorted on next write.
             let mut sorted_expected = scenario.expected.stats.clone();
             sorted_expected.sort_by(|a, b| a.day.cmp(&b.day).then(a.eventId.cmp(&b.eventId)));
             // Verify expected itself is sorted day then eventId (generator guarantee)

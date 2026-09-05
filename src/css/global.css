@@ -1,6 +1,6 @@
 /* ====================================================
-   Fluence Windows — Global Styles
-   "Precision Ink" — Monochrome-first, ultra-thin borders
+   Fluence Windows - Global Styles
+   "Precision Ink" - Monochrome-first, ultra-thin borders
    ==================================================== */
 
 @import './design-tokens.css';
@@ -52,7 +52,7 @@ body {
   color: var(--color-on-surface);
 }
 
-/* ── Text Selection — re-enable in text-bearing regions ────────── */
+/* ── Text Selection - re-enable in text-bearing regions ────────── */
 #history-list, .dict-table, .page p, .wizard-step p, .test-result,
 input, textarea {
   user-select: text;
@@ -130,7 +130,7 @@ input, textarea {
 .bg-card               { background: var(--color-surface); }
 .bg-gradient           { background: var(--color-canvas); }
 
-/* ── Card — luminance + ultra-thin border ──────────────────────── */
+/* ── Card - luminance + ultra-thin border ──────────────────────── */
 .glass-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -157,7 +157,7 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* Primary — monochrome filled. Transparent 1px border keeps the same
+/* Primary - monochrome filled. Transparent 1px border keeps the same
    box as the bordered secondary/danger variants so side-by-side
    buttons share one height. */
 .btn-primary {
@@ -184,7 +184,7 @@ button:focus-visible {
   background: var(--color-interactive-active);
 }
 
-/* Secondary — surface elevation + ultra-thin border */
+/* Secondary - surface elevation + ultra-thin border */
 .btn-secondary {
   display: inline-flex;
   align-items: center;
@@ -207,7 +207,7 @@ button:focus-visible {
   transform: scale(0.98);
 }
 
-/* Ghost — transparent, same 1px box as the other variants */
+/* Ghost - transparent, same 1px box as the other variants */
 .btn-ghost {
   display: inline-flex;
   align-items: center;
@@ -230,7 +230,7 @@ button:focus-visible {
   transform: scale(0.98);
 }
 
-/* Danger — semantic red. Base padding matches primary/secondary so
+/* Danger - semantic red. Base padding matches primary/secondary so
    paired buttons (Download + Delete) share one height. */
 .btn-danger {
   background: var(--color-error-container);
@@ -249,7 +249,7 @@ button:focus-visible {
   transform: scale(0.98);
 }
 
-/* Compact button sizes — use these instead of inline padding/font
+/* Compact button sizes - use these instead of inline padding/font
    overrides so control heights stay on the spacing/type system. */
 .btn-sm {
   padding: 6px 14px;
@@ -261,7 +261,7 @@ button:focus-visible {
   font-size: var(--text-label-sm);
 }
 
-/* ── Input Base — ultra-thin border ────────────────────────────── */
+/* ── Input Base - ultra-thin border ────────────────────────────── */
 input, select, textarea {
   font-family: var(--font-body);
   font-size: var(--text-body-md);
@@ -326,7 +326,7 @@ select {
 .dot-error   { background: var(--color-error); }
 .dot-idle    { background: var(--color-ink-muted); }
 
-/* ── Toggle Switch — luminance + ultra-thin border ─────────────── */
+/* ── Toggle Switch - luminance + ultra-thin border ─────────────── */
 .toggle-switch {
   position: relative;
   display: inline-flex;
@@ -450,7 +450,7 @@ select {
 .invisible { visibility: hidden; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
-/* ── Toast — ultra-thin border ─────────────────────────────────── */
+/* ── Toast - ultra-thin border ─────────────────────────────────── */
 /* Bottom-center: bottom-right collides with the bottom-aligned Save
    actions on General/Providers. Newest stacks at the bottom. */
 .toast-container {
@@ -485,7 +485,7 @@ select {
 .toast.success { background: var(--color-toast-success); }
 .toast.error   { background: var(--color-toast-error); }
 
-/* ── Custom Titlebar — ultra-thin bottom border ────────────────── */
+/* ── Custom Titlebar - ultra-thin bottom border ────────────────── */
 .titlebar {
   height: 32px;
   background: transparent;
@@ -593,7 +593,7 @@ textarea:disabled {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
   }
-  /* Loading indicators stay perceivable — slower, gentler spin */
+  /* Loading indicators stay perceivable - slower, gentler spin */
   .animate-spin {
     animation: spin 1.5s linear infinite !important;
   }

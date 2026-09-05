@@ -1,4 +1,4 @@
-// Fluence Windows — Custom Dictionary module
+// Fluence Windows - Custom Dictionary module
 // Stores spoken→corrected word/phrase pairs in a JSON file.
 // Applied as post-processing after every transcription.
 
@@ -255,7 +255,7 @@ fn merge_dictionary_entries(
     (entries, added)
 }
 
-/// Live entries only (not tombstoned) — the user-facing view (§30.2).
+/// Live entries only (not tombstoned) - the user-facing view (§30.2).
 fn live_entries(entries: Vec<DictionaryEntry>) -> Vec<DictionaryEntry> {
     entries
         .into_iter()
@@ -282,12 +282,16 @@ pub fn get_dictionary() -> Result<Vec<DictionaryEntry>, String> {
     ))
 }
 
-#[tauri::command]
-pub fn add_dictionary_entry(
+/// Scheduler-free core of [`add_dictionary_entry`]: identical validation,
+/// persistence and cache invalidation, but no sync wake-up signal. Used by
+/// the auto-accept path, which runs on threads without Tauri state (notably
+/// the post-injection monitor thread); the periodic sync pass picks up the
+/// dirty row. Callers needing an immediate sync wake-up must send
+/// `SyncCommand::LocalChange` themselves.
+pub(crate) fn add_dictionary_entry_internal(
     spoken: String,
     corrected: String,
     kind: Option<String>,
-    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<DictionaryEntry, String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
@@ -307,7 +311,7 @@ pub fn add_dictionary_entry(
     }
     let mut meta = crate::sync::metadata::SyncMetadata::load();
     let device_id = meta.ensure_device_id();
-    // Monotonic per-account maxSeen (or global if no account yet) — prevents clock skew from making stale win
+    // Monotonic per-account maxSeen (or global if no account yet) - prevents clock skew from making stale win
     let account_hash = crate::settings::load_settings()
         .ok()
         .and_then(|s| s.sync_account_key)
@@ -339,8 +343,19 @@ pub fn add_dictionary_entry(
     };
     all_entries.push(entry.clone());
     save_dictionary_internal(&all_entries).map_err(|e| e.to_string())?;
-    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
+    Ok(entry)
+}
+
+#[tauri::command]
+pub fn add_dictionary_entry(
+    spoken: String,
+    corrected: String,
+    kind: Option<String>,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<DictionaryEntry, String> {
+    let entry = add_dictionary_entry_internal(spoken, corrected, kind)?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(entry)
 }
 
@@ -422,11 +437,11 @@ pub fn update_dictionary_entry(
     Ok(())
 }
 
-#[tauri::command]
-pub fn delete_dictionary_entry(
-    id: String,
-    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
-) -> Result<(), String> {
+/// Scheduler-free core of [`delete_dictionary_entry`]: identical lookup,
+/// tombstone/hard-delete, persistence, delete→dismiss linkage and cache
+/// invalidation, but no sync wake-up signal (the periodic sync pass picks
+/// up the change). Used by the revert-auto-accept path.
+pub(crate) fn delete_dictionary_entry_internal(id: String) -> Result<(), String> {
     let _io = crate::sync::io_lock::io_lock_guard();
     let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
     let mut meta = crate::sync::metadata::SyncMetadata::load();
@@ -445,8 +460,10 @@ pub fn delete_dictionary_entry(
     }
     let active_account = crate::sync::metadata::current_account_hash();
     let mut to_hard_delete = false;
+    let mut deleted_pair: Option<(String, String)> = None;
     for entry in entries.iter_mut() {
         if entry.id == id {
+            deleted_pair = Some((entry.spoken.clone(), entry.corrected.clone()));
             if !crate::sync::metadata::belongs_to_account(
                 entry.sync_account.as_deref(),
                 active_account.as_deref(),
@@ -470,8 +487,29 @@ pub fn delete_dictionary_entry(
         entries.retain(|e| e.id != id);
     }
     save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
-    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
+    // Delete→dismiss linkage: the io lock is released first - dismiss takes
+    // SUGGESTION_LOCK, the reverse order of manual accept, so holding both
+    // would risk inversion. Suggestion failures never fail the delete.
+    drop(_io);
+    if let Some((spoken, corrected)) = deleted_pair {
+        if let Err(e) = crate::suggestion::dismiss_matching_suggestions(&spoken, &corrected) {
+            log::warn!(
+                "Failed to dismiss suggestions for deleted dictionary entry: {}",
+                e
+            );
+        }
+    }
     invalidate_cache();
+    Ok(())
+}
+
+#[tauri::command]
+pub fn delete_dictionary_entry(
+    id: String,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
+    delete_dictionary_entry_internal(id)?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())
 }
 
@@ -516,10 +554,7 @@ pub fn export_dictionary() -> Result<String, String> {
         .map_err(|e| e.to_string())?
         .into_iter()
         .filter(|e| {
-            crate::sync::metadata::belongs_to_account(
-                e.sync_account.as_deref(),
-                active.as_deref(),
-            )
+            crate::sync::metadata::belongs_to_account(e.sync_account.as_deref(), active.as_deref())
         })
         .collect();
     serde_json::to_string_pretty(&entries).map_err(|e| e.to_string())

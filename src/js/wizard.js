@@ -1,5 +1,5 @@
 /**
- * Fluence Windows — Setup Wizard JavaScript
+ * Fluence Windows - Setup Wizard JavaScript
  * 
  * Controls the 6-step first-run onboarding wizard:
  * 1. Welcome
@@ -262,7 +262,7 @@ function setupStep2() {
       const endpointRow = document.getElementById('wiz-endpoint-row');
       const err = document.getElementById('wiz-api-error');
 
-      // Local Offline — same flow as the skip-to-offline link
+      // Local Offline - same flow as the skip-to-offline link
       if (preset === 'Local Offline') {
         wizardData.skipApiKey = true;
         wizardData.baseUrl = '';
@@ -352,7 +352,7 @@ function setupStep2() {
     if (err) err.hidden = true;
   });
 
-  // Skip to offline transcription — no API key required
+  // Skip to offline transcription - no API key required
   document.getElementById('wiz-skip-offline')?.addEventListener('click', () => {
     wizardData.skipApiKey = true;
     wizardData.provider = 'Local Offline';
@@ -423,7 +423,7 @@ function setupStep3() {
     cancelHotkeyRecording();
   });
 
-  // Keyboard activation (Enter/Space) — capture starts from keyup so the
+  // Keyboard activation (Enter/Space) - capture starts from keyup so the
   // activating key isn't recorded as part of the shortcut
   display?.addEventListener('keydown', (e) => {
     if (isRecordingHotkey) return;
@@ -459,7 +459,7 @@ function setupStep3() {
     if (!isRecordingHotkey || currentStep !== 3) return;
     const current = document.getElementById('wiz-hotkey-text')?.textContent;
     if (current && current !== 'Press your shortcut…') {
-      // Require a non-modifier key — modifiers-only shortcuts (e.g. "Ctrl" or
+      // Require a non-modifier key - modifiers-only shortcuts (e.g. "Ctrl" or
       // "Ctrl+Shift") keep recording until a real key is pressed
       const MODIFIER_TOKENS = new Set(['Ctrl','Alt','Shift','Meta']);
       const isModifiersOnly = current.split('+').every(t => MODIFIER_TOKENS.has(t));

@@ -17,7 +17,7 @@ pub struct TranscriptionFlowResult {
     pub polish_fallback: bool,
     /// Legacy field from the removed online-streaming support: always false
     /// now (every online take is batch). Kept so the serialized result
-    /// shape — and the overlay code reading it — does not change.
+    /// shape - and the overlay code reading it - does not change.
     #[serde(default)]
     pub realtime_fallback: bool,
     /// True when this take was rejected by the automatic pre-upload silence
@@ -143,7 +143,7 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
 
     // Gate-rejection marker consumed from capture above (self-clearing;
     // true only when THIS take was just rejected by the automatic silence
-    // gate — no audio uploaded anywhere). Threaded through so the overlay
+    // gate - no audio uploaded anywhere). Threaded through so the overlay
     // can vanish instantly instead of showing the no-speech notice.
     let silence_rejected = crate::silence_gate::take_gate_rejected();
 

@@ -1,4 +1,4 @@
-// Fluence Windows — Main entry point
+// Fluence Windows - Main entry point
 // Initializes Tauri v2 app, registers all IPC commands, sets up tray,
 // hotkey, SQLite history, and handles first-run wizard detection.
 
@@ -31,10 +31,10 @@ mod suggestion;
 // remaining dead-code seams (user resolution of quarantine, the future
 // settings-toggle row API, and command variants used only from tests) are
 // allowed until their owning features are wired.
+mod silence_gate;
 #[allow(dead_code)]
 mod sync;
 mod transcribe;
-mod silence_gate;
 mod tray;
 mod workflow;
 
@@ -158,7 +158,7 @@ pub fn run() {
                     let _ = win.emit("window-visibility", true);
                 }
             } else {
-                // App runs in background — main window only shows from tray
+                // App runs in background - main window only shows from tray
                 log::info!("Fluence started in background (tray)");
             }
 
@@ -249,7 +249,11 @@ pub fn run() {
             suggestion::accept_suggestion_command,
             suggestion::dismiss_suggestion_command,
             suggestion::clear_dismissed_suggestions_command,
+            suggestion::get_dismissed_count,
             suggestion::expire_stale_suggestions_command,
+            suggestion::get_learning_suggestions,
+            suggestion::get_auto_accepted_suggestions,
+            suggestion::revert_auto_accepted_suggestion,
             // Sync
             sync::scheduler::sync_get_status,
             sync::scheduler::sync_toggle,
@@ -265,7 +269,7 @@ pub fn run() {
 
     app.run(|_app, event| {
         // Tray Quit calls app.exit(0), which fires ExitRequested. Window close only hides
-        // to tray, so this is the only real exit — un-duck before the process leaves.
+        // to tray, so this is the only real exit - un-duck before the process leaves.
         if let tauri::RunEvent::ExitRequested { .. } = event {
             ducking::restore();
         }

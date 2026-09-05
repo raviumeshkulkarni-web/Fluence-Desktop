@@ -1,5 +1,5 @@
 /**
- * Fluence Windows — Settings Page JavaScript
+ * Fluence Windows - Settings Page JavaScript
  * 
  * Handles all settings page interactions:
  * - Navigation between tabs
@@ -8,7 +8,7 @@
  * - Transcription history
  * - Auto-start and system toggles
  * 
- * Design: Precision Ink — Clean, matte, monochrome-first
+ * Design: Precision Ink - Clean, matte, monochrome-first
  */
 
 const { invoke } = window.__TAURI__.core;
@@ -138,6 +138,8 @@ function populateUI(s) {
   setSelectValue('ai-polish-select', s.ai_polish_style || 'none');
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
   setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
+  setChecked('auto-accept-cb', s.auto_accept_enabled === true);
+  syncLearnAcceptUI();
   setChecked('sound-on-complete-cb', s.sound_on_complete ?? true);
   // Retired Moonshine v1 id maps to its English successor (same mapping
   // the backend applies at load; belt-and-braces for any stale payload).
@@ -310,7 +312,7 @@ function wireHotkeyRecorder(displayId, textId, clearBtnId, settingsKey, defaultS
     }
   });
 
-  // Keyboard activation (Enter/Space) — while capturing, the document
+  // Keyboard activation (Enter/Space) - while capturing, the document
   // recorder owns all keys, so only start recording from here
   display?.addEventListener('keydown', (e) => {
     if (activeRecorder) return;
@@ -526,7 +528,7 @@ async function fetchModels(type, silent = false) {
     if (!models.length) {
       // Never strand the user: keep existing options when the endpoint
       // offers nothing (selectable).
-      if (!silent) showToast('No models found on this endpoint — keeping current list', 'error');
+      if (!silent) showToast('No models found on this endpoint - keeping current list', 'error');
       return;
     }
     if (select) {
@@ -542,7 +544,7 @@ async function fetchModels(type, silent = false) {
     if (!silent) {
       showToast(
         type === 'stt' && !filtered
-          ? `Loaded ${models.length} models (unrecognized endpoint — showing all) ✓`
+          ? `Loaded ${models.length} models (unrecognized endpoint - showing all) ✓`
           : `Loaded ${models.length} models ✓`,
         'success'
       );
@@ -794,7 +796,7 @@ async function loadDashboardStats() {
     const monthlySavedMs = (monthlyWords / 40 / 60) * 3600000;
     animateStatValue('stat-monthly-saved', formatDurationMs(monthlySavedMs));
 
-    // Weekly activity bar chart — UTC Monday boundary comes from the backend
+    // Weekly activity bar chart - UTC Monday boundary comes from the backend
     // (identical across devices/timezones and matches the weekly header).
     const monday = new Date(bStats.week_start_ms);
 
@@ -868,6 +870,7 @@ const GENERAL_BINDINGS = [
   { id: 'duck-cb',                     key: 'duck_enabled',          type: 'checkbox' },
   { id: 'auto-grab-cb',                key: 'auto_grab_highlight',   type: 'checkbox' },
   { id: 'auto-learn-cb',               key: 'auto_learn_enabled',    type: 'checkbox' },
+  { id: 'auto-accept-cb',              key: 'auto_accept_enabled',   type: 'checkbox' },
   { id: 'sound-on-complete-cb',        key: 'sound_on_complete',     type: 'checkbox' },
 ];
 
@@ -881,6 +884,32 @@ function setupAutoApply() {
       queuePersist('general', ...features);
     });
   });
+
+  // Auto-accept depends on auto-learn: turning the master off forces the
+  // dependent toggle off (persisted) and disables its input. Registered
+  // after the generic binding so it runs after the generic state update.
+  document.getElementById('auto-learn-cb')?.addEventListener('change', () => syncLearnAcceptUI());
+}
+
+// Auto-accept depends on auto-learn. When the master is off, the dependent
+// toggle is forced off, persisted, and disabled with an explanatory title;
+// when the master is on, the dependent toggle is re-enabled untouched.
+function syncLearnAcceptUI() {
+  const learnCb = document.getElementById('auto-learn-cb');
+  const acceptCb = document.getElementById('auto-accept-cb');
+  if (!learnCb || !acceptCb || !currentSettings) return;
+  if (!learnCb.checked) {
+    acceptCb.checked = false;
+    acceptCb.disabled = true;
+    acceptCb.title = 'Requires Auto-Learn';
+    if (currentSettings.auto_accept_enabled !== false) {
+      currentSettings.auto_accept_enabled = false;
+      queuePersist('general');
+    }
+  } else {
+    acceptCb.disabled = false;
+    acceptCb.removeAttribute('title');
+  }
 }
 
 function queuePersist(...features) {
@@ -987,7 +1016,7 @@ async function populateAudioDevices() {
       select.value = currentSettings.audio_device_id;
     }
   } catch {
-    // Audio devices unavailable — silently fail
+    // Audio devices unavailable - silently fail
   }
 }
 
@@ -1238,7 +1267,7 @@ async function setupOfflineDownloader() {
   const progressWrapper = document.getElementById('offline-progress-wrapper');
   
   // Engine card selection (radio behaviour; persists via auto-apply).
-  // Button clicks inside a card are ignored here — download/delete manage
+  // Button clicks inside a card are ignored here - download/delete manage
   // themselves and must not switch the selected engine as a side effect.
   document.querySelectorAll('#stt-offline-downloader .offline-model-card').forEach(card => {
     card.addEventListener('click', (e) => {
@@ -1426,9 +1455,24 @@ function toggleDictAddRow(show) {
   }
 }
 
+let autoAddedKeys = new Set();
+
 async function loadDictionary() {
   try {
     dictEntries = await invoke('get_dictionary');
+    // Provenance for the "Added" badge: canonical pair keys of auto-added
+    // rows (mirrors dictionary::canonical_entry_key). Fetched only in auto
+    // mode; otherwise the set stays empty and no badges render.
+    autoAddedKeys = new Set();
+    if (currentSettings?.auto_accept_enabled === true) {
+      try {
+        const autoAdded = await invoke('get_auto_accepted_suggestions');
+        autoAddedKeys = new Set(autoAdded.map(s =>
+          s.spoken.trim().toLowerCase() + '\u0000' + s.corrected.trim().toLowerCase()));
+      } catch (err) {
+        console.error('Failed to load auto-added provenance:', err);
+      }
+    }
     renderDictTable();
   } catch (err) {
     showToast('Failed to load dictionary: ' + err, 'error');
@@ -1450,11 +1494,13 @@ function renderDictTable() {
     dictEntries.forEach(entry => {
       const tr = document.createElement('tr');
       tr.dataset.dictId = entry.id;
+      const autoKey = entry.spoken.trim().toLowerCase() + '\u0000' + entry.corrected.trim().toLowerCase();
       tr.innerHTML = `
         <td class="spoken-word">${escapeHtml(entry.spoken)}</td>
         <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
+        <td>${autoAddedKeys.has(autoKey) ? '<span class="source-badge">auto</span>' : ''}</td>
         <td class="actions">
-          <button class="btn-ghost dict-delete-btn" data-dict-id="${entry.id}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${entry.id}" style="color:var(--color-error)">Delete</button>
         </td>
       `;
       tr.querySelector('.dict-delete-btn')?.addEventListener('click', () => deleteDictEntry(entry.id));
@@ -1488,6 +1534,7 @@ window.deleteDictEntry = async (id) => {
     await invoke('delete_dictionary_entry', { id });
     dictEntries = dictEntries.filter(e => e.id !== id);
     renderDictTable();
+    loadSuggestions();  // Delete→dismiss linkage may dismiss a suggestion row
     showToast('Entry deleted', 'success');
   } catch (err) {
     showToast('Failed to delete: ' + err, 'error');
@@ -1765,7 +1812,7 @@ function renderSyncStatus() {
     if (signOutBtn) signOutBtn.style.display = 'none';
   }
 
-  // Persistent sign-in error — visible while signed out (task: under ACCOUNT row, id sync-signin-error)
+  // Persistent sign-in error - visible while signed out (task: under ACCOUNT row, id sync-signin-error)
   let syncSignInErrorEl = document.getElementById('sync-signin-error');
   if (!syncSignInErrorEl) {
     syncSignInErrorEl = document.createElement('div');
@@ -1815,7 +1862,15 @@ function renderSyncStatus() {
 // ── Suggestions (Auto-Learn) ────────────────────────────────────
 
 function setupSuggestions() {
-  document.getElementById('clear-dismissed-btn')?.addEventListener('click', clearDismissedSuggestions);
+  document.getElementById('dismiss-selected-btn')?.addEventListener('click', dismissSelectedSuggestions);
+  document.getElementById('clear-selection-btn')?.addEventListener('click', () => {
+    document.querySelectorAll('.suggestion-select:checked').forEach(cb => { cb.checked = false; });
+    refreshBulkBar();
+  });
+  document.getElementById('select-all-suggestions')?.addEventListener('change', (e) => {
+    document.querySelectorAll('.suggestion-select').forEach(cb => { cb.checked = e.target.checked; });
+    refreshBulkBar();
+  });
 
   // Background UIA monitoring can save a suggestion while this page is open.
   // Refresh only while the dictionary page is visible, avoiding a global poll.
@@ -1830,8 +1885,15 @@ async function loadSuggestions() {
   if (suggestionsLoading) return;
   suggestionsLoading = true;
   try {
+    const autoMode = currentSettings?.auto_accept_enabled === true;
     const suggestions = await invoke('get_suggestions');
-    renderSuggestionsTable(suggestions);
+    const signature = [
+      suggestions.length,
+      suggestions.map(s => s.id).join(','),
+    ].join('|');
+    if (signature === lastSuggestionsSignature) return;
+    lastSuggestionsSignature = signature;
+    renderSuggestionsTable(suggestions, autoMode);
   } catch (err) {
     console.error('Failed to load suggestions:', err);
   } finally {
@@ -1847,36 +1909,121 @@ async function expireStaleSuggestions() {
   }
 }
 
-function renderSuggestionsTable(suggestions) {
+let lastSuggestionsSignature = null;
+
+const SUGGESTIONS_HINT_MANUAL =
+  'Corrections detected from your transcriptions. Accept to add to dictionary, dismiss to ignore.';
+const SUGGESTIONS_HINT_AUTO =
+  'Auto-accept is on: repeat corrections land straight in the dictionary as auto-added; anything still needing a decision appears here.';
+
+function suggestionGroupHeader(title, sub) {
+  return `<tr data-srow="1" class="suggestions-group-row"><td colspan="5">`
+    + `<div class="suggestions-group-title">${title}</div>`
+    + (sub ? `<div class="suggestions-group-sub">${sub}</div>` : '')
+    + `</td></tr>`;
+}
+
+function suggestionRowHtml(s, actionsHtml, seenLabel) {
+  return `
+    <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${s.id}" aria-label="Select suggestion"></td>
+    <td class="spoken-word">${escapeHtml(s.spoken)}</td>
+    <td class="corrected-word">${escapeHtml(s.corrected)}</td>
+    <td class="frequency">${seenLabel}</td>
+    <td class="actions">${actionsHtml}</td>
+  `;
+}
+
+function appendSuggestionRow(tbody, s, preserved) {
+  const tr = document.createElement('tr');
+  tr.dataset.srow = '1';
+  tr.dataset.suggestionId = s.id;
+  tr.innerHTML = suggestionRowHtml(s, `
+    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${s.id}"
+      style="color:var(--color-success)">Accept</button>
+    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${s.id}"
+      style="color:var(--color-error)">Dismiss</button>
+  `, `${s.frequency}x`);
+  tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
+  tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
+  tr.querySelector('.suggestion-select')?.addEventListener('change', refreshBulkBar);
+  const selectCb = tr.querySelector('.suggestion-select');
+  if (selectCb && preserved && preserved.has(s.id)) selectCb.checked = true;
+  tbody.appendChild(tr);
+}
+
+function renderSuggestionsTable(suggestions, autoMode = false) {
   const tbody = document.getElementById('suggestions-table-body');
   const emptyRow = document.getElementById('suggestions-empty-row');
+  const hint = document.getElementById('suggestions-hint');
   if (!tbody) return;
 
-  // Remove all non-empty rows
-  tbody.querySelectorAll('tr[data-suggestion-id]').forEach(r => r.remove());
+  // Keep the user's selection across a rebuild: the dictionary page polls
+  // loadSuggestions in the background, and rebuilding must not drop checks.
+  const preserved = new Set(
+    [...tbody.querySelectorAll('.suggestion-select:checked')]
+      .map(cb => cb.dataset.suggestionId)
+      .filter(Boolean)
+  );
 
-  if (suggestions.length === 0) {
+  if (hint) hint.textContent = autoMode ? SUGGESTIONS_HINT_AUTO : SUGGESTIONS_HINT_MANUAL;
+
+  // Remove all rendered rows (data + group headers); the empty row stays.
+  tbody.querySelectorAll('tr[data-srow]').forEach(r => r.remove());
+
+  const showReview = suggestions.length > 0;
+
+  if (!showReview) {
     if (emptyRow) emptyRow.style.display = '';
-  } else {
-    if (emptyRow) emptyRow.style.display = 'none';
-    suggestions.forEach(s => {
-      const tr = document.createElement('tr');
-      tr.dataset.suggestionId = s.id;
-      tr.innerHTML = `
-        <td class="spoken-word">${escapeHtml(s.spoken)}</td>
-        <td class="corrected-word">${escapeHtml(s.corrected)}</td>
-        <td style="color:var(--color-outline);font-size:12px;">${s.frequency}x</td>
-        <td class="actions">
-          <button class="btn-ghost suggestion-accept-btn" data-suggestion-id="${s.id}" 
-            style="padding:4px 8px;font-size:12px;color:var(--color-success)">Accept</button>
-          <button class="btn-ghost suggestion-dismiss-btn" data-suggestion-id="${s.id}" 
-            style="padding:4px 8px;font-size:12px;color:var(--color-error)">Dismiss</button>
-        </td>
-      `;
-      tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
-      tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
-      tbody.appendChild(tr);
-    });
+    refreshBulkBar();
+    return;
+  }
+  if (emptyRow) emptyRow.style.display = 'none';
+
+  if (autoMode) tbody.insertAdjacentHTML('beforeend', suggestionGroupHeader(
+    'Ready to review',
+    'Observed repeatedly - Accept adds to the dictionary, Dismiss blocks the pair permanently.'
+  ));
+  suggestions.forEach(s => appendSuggestionRow(tbody, s, preserved));
+  refreshBulkBar();
+}
+
+function selectedSuggestionIds() {
+  return [...document.querySelectorAll('.suggestion-select:checked')]
+    .map(cb => cb.dataset.suggestionId)
+    .filter(Boolean);
+}
+
+function refreshBulkBar() {
+  const count = document.getElementById('suggestions-selected-count');
+  const ids = selectedSuggestionIds();
+  if (count) count.textContent = `${ids.length} selected`;
+  const dismiss = document.getElementById('dismiss-selected-btn');
+  if (dismiss) dismiss.disabled = ids.length === 0;
+  const cancel = document.getElementById('clear-selection-btn');
+  if (cancel) cancel.classList.toggle('hidden', ids.length === 0);
+  const all = document.getElementById('select-all-suggestions');
+  if (all) {
+    const boxes = [...document.querySelectorAll('.suggestion-select')];
+    all.disabled = boxes.length === 0;
+    all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+  }
+}
+
+async function dismissSelectedSuggestions() {
+  const ids = selectedSuggestionIds();
+  if (ids.length === 0) {
+    showToast('Nothing selected', 'error');
+    return;
+  }
+  try {
+    for (const id of ids) {
+      await invoke('dismiss_suggestion_command', { id });
+    }
+    showToast(`Dismissed ${ids.length} suggestion${ids.length === 1 ? '' : 's'}`, 'success');
+    loadSuggestions();
+  } catch (err) {
+    showToast('Failed to dismiss selected: ' + err, 'error');
+    loadSuggestions();
   }
 }
 
@@ -1900,16 +2047,6 @@ window.dismissSuggestion = async (id) => {
     showToast('Failed to dismiss: ' + err, 'error');
   }
 };
-
-async function clearDismissedSuggestions() {
-  try {
-    await invoke('clear_dismissed_suggestions_command');
-    showToast('Cleared dismissed suggestions', 'success');
-    loadSuggestions();
-  } catch (err) {
-    showToast('Failed to clear: ' + err, 'error');
-  }
-}
 
 function setupUpdaterUI() {
   if (!window.updateManager) return;
@@ -2130,14 +2267,14 @@ function setupKeyboardShortcuts() {
     const target = e.target;
     const isInput = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable;
 
-    // Escape — close window
+    // Escape - close window
     if (e.key === 'Escape' && !isInput) {
       e.preventDefault();
       invoke('hide_main_window').catch(() => {});
       return;
     }
 
-    // Ctrl+F / Ctrl+K — focus history search
+    // Ctrl+F / Ctrl+K - focus history search
     if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'k')) {
       e.preventDefault();
       if (currentPage !== 'history') navigateTo('history');
@@ -2146,7 +2283,7 @@ function setupKeyboardShortcuts() {
       return;
     }
 
-    // Ctrl+S — save current page
+    // Ctrl+S - save current page
     if ((e.ctrlKey || e.metaKey) && e.key === 's') {
       e.preventDefault();
       if (currentPage === 'general') saveGeneral();

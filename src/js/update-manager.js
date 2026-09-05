@@ -1,5 +1,5 @@
 /**
- * Fluence Windows — UpdateManager
+ * Fluence Windows - UpdateManager
  * 
  * Professional 5-State Auto-Updater Service:
  * 1. idle       - "You're up to date" | Action: [Check for Updates]
@@ -73,12 +73,12 @@ class UpdateManager {
     const lastCheck = localStorage.getItem('fluence_last_update_check');
     const now = Date.now();
     if (lastCheck && (now - parseInt(lastCheck, 10)) < this.CHECK_INTERVAL_MS) {
-      console.log('[UpdateManager] Skipping check — checked within last 24h');
+      console.log('[UpdateManager] Skipping check - checked within last 24h');
       return;
     }
 
     if (await this.isUserRecording()) {
-      console.log('[UpdateManager] Skipping check — user is currently recording');
+      console.log('[UpdateManager] Skipping check - user is currently recording');
       return;
     }
 
@@ -116,7 +116,7 @@ class UpdateManager {
 
     try {
       if (await this.isUserRecording()) {
-        console.log('[UpdateManager] Skipping check — user is currently recording');
+        console.log('[UpdateManager] Skipping check - user is currently recording');
         if (manualTrigger) {
           this.state = 'failed';
           this.errorMessage = 'Cannot check for updates while recording. Please finish recording first.';

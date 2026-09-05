@@ -1,4 +1,4 @@
-// Fluence Windows — Windows Auto-start module
+// Fluence Windows - Windows Auto-start module
 // Adds/removes a registry Run entry so Fluence launches with Windows.
 
 use anyhow::{anyhow, Result};

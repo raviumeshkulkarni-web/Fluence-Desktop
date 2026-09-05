@@ -1,4 +1,4 @@
-// Fluence Windows — Clipboard + text injection module
+// Fluence Windows - Clipboard + text injection module
 // Saves clipboard, sets new text, simulates Ctrl+V, then restores original clipboard.
 
 use anyhow::{anyhow, Result};

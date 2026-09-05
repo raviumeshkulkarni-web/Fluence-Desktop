@@ -306,18 +306,6 @@
             </label>
           </div>
         </div>
-        <div class="setting-row">
-          <div class="setting-info">
-            <div class="setting-label">Auto-Learn Corrections</div>
-            <div class="setting-desc">Suggest transcription corrections based on detected patterns</div>
-          </div>
-          <div class="setting-control">
-            <label class="toggle-switch" id="auto-learn-toggle">
-              <input type="checkbox" id="auto-learn-cb" aria-label="Auto-learn transcription corrections" />
-              <div class="toggle-track"><div class="toggle-thumb"></div></div>
-            </label>
-          </div>
-        </div>
       </div>
 
       <div style="display:flex;justify-content:flex-end;padding-top:var(--spacing-md);">
@@ -418,7 +406,7 @@
             <span class="text-muted" style="font-size:var(--text-label-sm);">Pick the option that fits how you dictate. You can change this any time.</span>
           </div>
           <div class="offline-model-list" role="radiogroup" aria-label="Offline speech recognition model">
-            <!-- Fast (English) — Moonshine v2 Small -->
+            <!-- Fast (English) - Moonshine v2 Small -->
             <div class="offline-model-card" id="v2small-model-card" data-engine="moonshine_v2_small" role="radio" aria-checked="false" tabindex="0">
               <div class="offline-model-card-top">
                 <span class="offline-radio" aria-hidden="true"></span>
@@ -441,7 +429,7 @@
                 <button class="btn-danger hidden" id="v2small-delete-btn" style="min-width:140px;">Delete Model</button>
               </div>
             </div>
-            <!-- Fast (Multilingual) — SenseVoice -->
+            <!-- Fast (Multilingual) - SenseVoice -->
             <div class="offline-model-card" id="sensevoice-model-card" data-engine="sensevoice" role="radio" aria-checked="false" tabindex="0">
               <div class="offline-model-card-top">
                 <span class="offline-radio" aria-hidden="true"></span>
@@ -463,7 +451,7 @@
                 <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
               </div>
             </div>
-            <!-- Pro (English) — Moonshine v2 Medium -->
+            <!-- Pro (English) - Moonshine v2 Medium -->
             <div class="offline-model-card" id="v2medium-model-card" data-engine="moonshine_v2_medium" role="radio" aria-checked="false" tabindex="0">
               <div class="offline-model-card-top">
                 <span class="offline-radio" aria-hidden="true"></span>
@@ -585,6 +573,36 @@
 
       <div class="settings-section">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Correction Learning</h2>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Learn Corrections</div>
+            <div class="setting-desc">Suggest transcription corrections based on detected patterns</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-learn-toggle">
+              <input type="checkbox" id="auto-learn-cb" aria-label="Auto-learn transcription corrections" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Accept Suggestions</div>
+            <div class="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-accept-toggle">
+              <input type="checkbox" id="auto-accept-cb" aria-label="Auto-accept repeated correction suggestions" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Word Corrections</h2>
           <div style="display:flex;gap:var(--spacing-sm);">
             <button class="btn-ghost btn-small" id="import-dict-btn">Import</button>
@@ -611,12 +629,13 @@
             <tr>
               <th>Spoken</th>
               <th>Corrected</th>
+              <th class="added-col">Added</th>
               <th class="actions">Actions</th>
             </tr>
           </thead>
           <tbody id="dict-table-body">
             <tr id="dict-empty-row">
-              <td colspan="3">
+              <td colspan="4">
                 <div class="empty-state">
                   <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
@@ -635,14 +654,22 @@
       <div class="settings-section" style="margin-top:var(--spacing-lg);">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Suggested Corrections</h2>
-          <button class="btn-ghost btn-xs" id="clear-dismissed-btn">Clear Dismissed</button>
+          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
+            <label class="suggestions-select-all-label">
+              <input type="checkbox" id="select-all-suggestions" aria-label="Select all suggestions"> Select all
+            </label>
+            <span id="suggestions-selected-count" style="font-size:12px;color:var(--color-on-surface-variant);">0 selected</span>
+            <button class="btn-ghost btn-small" id="dismiss-selected-btn" disabled>Dismiss Selected</button>
+            <button class="btn-ghost btn-small hidden" id="clear-selection-btn">Cancel</button>
+          </div>
         </div>
-        <p style="font-size:12px;color:var(--color-on-surface-variant);margin:0 0 var(--spacing-md) 0;">
+        <p id="suggestions-hint" style="font-size:12px;color:var(--color-on-surface-variant);margin:0 0 var(--spacing-md) 0;padding-left:var(--spacing-md);">
           Corrections detected from your transcriptions. Accept to add to dictionary, dismiss to ignore.
         </p>
         <table class="dict-table" id="suggestions-table">
           <thead>
             <tr>
+              <th class="select-col"></th>
               <th>Detected</th>
               <th>Should Be</th>
               <th>Seen</th>
@@ -651,7 +678,7 @@
           </thead>
           <tbody id="suggestions-table-body">
             <tr id="suggestions-empty-row">
-              <td colspan="4">
+              <td colspan="5">
                 <div class="empty-state">
                   <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <path d="M9 18h6"/>
@@ -699,7 +726,7 @@
         </div>
       </div>
 
-      <!-- Weekly Activity Chart — symmetrical to Android: bars with transcription count -->
+      <!-- Weekly Activity Chart - symmetrical to Android: bars with transcription count -->
       <div class="settings-section">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Weekly Activity</h2>

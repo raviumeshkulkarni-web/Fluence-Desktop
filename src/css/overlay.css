@@ -1,5 +1,5 @@
 /* ====================================================
-   Fluence Windows — Overlay / Capture Palette
+   Fluence Windows - Overlay / Capture Palette
    Pixel-perfect spec implementation
    ==================================================== */
 
@@ -72,7 +72,7 @@ body {
   border-radius: 16px;
 }
 
-/* Docked-corner treatment — sharpen the corner that hugs the edge */
+/* Docked-corner treatment - sharpen the corner that hugs the edge */
 .overlay-root.corner-bottom-left {
   transform-origin: 0% 100%;
   border-radius: 16px 16px 16px 6px;
@@ -176,7 +176,7 @@ body {
     0 2px 8px rgba(0, 0, 0, 0.30);
 }
 
-/* Let the discard badge extend past the orb's edge — it anchors on the
+/* Let the discard badge extend past the orb's edge - it anchors on the
    bubble but must not cover the waveform face. */
 .overlay-root.style-bubble {
   overflow: visible;
@@ -201,7 +201,7 @@ body {
   inset: 0;
 }
 
-/* Discard badge — a small circular "×" chip anchored on the orb's
+/* Discard badge - a small circular "×" chip anchored on the orb's
    top-right edge, half inside / half outside. It shares the bubble's edge
    (gestalt: the two shapes read as one control group) without covering the
    waveform face. !important overrides the base
@@ -269,14 +269,14 @@ body {
   scale: 0.8;
 }
 
-/* Transcribe mode surface — monochrome ink */
+/* Transcribe mode surface - monochrome ink */
 .overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
   background: var(--color-canvas);
   box-shadow:
     inset 0 1px 0 rgba(255, 255, 255, 0.07);
 }
 
-/* Agent mode surface — the same monochrome ink */
+/* Agent mode surface - the same monochrome ink */
 .overlay-root.state-agent.active,
 .overlay-root.state-agent_transcribing.active {
   background: var(--color-canvas);
@@ -365,7 +365,7 @@ body {
 
 /* ── Card Zones ────────────────────────────────────────────────── */
 
-/* Row 1: Metadata — REC indicator + mode badge */
+/* Row 1: Metadata - REC indicator + mode badge */
 .card-meta {
   display: flex;
   align-items: center;
@@ -406,7 +406,7 @@ body {
   will-change: transform;
 }
 
-/* Row 3: Footer — timer + close */
+/* Row 3: Footer - timer + close */
 .card-footer {
   display: flex;
   align-items: center;
@@ -546,7 +546,7 @@ body {
   color: var(--overlay-amethyst);
 }
 
-/* Agent mode badge — teal */
+/* Agent mode badge - teal */
 .overlay-root.state-agent .mode-badge,
 .overlay-root.state-agent_transcribing .mode-badge {
   background: rgba(11, 214, 227, 0.10);
@@ -600,7 +600,7 @@ body {
 /* ── Stop-and-Save Button ──────────────────────────────────────── */
 /* The bubble tier repurposes its card-footer as the hover discard
    badge, so the stop control must never appear there. All rules are
-   guarded with :not(.style-bubble) — the existing bubble declarations
+   guarded with :not(.style-bubble) - the existing bubble declarations
    are untouched and the badge stays pixel-identical. */
 .card-stop {
   display: none;
@@ -712,7 +712,7 @@ body {
   color: var(--color-error);
 }
 
-/* Neutral "no speech" notice — variant-colored, no red X, quiet. Guarded
+/* Neutral "no speech" notice - variant-colored, no red X, quiet. Guarded
    with :not(.style-bubble) so the minimal bubble, which hides status-msg
    anyway, stays pixel-identical. */
 .overlay-root.state-no-speech:not(.style-bubble) .status-msg {
@@ -830,7 +830,7 @@ body {
   transition: opacity 100ms ease;
 }
 
-/* ── Reduced motion — keep the processing spinner perceivable ──── */
+/* ── Reduced motion - keep the processing spinner perceivable ──── */
 @media (prefers-reduced-motion: reduce) {
   .overlay-root.active {
     animation: none;

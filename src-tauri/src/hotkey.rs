@@ -1,4 +1,4 @@
-// Fluence Windows — Hotkey module (v2: dual independent hotkeys)
+// Fluence Windows - Hotkey module (v2: dual independent hotkeys)
 // Registers two global shortcuts: one for transcription, one for agent mode.
 // Each supports push_to_toggle OR hold_to_record independently.
 

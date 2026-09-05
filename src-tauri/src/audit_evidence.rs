@@ -1,4 +1,4 @@
-// Fluence Windows — Audit Evidence Harnesses (main branch, 1.14.1)
+// Fluence Windows - Audit Evidence Harnesses (main branch, 1.14.1)
 // Deterministic, hardware-independent reproductions for findings H1-H4, M1-M6, L1-L5
 // Logical/state-machine defects are simulated with atomics/threads/filesystem.
 // Physical/hardware defects are marked `needs_verification` with manual procedures.
@@ -12,7 +12,7 @@ mod tests {
     use std::time::Duration;
 
     // ------------------------------------------------------------
-    // H1 — Drain ordering divergence (logical, fully deterministic)
+    // H1 - Drain ordering divergence (logical, fully deterministic)
     // ------------------------------------------------------------
     // Simulates the audio callback increment vs stop-path clear/signal ordering.
     // The bug: online paths do STOP.store(true) then CALLBACKS.store(0),
@@ -164,7 +164,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // H2 — Startup timeout hotkey leak (logical, deterministic)
+    // H2 - Startup timeout hotkey leak (logical, deterministic)
     // ------------------------------------------------------------
     #[test]
     fn h2_startup_timeout_leaks_hotkey_owner() {
@@ -250,7 +250,7 @@ mod tests {
     #[test]
     fn h2_source_unconditional_clear() {
         // Regression: verifies that audio.rs timeout branches unconditionally clear hotkey owner
-        // Old code had `if stop_completed { clear_cancelled_startup_owner(); }` — would fail this test
+        // Old code had `if stop_completed { clear_cancelled_startup_owner(); }` - would fail this test
         let src = include_str!("audio.rs");
         // Find the timeout branch for Ok(Err(_)) and Err(_)
         let count_conditional = src.matches("if stop_completed {").count();
@@ -268,7 +268,7 @@ mod tests {
             "[H2-REGRESSION] Count of 'if stop_completed {{' in file: {}",
             count_conditional
         );
-        assert!(!has_buggy, "H2 REGRESSION: audio.rs still has conditional clear_cancelled_startup_owner — should be unconditional");
+        assert!(!has_buggy, "H2 REGRESSION: audio.rs still has conditional clear_cancelled_startup_owner - should be unconditional");
         // Verify unconditional clear exists in both branches
         let unconditional = src.matches("clear_cancelled_startup_owner();").count();
         println!(
@@ -303,7 +303,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // H3 — Settings corruption recovery (logical, filesystem)
+    // H3 - Settings corruption recovery (logical, filesystem)
     // ------------------------------------------------------------
     #[test]
     fn h3_settings_corruption_persists() {
@@ -441,7 +441,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // H4 — Oversized payload no limit (logical)
+    // H4 - Oversized payload no limit (logical)
     // ------------------------------------------------------------
     #[test]
     fn h4_oversized_payload_not_rejected_on_workflow_path() {
@@ -590,7 +590,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // M2 — Non-UTF8 path panic (logical)
+    // M2 - Non-UTF8 path panic (logical)
     // ------------------------------------------------------------
     #[test]
     fn m2_non_utf8_path_panics() {
@@ -622,7 +622,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // M1 — History silent zero (logical)
+    // M1 - History silent zero (logical)
     // ------------------------------------------------------------
     #[test]
     fn m1_history_swallows_errors() {
@@ -686,7 +686,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // M4 — Credential cross-preset migration (logical)
+    // M4 - Credential cross-preset migration (logical)
     // ------------------------------------------------------------
     #[test]
     fn m4_credential_cross_preset_migration() {
@@ -739,7 +739,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------
-    // L2 — DPI positioning (physical, needs verification)
+    // L2 - DPI positioning (physical, needs verification)
     // ------------------------------------------------------------
     #[test]
     fn l2_dpi_positioning_fractional() {
@@ -771,7 +771,7 @@ mod tests {
     #[test]
     fn physical_reproduction_needs_verification() {
         println!(
-            "\n=== PHYSICAL REPRODUCTION — NEEDS_VERIFICATION (environment lacks hardware) ==="
+            "\n=== PHYSICAL REPRODUCTION - NEEDS_VERIFICATION (environment lacks hardware) ==="
         );
         println!("[PHYSICAL-H1] Real WASAPI callback timing: requires USB mic + CPU load to observe truncation. Cannot reproduce deterministically in this env (no cpal device). Marked NEEDS_VERIFICATION.");
         println!("[PHYSICAL-H2] Real device hang (default_input_config blocking): requires exclusive-mode contention or unplugged device. Simulated logically above; physical needs hardware.");
@@ -800,7 +800,7 @@ mod tests {
         let has_fs_allow_read = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read") || v.as_str() == Some("fs:allow-read"));
         let has_fs_allow_write = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write") || v.as_str() == Some("fs:allow-write"));
         let has_fs_scope = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
-        assert!(!has_fs_default, "fs:default must be removed — use scoped fs:allow-* + fs:scope for hardening");
+        assert!(!has_fs_default, "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening");
         assert!(has_fs_allow_read, "fs:allow-read with scoped allow required");
         assert!(has_fs_allow_write, "fs:allow-write with scoped allow required");
         assert!(has_fs_scope, "fs:scope with explicit $APPDATA/$APPLOCALDATA/$APPCONFIG allow required");

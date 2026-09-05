@@ -1,7 +1,7 @@
-// Fluence Windows — Audio ducking module
+// Fluence Windows - Audio ducking module
 // Mutes/attenuates other apps' render sessions while dictating (Core Audio),
-// restoring each session's exact prior (volume, mute). State is plain data only —
-// no COM pointers cross calls — so every duck/restore re-enumerates live sessions
+// restoring each session's exact prior (volume, mute). State is plain data only -
+// no COM pointers cross calls - so every duck/restore re-enumerates live sessions
 // and matches by saved identifiers. A sidecar JSON makes a crash recoverable.
 
 /// RAII guard: restores ducked sessions when dropped. Placed at the top of each
@@ -60,7 +60,7 @@ mod sys {
     }
 
     /// `active_duck`: sessions ducked in the current cycle (restored on stop).
-    /// `pending_recovery`: entries whose session vanished (app closed while ducked) —
+    /// `pending_recovery`: entries whose session vanished (app closed while ducked) -
     /// its registry-persisted volume stays ducked, so we retain and reconcile later.
     #[derive(Default, Serialize, Deserialize)]
     struct DuckState {
@@ -76,7 +76,7 @@ mod sys {
     static RECONCILER_ACTIVE: AtomicBool = AtomicBool::new(false);
 
     /// A live session discovered during enumeration, holding its COM volume interface.
-    /// Lives only on the COM worker thread — never stored in `DuckState`.
+    /// Lives only on the COM worker thread - never stored in `DuckState`.
     struct LiveSession {
         endpoint_id: String,
         session_identifier: String,
@@ -167,7 +167,7 @@ mod sys {
     }
 
     /// Apply the duck: full mute when level is 0.0, else scale current volume by level
-    /// (multiplicative — preserves the user's relative mix).
+    /// (multiplicative - preserves the user's relative mix).
     unsafe fn apply_duck(vol: &ISimpleAudioVolume, level: f32, current: f32) {
         if level <= 0.0 {
             let _ = vol.SetMute(BOOL(1), std::ptr::null());
@@ -183,7 +183,7 @@ mod sys {
 
     /// Restore any `pending_recovery` entry whose session has reappeared, but only on an
     /// unambiguous 1:1 match by session_identifier (exactly one pending entry and exactly
-    /// one live session share it) — otherwise we might restore the wrong app instance.
+    /// one live session share it) - otherwise we might restore the wrong app instance.
     unsafe fn reconcile_pending(st: &mut DuckState, live: &[LiveSession]) {
         if st.pending_recovery.is_empty() {
             return;
@@ -343,7 +343,7 @@ mod sys {
 
     /// Start the background reconciliation tick if not already running. It polls every
     /// ~30 s while entries remain unresolved (an app closed while ducked, awaiting its
-    /// reopen) and exits once they drain — so no timer runs when there's nothing to do.
+    /// reopen) and exits once they drain - so no timer runs when there's nothing to do.
     fn ensure_reconciler() {
         if RECONCILER_ACTIVE.swap(true, Ordering::SeqCst) {
             return;

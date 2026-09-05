@@ -1,4 +1,4 @@
-// Fluence Windows — Windows Credential Manager integration
+// Fluence Windows - Windows Credential Manager integration
 // Securely stores API keys using the Windows Credential Manager API.
 
 use anyhow::{anyhow, Result};
@@ -39,7 +39,7 @@ fn to_wide(s: &str) -> Vec<u16> {
 /// Note: existing credentials written with CRED_PERSIST_LOCAL_MACHINE remain
 /// machine-visible until the next successful `store_credential` for that target,
 /// which rewrites them as CRED_PERSIST_ENTERPRISE (per-user/per-enterprise).
-/// No automatic migration is performed — the window closes on first re-save/re-auth.
+/// No automatic migration is performed - the window closes on first re-save/re-auth.
 #[cfg(target_os = "windows")]
 pub fn store_credential(target: &str, username: &str, secret: &str) -> Result<()> {
     let target_wide = to_wide(target);
@@ -125,7 +125,7 @@ pub fn delete_credential(_target: &str) -> Result<()> {
 // Credential target name constants
 pub const STT_API_KEY_TARGET: &str = "Fluence/STT_ApiKey";
 pub const LLM_API_KEY_TARGET: &str = "Fluence/LLM_ApiKey";
-/// OAuth refresh token for sync (spec §24) — stored in Credential Manager,
+/// OAuth refresh token for sync (spec §24) - stored in Credential Manager,
 /// never in a file; the access token stays in memory only.
 pub const SYNC_REFRESH_TOKEN_TARGET: &str = "Fluence/Sync/RefreshToken";
 

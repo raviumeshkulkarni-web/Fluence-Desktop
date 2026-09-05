@@ -1,4 +1,4 @@
-// Fluence sync — shared error types for the frozen v1.2 domain engine.
+// Fluence sync - shared error types for the frozen v1.2 domain engine.
 // Previously these lived in the legacy per-record engine; they now stand alone.
 
 use std::fmt;
@@ -7,7 +7,7 @@ use std::fmt;
 /// backoff/latch state machine; the domain engine only produces them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SyncError {
-    /// Refresh token missing/revoked — the user must sign in again.
+    /// Refresh token missing/revoked - the user must sign in again.
     AuthRequired,
     /// Transient failure (network, 429, 5xx, timeout). Safe to retry.
     Retryable(String),
@@ -22,7 +22,7 @@ pub enum SyncError {
     /// Local bug or unrecoverable state. Automatic scheduling pauses until
     /// a manual command re-arms it.
     Fatal(String),
-    /// 403 — the remote resource is not ours (wrong scope/account). Abort the
+    /// 403 - the remote resource is not ours (wrong scope/account). Abort the
     /// pass; never retried with escalation.
     NotOurs,
     /// A concurrent writer changed the remote domain file between our GET

@@ -1,7 +1,7 @@
-// Fluence sync — frozen v1.2 clock (wall UTC ms + maxSeen persisted floor)
+// Fluence sync - frozen v1.2 clock (wall UTC ms + maxSeen persisted floor)
 //
 // Winner ordering: max(updatedAt, deviceId), lexicographic. Tombstones are
-// ordinary records — they win exactly when they are newest. This makes
+// ordinary records - they win exactly when they are newest. This makes
 // delete/re-create symmetric: a newer deletion beats an older live record,
 // and a newer re-creation beats an older tombstone. Older remote state can
 // never resurrect over a newer local deletion.

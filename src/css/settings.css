@@ -1,6 +1,6 @@
 /* ====================================================
-   Fluence Windows — Settings Page CSS
-   "Precision Ink" — Ultra-thin borders, luminance surfaces
+   Fluence Windows - Settings Page CSS
+   "Precision Ink" - Ultra-thin borders, luminance surfaces
    ==================================================== */
 
 @import './global.css';
@@ -664,7 +664,7 @@ body {
   color: var(--color-on-surface-variant);
 }
 
-/* ── Numeric readouts — counts keep the mono accent face ────────── */
+/* ── Numeric readouts - counts keep the mono accent face ────────── */
 #offline-progress-percentage,
 #offline-progress-bytes,
 #update-progress-text {
@@ -919,15 +919,74 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .dict-table tr:hover td { background: var(--color-hover); }
 .dict-table .spoken-word { color: var(--color-on-surface-variant); font-style: italic; }
 .dict-table .corrected-word { color: var(--color-on-surface); font-weight: 500; }
-.dict-table .actions { width: 120px; text-align: right; }
+.dict-table .actions { width: 150px; text-align: right; white-space: nowrap; }
 
-/* Suggestions table frequency column — a count, keeps the mono face */
+/* Suggestions table frequency column - a count, keeps the mono face */
 #suggestions-table .frequency {
   color: var(--color-ink-muted);
   font-size: 12px;
   font-family: var(--font-label);
   font-variant-numeric: tabular-nums;
 }
+
+/* Suggestions table grammar: explicit header alignment to match content. */
+.dict-table th.actions { text-align: right; }
+
+/* Narrow centered checkbox column for suggestion bulk selection. */
+.dict-table .select-col { width: 36px; text-align: center; }
+.dict-table .select-col input[type="checkbox"] { vertical-align: middle; }
+
+/* Disabled state for the static bulk-action buttons in the section header. */
+#dismiss-selected-btn:disabled { opacity: 0.45; cursor: default; }
+
+/* Labeled "Select all" control in the suggestions section header. */
+.suggestions-select-all-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.suggestions-select-all-label input { vertical-align: middle; }
+.suggestions-select-all-label input:disabled { cursor: default; opacity: 0.45; }
+
+/* Provenance chip for auto-added dictionary rows. */
+.source-badge {
+  display: inline-block;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface-variant);
+  border: 1px solid var(--color-outline);
+  border-radius: var(--radius-sm);
+  padding: 2px 6px;
+}
+
+/* Suggestion group headers follow .dict-table th grammar. */
+.suggestions-group-row td {
+  text-transform: uppercase;
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: var(--color-on-surface-variant);
+  background: var(--color-surface-secondary);
+  padding: 10px var(--spacing-md) 4px var(--spacing-md);
+}
+.suggestions-group-sub {
+  text-transform: none;
+  letter-spacing: normal;
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--color-outline);
+  margin-top: 2px;
+}
+
+/* Disabled dependent toggle (auto-accept requires auto-learn). */
+.toggle-switch input:disabled + .toggle-track { opacity: 0.45; }
+.toggle-switch input:disabled { cursor: not-allowed; }
 
 /* ── Skeleton Loading Shimmer ─────────────────────────────────── */
 @keyframes shimmer {

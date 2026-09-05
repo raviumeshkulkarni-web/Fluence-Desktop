@@ -1,4 +1,4 @@
-// Fluence Windows — Auto-Learn Module
+// Fluence Windows - Auto-Learn Module
 // Contains pipeline-based extraction AND UIA-based post-injection monitoring.
 //
 // Pipeline extraction (extraction.rs): Compares raw STT output vs final text

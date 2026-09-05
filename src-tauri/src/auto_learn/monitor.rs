@@ -1,4 +1,4 @@
-// Fluence Windows — Auto-Learn Monitor
+// Fluence Windows - Auto-Learn Monitor
 // Runs on a dedicated OS thread with COM STA.
 // Monitors the focused text field for user edits after text injection.
 // Uses adaptive polling: fast initially, then slower to reduce overhead.
@@ -40,6 +40,24 @@ const MEDIUM_THRESHOLD_MS: u64 = 15000;
 /// Maximum output characters from UIA before we consider it unreliable.
 const MAX_FIELD_CHARS: usize = 50_000;
 
+/// Attempts (and delay between them) when establishing the initial field
+/// value. A single read right after paste commonly misses: the paste may
+/// still be landing, focus settling, or the UIA tree churning.
+const INITIAL_READ_ATTEMPTS: u32 = 4;
+const INITIAL_READ_RETRY_DELAY_MS: u64 = 250;
+
+/// Consecutive transient read failures tolerated mid-session before giving
+/// up. Semantic exits (focus change, secure/read-only field) still stop
+/// the session immediately; only NoElement/NoValue are retried.
+const MAX_TRANSIENT_FAILURES: u32 = 3;
+
+/// Consecutive identical reads required before a changed value is treated
+/// as settled and diffed. While the user is typing, every poll sees a new
+/// intermediate value; extracting from those would turn each keystroke into
+/// its own candidate. Waiting for two identical reads collapses the whole
+/// keystroke burst into one diff of the final text.
+const SETTLED_POLLS: u32 = 2;
+
 // ── Structured Session Results ────────────────────────────────────
 
 /// Why a monitoring session ended.
@@ -63,6 +81,9 @@ pub enum ExitReason {
     FieldTooLarge { chars: usize },
     /// UIA reader could not be created (COM init, no text patterns, etc.).
     ReaderInitFailed,
+    /// The observed field never contained the injected text (wrong field
+    /// locked on, paste landed elsewhere, or the app rewrote content).
+    InjectedTextNotObserved,
 }
 
 /// Structured result of a single monitoring session.
@@ -92,7 +113,7 @@ pub fn monitoring_thread(rx: Receiver<MonitorRequest>, active_generation: &Atomi
     match super::ui_automation::FocusedTextReader::new() {
         // We just test COM init here; actual reader is created per-session
         None => {
-            // COM init failed — but we can't proceed, so just loop on the channel
+            // COM init failed - but we can't proceed, so just loop on the channel
             // to avoid crashing. We'll re-create the reader per session anyway.
             log::warn!("[AutoLearn] Initial COM check failed, will retry per session");
         }
@@ -187,73 +208,111 @@ fn run_monitoring_session(
         }
     };
 
-    // Read the initial value
-    let initial_value = match reader.read_current_value() {
-        ReadResult::Value(v) => {
-            if v.len() > MAX_FIELD_CHARS {
-                log::debug!(
-                    "[AutoLearn] Initial field too large ({} chars), skipping",
-                    v.len()
-                );
-                return SessionResult {
-                    exit_reason: ExitReason::FieldTooLarge { chars: v.len() },
-                    duration_ms: session_start.elapsed().as_millis() as u64,
-                    poll_count: 0,
-                    value_changed: false,
-                    corrections_count: 0,
-                };
+    // Establish the baseline field value, retrying transient failures.
+    // Also verify the field actually contains the injected text: without
+    // this check the monitor can diff against wrong-field content and either
+    // learn garbage or (more often) silently learn nothing.
+    let initial_value: String = {
+        let mut attempts: u32 = 0;
+        loop {
+            attempts += 1;
+            match reader.read_current_value() {
+                ReadResult::Value(v) => {
+                    if v.len() > MAX_FIELD_CHARS {
+                        log::debug!(
+                            "[AutoLearn] Initial field too large ({} chars), skipping",
+                            v.len()
+                        );
+                        return SessionResult {
+                            exit_reason: ExitReason::FieldTooLarge { chars: v.len() },
+                            duration_ms: session_start.elapsed().as_millis() as u64,
+                            poll_count: 0,
+                            value_changed: false,
+                            corrections_count: 0,
+                        };
+                    }
+                    if v.contains(injected_text) {
+                        break v;
+                    }
+                    log::debug!(
+                        "[AutoLearn] Injected text not yet observed (attempt {})",
+                        attempts
+                    );
+                    if attempts >= INITIAL_READ_ATTEMPTS {
+                        log::info!("[AutoLearn] Field never contained injected text, stopping");
+                        return SessionResult {
+                            exit_reason: ExitReason::InjectedTextNotObserved,
+                            duration_ms: session_start.elapsed().as_millis() as u64,
+                            poll_count: 0,
+                            value_changed: false,
+                            corrections_count: 0,
+                        };
+                    }
+                }
+                ReadResult::NoValue => {
+                    if attempts >= INITIAL_READ_ATTEMPTS {
+                        log::debug!("[AutoLearn] Focused element has no text value, stopping");
+                        return SessionResult {
+                            exit_reason: ExitReason::NoValue,
+                            duration_ms: session_start.elapsed().as_millis() as u64,
+                            poll_count: 0,
+                            value_changed: false,
+                            corrections_count: 0,
+                        };
+                    }
+                    log::debug!(
+                        "[AutoLearn] No text value yet, retrying (attempt {})",
+                        attempts
+                    );
+                }
+                ReadResult::NoElement => {
+                    if attempts >= INITIAL_READ_ATTEMPTS {
+                        log::debug!("[AutoLearn] No focused element found, stopping");
+                        return SessionResult {
+                            exit_reason: ExitReason::NoElement,
+                            duration_ms: session_start.elapsed().as_millis() as u64,
+                            poll_count: 0,
+                            value_changed: false,
+                            corrections_count: 0,
+                        };
+                    }
+                    log::debug!(
+                        "[AutoLearn] No focused element yet, retrying (attempt {})",
+                        attempts
+                    );
+                }
+                ReadResult::FocusChanged => {
+                    log::debug!("[AutoLearn] Focus changed during init, stopping");
+                    return SessionResult {
+                        exit_reason: ExitReason::FocusChanged,
+                        duration_ms: session_start.elapsed().as_millis() as u64,
+                        poll_count: 0,
+                        value_changed: false,
+                        corrections_count: 0,
+                    };
+                }
+                ReadResult::SecureField => {
+                    log::info!("[AutoLearn] Focused element is a password field, not monitoring");
+                    return SessionResult {
+                        exit_reason: ExitReason::SecureFieldDetected,
+                        duration_ms: session_start.elapsed().as_millis() as u64,
+                        poll_count: 0,
+                        value_changed: false,
+                        corrections_count: 0,
+                    };
+                }
+                ReadResult::ReadOnly => {
+                    log::debug!("[AutoLearn] Focused element is read-only, not monitoring");
+                    return SessionResult {
+                        exit_reason: ExitReason::ReadOnlyField,
+                        duration_ms: session_start.elapsed().as_millis() as u64,
+                        poll_count: 0,
+                        value_changed: false,
+                        corrections_count: 0,
+                    };
+                }
             }
-            v
-        }
-        ReadResult::NoValue => {
-            log::debug!("[AutoLearn] Focused element has no text value, stopping");
-            return SessionResult {
-                exit_reason: ExitReason::NoValue,
-                duration_ms: session_start.elapsed().as_millis() as u64,
-                poll_count: 0,
-                value_changed: false,
-                corrections_count: 0,
-            };
-        }
-        ReadResult::NoElement => {
-            log::debug!("[AutoLearn] No focused element found, stopping");
-            return SessionResult {
-                exit_reason: ExitReason::NoElement,
-                duration_ms: session_start.elapsed().as_millis() as u64,
-                poll_count: 0,
-                value_changed: false,
-                corrections_count: 0,
-            };
-        }
-        ReadResult::FocusChanged => {
-            log::debug!("[AutoLearn] Focus changed during init, stopping");
-            return SessionResult {
-                exit_reason: ExitReason::FocusChanged,
-                duration_ms: session_start.elapsed().as_millis() as u64,
-                poll_count: 0,
-                value_changed: false,
-                corrections_count: 0,
-            };
-        }
-        ReadResult::SecureField => {
-            log::info!("[AutoLearn] Focused element is a password field, not monitoring");
-            return SessionResult {
-                exit_reason: ExitReason::SecureFieldDetected,
-                duration_ms: session_start.elapsed().as_millis() as u64,
-                poll_count: 0,
-                value_changed: false,
-                corrections_count: 0,
-            };
-        }
-        ReadResult::ReadOnly => {
-            log::debug!("[AutoLearn] Focused element is read-only, not monitoring");
-            return SessionResult {
-                exit_reason: ExitReason::ReadOnlyField,
-                duration_ms: session_start.elapsed().as_millis() as u64,
-                poll_count: 0,
-                value_changed: false,
-                corrections_count: 0,
-            };
+            std::thread::sleep(Duration::from_millis(INITIAL_READ_RETRY_DELAY_MS));
         }
     };
 
@@ -262,7 +321,14 @@ fn run_monitoring_session(
         initial_value.len()
     );
 
-    let mut last_value = initial_value;
+    let mut last_value = initial_value.clone();
+    let mut consecutive_transient_failures: u32 = 0;
+    // Settle tracking: only a value observed unchanged across SETTLED_POLLS
+    // consecutive reads is diffed. `last_extracted_value` guards the final
+    // end-of-session diff against re-saving an already extracted state.
+    let mut pending_value: Option<String> = None;
+    let mut stable_polls: u32 = 0;
+    let mut last_extracted_value = initial_value.clone();
     let exit_reason: ExitReason;
 
     // Adaptive polling loop
@@ -294,6 +360,7 @@ fn run_monitoring_session(
         // Read current value
         match reader.read_current_value() {
             ReadResult::Value(current_value) => {
+                consecutive_transient_failures = 0;
                 if current_value.len() > MAX_FIELD_CHARS {
                     log::debug!(
                         "[AutoLearn] Field value too large ({} chars), stopping",
@@ -313,35 +380,76 @@ fn run_monitoring_session(
                     );
 
                     value_changed = true;
+                    last_value = current_value;
+                }
 
-                    // Extract corrections from the diff
-                    let corrections = extract_user_corrections(injected_text, &current_value);
+                // Settle gate: track the latest value, but only diff it once
+                // it has been observed unchanged across SETTLED_POLLS polls.
+                // Intermediate keystrokes keep resetting the counter, so a
+                // burst of typing yields one diff of the final text instead
+                // of one candidate per keystroke. No per-session cap: a
+                // session with several genuine corrections captures all of
+                // them, one settled diff at a time.
+                if last_value == last_extracted_value {
+                    pending_value = None;
+                    stable_polls = 0;
+                } else if pending_value.as_deref() == Some(last_value.as_str()) {
+                    stable_polls += 1;
+                } else {
+                    pending_value = Some(last_value.clone());
+                    stable_polls = 1;
+                }
 
-                    if !corrections.is_empty() {
-                        match learner::save_corrections(corrections) {
-                            Ok(count) => {
-                                log::info!(
-                                    "[AutoLearn] Saved {} corrections after {}ms",
-                                    count,
-                                    session_start.elapsed().as_millis()
-                                );
-                                corrections_count += count as u32;
-                            }
-                            Err(e) => {
-                                log::warn!("[AutoLearn] Failed to save corrections: {}", e);
+                if stable_polls >= SETTLED_POLLS {
+                    if let Some(target) = pending_value.take() {
+                        stable_polls = 0;
+                        let corrections =
+                            extract_user_corrections(injected_text, &initial_value, &target);
+
+                        if !corrections.is_empty() {
+                            match learner::save_corrections(corrections) {
+                                Ok(count) => {
+                                    log::info!(
+                                        "[AutoLearn] Saved {} corrections after {}ms",
+                                        count,
+                                        session_start.elapsed().as_millis()
+                                    );
+                                    corrections_count += count as u32;
+                                }
+                                Err(e) => {
+                                    log::warn!("[AutoLearn] Failed to save corrections: {}", e);
+                                }
                             }
                         }
-                    }
 
-                    last_value = current_value;
+                        last_extracted_value = target;
+                    }
                 }
             }
             ReadResult::NoValue => {
+                consecutive_transient_failures += 1;
+                if consecutive_transient_failures < MAX_TRANSIENT_FAILURES {
+                    log::debug!(
+                        "[AutoLearn] Field has no value (transient {}/{}), retrying",
+                        consecutive_transient_failures,
+                        MAX_TRANSIENT_FAILURES
+                    );
+                    continue;
+                }
                 log::debug!("[AutoLearn] Field has no value, stopping");
                 exit_reason = ExitReason::NoValue;
                 break;
             }
             ReadResult::NoElement => {
+                consecutive_transient_failures += 1;
+                if consecutive_transient_failures < MAX_TRANSIENT_FAILURES {
+                    log::debug!(
+                        "[AutoLearn] No focused element (transient {}/{}), retrying",
+                        consecutive_transient_failures,
+                        MAX_TRANSIENT_FAILURES
+                    );
+                    continue;
+                }
                 log::debug!("[AutoLearn] No focused element, stopping");
                 exit_reason = ExitReason::NoElement;
                 break;
@@ -363,6 +471,38 @@ fn run_monitoring_session(
                 log::info!("[AutoLearn] User tabbed into read-only field, stopping");
                 exit_reason = ExitReason::ReadOnlyField;
                 break;
+            }
+        }
+    }
+
+    // Final diff: the last observed state may never have settled (user was
+    // still typing at timeout, or clicked away mid-edit). One diff of the
+    // final-vs-injected text captures the net correction without reviving
+    // the per-keystroke noise above. Only for exits where the last read is
+    // trustworthy: Timeout (field kept changing) and FocusChanged (last
+    // read passed the same-element check). Superseded sessions are skipped
+    // - the user is actively dictating again and the new session owns the
+    // field - as are error exits where the field is gone or unreadable.
+    if matches!(exit_reason, ExitReason::Timeout | ExitReason::FocusChanged)
+        && last_value != last_extracted_value
+    {
+        let corrections = extract_user_corrections(injected_text, &initial_value, &last_value);
+        if !corrections.is_empty() {
+            match learner::save_corrections(corrections) {
+                Ok(count) => {
+                    log::info!(
+                        "[AutoLearn] Saved {} corrections from final state after {}ms",
+                        count,
+                        session_start.elapsed().as_millis()
+                    );
+                    corrections_count += count as u32;
+                }
+                Err(e) => {
+                    log::warn!(
+                        "[AutoLearn] Failed to save corrections from final state: {}",
+                        e
+                    );
+                }
             }
         }
     }
@@ -391,10 +531,11 @@ fn run_monitoring_session(
 
 // ── Diagnostics ───────────────────────────────────────────────────
 
-/// Log session result. Structured diagnostics gated behind debug assertions.
+/// Log session result. Always compiled in: the exit reason is the primary
+/// diagnostic for "why did Auto Learn not learn anything" reports.
+/// Run with RUST_LOG=info to see these lines in production builds.
 fn log_session_result(result: &SessionResult) {
-    #[cfg(debug_assertions)]
-    log::debug!(
+    log::info!(
         "[AutoLearn] Session diagnostic: {}",
         serde_json::to_string(result).unwrap_or_else(|_| format!("{:?}", result))
     );
@@ -416,6 +557,7 @@ mod tests {
             ExitReason::NoValue,
             ExitReason::FieldTooLarge { chars: 99999 },
             ExitReason::ReaderInitFailed,
+            ExitReason::InjectedTextNotObserved,
         ];
         for reason in &reasons {
             let json = serde_json::to_string(reason).unwrap();
@@ -473,6 +615,7 @@ mod tests {
             ExitReason::NoValue,
             ExitReason::FieldTooLarge { chars: 0 },
             ExitReason::ReaderInitFailed,
+            ExitReason::InjectedTextNotObserved,
         ];
         let jsons: Vec<String> = reasons
             .iter()

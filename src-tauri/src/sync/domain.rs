@@ -1,15 +1,15 @@
-// Fluence sync — frozen v1.2 domain envelopes (dictionary, snippets, stats, settings)
+// Fluence sync - frozen v1.2 domain envelopes (dictionary, snippets, stats, settings)
 //
 // Drive: drive.appdata, appDataFolder/fluence/v1/{dictionary.json,snippets.json,stats.json,settings.json}
 //
 // Validation policy (v1.2 hardening):
 // - Envelope version must be exactly 1; anything else is skipped as foreign.
-// - Individual records that fail validation are SKIPPED, never applied —
+// - Individual records that fail validation are SKIPPED, never applied -
 //   one malformed record must not discard an otherwise-valid domain.
 // - Envelopes exceeding the item cap or byte cap are rejected wholesale
 //   (corruption/abuse guard).
 // - businessKey identity is always recomputed from record CONTENT
-//   (`business_key()` derives from spoken/trigger) — never trusted from wire.
+//   (`business_key()` derives from spoken/trigger) - never trusted from wire.
 // - Duplicate domain files on Drive are all fetched and merged by the engine.
 
 use serde::ser::{SerializeStruct, Serializer};
@@ -23,7 +23,7 @@ pub const ENVELOPE_V1: i32 = 1;
 /// anything beyond this bound is corruption or abuse.
 pub const MAX_ENVELOPE_ITEMS: usize = 50_000;
 
-/// F3 — far-future clock cap: records stamped >24h beyond wall clock are invalid (per-record skip, never whole-file).
+/// F3 - far-future clock cap: records stamped >24h beyond wall clock are invalid (per-record skip, never whole-file).
 pub const CLOCK_SKEW_TOLERANCE_MS: i64 = 24 * 60 * 60 * 1000;
 
 fn default_kind() -> String {
@@ -39,7 +39,7 @@ pub struct DictionaryItem {
     pub spoken: String,
     pub corrected: String,
     #[serde(default = "default_kind", skip_serializing)]
-    pub kind: String, // correction | expansion — internal only, never on wire (F1)
+    pub kind: String, // correction | expansion - internal only, never on wire (F1)
     #[serde(rename = "isEnabled")]
     pub is_enabled: bool,
     #[serde(rename = "deletedAt")]
@@ -55,7 +55,7 @@ impl Serialize for DictionaryItem {
     where
         S: Serializer,
     {
-        // F1 — strict wire contract: {syncId, businessKey, spoken, corrected, isEnabled, updatedAt, deletedAt, deviceId}
+        // F1 - strict wire contract: {syncId, businessKey, spoken, corrected, isEnabled, updatedAt, deletedAt, deviceId}
         // businessKey computed, kind never emitted, fixed order per frozen README
         let mut s = serializer.serialize_struct("DictionaryItem", 8)?;
         s.serialize_field("syncId", &self.sync_id)?;
@@ -71,7 +71,7 @@ impl Serialize for DictionaryItem {
 }
 
 impl DictionaryItem {
-    /// Canonical identity — ALWAYS derived from content, never from any wire
+    /// Canonical identity - ALWAYS derived from content, never from any wire
     /// field. NFC-normalized + case-insensitive on the spoken form (symmetric cross-platform).
     pub fn business_key(&self) -> String {
         self.spoken.trim().nfc().collect::<String>().to_lowercase()
@@ -99,7 +99,7 @@ impl DictionaryItem {
         if self.updated_at <= 0 {
             return false;
         }
-        // F3 — far-future cap: reject records stamped >24h beyond wall clock (per-record skip, never whole-file)
+        // F3 - far-future cap: reject records stamped >24h beyond wall clock (per-record skip, never whole-file)
         let now = chrono::Utc::now().timestamp_millis();
         if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
             return false;
@@ -174,7 +174,7 @@ impl Serialize for SnippetItem {
     where
         S: Serializer,
     {
-        // F1 — strict wire contract: {syncId, businessKey, trigger, expansion, isEnabled, updatedAt, deletedAt, deviceId}
+        // F1 - strict wire contract: {syncId, businessKey, trigger, expansion, isEnabled, updatedAt, deletedAt, deviceId}
         let mut s = serializer.serialize_struct("SnippetItem", 8)?;
         s.serialize_field("syncId", &self.sync_id)?;
         s.serialize_field("businessKey", &self.business_key())?;
@@ -189,7 +189,7 @@ impl Serialize for SnippetItem {
 }
 
 impl SnippetItem {
-    /// Canonical identity — derived from the trigger content. NFC-normalized + case-insensitive (symmetric).
+    /// Canonical identity - derived from the trigger content. NFC-normalized + case-insensitive (symmetric).
     pub fn business_key(&self) -> String {
         self.trigger.trim().nfc().collect::<String>().to_lowercase()
     }
@@ -205,7 +205,7 @@ impl SnippetItem {
         if self.device_id.is_empty() || self.updated_at <= 0 {
             return false;
         }
-        // F3 — far-future cap
+        // F3 - far-future cap
         let now = chrono::Utc::now().timestamp_millis();
         if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
             return false;
@@ -286,7 +286,7 @@ impl SettingsItem {
         if self.updated_at <= 0 || self.device_id.is_empty() {
             return false;
         }
-        // F3 — far-future cap
+        // F3 - far-future cap
         let now = chrono::Utc::now().timestamp_millis();
         if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
             return false;
@@ -367,7 +367,7 @@ impl StatsItem {
         if self.timestamp_ms < 0 {
             return false;
         }
-        // F3 — far-future cap for stats: updatedAt > now+24h is invalid per-record (only Some, None stays valid)
+        // F3 - far-future cap for stats: updatedAt > now+24h is invalid per-record (only Some, None stays valid)
         if let Some(t) = self.updated_at {
             let now = chrono::Utc::now().timestamp_millis();
             if t > now + CLOCK_SKEW_TOLERANCE_MS {
@@ -385,7 +385,7 @@ impl StatsItem {
 
     /// Fresh event for one completed dictation. `event_id` is deterministic
     /// per history row (UUIDv5 of the row id) so even a duplicated commit
-    /// path produces the SAME event id and union dedup absorbs it — exactly
+    /// path produces the SAME event id and union dedup absorbs it - exactly
     /// once counting by construction.
     pub fn from_history_row(
         history_id: &str,
@@ -422,7 +422,7 @@ pub fn synthetic_backfill_id(history_id: &str, account_hash: &str) -> String {
     uuid::Uuid::new_v5(&uuid::Uuid::NAMESPACE_OID, name.as_bytes()).to_string()
 }
 
-/// F2 — collapse rule primitive: filter day-aggregate StatsItems (timestamp_ms==0 && chars==0)
+/// F2 - collapse rule primitive: filter day-aggregate StatsItems (timestamp_ms==0 && chars==0)
 /// where (day) already has dictation-level events. Pure and testable; used by the post-merge
 /// filter below AND keeps the flagged legacy reconciliation OFF (resurrection-unsafe).
 pub fn filter_aggregates_for_existing_dictation(
@@ -586,7 +586,7 @@ mod tests {
 
     #[test]
     fn android_canonical_fixtures_parse_and_roundtrip() {
-        // UNIT A — byte-gate for all four domains against canonical fixtures (frozen contract).
+        // UNIT A - byte-gate for all four domains against canonical fixtures (frozen contract).
         // Verifies: parse ok, counts, validation, and byte-identical re-serialization (exactly one trailing \n, CRLF-normalized).
         let dict_raw = include_bytes!("../../../examples/sync/v1/dictionary.json");
         let dict = DictionaryEnvelope::from_bytes(dict_raw).expect("dict fixture");
@@ -595,7 +595,7 @@ mod tests {
         assert_eq!(dict.entries[0].business_key(), "asap");
         assert_eq!(dict.entries[1].business_key(), "gonna");
         assert_eq!(dict.entries[2].business_key(), "teh");
-        // F1 — strict byte-gate: dict/snips must be byte-identical to fixtures (businessKey, no kind, fixed order)
+        // F1 - strict byte-gate: dict/snips must be byte-identical to fixtures (businessKey, no kind, fixed order)
         let dict_bytes = DictionaryEnvelope {
             v: 1,
             entries: dict.entries.clone(),
@@ -699,7 +699,7 @@ mod tests {
 
     #[test]
     fn business_key_nfc_normalized_cafe() {
-        // ITEM 1 — NFC: precomposed é (U+00E9) vs e + combining acute (U+0301) must yield same businessKey, merge dedups to one
+        // ITEM 1 - NFC: precomposed é (U+00E9) vs e + combining acute (U+0301) must yield same businessKey, merge dedups to one
         let precomposed = "café"; // café with U+00E9
         let decomposed = "cafe\u{0301}"; // cafe + U+0301
         let a = dict(precomposed, "x", 100);
@@ -742,7 +742,7 @@ mod tests {
 
     #[test]
     fn future_stamped_record_skipped_per_record() {
-        // F3 — far-future cap: updatedAt > now+24h is invalid per-record, never whole-file
+        // F3 - far-future cap: updatedAt > now+24h is invalid per-record, never whole-file
         let now = chrono::Utc::now().timestamp_millis();
         let future = now + CLOCK_SKEW_TOLERANCE_MS + 60_000;
         let mut bad = dict("future", "bad", future);

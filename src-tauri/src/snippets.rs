@@ -1,9 +1,9 @@
-// Fluence Windows — Text Expansion (Snippets)
+// Fluence Windows - Text Expansion (Snippets)
 // Ported from the Android app: a spoken trigger phrase is replaced by
 // expansion text in the FINAL transcript, after dictionary corrections.
 //
 // SECURITY INVARIANT: snippet data is applied only to the final
-// transcript text. It NEVER enters the STT recognition prompt — the
+// transcript text. It NEVER enters the STT recognition prompt - the
 // prompt is built exclusively from dictionary correction entries
 // (see transcribe::build_vocabulary_hint).
 
@@ -146,7 +146,7 @@ pub(crate) fn invalidate_cache() {
 
 /// Post-transcription pipeline: dictionary corrections first, then
 /// snippet expansion (only when the master toggle is enabled).
-/// This runs on the final text only — never on the STT prompt.
+/// This runs on the final text only - never on the STT prompt.
 pub fn process_transcript(text: &str) -> String {
     let corrected = crate::dictionary::apply_corrections(text);
     let store = cached_store();

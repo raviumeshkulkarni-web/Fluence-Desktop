@@ -1,4 +1,4 @@
-// Fluence Windows — Agent Mode module
+// Fluence Windows - Agent Mode module
 // Sends voice commands + clipboard context to an OpenAI-compatible LLM
 // and executes structured actions (insert, delete, select_all, submit).
 
@@ -135,7 +135,7 @@ fn truncate_provider_body(body: &str) -> String {
 
 #[tauri::command]
 pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, String> {
-    // Correlation id for log tracing (A8). Lengths only below — never the
+    // Correlation id for log tracing (A8). Lengths only below - never the
     // api_key, voice text, or clipboard content.
     let request_id = req.request_id.clone().unwrap_or_default();
     let log_id = if request_id.is_empty() {
@@ -240,7 +240,7 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
             status,
             agent_start.elapsed()
         );
-        // Classify common cases for actionable UI — never log the api_key or clipboard content
+        // Classify common cases for actionable UI - never log the api_key or clipboard content
         if status.as_u16() == 401 || status.as_u16() == 403 {
             return Err(format!(
                 "LLM auth failed ({}). Check Providers → LLM API key and model. {}",

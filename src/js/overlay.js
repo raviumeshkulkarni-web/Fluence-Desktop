@@ -1,10 +1,10 @@
 /**
- * Fluence Windows — Overlay Window JS
+ * Fluence Windows - Overlay Window JS
  * 
  * Controls the floating recording overlay states and connects to
  * Tauri IPC events from the Rust backend.
  * 
- * Design: Precision Ink status card — three luminance zones,
+ * Design: Precision Ink status card - three luminance zones,
  * waveform hero, duration timer, mode badge.
  */
 
@@ -32,7 +32,7 @@ let retryTimer = null;
 let nextSessionId = 0;
 let activeSessionId = 0;
 let chimeCtx = null;
-// Agent-mode hardening state (agent path only — the STT flow never reads these)
+// Agent-mode hardening state (agent path only - the STT flow never reads these)
 let agentRequestSeq = 0;
 let agentRetryContext = null;
 let lastAgentStartAt = 0;
@@ -142,7 +142,7 @@ async function setupEventListeners() {
   await listen('hotkey-start-agent-recording', async () => {
     console.log('hotkey-start-agent-recording event received');
     // Debounce (A4): a duplicate start arriving <300ms into an agent
-    // recording is a hotkey bounce, not intent — dropping it protects the
+    // recording is a hotkey bounce, not intent - dropping it protects the
     // just-started capture. Starts in any other state proceed normally.
     const now = Date.now();
     if (currentState === 'agent' && now - lastAgentStartAt < 300) return;
@@ -284,7 +284,7 @@ function applyAppInfo(info) {
     pillName.textContent = info.name;
   }
   pill.hidden = false;
-  // Apply synchronously — requestAnimationFrame can be dropped while the
+  // Apply synchronously - requestAnimationFrame can be dropped while the
   // overlay window is still hidden, which would leave the pill at opacity 0.
   pill.classList.add('visible');
 }
@@ -310,7 +310,7 @@ function startAppPolling() {
         applyAppInfo(info);
       }
     } catch (err) {
-      // Transient — keep showing the current pill.
+      // Transient - keep showing the current pill.
     }
   }, 1200);
 }
@@ -561,7 +561,7 @@ function setupDiscardButton() {
       // NOTE (A10): beginSession() invalidates any in-flight agent/transcription
       // session; its late result is dropped by isSessionActive guards. An
       // orphaned backend LLM request (if any) still runs to completion but can
-      // no longer touch UI, clipboard, or history. Accepted behavior — true
+      // no longer touch UI, clipboard, or history. Accepted behavior - true
       // backend cancellation is Class B (needs explicit approval).
       const sessionId = beginSession();
       resetTransientUi();
@@ -640,7 +640,7 @@ async function stopAndTranscribe(agentMode, sessionId) {
         invoke('stop_and_transcribe_recording'),
         invoke('get_settings'),
       ]);
-      // BUG-06: differentiate empty/silence from error — show brief feedback, not silent vanish
+      // BUG-06: differentiate empty/silence from error - show brief feedback, not silent vanish
       // EXPERIMENT Trial 4: gate rejections vanish instantly (no notice).
       // The gate already proved there is no speech; anything else empty
       // keeps the gentle notice below.
@@ -651,7 +651,7 @@ async function stopAndTranscribe(agentMode, sessionId) {
       if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
         if (isSessionActive(sessionId)) {
           // Very short recordings (<200ms) are already discarded by audio pipeline as accidental press
-          // Silence gets a gentle, neutral notice — not a red error X
+          // Silence gets a gentle, neutral notice - not a red error X
           setState('no-speech');
           setStatusMessage('No speech detected');
           scheduleAutoDismiss(2500);
@@ -696,7 +696,7 @@ async function runSttFlow(sessionId, retry = false) {
     const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
     if (!result.text || !result.text.trim() || !hasAlphanumeric) {
       if (isSessionActive(sessionId)) {
-        // Silence is a normal outcome, not an error — neutral notice, no red X
+        // Silence is a normal outcome, not an error - neutral notice, no red X
         setState('no-speech');
         setStatusMessage('No speech detected');
         scheduleAutoDismiss(2500);
@@ -740,7 +740,7 @@ async function runSttFlow(sessionId, retry = false) {
   }
 }
 
-// Agent error → user-facing status label (pure function — no DOM, so it can
+// Agent error → user-facing status label (pure function - no DOM, so it can
 // be unit-tested in Node; the STT flow never calls it).
 function mapAgentErrorToStatus(err) {
   const msg = String(err || '');
@@ -784,7 +784,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       try {
         clipboardCtx = (await invoke('grab_active_selection').catch(() => '')) || '';
       } catch {
-        // Clipboard read may fail if no permission — proceed without context
+        // Clipboard read may fail if no permission - proceed without context
       }
     }
 
@@ -817,7 +817,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
 
     // Defensive (A7): the backend whitelists actions and rejects blank
     // content, but never present a silent no-op as success if anything
-    // slips through — route it to the parse-failure branch instead.
+    // slips through - route it to the parse-failure branch instead.
     if (action.action === 'insert' || action.action === 'rewrite') {
       if (!action.content || !action.content.trim()) {
         throw new Error('Empty response from LLM');
@@ -882,7 +882,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     console.error('Agent Error:', err);
     if (!isSessionActive(sessionId)) return;
     setState('error');
-    // Actionable error mapping (A1) — never show generic Failed alone.
+    // Actionable error mapping (A1) - never show generic Failed alone.
     // Retryable failures cache the attempt so Retry re-sends the LLM request
     // without forcing a re-record (A2); config errors offer no retry.
     const { label, retryable } = mapAgentErrorToStatus(err);
@@ -900,7 +900,7 @@ async function setupHotkeyBusyFeedback() {
   await listen('hotkey-busy', (evt) => {
     console.warn('Hotkey busy:', evt.payload);
     if (currentState === 'recording' || currentState === 'agent' || currentState === 'transcribing' || currentState === 'agent_transcribing') {
-      // already busy recording — gentle hint, not error
+      // already busy recording - gentle hint, not error
       setStatusMessage('Recording busy');
       scheduleAutoDismiss(1200);
     }
@@ -942,7 +942,7 @@ function setState(state) {
         recLabel.textContent = 'PROCESSING';
         break;
       case 'no-speech':
-        // Quiet neutral state — the status notice carries the message
+        // Quiet neutral state - the status notice carries the message
         recLabel.textContent = '';
         break;
       default:

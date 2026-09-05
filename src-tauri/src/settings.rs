@@ -1,4 +1,4 @@
-// Fluence Windows — Settings module
+// Fluence Windows - Settings module
 // Manages persistent configuration in a JSON file in the app data directory.
 
 use anyhow::Result;
@@ -82,6 +82,11 @@ pub struct AppSettings {
     pub auto_grab_highlight: bool,
     #[serde(default = "default_true")]
     pub auto_learn_enabled: bool,
+    /// Master switch for automatic suggestion acceptance. Default OFF.
+    /// Local-only by design: intentionally NOT in the settings sync
+    /// allowlist, so no device can opt another into autonomous writes.
+    #[serde(default = "default_false")]
+    pub auto_accept_enabled: bool,
     #[serde(default = "default_false")]
     pub duck_enabled: bool,
     #[serde(default = "default_duck_level")]
@@ -181,6 +186,7 @@ impl Default for AppSettings {
             ai_polish_style: default_ai_polish_style(),
             auto_grab_highlight: default_true(),
             auto_learn_enabled: default_true(),
+            auto_accept_enabled: default_false(),
             duck_enabled: default_false(),
             duck_level: default_duck_level(),
             offline_engine: default_offline_engine(),
@@ -303,7 +309,7 @@ pub fn update_settings(
     let old_account = load_settings().ok().and_then(|s| s.sync_account_key);
     save_settings(&settings).map_err(|e| e.to_string())?;
     // Account switch via any path (frontend, file, scheduler) must drop
-    // compiled caches that were keyed to the previous account — otherwise
+    // compiled caches that were keyed to the previous account - otherwise
     // W1/W8 stale-cache shows foreign snippets/dictionary until next write.
     if old_account != settings.sync_account_key {
         crate::dictionary::invalidate_cache();

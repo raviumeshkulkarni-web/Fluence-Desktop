@@ -1,4 +1,4 @@
-// Fluence Windows — UI Automation Reader
+// Fluence Windows - UI Automation Reader
 // Reads the focused text field value via Windows UI Automation (UIA).
 // This is a read-only operation that does not modify focus, caret, clipboard,
 // IME state, or any other aspect of the target application.
@@ -19,7 +19,41 @@ use windows::Win32::UI::Accessibility::{
     IUIAutomationValuePattern, UIA_TextPatternId, UIA_ValuePatternId,
 };
 
-use super::extraction::strip_punctuation;
+/// Maximum attempts when reading a fallible UIA boolean property.
+const PROP_READ_ATTEMPTS: u32 = 3;
+/// Delay between property-read attempts.
+const PROP_READ_RETRY_DELAY_MS: u64 = 100;
+
+/// Read a fallible boolean UIA property, retrying transient failures.
+/// UIA property reads commonly fail once right after a paste or focus move;
+/// a single failed read must not end the monitoring session. Returns None
+/// when the property could not be read after all attempts - the caller
+/// decides the safe default (fail-safe for password state, fail-open for
+/// read-only state where a misread is harmless).
+fn read_bool_prop(read: impl Fn() -> WinResult<BOOL>) -> Option<bool> {
+    for attempt in 0..PROP_READ_ATTEMPTS {
+        match read() {
+            Ok(value) => return Some(value.0 != 0),
+            Err(e) => {
+                if attempt + 1 < PROP_READ_ATTEMPTS {
+                    log::debug!(
+                        "[AutoLearn] UIA property read failed (attempt {}): {}",
+                        attempt + 1,
+                        e
+                    );
+                    std::thread::sleep(std::time::Duration::from_millis(PROP_READ_RETRY_DELAY_MS));
+                } else {
+                    log::debug!(
+                        "[AutoLearn] UIA property read failed after {} attempts: {}",
+                        PROP_READ_ATTEMPTS,
+                        e
+                    );
+                }
+            }
+        }
+    }
+    None
+}
 
 /// RAII guard for COM initialization. Calls CoUninitialize on drop.
 struct ComGuard;
@@ -55,9 +89,9 @@ pub enum ReadResult {
     NoElement,
     /// The focused element changed since the initial read (focus moved).
     FocusChanged,
-    /// The focused element is a password or secure field — skip monitoring.
+    /// The focused element is a password or secure field - skip monitoring.
     SecureField,
-    /// The focused element is read-only — no edits possible.
+    /// The focused element is read-only - no edits possible.
     ReadOnly,
 }
 
@@ -107,11 +141,19 @@ impl FocusedTextReader {
             }
         };
 
-        // Reject password/secure fields immediately — never monitor these
-        let is_password = unsafe { focused.CurrentIsPassword().unwrap_or(BOOL(1)) };
-        if is_password.0 != 0 {
-            log::info!("[AutoLearn] Focused element is a password field — skipping");
-            return None;
+        // Reject password/secure fields immediately - never monitor these.
+        // The read is retried so a transient failure is not mistaken for a
+        // secure field; a persistent failure still aborts (fail-safe).
+        match read_bool_prop(|| unsafe { focused.CurrentIsPassword() }) {
+            Some(true) => {
+                log::info!("[AutoLearn] Focused element is a password field - skipping");
+                return None;
+            }
+            Some(false) => {}
+            None => {
+                log::warn!("[AutoLearn] Could not determine password state - skipping");
+                return None;
+            }
         }
 
         // Check what patterns the element supports
@@ -131,18 +173,18 @@ impl FocusedTextReader {
             return None;
         }
 
-        // Reject read-only fields — no edits possible
-        if uses_value {
-            let is_readonly = unsafe {
-                let pattern: IUIAutomationValuePattern = focused
+        // Reject read-only fields - no edits possible. Unreadable state
+        // fails open: a truly read-only field simply never changes, so the
+        // session times out harmlessly (and the monitor never writes).
+        if uses_value
+            && read_bool_prop(|| unsafe {
+                focused
                     .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-                    .ok()?;
-                pattern.CurrentIsReadOnly().unwrap_or(BOOL(1))
-            };
-            if is_readonly.0 != 0 {
-                log::info!("[AutoLearn] Focused element is read-only — skipping");
-                return None;
-            }
+                    .and_then(|pattern| pattern.CurrentIsReadOnly())
+            }) == Some(true)
+        {
+            log::info!("[AutoLearn] Focused element is read-only - skipping");
+            return None;
         }
 
         log::debug!(
@@ -181,11 +223,18 @@ impl FocusedTextReader {
             return ReadResult::FocusChanged;
         }
 
-        // Reject password fields if user tabs into one during monitoring
-        let is_password = unsafe { focused.CurrentIsPassword().unwrap_or(BOOL(1)) };
-        if is_password.0 != 0 {
-            log::info!("[AutoLearn] Focused element became a password field — stopping");
-            return ReadResult::SecureField;
+        // Reject password fields if user tabs into one during monitoring.
+        // Fail-safe: an unreadable state still stops the session.
+        match read_bool_prop(|| unsafe { focused.CurrentIsPassword() }) {
+            Some(true) => {
+                log::info!("[AutoLearn] Focused element became a password field - stopping");
+                return ReadResult::SecureField;
+            }
+            Some(false) => {}
+            None => {
+                log::warn!("[AutoLearn] Could not determine password state - stopping");
+                return ReadResult::SecureField;
+            }
         }
 
         // Check if the element still supports the same pattern type.
@@ -209,19 +258,18 @@ impl FocusedTextReader {
             return ReadResult::FocusChanged;
         }
 
-        // Reject read-only fields if user tabs into one during monitoring
-        if current_uses_value {
-            let is_readonly: bool = unsafe {
-                let is_ro: Option<BOOL> = focused
+        // Reject read-only fields if user tabs into one during monitoring.
+        // An unreadable state fails open (a read-only field never changes,
+        // so at worst the session times out without learning anything).
+        if current_uses_value
+            && read_bool_prop(|| unsafe {
+                focused
                     .GetCurrentPatternAs::<IUIAutomationValuePattern>(UIA_ValuePatternId)
-                    .ok()
-                    .and_then(|p| p.CurrentIsReadOnly().ok());
-                is_ro.map(|v| v.0 != 0).unwrap_or(true)
-            };
-            if is_readonly {
-                log::info!("[AutoLearn] Focused element became read-only — stopping");
-                return ReadResult::ReadOnly;
-            }
+                    .and_then(|pattern| pattern.CurrentIsReadOnly())
+            }) == Some(true)
+        {
+            log::info!("[AutoLearn] Focused element became read-only - stopping");
+            return ReadResult::ReadOnly;
         }
 
         // Try ValuePattern first (most common for text fields)
@@ -290,32 +338,34 @@ impl FocusedTextReader {
 }
 
 /// Check if a word looks like a high-confidence correction.
-/// This applies the same conservative rules as the pipeline extraction.
+///
+/// Android-parity rules (see `WordLcsExtractor.isValidCorrection`): no
+/// similarity score - a pair is accepted unless it is identical
+/// (case-sensitive), trivially short on both sides, or mixes numbers with
+/// non-numbers. Case-only and dissimilar pairs are intentionally allowed
+/// through here; the human Accept step on suggestions is the quality gate.
 pub fn is_valid_correction(original_word: &str, corrected_word: &str) -> bool {
     if original_word.is_empty() || corrected_word.is_empty() {
         return false;
     }
 
-    if original_word.len() < 3 || corrected_word.len() < 3 {
+    // Identical pair - nothing actually changed.
+    if original_word == corrected_word {
         return false;
     }
 
-    if original_word.to_lowercase() == corrected_word.to_lowercase() {
+    // Reject only when BOTH sides are trivially short. Single-word
+    // utterances are still guarded by the >50% rewrite veto in the
+    // extractor, not here.
+    if original_word.chars().count() < 2 && corrected_word.chars().count() < 2 {
         return false;
     }
 
-    let orig_stripped = strip_punctuation(original_word);
-    let corr_stripped = strip_punctuation(corrected_word);
-    if orig_stripped == corr_stripped {
-        return false;
-    }
-
-    let similarity = strsim::normalized_levenshtein(
-        &original_word.to_lowercase(),
-        &corrected_word.to_lowercase(),
-    );
-
-    if similarity < 0.40 {
+    // Exclude pure numbers unless both sides are numbers
+    // ("123" → "456" is a plausible correction; "123" → "abc" is not).
+    let orig_is_num = original_word.chars().all(|c| c.is_ascii_digit());
+    let corr_is_num = corrected_word.chars().all(|c| c.is_ascii_digit());
+    if orig_is_num != corr_is_num {
         return false;
     }
 
@@ -354,44 +404,66 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_short_original() {
-        assert!(!is_valid_correction("ab", "abcd"));
+    fn test_reject_identical_pair() {
+        assert!(!is_valid_correction("hello", "hello"));
     }
 
     #[test]
-    fn test_reject_short_corrected() {
-        assert!(!is_valid_correction("abcd", "ab"));
+    fn test_accept_short_original() {
+        // Android parity: only BOTH sides < 2 chars is rejected.
+        assert!(is_valid_correction("ab", "abcd"));
     }
 
     #[test]
-    fn test_reject_both_short() {
-        assert!(!is_valid_correction("ab", "cd"));
+    fn test_accept_short_corrected() {
+        assert!(is_valid_correction("abcd", "ab"));
     }
 
     #[test]
-    fn test_reject_case_only_difference() {
-        assert!(!is_valid_correction("hello", "Hello"));
+    fn test_accept_both_short_but_not_trivial() {
+        assert!(is_valid_correction("ab", "cd"));
     }
 
     #[test]
-    fn test_reject_case_only_difference_all_upper() {
-        assert!(!is_valid_correction("HELLO", "hello"));
+    fn test_reject_both_single_char() {
+        assert!(!is_valid_correction("a", "b"));
     }
 
     #[test]
-    fn test_reject_punctuation_only_difference() {
-        assert!(!is_valid_correction("dr.", "dr"));
+    fn test_allow_case_only_difference() {
+        // Allowed through here on purpose: the human Accept step on
+        // suggestions is the quality gate for case-only corrections.
+        assert!(is_valid_correction("hello", "Hello"));
     }
 
     #[test]
-    fn test_reject_punctuation_only_difference_quotes() {
-        assert!(!is_valid_correction("'hello'", "hello"));
+    fn test_allow_case_only_difference_all_upper() {
+        assert!(is_valid_correction("HELLO", "hello"));
     }
 
     #[test]
-    fn test_reject_low_similarity() {
-        // "abc" → "xyz" has very low similarity
-        assert!(!is_valid_correction("abc", "xyz"));
+    fn test_allow_punctuation_only_difference() {
+        // Passes this gate; in practice the extractor's tokenizer strips
+        // edge punctuation before pairs ever reach here.
+        assert!(is_valid_correction("dr.", "dr"));
+    }
+
+    #[test]
+    fn test_allow_punctuation_only_difference_quotes() {
+        assert!(is_valid_correction("'hello'", "hello"));
+    }
+
+    #[test]
+    fn test_accept_dissimilar_words() {
+        // No similarity gate by design (Android parity).
+        assert!(is_valid_correction("abc", "xyz"));
+    }
+
+    #[test]
+    fn test_accept_reported_case() {
+        // Regression: "shwande" → "Sinead" (similarity ~0.29) was rejected
+        // by the old 0.40 Levenshtein gate and produced zero suggestions.
+        assert!(is_valid_correction("shwande", "Sinead"));
     }
 
     #[test]
@@ -409,14 +481,16 @@ mod tests {
     }
 
     #[test]
-    fn test_reject_unrelated_words() {
-        assert!(!is_valid_correction("banana", "elephant"));
-        assert!(!is_valid_correction("computer", "elephant"));
+    fn test_accept_unrelated_words() {
+        // No similarity gate by design (Android parity); the >50% rewrite
+        // veto in the extractor remains the guard against rewrites.
+        assert!(is_valid_correction("banana", "elephant"));
+        assert!(is_valid_correction("computer", "elephant"));
     }
 
     #[test]
     fn test_3_char_minimum_boundary() {
-        // Exactly 3 chars — should pass if other conditions met
+        // Exactly 3 chars - should pass if other conditions met
         assert!(is_valid_correction("abc", "axc"));
     }
 
@@ -424,5 +498,17 @@ mod tests {
     fn test_numeric_words() {
         // Numeric words should work if they meet criteria
         assert!(is_valid_correction("forteen", "fourteen"));
+    }
+
+    #[test]
+    fn test_accept_number_to_number() {
+        assert!(is_valid_correction("123", "456"));
+    }
+
+    #[test]
+    fn test_reject_mixed_number_and_word() {
+        // Android parity: pure numbers must map to numbers.
+        assert!(!is_valid_correction("123", "abc"));
+        assert!(!is_valid_correction("abc", "123"));
     }
 }

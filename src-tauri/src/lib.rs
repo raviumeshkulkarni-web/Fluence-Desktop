@@ -1,4 +1,4 @@
-// Fluence Windows — Library module declarations
+// Fluence Windows - Library module declarations
 #![allow(
     clippy::needless_range_loop,
     clippy::needless_borrow,

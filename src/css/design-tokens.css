@@ -1,10 +1,10 @@
 /* ====================================================
-   Fluence Windows — Design Tokens
-   "Precision Ink" — Monochrome-first, layered surfaces
+   Fluence Windows - Design Tokens
+   "Precision Ink" - Monochrome-first, layered surfaces
    Source of truth: fluence-notes/src/index.css (web)
    ==================================================== */
 
-/* Bundled fonts — served locally from src/fonts/ (no network at runtime) */
+/* Bundled fonts - served locally from src/fonts/ (no network at runtime) */
 @font-face { font-family: 'Allura'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/allura-latin-400.woff2') format('woff2'); }
 
 @font-face { font-family: 'Sora'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/sora-latin-400.woff2') format('woff2'); }

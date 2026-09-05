@@ -1,6 +1,6 @@
-// Fluence sync — frozen v1.2 merges (dictionary, snippet, settings, stats)
+// Fluence sync - frozen v1.2 merges (dictionary, snippet, settings, stats)
 //
-// Winner: max(updatedAt, deviceId) — pure LWW. A tombstone is just another
+// Winner: max(updatedAt, deviceId) - pure LWW. A tombstone is just another
 // state transition: it wins when it is the newest record for a business key,
 // and loses to any newer edit or re-creation. Tombstones are kept forever
 // (never GC'd; the dataset is tiny).
@@ -11,7 +11,7 @@
 // so two devices creating the same word offline converge to one winner.
 //
 // Settings: per-key LWW over the frozen five allowed keys.
-// Stats: union dedup by eventId — summation happens at display time, so the
+// Stats: union dedup by eventId - summation happens at display time, so the
 // same event can never be counted twice.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -91,7 +91,7 @@ pub fn merge_snippets(local: &[SnippetItem], remote: &[SnippetItem]) -> MergeOut
     )
 }
 
-/// Settings adoption sentinel — byte-identical to Android's `Merge.kt`
+/// Settings adoption sentinel - byte-identical to Android's `Merge.kt`
 /// (1700000000000L). Both platforms stamp a first-observed settings key with
 /// this same fixed epoch, so two simultaneous first observers tie-break by
 /// deviceId instead of racing wall clocks, and the shared envelope carries

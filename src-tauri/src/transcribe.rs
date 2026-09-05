@@ -1,4 +1,4 @@
-// Fluence Windows — Transcription module
+// Fluence Windows - Transcription module
 // Sends recorded WAV audio to any OpenAI-compatible /v1/audio/transcriptions endpoint.
 // Supports Groq, OpenAI, and custom providers.
 
@@ -174,7 +174,7 @@ pub async fn transcribe_audio_bytes(
 
 /// Build the Whisper vocabulary hint from dictionary entries.
 ///
-/// SECURITY INVARIANT: Expansion entries are excluded entirely — expansion
+/// SECURITY INVARIANT: Expansion entries are excluded entirely - expansion
 /// text must never enter the STT recognition prompt. Only correction entries
 /// contribute their spoken/corrected words.
 ///

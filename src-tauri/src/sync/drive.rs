@@ -1,4 +1,4 @@
-// Fluence sync — Google Drive REST layer (frozen v1.2).
+// Fluence sync - Google Drive REST layer (frozen v1.2).
 //
 // Implements the `DomainDriveStore` trait against the Drive v3 API using the
 // shared reqwest blocking client. Error mapping:
@@ -20,7 +20,7 @@
 // `put_domain` re-checks the live version immediately before writing and
 // returns `SyncError::StaleVersion` when another device changed the file in
 // the meantime; the engine re-fetches, re-merges and retries. Check-then-write
-// is not atomic — a race can still slip through that window — but every
+// is not atomic - a race can still slip through that window - but every
 // device keeps its merged state locally, so the next pass converges. This is
 // deliberate: deterministic self-healing convergence, not transactional
 // guarantees.
@@ -64,7 +64,7 @@ pub fn update_media_url(upload_base: &str, file_id: &str) -> String {
 }
 
 /// Exponential backoff (base 1000ms, factor 2, cap 60000ms). No hardcoded
-/// quota figures — only these timing constants.
+/// quota figures - only these timing constants.
 #[derive(Debug, Clone)]
 pub struct Backoff {
     base_ms: u64,
@@ -119,7 +119,7 @@ pub type TokenRefresher = Box<dyn FnMut(&str) -> Result<String, SyncError>>;
 /// If `remaining` >0 the fault is consumed (decremented) and the requested
 /// error is returned. Absent/malformed file = no fault.
 ///
-/// DIRECT PRODUCTION: gated to debug builds only — release builds never read
+/// DIRECT PRODUCTION: gated to debug builds only - release builds never read
 /// the file, so `PRODUCTION` is not affected by a stray `__fault.json`.
 fn maybe_inject_fault(op: &str) -> Option<SyncError> {
     if !cfg!(debug_assertions) {
@@ -298,7 +298,7 @@ impl GoogleDriveStore {
     /// keyed retry is transport-level: `build` receives the CURRENT bearer
     /// token so a replay naturally uses the refreshed one. A second 401 (or
     /// any non-401) is returned untouched so the caller's status
-    /// classification maps it exactly as before — `AuthRequired` for 401.
+    /// classification maps it exactly as before - `AuthRequired` for 401.
     fn send<B>(&mut self, build: B) -> Result<reqwest::blocking::Response, SyncError>
     where
         B: Fn(&reqwest::blocking::Client, &str) -> reqwest::blocking::RequestBuilder,
@@ -317,7 +317,7 @@ impl GoogleDriveStore {
             }
             attempts += 1;
             if attempts > 1 {
-                // Still unauthorized after the one silent refresh — hand the
+                // Still unauthorized after the one silent refresh - hand the
                 // 401 back; the caller's classification surfaces AuthRequired.
                 return Ok(resp);
             }
@@ -520,7 +520,7 @@ pub struct DomainFileMeta {
     pub version: Option<String>,
 }
 
-/// Domain drive seam — one file per domain (dictionary, snippets, stats,
+/// Domain drive seam - one file per domain (dictionary, snippets, stats,
 /// settings) under appDataFolder/fluence/v1. Handles duplicate files
 /// (returns all duplicates for the caller to merge) and corruption skip
 /// (invalid envelope treated as absent, not a failure).
@@ -820,7 +820,7 @@ impl DomainDriveStore for GoogleDriveStore {
                 log::warn!("FAULT INJECTED duplicate list_v1_files: cloning {} -> {}", first.file_id, dup.file_id);
                 all.push(dup);
             } else {
-                // No existing files — create a synthetic duplicate pair for the test.
+                // No existing files - create a synthetic duplicate pair for the test.
                 // Engine should handle two valid files with same name.
                 let dup1 = DomainFileMeta {
                     file_id: "dup-1".to_string(),
@@ -849,7 +849,7 @@ impl DomainDriveStore for GoogleDriveStore {
         }
         // Synthetic duplicate content: when list_v1_files injected a dup file,
         // return a valid but distinct dictionary envelope for that dup id.
-        // DIRECT PRODUCTION: debug-only — release never returns synthetic data.
+        // DIRECT PRODUCTION: debug-only - release never returns synthetic data.
         if cfg!(debug_assertions) && (file_id.ends_with("-dup") || file_id.starts_with("dup-")) {
             let dup_content = serde_json::json!({
                 "v": 1,
@@ -912,7 +912,7 @@ impl DomainDriveStore for GoogleDriveStore {
             Some(meta) => {
                 // Concurrency check: the live version must still match what
                 // the caller merged against. A missing live version means we
-                // cannot prove freshness — treat as stale and let the caller
+                // cannot prove freshness - treat as stale and let the caller
                 // re-read (fail-safe, never fail-open).
                 let live = meta.version.as_deref();
                 let fresh = match (expected_version, live) {
@@ -937,7 +937,7 @@ impl DomainDriveStore for GoogleDriveStore {
             None => {
                 // File absent. Creating is always safe unless the caller
                 // expected to UPDATE an existing file whose row vanished
-                // between list and write — also fine: recreate.
+                // between list and write - also fine: recreate.
                 self.multipart_write(
                     reqwest::Method::POST,
                     create_upload_url(&self.upload_base),
@@ -1346,7 +1346,7 @@ mod tests {
 
     #[test]
     fn paginated_list_aggregates_across_pages() {
-        // ITEM 2 — verify list_v1_files pagination: two pages aggregated correctly
+        // ITEM 2 - verify list_v1_files pagination: two pages aggregated correctly
         let page1 = r#"{"files":[{"id":"a","name":"dictionary.json","version":"1"},{"id":"b","name":"dictionary.json","version":"2"}],"nextPageToken":"tok123"}"#;
         let (files1, next1) = parse_domain_listing(page1).expect("page1 parses");
         assert_eq!(files1.len(), 2);

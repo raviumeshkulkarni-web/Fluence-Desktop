@@ -1,4 +1,4 @@
-// Fluence sync — frozen v1.2 domain engine (dictionary, snippets, stats, settings)
+// Fluence sync - frozen v1.2 domain engine (dictionary, snippets, stats, settings)
 //
 // Drive layout: appDataFolder/fluence/v1/{dictionary.json,snippets.json,stats.json,settings.json}
 // Clock: wall UTC ms + persisted maxSeen floor; winner = max(updatedAt, deviceId).
@@ -17,7 +17,7 @@
 // local data is never discarded unless a strictly newer remote record wins.
 //
 // Corruption isolation: an unparseable or oversized remote envelope is skipped
-// (treated as absent) — one bad domain never blocks the others.
+// (treated as absent) - one bad domain never blocks the others.
 
 use crate::sync::domain::*;
 use crate::sync::drive::{
@@ -53,7 +53,7 @@ pub trait DirtyStore {
     fn stamp_account(&mut self, account_hash: &str) -> Result<usize, SyncError>;
     fn has_dirty(&self, account_hash: &str) -> bool;
     /// Replace this account's rows with the merged winners, mark them clean and
-    /// pushed, and purge never-pushed tombstones — atomically, under the io
+    /// pushed, and purge never-pushed tombstones - atomically, under the io
     /// lock.
     fn save_merged(&mut self, account_hash: &str, merged: Vec<Self::Item>)
         -> Result<(), SyncError>;
@@ -66,7 +66,7 @@ const MAX_ATTEMPTS: usize = 4;
 
 /// Staleness-retry backoff bounds (ms). Small, because it only needs to break
 /// a tight GET->PUT livelock when two devices invalidate each other in the
-/// same window — it must not meaningfully slow the normal convergence path.
+/// same window - it must not meaningfully slow the normal convergence path.
 const STALE_RETRY_BASE_MS: u64 = 50;
 const STALE_RETRY_MAX_MS: u64 = 600;
 
@@ -88,7 +88,7 @@ fn stale_retry_delay_ms(attempt: usize, rand: &mut impl FnMut() -> f64) -> u64 {
     (jitter.round() as u64).min(STALE_RETRY_MAX_MS)
 }
 
-/// A cheap deterministic-ish jitter source seeded from the monotonic clock —
+/// A cheap deterministic-ish jitter source seeded from the monotonic clock -
 /// good enough to de-correlate contending devices without pulling in `rand`.
 fn stale_retry_jitter_source() -> impl FnMut() -> f64 {
     let seed = std::time::SystemTime::now()
@@ -107,7 +107,7 @@ fn stale_retry_jitter_source() -> impl FnMut() -> f64 {
 
 /// Post-upload verification: re-list the domain and confirm the revision the
 /// PUT reported is actually the live remote version. Google Drive is eventually
-/// consistent, so a fresh write can briefly be invisible — that is treated as a
+/// consistent, so a fresh write can briefly be invisible - that is treated as a
 /// "not yet verified" miss, not a data error. A transient listing failure is
 /// treated the same (conservative: we never claim pushed unless we saw it live).
 /// The caller keeps the rows dirty so the next pass re-heals.
@@ -121,7 +121,7 @@ fn upload_is_live(name: &str, new_version: &str, drive: &mut dyn DomainDriveStor
 }
 
 /// One generic domain sync pass. All four domains differ only in their item
-/// type, merge law, codec and ordering key — captured here as parameters.
+/// type, merge law, codec and ordering key - captured here as parameters.
 fn sync_domain<T>(
     drive: &mut dyn DomainDriveStore,
     name: &str,
@@ -661,7 +661,7 @@ mod tests {
 
     #[test]
     fn oversized_remote_is_not_auto_replaced_keep_remote_intact() {
-        // UNIT C — oversized (abuse) must not be auto-replaced via !valid_found fallback
+        // UNIT C - oversized (abuse) must not be auto-replaced via !valid_found fallback
         let oversized = vec![b'x'; MAX_DOMAIN_BYTES + 1];
         let mut drive = FakeDrive::new().with_file("dictionary.json", "id-1", "1", oversized);
         let mut meta = SyncMetadata::default();
@@ -677,7 +677,7 @@ mod tests {
 
     #[test]
     fn corrupt_within_size_is_repaired_via_push() {
-        // UNIT C — corrupt but within size keeps current repair behavior (siblings + local push)
+        // UNIT C - corrupt but within size keeps current repair behavior (siblings + local push)
         let corrupt = b"{ not json".to_vec();
         let mut drive = FakeDrive::new().with_file("dictionary.json", "id-1", "1", corrupt);
         let mut meta = SyncMetadata::default();
@@ -743,7 +743,7 @@ mod tests {
     fn verification_miss_keeps_rows_unpushed_not_failed() {
         // B-3: the PUT succeeded but the pushed revision is not yet visible on
         // the next list (Drive eventual consistency). The pass must NOT report
-        // pushed nor set last_rev — it returns a non-pushed outcome so the next
+        // pushed nor set last_rev - it returns a non-pushed outcome so the next
         // pass re-heals, instead of stamping a possibly-not-yet-live write as
         // permanently pushed.
         let mut drive = LaggingFakeDrive::new();
@@ -766,7 +766,7 @@ mod tests {
 
     #[test]
     fn duplicate_consolidation_idempotent() {
-        // UNIT C — duplicate consolidation idempotence: repeat pass with single file is no-op
+        // UNIT C - duplicate consolidation idempotence: repeat pass with single file is no-op
         let valid_bytes = DictionaryEnvelope {
             v: ENVELOPE_V1,
             entries: vec![dict_item("hello", 100)],
@@ -798,7 +798,7 @@ mod tests {
 
     #[test]
     fn oversized_with_valid_sibling_keeps_valid_and_drops_oversized() {
-        // F4a — one valid sibling + multiple oversized duplicates: keep valid, drop oversized, no Rejected
+        // F4a - one valid sibling + multiple oversized duplicates: keep valid, drop oversized, no Rejected
         let valid_bytes = DictionaryEnvelope {
             v: ENVELOPE_V1,
             entries: vec![dict_item("hello", 100)],
@@ -826,7 +826,7 @@ mod tests {
 
     #[test]
     fn paginated_list_still_consolidates() {
-        // F4b — FakeDrive paginated in chunks, consolidation still works across pages
+        // F4b - FakeDrive paginated in chunks, consolidation still works across pages
         // Simulate pagination by having list_v1_files return files that would have come from 2 pages
         let valid_bytes = DictionaryEnvelope {
             v: ENVELOPE_V1,
@@ -850,7 +850,7 @@ mod tests {
 
     #[test]
     fn genuine_pagination_page_size_2_consolidates_5_files() {
-        // ITEM 2 — genuine pagination: 5 files across 3 pages (2+2+1) must still consolidate
+        // ITEM 2 - genuine pagination: 5 files across 3 pages (2+2+1) must still consolidate
         let valid_bytes = DictionaryEnvelope {
             v: ENVELOPE_V1,
             entries: vec![dict_item("hello", 100)],

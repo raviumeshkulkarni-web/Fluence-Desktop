@@ -1,5 +1,5 @@
 /**
- * Fluence Windows — Siri-Style Canvas Waveform Visualizer
+ * Fluence Windows - Siri-Style Canvas Waveform Visualizer
  * 
  * Android-inspired stateless visualization behavior using the existing
  * Windows RMS telemetry.
@@ -133,7 +133,7 @@ class AuraVisualizer {
     //
     // Instead of gating against absolute levels, this inverts the map back to
     // true dBFS and runs a differential meter whose reference is a
-    // continuously RE-ANCHORING noise floor — the broadcast-PPM approach,
+    // continuously RE-ANCHORING noise floor - the broadcast-PPM approach,
     // normalized the way professional mixers meter (relative to a learned
     // floor, never absolute dBFS), so the absolute capture gain cancels out:
     //   * signal near the floor (ambience)     → the floor re-anchors upward,
@@ -154,7 +154,7 @@ class AuraVisualizer {
     // Modulation gate (why the plain ONSET_DB gate goes deaf at t=0): when a
     // recording starts straight into continuous speech the prime window seeds
     // the floor AT speech level, so a plain level-relative onset can never
-    // fire and the floor even creeps up onto the utterance — the meter stays
+    // fire and the floor even creeps up onto the utterance - the meter stays
     // flat until the FIRST pause re-anchors it and re-speech triggers, which
     // is exactly the reported 5-10 s dead waveform. Speech is not just
     // louder than the floor, it MODULATES rhythmically (~syllabic envelope),
@@ -188,8 +188,8 @@ class AuraVisualizer {
       return;
     }
 
-    // Fast envelope (~45 ms). The floor tracker now runs on EVERY live frame —
-    // open or closed — so ambient / gain / AGC changes re-anchor the
+    // Fast envelope (~45 ms). The floor tracker now runs on EVERY live frame -
+    // open or closed - so ambient / gain / AGC changes re-anchor the
     // reference within ~1-2 s instead of latching the meter open for the rest
     // of the session. (The previous tracker only learned while the gate was
     // closed and froze while it was open; a mid-session mic-volume raise then
@@ -216,7 +216,7 @@ class AuraVisualizer {
     if (live) {
       const aboveFloor = this.fastDb - this.slowDb;
       // Floor re-anchors down fast when level falls below it, and follows a
-      // RISING level up only while the envelope is steady (< MOD_CLOSE) — a
+      // RISING level up only while the envelope is steady (< MOD_CLOSE) - a
       // loud-but-calm ambience, a mic-volume raise, or an AGC gain pump
       // becomes the new reference instead of false "speech". During speech the
       // envelope modulates so the floor freezes, letting the rise show as
@@ -240,7 +240,7 @@ class AuraVisualizer {
     }
 
     // Hysteresis: open on a level rise near/above ONSET_DB above the floor OR on
-    // speech-like envelope modulation (spread ≥ MOD_OPEN) — either sustained
+    // speech-like envelope modulation (spread ≥ MOD_OPEN) - either sustained
     // for OPEN_STREAK (~70 ms). The modulation key is what unwedges a
     // recording that starts straight into continuous speech, where the level
     // rise over the seeded floor alone stays just shy of ONSET_DB. Close when
@@ -290,7 +290,7 @@ class AuraVisualizer {
     if (!this.overlayRoot) return;
     // Only manage the state-* classes. Wiping className here would destroy
     // the tier style (style-full/compact/bubble) and corner docking classes
-    // applied by overlay.js on every state transition — the overlay would
+    // applied by overlay.js on every state transition - the overlay would
     // snap back to the full-size card and the waveform canvas would jump.
     this.overlayRoot.classList.remove(
       'state-idle',
@@ -434,7 +434,7 @@ class AuraVisualizer {
     // Ripple scroll rate matches its carrier wave on any canvas width. The
     // spatial frequencies stay in absolute pixels (0.1 / 0.15 / 0.08 rad/px,
     // the original calm ripple shapes), while the width-derived phase
-    // multipliers make the ripple advance at the carrier's rate — otherwise
+    // multipliers make the ripple advance at the carrier's rate - otherwise
     // the ripple outruns the wave on narrow canvases (perceived as churn).
     const vibPhase1 = (0.1 * W) / (2 * Math.PI * 1.5);
     const vibPhase2 = (0.15 * W) / (2 * Math.PI * 2.5);
@@ -444,7 +444,7 @@ class AuraVisualizer {
     const vib = this.smoothedAmplitude > 0.04 ? this.smoothedAmplitude : 0;
     const lwScale = isBubble ? 0.82 : 1;
 
-    // Wave 1: background — thin, airy, low opacity
+    // Wave 1: background - thin, airy, low opacity
     ctx.beginPath();
     ctx.moveTo(0, centerY);
     for (let x = 0; x <= W; x += step) {
@@ -462,7 +462,7 @@ class AuraVisualizer {
     ctx.lineWidth = 1.35 * lwScale;
     ctx.stroke();
 
-    // Wave 2: mid — the body of the meter, slightly bolder
+    // Wave 2: mid - the body of the meter, slightly bolder
     ctx.beginPath();
     ctx.moveTo(0, centerY);
     for (let x = 0; x <= W; x += step) {
@@ -480,7 +480,7 @@ class AuraVisualizer {
     ctx.lineWidth = 1.65 * lwScale;
     ctx.stroke();
 
-    // Wave 3: forefront — crisp ink line, soft glow only when loud
+    // Wave 3: forefront - crisp ink line, soft glow only when loud
     const glow = this.smoothedAmplitude > 0.28 ? this.smoothedAmplitude * 7 : 0;
     if (glow > 0) {
       ctx.shadowColor = hexAlpha(forefrontColor, 0.22);

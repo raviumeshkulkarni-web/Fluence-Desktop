@@ -1,4 +1,4 @@
-// Fluence Windows — automatic pre-upload silence gate (production).
+// Fluence Windows - automatic pre-upload silence gate (production).
 //
 // The frozen online pipeline (audio.rs capture/DSP, transcribe.rs sender)
 // is untouched: this module only ADDS the read-only energy measurement
@@ -24,11 +24,11 @@
 // gates (peak 0.003/0.006 discard, RMS energy gate 0.01):
 //
 // REVISION 2 (2026-09-04, from live gate evidence): whole-take PEAK is
-// useless in a transient-prone room — silent takes showed peaks of
+// useless in a transient-prone room - silent takes showed peaks of
 // 0.033-0.055 (clicks/bumps) while a 9 s SPOKEN sentence peaked at only
 // 0.037 with whole-take rms 0.0045. Peak cannot separate them.
 // REVISION 3 (authorized recalibration): the hottest-window rule ate soft
-// single words, so the gate counts SUSTAINED warmth instead — speech
+// single words, so the gate counts SUSTAINED warmth instead - speech
 // spreads energy across windows, clicks/rumbles concentrate it.
 // A 100 ms window at/above this RMS counts as warm (sits above stationary
 // silence at <=0.008 with margin, below the softest observed passing
@@ -78,7 +78,7 @@ pub fn measure_raw_energy(samples: &[f32]) -> (f32, f32) {
 
 /// Evaluate the gate (revision 3: sustained warmth). Splits the raw buffer
 /// into ~100 ms windows at the given sample rate. Rejects iff fewer than
-/// GATE_REQUIRED_WARM_WINDOWS windows reach GATE_WARM_WINDOW_RMS —
+/// GATE_REQUIRED_WARM_WINDOWS windows reach GATE_WARM_WINDOW_RMS -
 /// i.e. the take contains no sustained speech energy anywhere. A click
 /// warms at most one or two adjacent windows; a soft word warms several.
 /// An empty buffer yields zero warm windows and is rejected (unreachable
@@ -118,7 +118,7 @@ pub fn evaluate_silence_gate(
 
 /// Marker for the most recent gate rejection (see take_gate_rejected).
 /// NOTE: the silence gate itself is automatic and unconditional (see the
-/// audio stop path) — there is intentionally no flag for it.
+/// audio stop path) - there is intentionally no flag for it.
 static LAST_GATE_REJECTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
@@ -177,7 +177,7 @@ mod tests {
     fn gate_rejects_click_inside_silence() {
         // Live evidence 2026-09-04: silent takes with peak spikes up to
         // 0.055 still hallucinated. A single loud sample warms at most
-        // one window — below the required two — so the take stays
+        // one window - below the required two - so the take stays
         // rejected even though its peak looks loud.
         let mut take = vec![0.001f32; 48000];
         take[24000] = 0.5;
@@ -221,7 +221,7 @@ mod tests {
     fn gate_passes_sustained_soft_tone_v2_would_reject() {
         // Regression test for eaten single words: a steady soft tone at
         // 0.013 RMS never reaches the old 0.02 hottest-window bar, but
-        // warms every window — sustained speech the v3 rule must pass.
+        // warms every window - sustained speech the v3 rule must pass.
         let soft = vec![0.013f32; 48000];
         let d = evaluate_silence_gate(&soft, 16000, 3000);
         assert!(d.max_window_rms < 0.02, "setup must stay below the old bar");

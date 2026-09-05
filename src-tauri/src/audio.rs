@@ -232,7 +232,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                         }
                     }
 
-                    // Emit outside the lock — send to overlay window directly
+                    // Emit outside the lock - send to overlay window directly
                     if let Some(rms) = rms_to_emit {
                         let db = (rms.max(1e-6) as f64).log10() * 20.0;
                         let amplitude = ((db + 75.0) / 45.0).clamp(0.0, 1.0) as f32;
@@ -365,7 +365,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
         // Wait up to 3s for stream to be ready
         match tokio::time::timeout(std::time::Duration::from_secs(3), ready_rx).await {
             Ok(Ok(())) => {
-                // Stream is live and capturing — duck background apps if enabled.
+                // Stream is live and capturing - duck background apps if enabled.
                 let s = crate::settings::load_settings().unwrap_or_default();
                 if s.duck_enabled {
                     crate::ducking::duck(s.duck_level);

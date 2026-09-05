@@ -1,4 +1,4 @@
-// Fluence Windows — Auto-Learn Candidate Extraction
+// Fluence Windows - Auto-Learn Candidate Extraction
 // Pure functions that compare raw STT output with final text
 // to detect word-level corrections. No side effects.
 //
@@ -307,7 +307,7 @@ mod tests {
             TransformationType::Cleanup
         );
         // "clean" is an LLM rewrite (filler removal, grammar fix,
-        // rephrasing) — NOT a deterministic cleanup, so extraction
+        // rephrasing) - NOT a deterministic cleanup, so extraction
         // must be skipped.
         assert_eq!(
             TransformationType::from_ai_polish_style("clean"),

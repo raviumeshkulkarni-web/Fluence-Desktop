@@ -1,4 +1,4 @@
-// Fluence Windows — Overlay window management
+// Fluence Windows - Overlay window management
 // Controls the floating, always-on-top recording overlay window.
 
 use tauri::{AppHandle, Emitter, Manager, WebviewWindow};
@@ -28,7 +28,7 @@ pub fn show_overlay(app: AppHandle, position: String) -> Result<(), String> {
     let screen_size = monitor.size();
     let scale = monitor.scale_factor();
 
-    // Fixed window size — positioning matches pre-bubble baseline so the
+    // Fixed window size - positioning matches pre-bubble baseline so the
     // bubble is not clipped by the taskbar. Hitbox fix is CSS-only
     // (body pointer-events:none, overlay-root pointer-events:auto) so the
     // transparent 260×146 frame is click-through and does not need HWND resize.
@@ -72,7 +72,7 @@ pub fn set_overlay_style(app: AppHandle, style: String) -> Result<(), String> {
     // body{pointer-events:none} + .overlay-root{pointer-events:auto}.
     // Keeping this command is backward-compat for JS that calls it.
     log::debug!(
-        "set_overlay_style called: {} — HWND size unchanged (CSS hitbox fix)",
+        "set_overlay_style called: {} - HWND size unchanged (CSS hitbox fix)",
         style
     );
     Ok(())

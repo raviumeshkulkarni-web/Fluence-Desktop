@@ -1,4 +1,4 @@
-// Fluence sync — frozen v1.2 local stores (DirtyStore implementations)
+// Fluence sync - frozen v1.2 local stores (DirtyStore implementations)
 //
 // Account isolation model:
 // - dictionary.json / snippets.json rows carry `sync_account`; loads filter
@@ -7,7 +7,7 @@
 //   nullable account stamp; unstamped (pre-sign-in) dictations are claimed by
 //   the first account that syncs them. Event ids are UUIDv5 of the history
 //   row id, so a backfilled row and a freshly-recorded event for the same
-//   dictation collapse under union dedup — exactly-once counting by
+//   dictation collapse under union dedup - exactly-once counting by
 //   construction.
 // - settings LWW bookkeeping lives in `settings_sync_<hash>.json`, one
 //   document per account, so preferences cannot cross accounts.
@@ -395,7 +395,7 @@ struct KeyMeta {
 }
 
 /// The keys this platform emits/accepts, mapped onto real settings. See
-/// `live_values` — `dictionary_enabled` is deliberately absent (Windows has
+/// `live_values` - `dictionary_enabled` is deliberately absent (Windows has
 /// no dictionary toggle; incoming values are recorded but not applied).
 
 impl SettingsDirtyStore {
@@ -826,7 +826,7 @@ impl StatsDirtyStore {
             .collect()
     }
 
-    /// UNIT D — growth gauge: rows + envelope bytes vs 8 MiB headroom for the given account.
+    /// UNIT D - growth gauge: rows + envelope bytes vs 8 MiB headroom for the given account.
     /// Pure, no I/O beyond reading the local ledger; callers surface via existing diagnostics path.
     pub fn gauge_for_account(account_hash: &str) -> (usize, usize, usize) {
         let items: Vec<StatsItem> = Self::load_rows()
@@ -941,7 +941,7 @@ impl DirtyStore for StatsDirtyStore {
             .collect();
         // Mid-pass LWW guard for present rows: if a local dirty row still
         // wins tie (equal updatedAt, larger deviceId) keep it instead of
-        // clobbering with the merged winner — mirrors Android
+        // clobbering with the merged winner - mirrors Android
         // RoomStatV1Store.applyMergedAndClearDirty and dictionary rescue.
         use std::collections::HashMap;
         let dirty_by_id: HashMap<String, StatEventRow> = rows
@@ -1378,7 +1378,7 @@ mod tests {
 
     #[test]
     fn aggregates_filtered_for_existing_dictation_days() {
-        // UNIT B — collapse rule: day-aggregates for days that already have dictation-level events must be suppressed.
+        // UNIT B - collapse rule: day-aggregates for days that already have dictation-level events must be suppressed.
         use crate::sync::domain::filter_aggregates_for_existing_dictation;
         use std::collections::HashSet;
         let agg1 = StatsItem {
@@ -1410,7 +1410,7 @@ mod tests {
 
     #[test]
     fn legacy_reconciliation_flagged_off_by_default() {
-        // UNIT B — flagged reconciliation OFF by default, pure set-op (union-dedup by eventId)
+        // UNIT B - flagged reconciliation OFF by default, pure set-op (union-dedup by eventId)
         // This test documents the flag; actual deletion is behind feature gate.
         const STATS_RECONCILIATION_ENABLED: bool = false;
         assert!(

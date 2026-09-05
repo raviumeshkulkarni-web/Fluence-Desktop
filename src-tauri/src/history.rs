@@ -1,4 +1,4 @@
-// Fluence Windows — Transcription History module
+// Fluence Windows - Transcription History module
 // SQLite database in app data directory for storing past transcription sessions.
 
 use anyhow::Result;
@@ -22,7 +22,7 @@ pub struct HistoryEntry {
     pub char_count: usize,
     pub model: Option<String>,
     pub language: Option<String>,
-    // Sync (§29#3b): ownership indicator for the UI — foreign-stamped rows
+    // Sync (§29#3b): ownership indicator for the UI - foreign-stamped rows
     // (sync_account set and different from the active account) are read-only.
     pub sync_account: Option<String>,
     pub quarantine_reason: Option<String>,
@@ -65,7 +65,7 @@ pub fn init_db() -> Result<()> {
 // Creates the schema (full 15-column layout) and migrates a legacy DB
 // (PRAGMA user_version 0) through v1 to v2. A migration failure rolls back,
 // logs, sets MIGRATION_OK = false and returns Ok so reads keep serving from
-// the old schema — the "serve with sync disabled" seam.
+// the old schema - the "serve with sync disabled" seam.
 fn run_migration(conn: &Connection) -> Result<()> {
     // Frozen v1.1: history stays local, no sync columns. Initial create is frozen schema.
     conn.execute_batch(
@@ -89,7 +89,7 @@ fn run_migration(conn: &Connection) -> Result<()> {
 
     // v0 → v1 (legacy DB without the sync columns). A fresh full-schema DB
     // needs no structural migration. A failed migration rolls back, logs, and
-    // returns so reads keep serving from the old schema — the "serve with
+    // returns so reads keep serving from the old schema - the "serve with
     // sync disabled" seam. v1 → v2 must be skipped when v0 → v1 failed.
     if user_version < 1 {
         let has_timestamp_ms = {
@@ -331,7 +331,7 @@ pub fn add_history_entry(
     })?;
 
     // Account-level statistics: every completed dictation contributes exactly
-    // one stats event (deterministic id per history row — duplicates collapse
+    // one stats event (deterministic id per history row - duplicates collapse
     // under union dedup). Safe offline; the event rides the next sync.
     // Transcription history itself NEVER leaves this device.
     crate::sync::stores::StatsDirtyStore::record_dictation_event(
@@ -425,7 +425,7 @@ pub fn delete_history_entry(app: tauri::AppHandle, id: String) -> Result<(), Str
     Ok(())
 }
 
-// Frozen v1.1: history stays local — no sync, hard delete always.
+// Frozen v1.1: history stays local - no sync, hard delete always.
 pub(crate) fn delete_history_by_id(id: &str) -> Result<()> {
     let _guard = LOCAL_MUTATION_MUTEX
         .lock()

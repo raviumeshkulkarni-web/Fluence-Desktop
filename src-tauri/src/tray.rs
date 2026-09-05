@@ -1,4 +1,4 @@
-// Fluence Windows — System Tray module
+// Fluence Windows - System Tray module
 // Sets up the tray icon with context menu and state indicator.
 
 use crate::{audio, settings};

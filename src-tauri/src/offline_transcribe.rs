@@ -1,4 +1,4 @@
-// Fluence Windows — Offline Transcriber Module
+// Fluence Windows - Offline Transcriber Module
 // Manages sherpa-onnx sidecar lifecycle and WebSocket communication.
 
 use anyhow::{anyhow, Result};
@@ -132,10 +132,10 @@ const V2_SIDECAR_TRIPLE: &str = "unknown-target";
 ///
 /// Candidate order:
 ///
-/// 1. Beside the running app exe — production NSIS layout, where Tauri
+/// 1. Beside the running app exe - production NSIS layout, where Tauri
 ///    externalBin files land next to the installed application binary.
-/// 2. Workspace cargo output (release, then debug) — local dev builds.
-/// 3. Tauri binaries/ staging dir with the target-triple suffix — the exact
+/// 2. Workspace cargo output (release, then debug) - local dev builds.
+/// 3. Tauri binaries/ staging dir with the target-triple suffix - the exact
 ///    file externalBin consumes at packaging time.
 fn v2_sidecar_candidates(
     exe_dir: Option<&std::path::Path>,
@@ -161,7 +161,7 @@ fn v2_sidecar_candidates(
 
 /// Resolves the shipped Moonshine v2 sidecar exe plus its sibling
 /// onnxruntime.dll (Windows implicit DLL search starts at the loading
-/// executable's own directory, so the dll must sit beside the exe —
+/// executable's own directory, so the dll must sit beside the exe -
 /// resource-bundled in prod, build-staged in dev).
 fn resolve_v2_sidecar() -> Result<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
@@ -215,7 +215,7 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
                     }
                 }
             } else {
-                // Different engine requested — kill the current server
+                // Different engine requested - kill the current server
                 log::info!(
                     "Switching engine from {} to {}, killing current server",
                     instance.engine.display_name(),
@@ -241,7 +241,7 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     };
 
     // Moonshine v2 ships in the installer (Tauri externalBin) or a dev
-    // build tree — never in the model dir (see resolve_v2_sidecar). The
+    // build tree - never in the model dir (see resolve_v2_sidecar). The
     // sherpa runtime is still downloaded into its model dir by precedent.
     let (exe_path, runtime_dir) = match engine.v2_arch() {
         Some(_) => {
@@ -454,7 +454,7 @@ pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Resul
 
     // Per sherpa-onnx protocol: server decodes after receiving all bytes,
     // sends text result, THEN client sends "Done" to close.
-    // Do NOT send "Done" before receiving the result — it closes the connection.
+    // Do NOT send "Done" before receiving the result - it closes the connection.
 
     let receive_result = tokio::time::timeout(Duration::from_secs(120), async {
         let mut result_text = String::new();

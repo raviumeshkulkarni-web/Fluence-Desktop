@@ -1,6 +1,6 @@
-// Fluence sync — frozen v1.1 sync_metadata (deviceId, per-account maxSeen/backfill/lastRev)
+// Fluence sync - frozen v1.1 sync_metadata (deviceId, per-account maxSeen/backfill/lastRev)
 // Persists to %LOCALAPPDATA%/Fluence/sync_metadata.json
-// Identity: deviceId UUIDv4, syncId UUIDv4 (Windows id is syncId — we store one UUID as both)
+// Identity: deviceId UUIDv4, syncId UUIDv4 (Windows id is syncId - we store one UUID as both)
 
 use std::collections::HashMap;
 use std::path::PathBuf;

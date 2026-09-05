@@ -1,9 +1,9 @@
-// Fluence sync — global scheduler + settings UI wiring (frozen v1.2).
+// Fluence sync - global scheduler + settings UI wiring (frozen v1.2).
 //
 // One scheduler per process. A background thread owns the pass loop: it waits
 // on a command channel for the cadence interval, then runs one v1.2 domain
-// pass (dictionary, snippets, stats, settings — history NEVER syncs) and
-// emits a `sync-status` Tauri event. Scheduling is gated by three flags —
+// pass (dictionary, snippets, stats, settings - history NEVER syncs) and
+// emits a `sync-status` Tauri event. Scheduling is gated by three flags -
 // sync enabled (settings), signed in (refresh token present), and a
 // fatal-error latch (only a manual command re-arms automatic scheduling). A
 // "sync now" or local-change request that arrives while a pass is running is
@@ -12,7 +12,7 @@
 // advance the drive `Backoff` (1000 ms ×2, cap 60 s); successful passes reset it.
 //
 // Secrets and persistence follow the security contract: the client secret is
-// never committed — it comes from the `FLUENCE_SYNC_CLIENT_SECRET` environment
+// never committed - it comes from the `FLUENCE_SYNC_CLIENT_SECRET` environment
 // variable or `Fluence/sync-oauth.json` ({"client_secret": "..."}) at runtime.
 // The access token is memory-only; the refresh token lives in the OS
 // credential store (`credentials::Fluence/Sync/RefreshToken`). No transcript
@@ -33,7 +33,7 @@ use crate::sync::error::SyncError;
 // Public constants (reported to the user; Exp 4 fixed the client ID and port).
 // ---------------------------------------------------------------------------
 
-/// Google OAuth client ID recorded in Exp 4 — public by design.
+/// Google OAuth client ID recorded in Exp 4 - public by design.
 pub const SYNC_CLIENT_ID: &str =
     "236666538373-8s13ahi71df7q9soql435fk2fol6up86.apps.googleusercontent.com";
 /// Loopback redirect port validated in Exp 4.
@@ -67,7 +67,7 @@ const SYNC_SECRET_MISSING_MSG: &str = "sync client secret is not configured. Set
 pub enum SyncCommand {
     /// Manual pass now (coalesces while running; re-arms after a fatal error).
     RunNow,
-    /// Local data changed — debounce 300ms before syncing (frozen v1.1).
+    /// Local data changed - debounce 300ms before syncing (frozen v1.1).
     LocalChange,
     /// User toggled sync in settings.
     SetEnabled(bool),
@@ -85,13 +85,13 @@ pub enum PassOutcomeKind {
     Success,
     /// Pass ran but reported retryable failures, or ended on a retryable error.
     Retryable,
-    /// Permanent client rejections were surfaced — non-success, but unlike
+    /// Permanent client rejections were surfaced - non-success, but unlike
     /// `Retryable` the backoff is NOT escalated: the next attempt runs at the
     /// cadence (§23 / Phase 0 remediation).
     Rejected,
-    /// Fatal or NotOurs error — automatic scheduling stops until a command.
+    /// Fatal or NotOurs error - automatic scheduling stops until a command.
     Fatal,
-    /// 401 — the refresh token is gone; the user must sign in again.
+    /// 401 - the refresh token is gone; the user must sign in again.
     AuthRequired,
 }
 
@@ -332,7 +332,7 @@ pub struct SyncStatus {
     pub last_error: Option<String>,
     /// Absolute epoch millis of the next scheduled attempt (null when idle).
     pub next_attempt_ms: Option<i64>,
-    /// UNIT D — growth gauge for stats envelope (existing diagnostics path, no new command)
+    /// UNIT D - growth gauge for stats envelope (existing diagnostics path, no new command)
     pub stats_rows: Option<usize>,
     pub stats_bytes: Option<usize>,
     pub stats_headroom_bytes: Option<usize>,
@@ -497,7 +497,7 @@ fn classify_pass(
     }
 }
 
-/// Run one pass and commit its outcome to the core — including when the pass
+/// Run one pass and commit its outcome to the core - including when the pass
 /// panics (a bug mid-pass must not wedge the single-flight latch; the panic
 /// surfaces as a fatal error and scheduling waits for a manual command).
 fn finish_guarded<F>(core: &Mutex<SchedulerCore>, pass: F)
@@ -521,11 +521,11 @@ where
 
 // ---------------------------------------------------------------------------
 // The pass driver (frozen v1.2: one domain pass over dictionary, snippets,
-// stats, settings — transcription history is platform-local and never syncs).
+// stats, settings - transcription history is platform-local and never syncs).
 // ---------------------------------------------------------------------------
 
 /// Build the OAuth config. The client secret is resolved at runtime and only
-/// attached when present — never hard-coded, never persisted.
+/// attached when present - never hard-coded, never persisted.
 fn build_config(secret: Option<String>) -> auth::OAuthConfig {
     let mut config = auth::OAuthConfig::google(SYNC_CLIENT_ID.to_string(), SYNC_REDIRECT_PORT);
     config.client_secret = secret;
@@ -556,7 +556,7 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
     // Silent 401 recovery: when Drive rejects the access token mid-pass,
     // refresh it once through the stored refresh token and retry the request.
     // A refresh-grant rejection (revoked/expired refresh token) surfaces
-    // AuthRequired so the pass stops — the user must reconnect. The session
+    // AuthRequired so the pass stops - the user must reconnect. The session
     // is shared through Rc<RefCell> so the refresher closure can outlive the
     // local binding and still adopt rotated refresh tokens.
     let session_cell = std::rc::Rc::new(std::cell::RefCell::new(session));
@@ -575,7 +575,7 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         if metadata.last_account_hash.as_deref() != Some(&hash) {
             metadata.last_account_hash = Some(hash.clone());
             metadata.save();
-            // Same stale-cache class as dictionary.rs W1 — compiled caches
+            // Same stale-cache class as dictionary.rs W1 - compiled caches
             // keyed to the previous account must be dropped immediately.
             crate::dictionary::invalidate_cache();
             crate::snippets::invalidate_cache();
@@ -613,7 +613,7 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
 }
 
 /// Access token with an in-memory refresh when needed (spec §24). A 400/401
-/// from the token endpoint means the refresh token was revoked — the user
+/// from the token endpoint means the refresh token was revoked - the user
 /// must sign in again.
 fn ensure_access_token(session: &mut AuthSession) -> Result<String, SyncError> {
     if let Some(token) = session.access_token() {
@@ -665,7 +665,7 @@ fn refresh_access_token_silently(session: &mut AuthSession) -> Result<String, Sy
 
 /// Whether a successful token grant must update the stored refresh token:
 /// true only when the provider returned a rotated token different from the
-/// one already held/persisted. Pure — the Credential Manager round-trip is
+/// one already held/persisted. Pure - the Credential Manager round-trip is
 /// OS integration, not unit-testable here.
 fn needs_refresh_token_persist(previous: Option<&str>, response: &auth::TokenResponse) -> bool {
     match &response.refresh_token {
@@ -675,7 +675,7 @@ fn needs_refresh_token_persist(previous: Option<&str>, response: &auth::TokenRes
 }
 
 // ---------------------------------------------------------------------------
-// Client secret resolution (runtime only — never committed) and account key.
+// Client secret resolution (runtime only - never committed) and account key.
 // ---------------------------------------------------------------------------
 
 fn oauth_config_path() -> Option<std::path::PathBuf> {
@@ -734,7 +734,7 @@ fn windows_browser_command(url: &str) -> Vec<String> {
 }
 
 /// Open the authorization URL in the system browser. Windows: route the URL
-/// to `ShellExecuteEx` via `rundll32 url.dll,FileProtocolHandler` — no cmd
+/// to `ShellExecuteEx` via `rundll32 url.dll,FileProtocolHandler` - no cmd
 /// involved, so the `&` query separators in the auth URL are passed through
 /// verbatim instead of being split into separate commands.
 fn open_browser(url: &str) -> std::io::Result<()> {
@@ -784,7 +784,7 @@ pub fn sync_toggle(
 /// redirect, exchange the code, persist the refresh token, record the account
 /// email, enable sync, and trigger an immediate pass. Blocks the caller until
 /// the user finishes in the browser. A client secret is attached only when
-/// resolvable at runtime — a Desktop OAuth client is a public PKCE client and
+/// resolvable at runtime - a Desktop OAuth client is a public PKCE client and
 /// must be able to sign in without one.
 #[tauri::command]
 pub async fn sync_sign_in(
@@ -891,8 +891,8 @@ async fn fetch_account_email(access_token: &str) -> Result<String, String> {
 
 /// Account-level combined statistics (frozen v1.2 product contract).
 ///
-/// Signed in: totals derive from the merged account event ledger — the same
-/// union set every device converges to — so Windows + Android contributions
+/// Signed in: totals derive from the merged account event ledger - the same
+/// union set every device converges to - so Windows + Android contributions
 /// sum naturally (X + Y). Signed out, or before the first successful sync
 /// populates the ledger, falls back to platform-local history-derived numbers.
 ///
@@ -1415,7 +1415,7 @@ mod tests {
     #[test]
     fn retry_after_header_is_honored_by_the_backoff() {
         // When Drive says "retry after 5s" on the first 429, the scheduler must
-        // wait at least 5s — not the 1s base backoff — before the next attempt.
+        // wait at least 5s - not the 1s base backoff - before the next attempt.
         let mut c = core();
         assert!(c.take_run(NOW));
         c.note_retry_after(Some(5_000));

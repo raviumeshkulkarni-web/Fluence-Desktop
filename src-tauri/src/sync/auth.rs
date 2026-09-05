@@ -1,9 +1,9 @@
-// Fluence sync — Windows OAuth 2.0 authorization-code flow (spec §24).
+// Fluence sync - Windows OAuth 2.0 authorization-code flow (spec §24).
 //
 // Loopback PKCE (S256): the browser is pointed at the provider's
 // authorization endpoint with a code challenge; the provider redirects to
 // `http://localhost:<port>/`, where an in-process listener captures the code.
-// The refresh token is persisted by the caller (Credential Manager —
+// The refresh token is persisted by the caller (Credential Manager -
 // `credentials::SYNC_REFRESH_TOKEN_TARGET`); the access token is memory-only.
 //
 // Everything except the HTTP exchange and the loopback listener is a pure
@@ -548,7 +548,7 @@ mod tests {
         assert_eq!(session.refresh_token.as_deref(), Some("rt-1"));
 
         // Sign-out clears the refresh token; the in-memory access token still
-        // authorizes the current pass — only a full sign-out (no tokens at
+        // authorizes the current pass - only a full sign-out (no tokens at
         // all) skips it. The Credential Manager round-trip is OS integration,
         // not unit-testable here.
         session.refresh_token = None;

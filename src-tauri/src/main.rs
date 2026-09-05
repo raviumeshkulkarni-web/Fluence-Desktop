@@ -34,6 +34,7 @@ mod suggestion;
 #[allow(dead_code)]
 mod sync;
 mod transcribe;
+mod silence_gate;
 mod tray;
 mod workflow;
 
@@ -101,7 +102,7 @@ pub fn run() {
                         .builder()
                         .title("Fluence is ready")
                         .body(
-                            "Running in the system tray — press your hotkey to start voice typing.",
+                            "Running in the system tray. Press your hotkey to start voice typing.",
                         )
                         .show()
                     {
@@ -192,6 +193,7 @@ pub fn run() {
             // Transcription
             transcribe::transcribe_audio,
             transcribe::fetch_models,
+            transcribe::fetch_stt_models,
             transcribe::test_stt_connection,
             // Agent
             agent::execute_agent_command,
@@ -235,10 +237,13 @@ pub fn run() {
             offline_downloader::get_offline_model_status,
             offline_downloader::cancel_offline_download,
             offline_downloader::delete_offline_model,
-            // Moonshine offline ASR
-            offline_downloader::download_moonshine_model,
-            offline_downloader::get_moonshine_model_status,
-            offline_downloader::delete_moonshine_model,
+            // Moonshine v2 streaming offline ASR (small/medium)
+            offline_downloader::download_moonshine_v2_small_model,
+            offline_downloader::get_moonshine_v2_small_model_status,
+            offline_downloader::delete_moonshine_v2_small_model,
+            offline_downloader::download_moonshine_v2_medium_model,
+            offline_downloader::get_moonshine_v2_medium_model_status,
+            offline_downloader::delete_moonshine_v2_medium_model,
             // Suggestions (auto-learn)
             suggestion::get_suggestions,
             suggestion::accept_suggestion_command,

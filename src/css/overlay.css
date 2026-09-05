@@ -424,6 +424,13 @@ body {
   opacity: 1;
 }
 
+/* The bubble tier repurposes .card-footer as an absolutely-positioned hover
+   discard badge; giving non-bubble tiers a positioning context for the
+   stop-and-save button must not touch that badge. */
+.overlay-root:not(.style-bubble) .card-footer {
+  position: relative;
+}
+
 /* ── Recording Indicator ───────────────────────────────────────── */
 .card-rec {
   display: flex;
@@ -590,6 +597,58 @@ body {
   transform: scale(0.9);
 }
 
+/* ── Stop-and-Save Button ──────────────────────────────────────── */
+/* The bubble tier repurposes its card-footer as the hover discard
+   badge, so the stop control must never appear there. All rules are
+   guarded with :not(.style-bubble) — the existing bubble declarations
+   are untouched and the badge stays pixel-identical. */
+.card-stop {
+  display: none;
+}
+
+.overlay-root:not(.style-bubble) .card-stop {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  right: 52px; /* full tier: discard 28px + 8px gap + right pad 16px */
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: none;
+  background: transparent;
+  color: var(--color-on-surface);
+  cursor: pointer;
+  padding: 0;
+  transition: background 150ms ease, color 150ms ease;
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+.overlay-root:not(.style-bubble) .card-stop:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+.overlay-root:not(.style-bubble) .card-stop:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+.overlay-root:not(.style-bubble) .card-stop:active {
+  background: rgba(255, 255, 255, 0.10);
+}
+
+/* Compact tier mirrors its smaller discard: 22px round chip */
+.overlay-root:not(.style-bubble).style-compact .card-stop {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  right: 34px; /* compact discard 22px + 12px gap (compact footer has no right padding) */
+}
+
 /* ── Status Icons (success/error) ──────────────────────────────── */
 .status-icon {
   position: absolute;
@@ -653,10 +712,23 @@ body {
   color: var(--color-error);
 }
 
+/* Neutral "no speech" notice — variant-colored, no red X, quiet. Guarded
+   with :not(.style-bubble) so the minimal bubble, which hides status-msg
+   anyway, stays pixel-identical. */
+.overlay-root.state-no-speech:not(.style-bubble) .status-msg {
+  opacity: 1;
+  color: var(--color-on-surface-variant);
+}
+
+.overlay-root.state-no-speech:not(.style-bubble) .card-waveform {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
 /* ── Hold-to-Record Hint ───────────────────────────────────────── */
 .rec-hint {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.02em;
   line-height: 1.15;

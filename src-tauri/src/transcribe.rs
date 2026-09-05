@@ -43,7 +43,9 @@ pub const MAX_AUDIO_BYTES: usize = 22_000_000;
 /// Maximum offline sample count (10 minutes at 16kHz mono = 9.6M samples)
 pub const MAX_OFFLINE_SAMPLES: usize = 10 * 60 * 16_000;
 
-fn check_audio_bytes_len(len: usize) -> Result<(), String> {
+// Shared size guard: every online entry point calls this so no path can
+// bypass the provider limit. No behavior change.
+pub(crate) fn check_audio_bytes_len(len: usize) -> Result<(), String> {
     if len > MAX_AUDIO_BYTES {
         return Err(format!(
             "Recording too long ({} bytes, {:.1} MB). Maximum is ~22 MB (~10 minutes at 64 kbps). Please split recordings.",
@@ -177,7 +179,11 @@ pub async fn transcribe_audio_bytes(
 /// contribute their spoken/corrected words.
 ///
 /// Groq rejects prompts > 896 characters, so the result is truncated to 890.
-fn build_vocabulary_hint(entries: &[crate::dictionary::DictionaryEntry]) -> Option<String> {
+// Shared vocabulary-hint builder (including the expansion-exclusion
+// invariant above) so all senders behave identically. No behavior change.
+pub(crate) fn build_vocabulary_hint(
+    entries: &[crate::dictionary::DictionaryEntry],
+) -> Option<String> {
     let mut prompt_words = Vec::new();
     for entry in entries {
         if entry.kind == "expansion" {
@@ -400,14 +406,20 @@ pub async fn transcribe_mp3_bytes_with_raw(
 }
 
 /// Fetch available models from an OpenAI-compatible /v1/models endpoint.
+/// Unfiltered: used by the LLM/agent picker, which legitimately lists
+/// every model on the account.
 #[tauri::command]
 pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
-    crate::http_client::validate_api_url(&base_url)?;
-    let url = crate::http_client::build_api_url(&base_url, "models");
+    fetch_model_ids(&base_url, &api_key).await
+}
+
+async fn fetch_model_ids(base_url: &str, api_key: &str) -> Result<Vec<String>, String> {
+    crate::http_client::validate_api_url(base_url)?;
+    let url = crate::http_client::build_api_url(base_url, "models");
 
     let resp = crate::http_client::CLIENT
         .get(&url)
-        .bearer_auth(&api_key)
+        .bearer_auth(api_key)
         .timeout(std::time::Duration::from_secs(10))
         .send()
         .await
@@ -433,6 +445,82 @@ pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<Strin
 
     let ids: Vec<String> = models.data.into_iter().map(|m| m.id).collect();
     Ok(ids)
+}
+
+/// Substrings (matched case-insensitively) identifying speech-to-text /
+/// ASR model ids across providers: Groq (`whisper-large-v3-turbo`),
+/// OpenAI (`whisper-1`, `gpt-4o-transcribe`), Mistral
+/// (`voxtral-mini-latest`, `mistral-stt`), xAI (`grok-stt`), local
+/// engines (`sensevoice`, `moonshine`), and common third-party families.
+/// Chat/LLM ids (`llama-*`, `gpt-4o`, `mistral-large-*`, …) match none of
+/// these, so the STT picker can never offer them.
+pub const ASR_MODEL_MARKERS: &[&str] = &[
+    "whisper",
+    "voxtral",
+    "transcribe",
+    "stt",
+    "scribe",
+    "asr",
+    "speech",
+    "parakeet",
+    "canary",
+    "moonshine",
+    "sensevoice",
+    "chirp",
+    "nova",
+];
+
+/// True when a model id looks like a speech-to-text model (see
+/// `ASR_MODEL_MARKERS`). Conservative by design: unknown ids fail closed
+/// to false (batch sender still accepts any configured id; this only
+/// gates what the picker *offers*).
+pub fn is_asr_model_id(id: &str) -> bool {
+    let lower = id.to_lowercase();
+    ASR_MODEL_MARKERS.iter().any(|m| lower.contains(m))
+}
+
+/// Filtered model list for the transcription picker, plus whether any
+/// filtering applied. Pure (no network): `fetch_stt_models` fetches,
+/// this decides.
+pub fn apply_stt_model_filter(ids: Vec<String>, keep: Option<&str>) -> SttModelList {
+    let filtered: Vec<String> = ids.into_iter().filter(|id| is_asr_model_id(id)).collect();
+    // Whether the endpoint listing itself contained speech models (before
+    // `keep` is merged in): the UI uses this to say so instead of silently
+    // showing chat models.
+    let recognized_any = !filtered.is_empty();
+    let mut models = filtered;
+    if let Some(k) = keep {
+        let k = k.trim();
+        if !k.is_empty() && !models.iter().any(|m| m == k) {
+            models.push(k.to_string());
+        }
+    }
+    SttModelList {
+        models,
+        filtered: recognized_any,
+    }
+}
+
+/// Transcription-picker model list: speech models only. `keep` (usually
+/// the currently saved model) is always included so fetching can never
+/// strand an existing selection. The LLM/agent picker keeps using the
+/// unfiltered `fetch_models`.
+#[derive(Debug, Clone, Serialize)]
+pub struct SttModelList {
+    pub models: Vec<String>,
+    pub filtered: bool,
+}
+
+/// Fetch available models like `fetch_models`, but only return
+/// speech-to-text capable ids for the transcription picker.
+#[tauri::command]
+pub async fn fetch_stt_models(
+    base_url: String,
+    api_key: String,
+    keep: Option<String>,
+) -> Result<SttModelList, String> {
+    let ids = fetch_model_ids(&base_url, &api_key).await?;
+    Ok(apply_stt_model_filter(ids, keep.as_deref()))
 }
 
 /// Test connectivity to an STT provider.
@@ -701,5 +789,76 @@ mod tests {
             prompt.len()
         );
         assert!(prompt.chars().all(|c| c == '€'), "prompt content corrupted");
+    }
+
+    #[test]
+    fn asr_classifier_accepts_speech_models_per_provider() {
+        // Groq Whisper pair.
+        assert!(is_asr_model_id("whisper-large-v3"));
+        assert!(is_asr_model_id("whisper-large-v3-turbo"));
+        // OpenAI speech models.
+        assert!(is_asr_model_id("whisper-1"));
+        assert!(is_asr_model_id("gpt-4o-transcribe"));
+        assert!(is_asr_model_id("gpt-4o-mini-transcribe"));
+        // Mistral speech models (batch + realtime).
+        assert!(is_asr_model_id("voxtral-mini-latest"));
+        assert!(is_asr_model_id("voxtral-mini-realtime-latest"));
+        assert!(is_asr_model_id("mistral-stt"));
+        // xAI + local engines.
+        assert!(is_asr_model_id("grok-stt"));
+        assert!(is_asr_model_id("sensevoice"));
+    }
+
+    #[test]
+    fn asr_classifier_rejects_chat_models() {
+        for llm in [
+            "llama-3.3-70b-versatile",
+            "gpt-4o",
+            "gpt-4o-mini",
+            "mistral-large-latest",
+            "qwen-qwq-32b",
+            "deepseek-r1-distill-llama-70b",
+            "",
+        ] {
+            assert!(!is_asr_model_id(llm), "{llm} must not classify as speech");
+        }
+    }
+
+    #[test]
+    fn asr_classifier_is_case_insensitive() {
+        assert!(is_asr_model_id("Whisper-Large-V3"));
+        assert!(is_asr_model_id("VOXTRAL-MINI-LATEST"));
+    }
+
+    #[test]
+    fn stt_filter_keeps_speech_drops_chat_and_preserves_current() {
+        let ids = vec![
+            "whisper-large-v3".to_string(),
+            "llama-3.3-70b-versatile".to_string(),
+            "voxtral-mini-latest".to_string(),
+            "gpt-4o".to_string(),
+        ];
+        let list = apply_stt_model_filter(ids, Some("whisper-large-v3"));
+        assert!(list.filtered);
+        assert_eq!(list.models.len(), 2);
+        assert!(list.models.contains(&"whisper-large-v3".to_string()));
+        assert!(list.models.contains(&"voxtral-mini-latest".to_string()));
+    }
+
+    #[test]
+    fn stt_filter_never_strands_saved_selection() {
+        // A saved id absent from the listing (custom endpoint, retired
+        // model) is preserved so fetching can never strand the user.
+        let ids = vec!["llama-3.3-70b-versatile".to_string()];
+        let list = apply_stt_model_filter(ids, Some("my-custom-stt"));
+        assert!(!list.filtered);
+        assert_eq!(list.models, vec!["my-custom-stt".to_string()]);
+    }
+
+    #[test]
+    fn stt_filter_empty_without_keep_returns_empty() {
+        let list = apply_stt_model_filter(vec![], None);
+        assert!(!list.filtered);
+        assert!(list.models.is_empty());
     }
 }

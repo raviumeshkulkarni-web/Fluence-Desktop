@@ -55,7 +55,7 @@ const SYNC_OAUTH_CONFIG_FILE: &str = "sync-oauth.json";
 /// `drive.file` scope alone (no `openid`/`email` scope needed for the account
 /// key used by sync).
 const SYNC_ABOUT_URL: &str = "https://www.googleapis.com/drive/v3/about?fields=user";
-const SYNC_SECRET_MISSING_MSG: &str = "sync client secret is not configured — set the \
+const SYNC_SECRET_MISSING_MSG: &str = "sync client secret is not configured. Set the \
     FLUENCE_SYNC_CLIENT_SECRET environment variable or create Fluence/sync-oauth.json \
     with {\"client_secret\": \"...\"}";
 
@@ -477,7 +477,7 @@ fn classify_pass(
         Err(e) => match e {
             SyncError::AuthRequired => (
                 PassOutcomeKind::AuthRequired,
-                Some("authentication required — sign in again".to_string()),
+                Some("authentication required. Sign in again".to_string()),
                 None,
             ),
             SyncError::StaleVersion(e) => (PassOutcomeKind::Retryable, Some(e.to_string()), None),
@@ -1382,7 +1382,7 @@ mod tests {
             classify_pass(Err(SyncError::AuthRequired)),
             (
                 PassOutcomeKind::AuthRequired,
-                Some("authentication required — sign in again".to_string()),
+                Some("authentication required. Sign in again".to_string()),
                 None
             )
         );

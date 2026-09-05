@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Fluence",
   "identifier": "com.fluence.desktop",
-  "version": "1.17.4",
+  "version": "1.18.0",
   "build": {
     "frontendDist": "../src",
     "beforeDevCommand": "",
@@ -14,8 +14,8 @@
       {
         "label": "main",
         "title": "Fluence Settings",
-        "width": 960,
-        "height": 680,
+        "width": 1200,
+        "height": 880,
         "minWidth": 800,
         "minHeight": 600,
         "resizable": true,
@@ -68,6 +68,8 @@
       "icons/icon.icns",
       "icons/icon.ico"
     ],
+    "externalBin": ["binaries/moonshine-v2-server"],
+    "resources": ["binaries/onnxruntime.dll"],
     "windows": {
       "nsis": {
         "displayLanguageSelector": false,

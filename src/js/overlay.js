@@ -17,6 +17,7 @@ const recLabel    = document.getElementById('rec-label');
 const modeBadge   = document.getElementById('mode-badge');
 const cardTimer   = document.getElementById('card-timer');
 const cardDiscard = document.getElementById('card-discard');
+const cardStop    = document.getElementById('card-stop');
 const statusMsg   = document.getElementById('status-msg');
 const statusRetry = document.getElementById('status-retry');
 const recHint     = document.getElementById('rec-hint');
@@ -66,6 +67,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   aura = new AuraVisualizer('waveform-canvas');
   setupEventListeners();
   setupDiscardButton();
+  setupStopButton();
   setupRetryButton();
   setupHotkeyBusyFeedback();
   // Reset synchronously before any awaits so a hotkey that fires while the
@@ -372,19 +374,106 @@ function hideRetry() {
   if (statusRetry) statusRetry.hidden = true;
 }
 
+let autoDismissMs = 0;
+let autoDismissDeadline = 0;
+let autoDismissPaused = false;
+let autoDismissPauseBound = false;
+let autoDismissHover = false;
+let autoDismissFocus = false;
+
 function clearAutoDismiss() {
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  autoDismissPaused = false;
+  autoDismissHover = false;
+  autoDismissFocus = false;
+  autoDismissMs = 0;
+}
+
+function pauseAutoDismiss() {
+  // Only a live countdown can be paused. Without this guard, hovering the
+  // overlay mid-recording (no countdown armed) would latch `paused` with
+  // 0ms remaining, and the matching mouseleave would dismiss the overlay
+  // while still recording.
+  if (autoDismissPaused || !retryTimer) return;
+  autoDismissPaused = true;
+  autoDismissMs = Math.max(0, autoDismissDeadline - Date.now());
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
   }
 }
 
+// Resume only once neither hover nor focus is active. If the remaining time
+// already elapsed while paused, dismiss immediately.
+function resumeAutoDismiss() {
+  if (autoDismissHover || autoDismissFocus) return;
+  if (!autoDismissPaused) return;
+  autoDismissPaused = false;
+  if (autoDismissMs <= 0) {
+    autoDismissMs = 0;
+    const sessionId = activeSessionId;
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+    return;
+  }
+  autoDismissDeadline = Date.now() + autoDismissMs;
+  const sessionId = activeSessionId;
+  retryTimer = setTimeout(() => {
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+  }, autoDismissMs);
+}
+
+// Hover/focus pauses the dismiss countdown so long or critical errors stay
+// readable; the retry button stays clickable the whole time. Re-arms on
+// leave/blur with the remaining time (mirrors the settings-toast
+// hover-pause pattern).
+function ensureAutoDismissPause() {
+  if (autoDismissPauseBound || !overlayRoot) return;
+  autoDismissPauseBound = true;
+  overlayRoot.addEventListener('mouseenter', () => {
+    autoDismissHover = true;
+    pauseAutoDismiss();
+  });
+  overlayRoot.addEventListener('mouseleave', () => {
+    autoDismissHover = false;
+    resumeAutoDismiss();
+  });
+  document.addEventListener('focusin', (e) => {
+    if (e.target === statusRetry) {
+      autoDismissFocus = true;
+      pauseAutoDismiss();
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    if (e.target === statusRetry) {
+      autoDismissFocus = false;
+      resumeAutoDismiss();
+    }
+  });
+}
+
 function scheduleAutoDismiss(ms) {
   const sessionId = activeSessionId;
   clearAutoDismiss();
+  autoDismissMs = ms;
+  autoDismissDeadline = Date.now() + ms;
+  ensureAutoDismissPause();
   retryTimer = setTimeout(() => {
     if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
   }, ms);
+  // clearAutoDismiss resets our pause flags, but the cursor or retry may
+  // already be over the overlay right now (mouseenter/focusin already fired).
+  // Re-apply the pause for the fresh countdown so it doesn't run while held.
+  if (overlayRoot && overlayRoot.matches(':hover')) {
+    autoDismissHover = true;
+    pauseAutoDismiss();
+  }
+  if (document.activeElement === statusRetry) {
+    autoDismissFocus = true;
+    pauseAutoDismiss();
+  }
 }
 
 function setupRetryButton() {
@@ -486,6 +575,19 @@ function setupDiscardButton() {
   }
 }
 
+function setupStopButton() {
+  if (!cardStop) return;
+  cardStop.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    // Same path as the hotkey-stop handlers: stop the timer and transcribe,
+    // choosing the mode by the current state (recording → STT, agent → Agent).
+    const sessionId = activeSessionId;
+    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
+    stopTimer();
+    await stopAndTranscribe(currentState === 'agent', sessionId);
+  });
+}
+
 async function getRecordingPreferences() {
   try {
     cachedSettings = await invoke('get_settings');
@@ -539,13 +641,20 @@ async function stopAndTranscribe(agentMode, sessionId) {
         invoke('get_settings'),
       ]);
       // BUG-06: differentiate empty/silence from error — show brief feedback, not silent vanish
+      // EXPERIMENT Trial 4: gate rejections vanish instantly (no notice).
+      // The gate already proved there is no speech; anything else empty
+      // keeps the gentle notice below.
+      if (result.silenceRejected) {
+        if (isSessionActive(sessionId)) await fadeAndHide(sessionId);
+        return;
+      }
       if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
         if (isSessionActive(sessionId)) {
           // Very short recordings (<200ms) are already discarded by audio pipeline as accidental press
-          // Silence gets a gentle hint, not an error red X
-          setState('error');
+          // Silence gets a gentle, neutral notice — not a red error X
+          setState('no-speech');
           setStatusMessage('No speech detected');
-          scheduleAutoDismiss(1500);
+          scheduleAutoDismiss(2500);
         }
         return;
       }
@@ -563,11 +672,11 @@ async function stopAndTranscribe(agentMode, sessionId) {
     setState('error');
     if (agentMode) {
       setStatusMessage('Failed');
-      scheduleAutoDismiss(2000);
+      scheduleAutoDismiss(8000);
     } else {
       setStatusMessage('Transcription failed');
       showRetry();
-      scheduleAutoDismiss(4000);
+      scheduleAutoDismiss(8000);
     }
   }
 }
@@ -578,12 +687,19 @@ async function runSttFlow(sessionId, retry = false) {
   try {
     const result = await invoke(retry ? 'retry_transcription_flow' : 'finish_transcription_flow');
 
+    // EXPERIMENT Trial 4: gate rejections vanish instantly (no notice).
+    if (result.silenceRejected) {
+      if (isSessionActive(sessionId)) await fadeAndHide(sessionId);
+      return;
+    }
+
     const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
     if (!result.text || !result.text.trim() || !hasAlphanumeric) {
       if (isSessionActive(sessionId)) {
-        setState('error');
+        // Silence is a normal outcome, not an error — neutral notice, no red X
+        setState('no-speech');
         setStatusMessage('No speech detected');
-        scheduleAutoDismiss(1500);
+        scheduleAutoDismiss(2500);
       }
       return;
     }
@@ -601,7 +717,9 @@ async function runSttFlow(sessionId, retry = false) {
       await invoke('inject_text', { text: result.text, monitorAutoLearn: true });
       if (!isSessionActive(sessionId)) return;
       setState('success');
-      setStatusMessage('Inserted');
+      // Realtime was selected but batch served: say so instead of a plain
+      // "Inserted" so streaming silently downgrading stays visible.
+      setStatusMessage(result.realtimeFallback ? 'Inserted (standard mode)' : 'Inserted');
       playCompletionChime();
       await new Promise(r => setTimeout(r, 1000));
       await fadeAndHide(sessionId);
@@ -610,7 +728,7 @@ async function runSttFlow(sessionId, retry = false) {
       if (!isSessionActive(sessionId)) return;
       setState('error');
       setStatusMessage('Insert failed');
-      scheduleAutoDismiss(4000);
+      scheduleAutoDismiss(8000);
     }
   } catch (err) {
     console.error('Transcription error:', err);
@@ -618,7 +736,7 @@ async function runSttFlow(sessionId, retry = false) {
     setState('error');
     setStatusMessage('Transcription failed');
     showRetry();
-    scheduleAutoDismiss(4000);
+    scheduleAutoDismiss(8000);
   }
 }
 
@@ -631,7 +749,7 @@ function mapAgentErrorToStatus(err) {
   if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) return { label: 'LLM auth failed', retryable: false };
   if (msg.includes('Invalid URL') || msg.includes('HTTPS')) return { label: 'Check LLM URL', retryable: false };
   if (msg.includes('404') || msg.includes('400') || msg.includes('model')) return { label: 'Check LLM model', retryable: false };
-  if (msg.includes('LLM rate limited') || msg.includes('429')) return { label: 'Rate limited — retry', retryable: true };
+  if (msg.includes('LLM rate limited') || msg.includes('429')) return { label: 'Rate limited. Retry', retryable: true };
   if (msg.includes('LLM provider unavailable') || msg.includes('500') || msg.includes('502') || msg.includes('503')) return { label: 'LLM unavailable', retryable: true };
   if (msg.includes('timed out') || msg.includes('timeout') || msg.includes('Network error') || msg.includes('Connection failed')) return { label: 'Network error', retryable: true };
   if (msg.includes('Action parse error') || msg.includes('Empty response')) return { label: 'Agent parse failed', retryable: true };
@@ -686,7 +804,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     // A late arrival is dropped by the isSessionActive guards below.
     let agentTimeoutId = null;
     const agentTimeout = new Promise((_, reject) => {
-      agentTimeoutId = setTimeout(() => reject(new Error('Agent timed out — retry')), AGENT_LLM_WATCHDOG_MS);
+      agentTimeoutId = setTimeout(() => reject(new Error('Agent timed out. Retry')), AGENT_LLM_WATCHDOG_MS);
     });
     let action;
     try {
@@ -773,7 +891,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
       agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId };
       showRetry();
     }
-    scheduleAutoDismiss(4000);
+    scheduleAutoDismiss(8000);
   }
 }
 
@@ -822,6 +940,10 @@ function setState(state) {
       case 'transcribing':
       case 'agent_transcribing':
         recLabel.textContent = 'PROCESSING';
+        break;
+      case 'no-speech':
+        // Quiet neutral state — the status notice carries the message
+        recLabel.textContent = '';
         break;
       default:
         recLabel.textContent = 'LISTENING';

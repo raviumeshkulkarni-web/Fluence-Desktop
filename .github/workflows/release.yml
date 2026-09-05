@@ -27,6 +27,58 @@ jobs:
       - name: install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
+      # Moonshine v2 sidecar (experiment branch, opt-in engines only).
+      # Fetches the official prebuilt C++ core + ONNX Runtime and verifies
+      # it against the reviewed digest in
+      # src-tauri/moonshine-v2-server/VENDOR.json — the single source of
+      # truth. Nothing here trusts a developer machine: a digest mismatch
+      # fails the release before anything compiles.
+      - name: fetch moonshine v2 vendor bundle
+        shell: pwsh
+        run: |
+          $vendor = Get-Content src-tauri/moonshine-v2-server/VENDOR.json | ConvertFrom-Json
+          $dest = ".vendor/moonshine-voice-windows-x86_64.tar.gz"
+          New-Item -ItemType Directory -Force -Path ".vendor/moonshine" | Out-Null
+          Invoke-WebRequest -Uri $vendor.url -OutFile $dest
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLower()
+          if ($actual -ne $vendor.sha256) {
+            throw "Vendor digest mismatch: expected $($vendor.sha256), got $actual"
+          }
+          $size = (Get-Item -LiteralPath $dest).Length
+          if ($size -ne $vendor.size_bytes) {
+            throw "Vendor size mismatch: expected $($vendor.size_bytes), got $size"
+          }
+          # Layout must match build.rs default:
+          # <repo>/.vendor/moonshine/moonshine-voice-windows-x86_64/{include,lib}
+          tar -xzf $dest -C .vendor/moonshine
+          if (-not (Test-Path ".vendor/moonshine/moonshine-voice-windows-x86_64/lib/onnxruntime.dll")) {
+            throw "Vendor extract missing onnxruntime.dll"
+          }
+
+      # Builds the workspace-member sidecar, then stages the Tauri
+      # externalBin + resource files the bundler requires to exist BEFORE
+      # `tauri build` runs. The app build.rs hashes the staged exe and bakes
+      # it in as MOONSHINE_V2_SERVER_SHA256 for the runtime spawn gate.
+      - name: build and stage moonshine v2 sidecar
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml -p moonshine-v2-server
+          $triple = (rustc --print host-tuple).Trim()
+          New-Item -ItemType Directory -Force -Path "src-tauri/binaries" | Out-Null
+          Copy-Item "src-tauri/target/release/moonshine-v2-server.exe" `
+            "src-tauri/binaries/moonshine-v2-server-$triple.exe" -Force
+          Copy-Item "src-tauri/target/release/onnxruntime.dll" `
+            "src-tauri/binaries/onnxruntime.dll" -Force
+          if (-not (Test-Path "src-tauri/binaries/moonshine-v2-server-$triple.exe")) {
+            throw "Sidecar staging failed"
+          }
+
+      # Quality gate: a pushed tag must never ship an untested tree.
+      # (clippy/fmt stay advisory for now: pre-existing lints would fail CI.)
+      - name: run backend test suite
+        working-directory: src-tauri
+        run: cargo test --lib
+
       - name: install frontend dependencies
         run: npm ci
 

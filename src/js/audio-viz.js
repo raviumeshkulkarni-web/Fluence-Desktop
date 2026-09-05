@@ -299,7 +299,8 @@ class AuraVisualizer {
       'state-transcribing',
       'state-agent_transcribing',
       'state-success',
-      'state-error'
+      'state-error',
+      'state-no-speech'
     );
     if (state !== 'idle') this.overlayRoot.classList.add(`state-${state}`);
 
@@ -407,7 +408,10 @@ class AuraVisualizer {
     const isAgent = this.currentState === 'agent' || this.currentState === 'agent_transcribing';
 
     const isBubble = this.overlayRoot?.classList.contains('style-bubble');
-    const primaryColor = isAgent ? '#00F5D4' : '#B08AC8';
+    // Token-backed colors: agent = --color-brand-cyan (#0BD6E3), STT =
+    // --color-brand-amethyst (#8B45D8) in design-tokens.css. Literal values
+    // are kept in sync with those tokens.
+    const primaryColor = isAgent ? '#0BD6E3' : '#8B45D8';
     const forefrontColor = isAgent ? '#E6FFFA' : '#F1EAF5';
     const primaryAlpha = 0.32;
 

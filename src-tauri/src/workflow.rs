@@ -15,6 +15,16 @@ pub struct TranscriptionFlowResult {
     /// True if AI polish was requested but fell back to raw (BUG-10)
     #[serde(default)]
     pub polish_fallback: bool,
+    /// Legacy field from the removed online-streaming support: always false
+    /// now (every online take is batch). Kept so the serialized result
+    /// shape — and the overlay code reading it — does not change.
+    #[serde(default)]
+    pub realtime_fallback: bool,
+    /// True when this take was rejected by the automatic pre-upload silence
+    /// gate (no audio was sent anywhere). Lets the UI vanish instantly
+    /// instead of showing the no-speech notice.
+    #[serde(default)]
+    pub silence_rejected: bool,
 }
 
 enum PendingAudio {
@@ -131,6 +141,12 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         }
     };
 
+    // Gate-rejection marker consumed from capture above (self-clearing;
+    // true only when THIS take was just rejected by the automatic silence
+    // gate — no audio uploaded anywhere). Threaded through so the overlay
+    // can vanish instantly instead of showing the no-speech notice.
+    let silence_rejected = crate::silence_gate::take_gate_rejected();
+
     let Some(pending) = pending else {
         return Ok(TranscriptionFlowResult {
             text: String::new(),
@@ -138,6 +154,10 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
             duration_ms: start_time.elapsed().as_millis() as u64,
             provider: settings.stt_provider.preset,
             polish_fallback: false,
+            // No audio, no transcription: batch was never attempted, so no
+            // realtime fallback either (online streaming support removed).
+            realtime_fallback: false,
+            silence_rejected,
         });
     };
 
@@ -160,6 +180,8 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         duration_ms: start_time.elapsed().as_millis() as u64,
         provider: settings.stt_provider.preset,
         polish_fallback: false,
+        realtime_fallback: false,
+        silence_rejected,
     })
 }
 
@@ -347,6 +369,8 @@ pub async fn retry_transcription_flow(
 ) -> Result<TranscriptionFlowResult, String> {
     let start_time = std::time::Instant::now();
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
+    // Retry always re-transcribes retained audio via the standard batch
+    // path (online streaming support removed).
     let (mut text, raw_text, _transcribe_duration) = transcribe_pending_audio(&settings).await?;
 
     if settings.ai_polish_style != "none" {
@@ -387,5 +411,8 @@ pub async fn retry_transcription_flow(
         duration_ms: start_time.elapsed().as_millis() as u64,
         provider: settings.stt_provider.preset,
         polish_fallback: false,
+        realtime_fallback: false,
+        // Retry never captures audio, so the gate cannot have fired here.
+        silence_rejected: false,
     })
 }

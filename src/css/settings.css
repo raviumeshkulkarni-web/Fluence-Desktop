@@ -64,7 +64,7 @@ body {
 }
 
 .nav-section-label {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -243,6 +243,10 @@ body {
 }
 
 .page { display: none; flex-direction: column; gap: var(--spacing-lg); animation: fade-in 0.15s var(--ease-standard); }
+/* Readable measure: without a cap, rows stretch edge-to-edge on wide
+   windows and labels drift far from their controls. Tables/data stay
+   full-width *within* the measure, which is correct for data density. */
+.page { width: 100%; max-width: 920px; margin: 0 auto; }
 .page.active { display: flex; }
 
 .page-header {
@@ -255,8 +259,8 @@ body {
 
 .page-title {
   font-family: var(--font-display);
-  font-size: var(--text-headline-md);
-  font-weight: 500;
+  font-size: var(--text-title-lg);
+  font-weight: 600;
   color: var(--color-on-surface);
   letter-spacing: -0.02em;
   outline: none;
@@ -283,7 +287,7 @@ body {
   padding: 12px var(--spacing-md);
   background: var(--color-surface-secondary);
   border-bottom: 1px solid var(--color-border-muted);
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-sm);
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -373,11 +377,40 @@ body {
 }
 
 /* ── Provider Cards ────────────────────────────────────────────── */
+/* Centered wrapping row: fixed 3-col grids orphan trailing cards
+   (STT has 5, LLM has 4), so tracks flex and orphans center instead. */
 .provider-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: var(--spacing-sm);
   padding: var(--spacing-md);
+}
+
+.provider-grid .provider-card {
+  flex: 1 1 160px;
+  max-width: 230px;
+}
+
+/* ── Segmented two-option control (Transcription Mode) ──────────── */
+/* Equal halves read as one control; a faded-but-uneven pair reads as
+   broken. Disabled stays legible (0.6, not the global 0.45 wash) with
+   a not-allowed cursor and a title tooltip explaining why. */
+.mode-segmented {
+  display: flex;
+  gap: var(--spacing-sm);
+  max-width: 460px;
+}
+
+.mode-segmented .provider-card {
+  flex: 1;
+  margin: 0;
+}
+
+.mode-segmented .provider-card:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .provider-card {
@@ -411,11 +444,129 @@ body {
 }
 
 .provider-card .provider-name {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: 12px;
   font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.08em;
+}
+
+/* ── Offline model cards (Android parity) ─────────────────────── */
+/* Radio-selectable cards with speed/accuracy meters. Selected state
+   mirrors Android: 2px primary border (padding compensated so the card
+   does not shift) + filled radio dot. */
+.offline-model-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.offline-model-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: var(--color-surface-secondary);
+  padding: var(--spacing-md);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: background-color 0.12s var(--ease-standard), border-color 0.12s var(--ease-standard);
+}
+
+.offline-model-card:hover {
+  border-color: var(--color-border-focus);
+}
+
+.offline-model-card.selected {
+  border: 2px solid var(--color-interactive-hover);
+  padding: calc(var(--spacing-md) - 1px);
+}
+
+.offline-model-card-top {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.offline-radio {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 2px solid var(--color-on-surface-variant);
+}
+
+.offline-model-card.selected .offline-radio {
+  border-color: var(--color-on-surface);
+}
+
+.offline-model-card.selected .offline-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: var(--color-on-surface);
+}
+
+.offline-model-title {
+  font-weight: 600;
+}
+
+.offline-badge {
+  margin-left: auto;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: var(--color-on-surface);
+  color: var(--color-canvas);
+  white-space: nowrap;
+}
+
+.offline-model-desc {
+  font-size: var(--text-label-sm);
+}
+
+.offline-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+}
+
+.offline-metric {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.offline-metric-label {
+  font-size: 11px;
+  color: var(--color-on-surface-variant);
+  min-width: 52px;
+}
+
+.offline-metric-segs {
+  display: flex;
+  gap: 3px;
+}
+
+.offline-metric-segs i {
+  display: block;
+  width: 14px;
+  height: 6px;
+  border-radius: 3px;
+  background: var(--color-border-structural);
+  font-style: normal;
+}
+
+.offline-metric-segs i.on {
+  background: var(--color-success);
+}
+
+.offline-model-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+  justify-content: flex-end;
 }
 
 /* ── History Items ─────────────────────────────────────────────── */
@@ -469,7 +620,7 @@ body {
 }
 
 .history-group-header {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-sm);
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -511,6 +662,14 @@ body {
   font-family: var(--font-label);
   font-size: var(--text-label-sm);
   color: var(--color-on-surface-variant);
+}
+
+/* ── Numeric readouts — counts keep the mono accent face ────────── */
+#offline-progress-percentage,
+#offline-progress-bytes,
+#update-progress-text {
+  font-family: var(--font-label);
+  font-variant-numeric: tabular-nums;
 }
 
 .history-item-text {
@@ -709,7 +868,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .chart-bar-count {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-label);
   font-size: 11px;
   font-weight: 500;
   color: var(--color-on-surface-variant);
@@ -721,7 +880,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .chart-bar-col span {
-  font-family: var(--font-mono, monospace);
+  font-family: var(--font-label);
   font-size: 10px;
   color: var(--color-on-surface-variant);
   flex-shrink: 0;
@@ -736,7 +895,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .dict-table th {
   text-align: left;
   padding: 10px var(--spacing-md);
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-sm);
   font-weight: 500;
   letter-spacing: 0.08em;
@@ -762,10 +921,12 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 .dict-table .corrected-word { color: var(--color-on-surface); font-weight: 500; }
 .dict-table .actions { width: 120px; text-align: right; }
 
-/* Suggestions table frequency column */
+/* Suggestions table frequency column — a count, keeps the mono face */
 #suggestions-table .frequency {
   color: var(--color-ink-muted);
   font-size: 12px;
+  font-family: var(--font-label);
+  font-variant-numeric: tabular-nums;
 }
 
 /* ── Skeleton Loading Shimmer ─────────────────────────────────── */

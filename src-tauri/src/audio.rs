@@ -72,7 +72,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     if RECORDING.load(Ordering::SeqCst) {
         // BUG-05/08: surface stuck state instead of silently returning
         log::warn!("start_recording rejected: still recording after 250ms busy-wait");
-        return Err("Already recording — please wait a moment and retry".to_string());
+        return Err("Already recording. Please wait a moment and retry".to_string());
     }
 
     RECORDING.store(true, Ordering::SeqCst);
@@ -1060,6 +1060,38 @@ pub async fn stop_recording_mp3_bytes() -> Result<Vec<u8>, String> {
     }
 
     let process_start = std::time::Instant::now();
+
+    // Automatic pre-upload silence gate (NOT user-configurable): clearly
+    // silent takes are rejected BEFORE peak normalization/MP3/upload by
+    // returning empty (the existing "no audio" path downstream, same as a
+    // sub-200ms accidental press). No DSP constant, capture code,
+    // normalization behavior, or encoder setting is modified; this only
+    // READS the raw pre-DSP buffer and measures its energy. Without this,
+    // normalization amplifies mic noise to full scale and the provider
+    // confidently hallucinates words for silence (evidence 2026-09-04).
+    {
+        let gate_duration_ms = if native_channels > 0 && native_sample_rate > 0 {
+            (samples.len() * 1000) / (native_channels * native_sample_rate)
+        } else {
+            0
+        };
+        let decision = crate::silence_gate::evaluate_silence_gate(
+            &samples,
+            native_sample_rate as u32,
+            gate_duration_ms as u64,
+        );
+        if decision.rejected {
+            crate::silence_gate::note_gate_rejected();
+            log::info!(
+                "silence gate: rejecting silent take (rms={:.5}, peak={:.5}, max_window_rms={:.5}, {}ms) before normalization/upload",
+                decision.rms,
+                decision.peak,
+                decision.max_window_rms,
+                decision.duration_ms
+            );
+            return Ok(Vec::new());
+        }
+    }
 
     // Run CPU-intensive audio processing on a dedicated thread to avoid blocking the async executor
     let mp3_bytes = tokio::task::spawn_blocking(move || -> Result<Vec<u8>, String> {

@@ -17,22 +17,37 @@ const CREATE_NO_WINDOW: u32 = 0x08000000;
 #[serde(rename_all = "snake_case")]
 pub enum OfflineEngine {
     SenseVoice,
-    #[serde(rename = "moonshine_base")]
-    MoonshineBase,
+    #[serde(rename = "moonshine_v2_small")]
+    MoonshineV2Small,
+    #[serde(rename = "moonshine_v2_medium")]
+    MoonshineV2Medium,
 }
 
 impl OfflineEngine {
     pub fn display_name(&self) -> &str {
         match self {
             Self::SenseVoice => "SenseVoice",
-            Self::MoonshineBase => "Moonshine Base",
+            Self::MoonshineV2Small => "Moonshine v2 Small (English)",
+            Self::MoonshineV2Medium => "Moonshine v2 Medium (English)",
         }
     }
 
     pub fn dir_name(&self) -> &str {
         match self {
             Self::SenseVoice => "sensevoice_v2",
-            Self::MoonshineBase => "moonshine_base",
+            Self::MoonshineV2Small => "moonshine_v2_small",
+            Self::MoonshineV2Medium => "moonshine_v2_medium",
+        }
+    }
+
+    /// Streaming-architecture id for the v2 sidecar ("small" | "medium"),
+    /// matching the official `MOONSHINE_MODEL_ARCH_*_STREAMING` ids and the
+    /// v2 manifests. `None` for the sherpa-onnx engines.
+    pub fn v2_arch(&self) -> Option<&'static str> {
+        match self {
+            Self::MoonshineV2Small => Some("small"),
+            Self::MoonshineV2Medium => Some("medium"),
+            _ => None,
         }
     }
 }
@@ -41,7 +56,8 @@ impl std::fmt::Display for OfflineEngine {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::SenseVoice => write!(f, "sensevoice"),
-            Self::MoonshineBase => write!(f, "moonshine_base"),
+            Self::MoonshineV2Small => write!(f, "moonshine_v2_small"),
+            Self::MoonshineV2Medium => write!(f, "moonshine_v2_medium"),
         }
     }
 }
@@ -52,7 +68,8 @@ impl std::str::FromStr for OfflineEngine {
     fn from_str(s: &str) -> Result<Self> {
         match s {
             "sensevoice" => Ok(Self::SenseVoice),
-            "moonshine_base" => Ok(Self::MoonshineBase),
+            "moonshine_v2_small" => Ok(Self::MoonshineV2Small),
+            "moonshine_v2_medium" => Ok(Self::MoonshineV2Medium),
             _ => Err(anyhow!("Unknown offline engine: {}", s)),
         }
     }
@@ -101,6 +118,84 @@ fn start_idle_monitor() {
     });
 }
 
+/// Target triple suffix used for the Tauri externalBin staging name
+/// (`binaries/moonshine-v2-server-<triple>.exe`). The app ships Windows
+/// x86_64 only; anything else resolves to a sentinel that matches nothing.
+#[cfg(all(target_os = "windows", target_arch = "x86_64"))]
+const V2_SIDECAR_TRIPLE: &str = "x86_64-pc-windows-msvc";
+#[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+const V2_SIDECAR_TRIPLE: &str = "unknown-target";
+
+/// Ordered candidate locations for the bundled Moonshine v2 sidecar exe,
+/// given the app-exe directory, the crate (src-tauri) directory, and the
+/// cargo target directory. Pure function so the ordering is unit-testable.
+///
+/// Candidate order:
+///
+/// 1. Beside the running app exe — production NSIS layout, where Tauri
+///    externalBin files land next to the installed application binary.
+/// 2. Workspace cargo output (release, then debug) — local dev builds.
+/// 3. Tauri binaries/ staging dir with the target-triple suffix — the exact
+///    file externalBin consumes at packaging time.
+fn v2_sidecar_candidates(
+    exe_dir: Option<&std::path::Path>,
+    manifest_dir: &std::path::Path,
+    target_dir: &std::path::Path,
+) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::with_capacity(4);
+    if let Some(dir) = exe_dir {
+        out.push(dir.join(crate::offline_downloader::MOONSHINE_V2_SERVER_EXE));
+    }
+    for profile in ["release", "debug"] {
+        out.push(
+            target_dir
+                .join(profile)
+                .join(crate::offline_downloader::MOONSHINE_V2_SERVER_EXE),
+        );
+    }
+    out.push(manifest_dir.join(format!(
+        "binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}.exe"
+    )));
+    out
+}
+
+/// Resolves the shipped Moonshine v2 sidecar exe plus its sibling
+/// onnxruntime.dll (Windows implicit DLL search starts at the loading
+/// executable's own directory, so the dll must sit beside the exe —
+/// resource-bundled in prod, build-staged in dev).
+fn resolve_v2_sidecar() -> Result<std::path::PathBuf> {
+    let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+    let exe_dir = std::env::current_exe()
+        .ok()
+        .and_then(|p| p.parent().map(|d| d.to_path_buf()));
+    let target_dir = manifest_dir.join("target");
+    let candidates = v2_sidecar_candidates(exe_dir.as_deref(), &manifest_dir, &target_dir);
+    for exe in &candidates {
+        if exe.is_file() {
+            let dll = exe
+                .parent()
+                .map(|d| d.join(crate::offline_downloader::MOONSHINE_V2_ORT_DLL));
+            match dll {
+                Some(d) if d.is_file() => return Ok(exe.clone()),
+                _ => {
+                    return Err(anyhow!(
+                        "Moonshine v2 sidecar found at {} but its onnxruntime.dll sibling is missing; reinstall the app or rebuild the sidecar.",
+                        exe.display()
+                    ))
+                }
+            }
+        }
+    }
+    Err(anyhow!(
+        "Moonshine v2 sidecar not found. Searched: {}. The runtime ships with the app installer; on dev builds run `cargo build -p moonshine-v2-server` first.",
+        candidates
+            .iter()
+            .map(|p| p.display().to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    ))
+}
+
 pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     let _start_lock = SERVER_START_LOCK.lock().await;
     // Check if an existing server is running with the same engine
@@ -140,24 +235,65 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         .join("bin")
         .join(engine.dir_name());
 
-    let exe_path = offline_dir.join("sherpa-onnx-offline-websocket-server.exe");
+    let exe_name = match engine.v2_arch() {
+        Some(_) => crate::offline_downloader::MOONSHINE_V2_SERVER_EXE,
+        None => "sherpa-onnx-offline-websocket-server.exe",
+    };
 
-    if !exe_path.exists() || !offline_dir.join("onnxruntime.dll").exists() {
+    // Moonshine v2 ships in the installer (Tauri externalBin) or a dev
+    // build tree — never in the model dir (see resolve_v2_sidecar). The
+    // sherpa runtime is still downloaded into its model dir by precedent.
+    let (exe_path, runtime_dir) = match engine.v2_arch() {
+        Some(_) => {
+            let resolved = resolve_v2_sidecar()?;
+            let dir = resolved
+                .parent()
+                .ok_or_else(|| anyhow!("Resolved sidecar path has no parent directory"))?
+                .to_path_buf();
+            (resolved, dir)
+        }
+        None => (offline_dir.join(exe_name), offline_dir.clone()),
+    };
+
+    if !exe_path.exists() || !runtime_dir.join("onnxruntime.dll").exists() {
         return Err(anyhow!(
             "Offline transcription engine is not installed. Please download it in Settings."
         ));
     }
 
-    // Verify binary integrity before execution
-    let exe_hash = crate::offline_downloader::manifest_binary_hash(
-        "sherpa-onnx-offline-websocket-server.exe",
-    )?;
-    crate::offline_downloader::verify_sha256(&exe_path, exe_hash).map_err(|e| {
-        anyhow!(
-            "Binary integrity check failed: {}. Please re-download the model in Settings.",
-            e
-        )
-    })?;
+    // Verify binary integrity before execution. Fail closed: with no pin
+    // available anywhere, refuse to execute native code rather than
+    // warn-and-continue. Pin precedence: compile-time hash of the staged
+    // artifact (baked by build.rs, covers every dev/CI build) over the
+    // manifest pin.
+    match engine.v2_arch() {
+        Some(arch) => {
+            let manifest = crate::offline_downloader::moonshine_v2_manifest_for_arch(arch)?;
+            let expected = option_env!("MOONSHINE_V2_SERVER_SHA256")
+                .map(str::to_string)
+                .or(manifest.server_exe_sha256.clone())
+                .ok_or_else(|| anyhow!(
+                    "Moonshine v2 sidecar has no pinned hash (rebuild the sidecar so build.rs can pin it, or reinstall the app)."
+                ))?;
+            crate::offline_downloader::verify_sha256(&exe_path, &expected).map_err(|e| {
+                anyhow!(
+                    "Binary integrity check failed: {}. Please re-download the model in Settings.",
+                    e
+                )
+            })?;
+        }
+        None => {
+            let exe_hash = crate::offline_downloader::manifest_binary_hash(
+                "sherpa-onnx-offline-websocket-server.exe",
+            )?;
+            crate::offline_downloader::verify_sha256(&exe_path, exe_hash).map_err(|e| {
+                anyhow!(
+                    "Binary integrity check failed: {}. Please re-download the model in Settings.",
+                    e
+                )
+            })?;
+        }
+    }
 
     // Verify model files exist for the requested engine
     match engine {
@@ -170,20 +306,15 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
                 ));
             }
         }
-        OfflineEngine::MoonshineBase => {
-            let required = [
-                "preprocess.onnx",
-                "encode.int8.onnx",
-                "uncached_decode.int8.onnx",
-                "cached_decode.int8.onnx",
-                "tokens.txt",
-            ];
-            for file in &required {
-                let p = offline_dir.join(file);
+        engine @ (OfflineEngine::MoonshineV2Small | OfflineEngine::MoonshineV2Medium) => {
+            let arch = engine.v2_arch().unwrap_or("small");
+            let manifest = crate::offline_downloader::moonshine_v2_manifest_for_arch(arch)?;
+            for file in &manifest.files {
+                let p = offline_dir.join(&file.name);
                 if !p.exists() {
                     return Err(anyhow!(
-                        "Moonshine Base model file '{}' is missing. Please download the model in Settings.",
-                        file
+                        "Moonshine v2 model file '{}' is missing. Please download the model in Settings.",
+                        file.name
                     ));
                 }
             }
@@ -198,8 +329,13 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             break;
         }
     }
+    let server_label = match engine.v2_arch() {
+        Some(_) => "moonshine-v2",
+        None => "sherpa-onnx",
+    };
     log::info!(
-        "Starting sherpa-onnx websocket server (engine: {}) on port {}",
+        "Starting {} websocket server (engine: {}) on port {}",
+        server_label,
         engine.display_name(),
         port
     );
@@ -219,40 +355,14 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             let model_arg = format!("--sense-voice-model={}", model_path.display().to_string());
             cmd.args([&tokens_arg, &model_arg, &port_arg, &threads_arg]);
         }
-        OfflineEngine::MoonshineBase => {
-            let tokens_path = offline_dir.join("tokens.txt");
-            let tokens_arg = format!("--tokens={}", tokens_path.display().to_string());
-            let preprocessor_arg = format!(
-                "--moonshine-preprocessor={}",
-                offline_dir.join("preprocess.onnx").display().to_string()
-            );
-            let encoder_arg = format!(
-                "--moonshine-encoder={}",
-                offline_dir.join("encode.int8.onnx").display().to_string()
-            );
-            let uncached_decoder_arg = format!(
-                "--moonshine-uncached-decoder={}",
-                offline_dir
-                    .join("uncached_decode.int8.onnx")
-                    .to_str()
-                    .unwrap()
-            );
-            let cached_decoder_arg = format!(
-                "--moonshine-cached-decoder={}",
-                offline_dir
-                    .join("cached_decode.int8.onnx")
-                    .to_str()
-                    .unwrap()
-            );
-            cmd.args([
-                &tokens_arg,
-                &preprocessor_arg,
-                &encoder_arg,
-                &uncached_decoder_arg,
-                &cached_decoder_arg,
-                &port_arg,
-                &threads_arg,
-            ]);
+        OfflineEngine::MoonshineV2Small | OfflineEngine::MoonshineV2Medium => {
+            // Served by our own sidecar: same WS protocol as the sherpa
+            // server, model dir + streaming arch as CLI args. The Moonshine
+            // core manages its own threading, so no --num-threads is passed.
+            let arch = engine.v2_arch().unwrap_or("small");
+            let model_dir_arg = format!("--model-dir={}", offline_dir.display());
+            let arch_arg = format!("--arch={arch}");
+            cmd.args([&model_dir_arg, &arch_arg, &port_arg]);
         }
     }
 
@@ -287,13 +397,15 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             let _ = instance.child.kill();
         }
         return Err(anyhow!(
-            "sherpa-onnx server failed to start on port {}",
+            "{} server failed to start on port {}",
+            server_label,
             port
         ));
     }
 
     log::info!(
-        "sherpa-onnx server is ready on port {} (engine: {})",
+        "{} server is ready on port {} (engine: {})",
+        server_label,
         port,
         engine.display_name()
     );
@@ -396,4 +508,92 @@ pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Resul
 
     let text = response.text.unwrap_or_default().trim().to_string();
     Ok(text)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn engine_display_parse_round_trip() {
+        for engine in [
+            OfflineEngine::SenseVoice,
+            OfflineEngine::MoonshineV2Small,
+            OfflineEngine::MoonshineV2Medium,
+        ] {
+            let s = engine.to_string();
+            assert_eq!(OfflineEngine::from_str(&s).unwrap(), engine);
+        }
+    }
+
+    #[test]
+    fn engine_parse_rejects_unknown() {
+        assert!(OfflineEngine::from_str("moonshine_v2_large").is_err());
+        assert!(OfflineEngine::from_str("").is_err());
+        // Retired v1 batch id: legacy settings files are migrated to
+        // moonshine_v2_small at load (see migrate_retired_offline_engine
+        // in settings.rs), so the engine itself must no longer accept it.
+        assert!(OfflineEngine::from_str("moonshine_base").is_err());
+    }
+
+    #[test]
+    fn v2_arch_mapping_matches_manifests_and_official_ids() {
+        assert_eq!(OfflineEngine::MoonshineV2Small.v2_arch(), Some("small"));
+        assert_eq!(OfflineEngine::MoonshineV2Medium.v2_arch(), Some("medium"));
+        assert_eq!(OfflineEngine::SenseVoice.v2_arch(), None);
+    }
+
+    #[test]
+    fn v2_engine_dirs_do_not_collide_with_existing_engines() {
+        let dirs = [
+            OfflineEngine::SenseVoice.dir_name(),
+            OfflineEngine::MoonshineV2Small.dir_name(),
+            OfflineEngine::MoonshineV2Medium.dir_name(),
+        ];
+        let mut unique = dirs.to_vec();
+        unique.sort_unstable();
+        unique.dedup();
+        assert_eq!(unique.len(), dirs.len());
+        assert_eq!(
+            OfflineEngine::MoonshineV2Small.dir_name(),
+            "moonshine_v2_small"
+        );
+        assert_eq!(
+            OfflineEngine::MoonshineV2Medium.dir_name(),
+            "moonshine_v2_medium"
+        );
+    }
+
+    #[test]
+    fn v2_sidecar_candidates_prefer_installed_bundle_over_dev_trees() {
+        use std::path::PathBuf;
+        let exe_dir = PathBuf::from("C:/install");
+        let manifest_dir = PathBuf::from("D:/repo/src-tauri");
+        let target_dir = PathBuf::from("D:/repo/src-tauri/target");
+        let got = v2_sidecar_candidates(Some(exe_dir.as_path()), &manifest_dir, &target_dir);
+        let names: Vec<String> = got
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(
+            names,
+            vec![
+                "C:/install/moonshine-v2-server.exe".to_string(),
+                "D:/repo/src-tauri/target/release/moonshine-v2-server.exe".to_string(),
+                "D:/repo/src-tauri/target/debug/moonshine-v2-server.exe".to_string(),
+                format!("D:/repo/src-tauri/binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}.exe"),
+            ]
+        );
+    }
+
+    #[test]
+    fn v2_sidecar_candidates_survive_missing_exe_dir() {
+        use std::path::PathBuf;
+        let manifest_dir = PathBuf::from("D:/repo/src-tauri");
+        let target_dir = PathBuf::from("D:/repo/src-tauri/target");
+        let got = v2_sidecar_candidates(None, &manifest_dir, &target_dir);
+        // No app-exe dir (e.g. test harness): dev candidates still listed.
+        assert_eq!(got.len(), 3);
+    }
 }

@@ -72,8 +72,8 @@ impl std::fmt::Display for AuthError {
             AuthError::BadResponse => write!(f, "malformed token response"),
             AuthError::InvalidState => write!(f, "OAuth state mismatch"),
             AuthError::AccessDenied(m) => write!(f, "authorization denied: {m}"),
-            AuthError::NoRefreshToken => write!(f, "no refresh token — sign in again"),
-            AuthError::Timeout => write!(f, "sign-in timed out — please try again"),
+            AuthError::NoRefreshToken => write!(f, "no refresh token. Sign in again"),
+            AuthError::Timeout => write!(f, "sign-in timed out. Please try again"),
         }
     }
 }
@@ -210,7 +210,7 @@ pub async fn listen_for_redirect(
         let request_line = head.lines().next().ok_or(AuthError::BadRedirect)?;
         let code = parse_redirect_request(request_line, expected_state)?;
 
-        let body = "Fluence sync authorized — you can close this window.";
+        let body = "Fluence sync authorized. You can close this window.";
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/plain; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             body.len(),

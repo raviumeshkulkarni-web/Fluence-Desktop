@@ -1,3 +1,7 @@
+# Local prebuilt native vendor libs (Moonshine v2 C++ core, etc.)
+# Provisioned per-machine from official releases; never committed.
+.vendor/
+
 # Node dependencies
 node_modules/
 
@@ -10,6 +14,10 @@ node_modules/
 
 # Rust build artifacts
 src-tauri/target/
+src-tauri/moonshine-v2-server/target/
+# Tauri sidecar/resource staging (built from workspace + vendor per-machine;
+# CI stages these; never committed)
+src-tauri/binaries/
 
 # Tauri bundling output
 src-tauri/gen/

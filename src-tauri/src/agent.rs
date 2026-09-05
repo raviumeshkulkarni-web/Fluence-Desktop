@@ -144,25 +144,40 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
         request_id.as_str()
     };
     if req.voice_command.trim().is_empty() {
-        log::warn!("agent request rejected: id={} reason=empty_voice_command", log_id);
-        return Err("Voice command is empty — try speaking again".into());
+        log::warn!(
+            "agent request rejected: id={} reason=empty_voice_command",
+            log_id
+        );
+        return Err("Voice command is empty. Try speaking again".into());
     }
     if req.voice_command.len() > MAX_VOICE_COMMAND_LEN {
-        log::warn!("agent request rejected: id={} reason=voice_too_long", log_id);
+        log::warn!(
+            "agent request rejected: id={} reason=voice_too_long",
+            log_id
+        );
         return Err("Voice command exceeds maximum length".into());
     }
     if req.clipboard_context.len() > MAX_CLIPBOARD_CONTEXT_LEN {
-        log::warn!("agent request rejected: id={} reason=context_too_long", log_id);
+        log::warn!(
+            "agent request rejected: id={} reason=context_too_long",
+            log_id
+        );
         return Err("Clipboard context exceeds maximum length".into());
     }
     if req.api_key.trim().is_empty() {
-        log::warn!("agent request rejected: id={} reason=missing_api_key", log_id);
+        log::warn!(
+            "agent request rejected: id={} reason=missing_api_key",
+            log_id
+        );
         return Err(
             "Missing API key for LLM provider. Open Settings → Providers → LLM → Save key.".into(),
         );
     }
     if req.api_key.len() > MAX_API_KEY_LEN {
-        log::warn!("agent request rejected: id={} reason=api_key_too_long", log_id);
+        log::warn!(
+            "agent request rejected: id={} reason=api_key_too_long",
+            log_id
+        );
         return Err("API key exceeds maximum length".into());
     }
     if let Err(e) = crate::http_client::validate_api_url(&req.base_url) {
@@ -260,18 +275,15 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
         choices: Vec<Choice>,
     }
 
-    let chat_resp: ChatResp = resp
-        .json()
-        .await
-        .map_err(|e| {
-            log::warn!(
-                "agent response parse failure: id={} elapsed={:?} err={}",
-                log_id,
-                agent_start.elapsed(),
-                e
-            );
-            format!("JSON parse error: {}", e)
-        })?;
+    let chat_resp: ChatResp = resp.json().await.map_err(|e| {
+        log::warn!(
+            "agent response parse failure: id={} elapsed={:?} err={}",
+            log_id,
+            agent_start.elapsed(),
+            e
+        );
+        format!("JSON parse error: {}", e)
+    })?;
 
     let content = chat_resp
         .choices
@@ -297,7 +309,7 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
             agent_start.elapsed(),
             e
         );
-        format!("Action parse error: {} — LLM returned: {}", e, snippet)
+        format!("Action parse error: {}. LLM returned: {}", e, snippet)
     })?;
     if let Err(e) = validate_action(&action) {
         log::warn!(

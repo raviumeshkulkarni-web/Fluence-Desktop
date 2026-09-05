@@ -1,6 +1,6 @@
 [package]
 name = "fluence-windows"
-version = "1.17.4"
+version = "1.18.0"
 description = "Fluence — AI Voice Typing for Windows"
 authors = ["Fluence Team"]
 license = "AGPL-3.0-only"
@@ -12,8 +12,22 @@ rust-version = "1.77"
 name = "fluence_windows_lib"
 crate-type = ["rlib"]
 
+# Cargo workspace: the main app plus the Moonshine v2 sidecar server.
+# `cargo check/test/clippy` in src-tauri cover all members; the sidecar
+# links the gitignored per-machine vendor tree (see
+# moonshine-v2-server/VENDOR.json), which CI provisions before any cargo
+# invocation. `default-members` intentionally left unset so a broken
+# sidecar fails the build loudly instead of silently dropping out.
+[workspace]
+members = [".", "moonshine-v2-server"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+# Sidecar integrity: the app build hashes the staged sidecar exe (when
+# present) and bakes it in as MOONSHINE_V2_SERVER_SHA256 for the
+# runtime verify_sha256 gate. No network access here by design.
+sha2 = "0.10"
+hex = "0.4"
 
 [dependencies]
 tauri = { version = "2", features = [
@@ -45,7 +59,7 @@ chrono = { version = "0.4", features = ["serde"] }
 base64 = "0.22"
 image = { version = "0.25", default-features = false, features = ["png"] }
 once_cell = "1"
-tokio-tungstenite = "0.23"
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"] }
 futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
 flacenc = "0.5.1"
 shine-rs = "0.1"

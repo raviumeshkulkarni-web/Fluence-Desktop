@@ -104,14 +104,14 @@ input, textarea {
 }
 
 .text-label-lg {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-lg);
   line-height: var(--leading-label);
   font-weight: 400;
 }
 
 .text-label-sm {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-sm);
   line-height: var(--leading-label);
   font-weight: 400;
@@ -157,7 +157,9 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-/* Primary — monochrome filled */
+/* Primary — monochrome filled. Transparent 1px border keeps the same
+   box as the bordered secondary/danger variants so side-by-side
+   buttons share one height. */
 .btn-primary {
   display: inline-flex;
   align-items: center;
@@ -168,6 +170,7 @@ button:focus-visible {
   color: var(--color-on-surface);
   font-size: var(--text-label-lg);
   font-weight: 500;
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
   transition: var(--transition-fast);
 }
@@ -204,7 +207,7 @@ button:focus-visible {
   transform: scale(0.98);
 }
 
-/* Ghost — transparent */
+/* Ghost — transparent, same 1px box as the other variants */
 .btn-ghost {
   display: inline-flex;
   align-items: center;
@@ -214,6 +217,7 @@ button:focus-visible {
   background: transparent;
   color: var(--color-on-surface-variant);
   font-size: var(--text-label-lg);
+  border: 1px solid transparent;
   border-radius: var(--radius-md);
 }
 
@@ -226,13 +230,14 @@ button:focus-visible {
   transform: scale(0.98);
 }
 
-/* Danger — semantic red */
+/* Danger — semantic red. Base padding matches primary/secondary so
+   paired buttons (Download + Delete) share one height. */
 .btn-danger {
   background: var(--color-error-container);
   color: var(--color-error);
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-md);
-  padding: 8px 14px;
+  padding: 10px 20px;
   font-size: var(--text-label-lg);
 }
 
@@ -242,6 +247,18 @@ button:focus-visible {
 
 .btn-danger:active {
   transform: scale(0.98);
+}
+
+/* Compact button sizes — use these instead of inline padding/font
+   overrides so control heights stay on the spacing/type system. */
+.btn-sm {
+  padding: 6px 14px;
+  font-size: 13px;
+}
+
+.btn-xs {
+  padding: 4px 12px;
+  font-size: var(--text-label-sm);
 }
 
 /* ── Input Base — ultra-thin border ────────────────────────────── */
@@ -374,7 +391,7 @@ select {
   align-items: center;
   padding: 2px 8px;
   border-radius: var(--radius-full);
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: var(--text-label-sm);
   font-weight: 500;
   letter-spacing: 0.04em;
@@ -434,15 +451,20 @@ select {
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 /* ── Toast — ultra-thin border ─────────────────────────────────── */
+/* Bottom-center: bottom-right collides with the bottom-aligned Save
+   actions on General/Providers. Newest stacks at the bottom. */
 .toast-container {
   position: fixed;
   bottom: var(--spacing-lg);
-  right: var(--spacing-lg);
+  left: 50%;
+  transform: translateX(-50%);
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
+  align-items: center;
   gap: var(--spacing-sm);
   pointer-events: none;
+  max-width: min(420px, calc(100vw - 48px));
 }
 
 .toast {
@@ -485,7 +507,7 @@ select {
 }
 
 .titlebar-title {
-  font-family: var(--font-label);
+  font-family: var(--font-body);
   font-size: 11px;
   color: var(--color-ink-muted);
   padding-left: 16px;

@@ -209,7 +209,7 @@ async function validateCurrentStep() {
       return false;
     }
     if (!key) {
-      showStepError('Enter your API key to continue — or skip to offline transcription below.');
+      showStepError('Enter your API key to continue, or skip to offline transcription below.');
       return false;
     }
     wizardData.apiKey = key;
@@ -302,18 +302,24 @@ function setupStep2() {
     btn1?.classList.add('animate-spin');
     btn2?.classList.add('animate-spin');
     try {
+      // STT select lists speech models only; LLM select lists everything.
+      const sttRes = await invoke('fetch_stt_models', {
+        baseUrl,
+        apiKey,
+        keep: wizardData.model || null,
+      });
       const models = await invoke('fetch_models', { baseUrl, apiKey });
-      
+
       const selectSTT = document.getElementById('wiz-model-select');
-      if (selectSTT) {
+      if (selectSTT && sttRes.models?.length) {
         selectSTT.textContent = '';
-        models.forEach(m => {
+        sttRes.models.forEach(m => {
           const opt = document.createElement('option');
           opt.value = m;
           opt.textContent = m;
           selectSTT.appendChild(opt);
         });
-        if (wizardData.model && models.includes(wizardData.model)) selectSTT.value = wizardData.model;
+        if (wizardData.model && sttRes.models.includes(wizardData.model)) selectSTT.value = wizardData.model;
       }
 
       const selectLLM = document.getElementById('wiz-llm-model-select');

@@ -37,9 +37,12 @@
       <canvas id="waveform-canvas"></canvas>
     </div>
 
-    <!-- Row 3: Footer — timer + discard -->
+    <!-- Row 3: Footer — timer + stop-and-save + discard -->
     <div class="card-footer">
       <span class="card-timer" id="card-timer">00:00</span>
+      <button class="card-stop" id="card-stop" type="button" title="Stop and transcribe" aria-label="Stop and transcribe">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="1" y="1" width="8" height="8" rx="1.5" fill="currentColor"/></svg>
+      </button>
       <button class="card-discard" id="card-discard" type="button" title="Discard recording" aria-label="Discard recording">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       </button>

@@ -79,7 +79,7 @@
     <div class="sidebar-footer">
       <div class="sidebar-update-widget" id="sidebar-update-widget">
         <!-- Version Label Header (v1.6.0 / Update Available / Update Ready) -->
-        <div class="sidebar-version-label" id="sidebar-version-label">v—</div>
+        <div class="sidebar-version-label" id="sidebar-version-label">v…</div>
 
         <!-- Optional Status Subtitle -->
         <div id="sidebar-update-status" class="sidebar-update-status" role="status"></div>
@@ -320,7 +320,7 @@
         </div>
       </div>
 
-      <div style="display:flex;justify-content:flex-end;padding-top:8px;">
+      <div style="display:flex;justify-content:flex-end;padding-top:var(--spacing-md);">
         <button class="btn-primary" id="save-general-btn" style="min-width:120px;">Save Changes</button>
       </div>
     </section>
@@ -383,8 +383,10 @@
           </div>
           <div class="form-row">
             <label for="stt-api-key">API Key</label>
-            <input type="password" id="stt-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
-            <button class="btn-secondary" id="stt-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);margin-top:var(--spacing-sm);">Save Key</button>
+            <div class="input-with-btn">
+              <input type="password" id="stt-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+              <button class="btn-secondary" id="stt-save-key-btn" style="white-space:nowrap;">Save Key</button>
+            </div>
           </div>
           <div class="form-row">
             <label for="stt-model-select">Model</label>
@@ -399,7 +401,7 @@
             <button class="btn-secondary" id="stt-test-btn">Test Connection</button>
             <div class="connection-status" id="stt-status" role="status">
               <div class="dot dot-idle"></div>
-              <span id="stt-status-text">Not tested</span>
+              <span id="stt-status-text">Not Tested</span>
             </div>
           </div>
         </div> <!-- Closes stt-credentials-wrapper -->
@@ -410,42 +412,83 @@
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
             Offline Model Manager
           </div>
-          <!-- Engine Selector -->
-          <div style="display:flex;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span class="text-body-md" style="font-weight:600;">Offline Engine</span>
-              <span class="text-muted text-label-md" style="font-size:12px;">Choose the speech recognition model to use offline</span>
-            </div>
-            <select id="offline-engine-select" aria-label="Offline speech recognition engine" style="width:200px;">
-              <option value="sensevoice">SenseVoice (Multilingual)</option>
-              <option value="moonshine_base">Moonshine Base (English)</option>
-            </select>
+          <!-- Engine picker (Android parity: radio cards with speed/accuracy) -->
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span class="text-body-md" style="font-weight:600;">Choose a model</span>
+            <span class="text-muted" style="font-size:var(--text-label-sm);">Pick the option that fits how you dictate. You can change this any time.</span>
           </div>
-          <!-- SenseVoice Model Card -->
-          <div id="sensevoice-model-card" style="display:flex;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span class="text-body-md" style="font-weight:600;">SenseVoice-Small ASR Model</span>
-              <span class="text-muted text-label-md" style="font-size:12px;">Multilingual model — includes model.int8.onnx & tokens.txt (~240 MB)</span>
+          <div class="offline-model-list" role="radiogroup" aria-label="Offline speech recognition model">
+            <!-- Fast (English) — Moonshine v2 Small -->
+            <div class="offline-model-card" id="v2small-model-card" data-engine="moonshine_v2_small" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Fast (English)</span>
+                <span class="offline-badge">Recommended</span>
+              </div>
+              <span class="text-muted offline-model-desc">Quick, reliable English dictation for everyday use (~142 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 4 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 4 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="v2small-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="v2small-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
             </div>
-            <div style="display:flex;gap:var(--spacing-sm);">
-              <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
-              <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
+            <!-- Fast (Multilingual) — SenseVoice -->
+            <div class="offline-model-card" id="sensevoice-model-card" data-engine="sensevoice" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Fast (Multilingual)</span>
+              </div>
+              <span class="text-muted offline-model-desc">Dictate in many languages with fast, on-device transcription (~239 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 5 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 3 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
             </div>
-          </div>
-          <!-- Moonshine Model Card -->
-          <div id="moonshine-model-card" style="display:none;justify-content:space-between;align-items:center;background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
-            <div style="display:flex;flex-direction:column;gap:4px;">
-              <span class="text-body-md" style="font-weight:600;">Moonshine Base ASR Model</span>
-              <span class="text-muted text-label-md" style="font-size:12px;">English-only model — 4 ONNX files + tokens (~287 MB)</span>
+            <!-- Pro (English) — Moonshine v2 Medium -->
+            <div class="offline-model-card" id="v2medium-model-card" data-engine="moonshine_v2_medium" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Pro (English)</span>
+              </div>
+              <span class="text-muted offline-model-desc">Our most accurate English model. Ideal when every word matters. Slightly slower to respond (~269 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 2 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 5 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="v2medium-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="v2medium-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
             </div>
-            <div style="display:flex;gap:var(--spacing-sm);">
-              <button class="btn-primary" id="moonshine-download-btn" style="min-width:140px;">Download Model</button>
-              <button class="btn-danger hidden" id="moonshine-delete-btn" style="min-width:140px;">Delete Model</button>
-            </div>
-          </div>
+          </div><!-- Closes offline-model-list -->
           <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-sm);background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
             <div style="display:flex;justify-content:space-between;font-size:12px;">
-              <span id="offline-progress-status" style="font-weight:500;">Downloading ASR engine…</span>
+              <span id="offline-progress-status" style="font-weight:500;">Downloading ASR Engine…</span>
               <span id="offline-progress-percentage" style="font-weight:600;color:var(--color-on-surface);">0%</span>
             </div>
             <div style="width:100%;height:8px;background:var(--color-border-structural);border-radius:var(--radius-xs);overflow:hidden;" role="progressbar" aria-label="Offline model download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="offline-progress-track">
@@ -453,7 +496,7 @@
             </div>
             <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-on-surface-variant);">
               <span id="offline-progress-bytes">0 / 0 MB</span>
-              <button class="btn-ghost" id="offline-cancel-btn" style="padding:4px 10px;font-size:11px;height:auto;">Cancel</button>
+              <button class="btn-ghost btn-xs" id="offline-cancel-btn">Cancel</button>
             </div>
           </div>
         </div>
@@ -504,8 +547,10 @@
           </div>
           <div class="form-row">
             <label for="llm-api-key">API Key</label>
-            <input type="password" id="llm-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
-            <button class="btn-secondary" id="llm-save-key-btn" style="white-space:nowrap;padding:10px 14px;border-radius:var(--radius-md);margin-top:var(--spacing-sm);">Save Key</button>
+            <div class="input-with-btn">
+              <input type="password" id="llm-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+              <button class="btn-secondary" id="llm-save-key-btn" style="white-space:nowrap;">Save Key</button>
+            </div>
           </div>
           <div class="form-row">
             <label for="llm-model-select">Model</label>
@@ -520,7 +565,7 @@
             <button class="btn-secondary" id="llm-test-btn">Test Connection</button>
             <div class="connection-status" id="llm-status" role="status">
               <div class="dot dot-idle"></div>
-              <span id="llm-status-text">Not tested</span>
+              <span id="llm-status-text">Not Tested</span>
             </div>
           </div>
         </div>
@@ -544,21 +589,21 @@
           <div style="display:flex;gap:var(--spacing-sm);">
             <button class="btn-ghost btn-small" id="import-dict-btn">Import</button>
             <button class="btn-ghost btn-small" id="export-dict-btn">Export</button>
-            <button class="btn-primary" id="add-dict-btn" style="padding:6px 14px;font-size:13px;">+ Add Entry</button>
+            <button class="btn-primary btn-sm" id="add-dict-btn">+ Add Entry</button>
           </div>
         </div>
         <div id="dict-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
           <div class="form-row" style="flex:1;">
-            <label for="dict-spoken-input">Spoken word/phrase</label>
+            <label for="dict-spoken-input">Spoken Word/Phrase</label>
             <input type="text" id="dict-spoken-input" placeholder="e.g. fluence" />
           </div>
           <div class="form-row" style="flex:1;">
-            <label for="dict-corrected-input">Corrected form</label>
+            <label for="dict-corrected-input">Corrected Form</label>
             <input type="text" id="dict-corrected-input" placeholder="e.g. Fluence" />
           </div>
-          <div style="display:flex;gap:var(--spacing-sm);padding-bottom:1px;">
-            <button class="btn-primary" id="dict-save-btn" style="padding:10px 16px;">Save</button>
-            <button class="btn-ghost" id="dict-cancel-btn">Cancel</button>
+          <div style="display:flex;gap:var(--spacing-sm);">
+            <button class="btn-primary btn-sm" id="dict-save-btn">Save</button>
+            <button class="btn-ghost btn-sm" id="dict-cancel-btn">Cancel</button>
           </div>
         </div>
         <table class="dict-table">
@@ -590,7 +635,7 @@
       <div class="settings-section" style="margin-top:var(--spacing-lg);">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Suggested Corrections</h2>
-          <button class="btn-ghost" id="clear-dismissed-btn" style="font-size:12px;">Clear Dismissed</button>
+          <button class="btn-ghost btn-xs" id="clear-dismissed-btn">Clear Dismissed</button>
         </div>
         <p style="font-size:12px;color:var(--color-on-surface-variant);margin:0 0 var(--spacing-md) 0;">
           Corrections detected from your transcriptions. Accept to add to dictionary, dismiss to ignore.
@@ -657,8 +702,8 @@
       <!-- Weekly Activity Chart — symmetrical to Android: bars with transcription count -->
       <div class="settings-section">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h2 style="font-family:var(--font-mono, monospace);font-size:11px;letter-spacing:0.08em;text-transform:uppercase;font-weight:500;color:var(--color-on-surface-variant);">WEEKLY ACTIVITY</h2>
-          <span id="chart-header-count" style="font-family:var(--font-mono, monospace);font-size:11px;font-weight:400;letter-spacing:0;color:var(--color-on-surface-variant);">Loading…</span>
+          <h2>Weekly Activity</h2>
+          <span id="chart-header-count" class="text-muted" style="font-size:var(--text-label-sm);font-family:var(--font-label);">Loading…</span>
         </div>
         <div class="bar-chart-container" id="weekly-chart">
           <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-0">0</div><div class="chart-bar" id="chart-bar-0"></div><span>Mon</span></div>
@@ -675,7 +720,7 @@
       <div class="settings-section" style="overflow:hidden;">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Recent Transcriptions</h2>
-          <button class="btn-danger" id="clear-history-btn" style="padding:4px 12px;font-size:12px;">Clear All</button>
+          <button class="btn-danger btn-xs" id="clear-history-btn">Clear All</button>
         </div>
         <div class="search-wrapper">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -709,7 +754,7 @@
       <div class="settings-section">
         <div class="setting-row" style="padding-bottom:var(--spacing-lg);border-bottom:1px solid var(--color-outline-variant);">
           <div class="setting-info">
-            <div class="setting-label">Enable text expansion</div>
+            <div class="setting-label">Enable Text Expansion</div>
             <div class="setting-desc">Dictate a short trigger like "my linkedin" and Fluence pastes your expansion text instead</div>
           </div>
           <div class="setting-control">
@@ -722,20 +767,20 @@
 
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--spacing-lg);">
           <h2>My Snippets</h2>
-          <button class="btn-primary" id="add-snippet-btn" style="padding:6px 14px;font-size:13px;">+ Add Snippet</button>
+          <button class="btn-primary btn-sm" id="add-snippet-btn">+ Add Snippet</button>
         </div>
         <div id="snippet-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
           <div class="form-row" style="flex:1;">
-            <label for="snippet-trigger-input">Spoken trigger</label>
+            <label for="snippet-trigger-input">Spoken Trigger</label>
             <input type="text" id="snippet-trigger-input" maxlength="100" placeholder="e.g. my linkedin" />
           </div>
           <div class="form-row" style="flex:2;">
-            <label for="snippet-expansion-input">Expansion text</label>
+            <label for="snippet-expansion-input">Expansion Text</label>
             <input type="text" id="snippet-expansion-input" maxlength="500" placeholder="e.g. https://linkedin.com/in/username" />
           </div>
-          <div style="display:flex;gap:var(--spacing-sm);padding-bottom:1px;">
-            <button class="btn-primary" id="snippet-save-btn" style="padding:10px 16px;">Save</button>
-            <button class="btn-ghost" id="snippet-cancel-btn">Cancel</button>
+          <div style="display:flex;gap:var(--spacing-sm);">
+            <button class="btn-primary btn-sm" id="snippet-save-btn">Save</button>
+            <button class="btn-ghost btn-sm" id="snippet-cancel-btn">Cancel</button>
           </div>
         </div>
         <table class="dict-table">
@@ -755,7 +800,7 @@
                     <path d="M12 8v8M9 11l3-3 3 3"/>
                   </svg>
                   <div class="empty-state-title">No snippets yet</div>
-                  <div class="empty-state-hint">Add a trigger phrase and its expansion — e.g. "my email" becomes your full email address</div>
+                  <div class="empty-state-hint">Add a trigger phrase and its expansion, e.g. "my email" becomes your full email address</div>
                 </div>
               </td>
             </tr>
@@ -775,7 +820,7 @@
         <div class="settings-section-header"><h2>Cloud Sync</h2></div>
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">Enable background sync</div>
+            <div class="setting-label">Enable Background Sync</div>
             <!-- Cadence copy mirrors SYNC_CADENCE_MS in src-tauri/src/sync/scheduler.rs (15 min) -->
             <div class="setting-desc">Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
           </div>
@@ -792,21 +837,21 @@
         <div class="settings-section-header"><h2>Account</h2></div>
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label" id="sync-account-label">Not signed in</div>
+            <div class="setting-label" id="sync-account-label">Not Signed In</div>
             <div class="setting-desc" id="sync-account-desc">Sign in with Google to start syncing your data.</div>
           </div>
           <div class="setting-control">
-            <button type="button" class="btn-primary" id="sync-sign-in-btn" style="padding:8px 16px;">Sign in with Google</button>
-            <button type="button" class="btn-ghost" id="sync-sign-out-btn" style="padding:8px 16px;display:none;">Sign out</button>
+            <button type="button" class="btn-primary btn-sm" id="sync-sign-in-btn">Sign in with Google</button>
+            <button type="button" class="btn-ghost btn-sm" id="sync-sign-out-btn" style="display:none;">Sign Out</button>
           </div>
         </div>
         <div class="setting-row">
           <div class="setting-info">
-            <div class="setting-label">Sync status</div>
+            <div class="setting-label">Sync Status</div>
             <div class="setting-desc" id="sync-status-desc">Sync is off.</div>
           </div>
           <div class="setting-control">
-            <button type="button" class="btn-ghost" id="sync-now-btn" style="padding:8px 16px;">Sync now</button>
+            <button type="button" class="btn-ghost btn-sm" id="sync-now-btn">Sync Now</button>
           </div>
         </div>
       </div>
@@ -858,7 +903,7 @@
             </div>
 
             <div style="display:flex;gap:8px;margin-top:4px;" id="update-status-actions">
-              <button class="btn-primary" id="update-action-btn" style="font-size:13px;padding:6px 16px;">Check for Updates</button>
+              <button class="btn-primary btn-sm" id="update-action-btn">Check for Updates</button>
             </div>
           </div>
 

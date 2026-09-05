@@ -87,7 +87,13 @@ pub struct AppSettings {
     #[serde(default = "default_duck_level")]
     pub duck_level: f32,
     #[serde(default = "default_offline_engine")]
-    pub offline_engine: String, // "sensevoice" | "moonshine_base"
+    pub offline_engine: String, // "sensevoice" | "moonshine_v2_small" | "moonshine_v2_medium"
+    // (legacy "moonshine_base" is auto-migrated on load, see below)
+    /// Legacy online-streaming toggle. Online streaming support has been
+    /// removed: this flag is parsed but no longer read by any code path,
+    /// so existing settings files keep working unchanged.
+    #[serde(default = "default_false")]
+    pub stt_streaming_enabled: bool,
     #[serde(default = "default_false")]
     pub sync_enabled: bool,
     #[serde(default)]
@@ -178,6 +184,7 @@ impl Default for AppSettings {
             duck_enabled: default_false(),
             duck_level: default_duck_level(),
             offline_engine: default_offline_engine(),
+            stt_streaming_enabled: default_false(),
             sync_enabled: default_false(),
             sync_account_key: None,
         }
@@ -191,6 +198,20 @@ pub fn settings_path() -> PathBuf {
     path
 }
 
+/// One-time migration for the retired Moonshine v1 batch engine (removed
+/// like on Android: English-only, ~2x the size of its v2 Small successor,
+/// no unique capability). Maps legacy saves to the English successor so
+/// existing users keep an English offline engine instead of falling back
+/// to multilingual SenseVoice via the workflow parse fallback. Idempotent:
+/// returns true only when a migration was applied.
+fn migrate_retired_offline_engine(settings: &mut AppSettings) -> bool {
+    if settings.offline_engine == "moonshine_base" {
+        settings.offline_engine = "moonshine_v2_small".to_string();
+        return true;
+    }
+    false
+}
+
 pub fn load_settings() -> Result<AppSettings> {
     let path = settings_path();
     log::debug!("Loading settings from path: {:?}", path);
@@ -202,8 +223,19 @@ pub fn load_settings() -> Result<AppSettings> {
     }
     let data = fs::read_to_string(&path)?;
     match serde_json::from_str::<AppSettings>(&data) {
-        Ok(settings) => {
+        Ok(mut settings) => {
             log::debug!("Successfully loaded settings");
+            if migrate_retired_offline_engine(&mut settings) {
+                log::info!(
+                    "Migrated retired offline engine 'moonshine_base' to 'moonshine_v2_small'"
+                );
+                // Persist once so the mapping is not re-applied on every
+                // load. A failed write is harmless: the in-memory value is
+                // already migrated and the next load retries idempotently.
+                if let Err(e) = save_settings(&settings) {
+                    log::warn!("Failed to persist migrated offline engine: {:?}", e);
+                }
+            }
             Ok(settings)
         }
         Err(e) => {
@@ -279,4 +311,78 @@ pub fn update_settings(
     }
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Highest-priority safety default: a settings.json written before the
+    /// streaming feature existed (no `stt_streaming_enabled` key at all)
+    /// must load with streaming OFF, so no existing install can silently
+    /// start streaming audio to a realtime endpoint after an update.
+    #[test]
+    fn legacy_settings_without_streaming_flag_default_off() {
+        let legacy = r#"{
+            "hotkey": "Ctrl+Shift+Space",
+            "language": "fr",
+            "stt_provider": {
+                "preset": "groq",
+                "base_url": "https://api.groq.com/openai",
+                "model": "whisper-large-v3",
+                "api_key_saved": true
+            }
+        }"#;
+        let settings: AppSettings =
+            serde_json::from_str(legacy).expect("legacy settings must parse");
+        assert!(
+            !settings.stt_streaming_enabled,
+            "streaming must default OFF for legacy settings files"
+        );
+        // Everything else still parses around the missing key.
+        assert_eq!(settings.language, "fr");
+        assert_eq!(settings.stt_provider.preset, "groq");
+    }
+
+    #[test]
+    fn streaming_flag_round_trips_when_present() {
+        let on = r#"{"stt_streaming_enabled": true}"#;
+        let off = r#"{"stt_streaming_enabled": false}"#;
+        let enabled: AppSettings = serde_json::from_str(on).unwrap();
+        let disabled: AppSettings = serde_json::from_str(off).unwrap();
+        assert!(enabled.stt_streaming_enabled);
+        assert!(!disabled.stt_streaming_enabled);
+        assert!(!AppSettings::default().stt_streaming_enabled);
+    }
+
+    /// Removed experiment keys (exp_omit_temperature, exp_verbose_json_filter,
+    /// exp_agc_boost, exp_silence_gate) must not break parsing of settings
+    /// files written while they existed (serde ignores unknown keys). The
+    /// silence gate itself runs unconditionally in the audio stop path.
+    #[test]
+    fn removed_experiment_flag_keys_still_parse() {
+        let old = r#"{"exp_omit_temperature": true, "exp_verbose_json_filter": true, "exp_agc_boost": true, "exp_silence_gate": true}"#;
+        let settings: AppSettings = serde_json::from_str(old).unwrap();
+        assert_eq!(settings.language, "en");
+    }
+
+    /// Retired Moonshine v1 batch engine: legacy saves migrate to the
+    /// English successor (v2 Small), never to multilingual SenseVoice;
+    /// current values pass through untouched; the mapping is idempotent.
+    #[test]
+    fn retired_moonshine_base_engine_migrates_to_v2_small() {
+        let mut legacy: AppSettings =
+            serde_json::from_str(r#"{"offline_engine": "moonshine_base"}"#).unwrap();
+        assert!(migrate_retired_offline_engine(&mut legacy));
+        assert_eq!(legacy.offline_engine, "moonshine_v2_small");
+        // Second load is a no-op.
+        assert!(!migrate_retired_offline_engine(&mut legacy));
+
+        for current in ["sensevoice", "moonshine_v2_small", "moonshine_v2_medium"] {
+            let mut settings: AppSettings =
+                serde_json::from_str(&format!(r#"{{"offline_engine": "{current}"}}"#)).unwrap();
+            assert!(!migrate_retired_offline_engine(&mut settings));
+            assert_eq!(settings.offline_engine, current);
+        }
+    }
 }

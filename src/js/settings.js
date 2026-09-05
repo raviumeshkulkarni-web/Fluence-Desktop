@@ -139,7 +139,10 @@ function populateUI(s) {
   setChecked('auto-grab-cb', s.auto_grab_highlight !== false);
   setChecked('auto-learn-cb', s.auto_learn_enabled !== false);
   setChecked('sound-on-complete-cb', s.sound_on_complete ?? true);
-  setSelectValue('offline-engine-select', s.offline_engine || 'sensevoice');
+  // Retired Moonshine v1 id maps to its English successor (same mapping
+  // the backend applies at load; belt-and-braces for any stale payload).
+  const offlineEngine = s.offline_engine === 'moonshine_base' ? 'moonshine_v2_small' : (s.offline_engine || 'sensevoice');
+  selectOfflineEngineCard(offlineEngine);
 
   // Sync tab
   setChecked('sync-enabled-cb', s.sync_enabled || false);
@@ -507,10 +510,26 @@ async function fetchModels(type, silent = false) {
   if (btn) btn.classList.add('animate-spin');
 
   try {
-    const models = await invoke('fetch_models', { baseUrl, apiKey });
+    // STT picker lists speech models only (backend filters out chat/LLM
+    // ids); the LLM picker lists everything via fetch_models, unchanged.
     const select = document.getElementById(`${type}-model-select`);
+    const current = select?.value || '';
+    let models;
+    let filtered = true;
+    if (type === 'stt') {
+      const res = await invoke('fetch_stt_models', { baseUrl, apiKey, keep: current || null });
+      models = res.models || [];
+      filtered = res.filtered !== false;
+    } else {
+      models = await invoke('fetch_models', { baseUrl, apiKey });
+    }
+    if (!models.length) {
+      // Never strand the user: keep existing options when the endpoint
+      // offers nothing (selectable).
+      if (!silent) showToast('No models found on this endpoint — keeping current list', 'error');
+      return;
+    }
     if (select) {
-      const current = select.value;
       select.textContent = '';
       models.forEach(m => {
         const opt = document.createElement('option');
@@ -520,7 +539,14 @@ async function fetchModels(type, silent = false) {
         select.appendChild(opt);
       });
     }
-    if (!silent) showToast(`Loaded ${models.length} models ✓`, 'success');
+    if (!silent) {
+      showToast(
+        type === 'stt' && !filtered
+          ? `Loaded ${models.length} models (unrecognized endpoint — showing all) ✓`
+          : `Loaded ${models.length} models ✓`,
+        'success'
+      );
+    }
   } catch (err) {
     if (!silent) showToast('Failed to fetch models: ' + err, 'error');
   } finally {
@@ -837,7 +863,6 @@ const GENERAL_BINDINGS = [
   { id: 'overlay-style-select',        key: 'overlay_style',         type: 'select' },
   { id: 'language-select',             key: 'language',              type: 'select' },
   { id: 'ai-polish-select',            key: 'ai_polish_style',       type: 'select' },
-  { id: 'offline-engine-select',       key: 'offline_engine',        type: 'select' },
   { id: 'audio-device-select',         key: 'audio_device_id',       type: 'select' },
   { id: 'autostart-cb',                key: 'auto_start',            type: 'checkbox', features: ['autostart'] },
   { id: 'duck-cb',                     key: 'duck_enabled',          type: 'checkbox' },
@@ -1010,6 +1035,9 @@ function showToast(message, type = 'info') {
   const container = document.getElementById('toast-container');
   if (!container) return;
 
+  // Cap the stack so rapid saves can't pile toasts over content.
+  while (container.children.length >= 3) container.firstChild.remove();
+
   const icons = { success: '✓', error: '✕', info: 'ℹ' };
   const colors = {
     success: 'var(--color-success)',
@@ -1025,10 +1053,19 @@ function showToast(message, type = 'info') {
   `;
   container.appendChild(toast);
 
-  setTimeout(() => {
+  // Hover pauses dismissal so long messages stay readable.
+  let dismissTimer = null;
+  const dismiss = () => {
     toast.style.animation = 'fade-out 0.3s ease forwards';
     setTimeout(() => toast.remove(), 300);
-  }, 3000);
+  };
+  const arm = (ms) => {
+    clearTimeout(dismissTimer);
+    dismissTimer = setTimeout(dismiss, ms);
+  };
+  toast.addEventListener('mouseenter', () => clearTimeout(dismissTimer));
+  toast.addEventListener('mouseleave', () => arm(800));
+  arm(3000);
 }
 
 // ── DOM Helpers ──────────────────────────────────────────────────
@@ -1134,22 +1171,48 @@ function updateSttUiVisibility(preset) {
   }
 }
 
+function currentSttPreset() {
+  return document.querySelector('#stt-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
+}
+
+// ── Offline engine cards (Android parity) ────────────────────────────
+// One card per engine: click (or Enter/Space) selects it and persists via
+// the standard auto-apply pipeline. All cards stay visible; each shows its
+// own Download/Installed state.
+const OFFLINE_ENGINE_CARDS = [
+  { engine: 'moonshine_v2_small', cardId: 'v2small-model-card', statusCmd: 'get_moonshine_v2_small_model_status', downloadBtnId: 'v2small-download-btn', deleteBtnId: 'v2small-delete-btn' },
+  { engine: 'sensevoice', cardId: 'sensevoice-model-card', statusCmd: 'get_offline_model_status', downloadBtnId: 'offline-download-btn', deleteBtnId: 'offline-delete-btn' },
+  { engine: 'moonshine_v2_medium', cardId: 'v2medium-model-card', statusCmd: 'get_moonshine_v2_medium_model_status', downloadBtnId: 'v2medium-download-btn', deleteBtnId: 'v2medium-delete-btn' },
+];
+
+function getSelectedOfflineEngine() {
+  return document.querySelector('#stt-offline-downloader .offline-model-card.selected')?.dataset.engine || 'sensevoice';
+}
+
+function selectOfflineEngineCard(engine, { persist = false } = {}) {
+  const known = OFFLINE_ENGINE_CARDS.some(c => c.engine === engine);
+  const target = known ? engine : 'sensevoice';
+  document.querySelectorAll('#stt-offline-downloader .offline-model-card').forEach(card => {
+    const selected = card.dataset.engine === target;
+    card.classList.toggle('selected', selected);
+    card.setAttribute('aria-checked', selected ? 'true' : 'false');
+  });
+  if (persist && typeof currentSettings !== 'undefined' && currentSettings) {
+    currentSettings.offline_engine = target;
+    queuePersist('general');
+  }
+  return target;
+}
+
 async function updateOfflineStatus() {
-  const engine = document.getElementById('offline-engine-select')?.value || 'sensevoice';
-  const svCard = document.getElementById('sensevoice-model-card');
-  const msCard = document.getElementById('moonshine-model-card');
   const progressWrapper = document.getElementById('offline-progress-wrapper');
 
-  // Show/hide engine-specific cards
-  if (svCard) svCard.style.display = engine === 'sensevoice' ? 'flex' : 'none';
-  if (msCard) msCard.style.display = engine === 'moonshine_base' ? 'flex' : 'none';
+  for (const cfg of OFFLINE_ENGINE_CARDS) {
+    try {
+      const isInstalled = await invoke(cfg.statusCmd);
+      const downloadBtn = document.getElementById(cfg.downloadBtnId);
+      const deleteBtn = document.getElementById(cfg.deleteBtnId);
 
-  try {
-    if (engine === 'sensevoice') {
-      const isInstalled = await invoke('get_offline_model_status');
-      const downloadBtn = document.getElementById('offline-download-btn');
-      const deleteBtn = document.getElementById('offline-delete-btn');
-      
       if (isInstalled) {
         if (downloadBtn) { downloadBtn.textContent = 'Installed'; downloadBtn.disabled = true; }
         if (deleteBtn) deleteBtn.classList.remove('hidden');
@@ -1158,42 +1221,40 @@ async function updateOfflineStatus() {
         if (downloadBtn) { downloadBtn.textContent = 'Download Model'; downloadBtn.disabled = false; }
         if (deleteBtn) deleteBtn.classList.add('hidden');
       }
-    } else {
-      const isInstalled = await invoke('get_moonshine_model_status');
-      const downloadBtn = document.getElementById('moonshine-download-btn');
-      const deleteBtn = document.getElementById('moonshine-delete-btn');
-      
-      if (isInstalled) {
-        if (downloadBtn) { downloadBtn.textContent = 'Installed'; downloadBtn.disabled = true; }
-        if (deleteBtn) deleteBtn.classList.remove('hidden');
-        if (progressWrapper) progressWrapper.classList.add('hidden');
-      } else {
-        if (downloadBtn) { downloadBtn.textContent = 'Download Model'; downloadBtn.disabled = false; }
-        if (deleteBtn) deleteBtn.classList.add('hidden');
-      }
+    } catch (err) {
+      console.error('Failed to get offline model status:', err);
     }
-  } catch (err) {
-    console.error('Failed to get offline model status:', err);
   }
 }
 
 async function setupOfflineDownloader() {
   const downloadBtn = document.getElementById('offline-download-btn');
   const deleteBtn = document.getElementById('offline-delete-btn');
-  const moonshineDownloadBtn = document.getElementById('moonshine-download-btn');
-  const moonshineDeleteBtn = document.getElementById('moonshine-delete-btn');
+  const v2smallDownloadBtn = document.getElementById('v2small-download-btn');
+  const v2smallDeleteBtn = document.getElementById('v2small-delete-btn');
+  const v2mediumDownloadBtn = document.getElementById('v2medium-download-btn');
+  const v2mediumDeleteBtn = document.getElementById('v2medium-delete-btn');
   const cancelBtn = document.getElementById('offline-cancel-btn');
   const progressWrapper = document.getElementById('offline-progress-wrapper');
-  const engineSelect = document.getElementById('offline-engine-select');
   
-  // Engine selector change
-  if (engineSelect) {
-    engineSelect.addEventListener('change', () => {
-      updateOfflineStatus();
+  // Engine card selection (radio behaviour; persists via auto-apply).
+  // Button clicks inside a card are ignored here — download/delete manage
+  // themselves and must not switch the selected engine as a side effect.
+  document.querySelectorAll('#stt-offline-downloader .offline-model-card').forEach(card => {
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('button')) return;
+      selectOfflineEngineCard(card.dataset.engine, { persist: true });
     });
-  }
+    card.addEventListener('keydown', (e) => {
+      if (e.target.closest('button')) return;
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        selectOfflineEngineCard(card.dataset.engine, { persist: true });
+      }
+    });
+  });
 
-  // SenseVoice download button
+  // Fast (Multilingual) download button
   if (downloadBtn) {
     downloadBtn.addEventListener('click', async () => {
       try {
@@ -1208,14 +1269,14 @@ async function setupOfflineDownloader() {
     });
   }
 
-  // SenseVoice delete button
+  // Fast (Multilingual) delete button
   if (deleteBtn) {
     deleteBtn.addEventListener('click', async () => {
-      if (!confirm('Are you sure you want to delete the SenseVoice model files to free space (~240 MB)?')) return;
+      if (!confirm('Are you sure you want to delete the Fast (Multilingual) model files to free space (~239 MB)?')) return;
       try {
         const bytesFreed = await invoke('delete_offline_model');
         const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
-        showToast(`SenseVoice model files deleted. Freed ${mbFreed} MB ✓`, 'success');
+        showToast(`Fast (Multilingual) model deleted. Freed ${mbFreed} MB ✓`, 'success');
         updateOfflineStatus();
       } catch (err) {
         showToast('Failed to delete model files: ' + err, 'error');
@@ -1223,14 +1284,14 @@ async function setupOfflineDownloader() {
     });
   }
 
-  // Moonshine download button
-  if (moonshineDownloadBtn) {
-    moonshineDownloadBtn.addEventListener('click', async () => {
+  // Fast (English) download button
+  if (v2smallDownloadBtn) {
+    v2smallDownloadBtn.addEventListener('click', async () => {
       try {
-        moonshineDownloadBtn.disabled = true;
-        moonshineDownloadBtn.textContent = 'Connecting…';
+        v2smallDownloadBtn.disabled = true;
+        v2smallDownloadBtn.textContent = 'Connecting…';
         if (progressWrapper) progressWrapper.classList.remove('hidden');
-        await invoke('download_moonshine_model');
+        await invoke('download_moonshine_v2_small_model');
       } catch (err) {
         showToast('Failed to start download: ' + err, 'error');
         updateOfflineStatus();
@@ -1238,14 +1299,44 @@ async function setupOfflineDownloader() {
     });
   }
 
-  // Moonshine delete button
-  if (moonshineDeleteBtn) {
-    moonshineDeleteBtn.addEventListener('click', async () => {
-      if (!confirm('Are you sure you want to delete the Moonshine Base model files to free space (~287 MB)?')) return;
+  // Fast (English) delete button
+  if (v2smallDeleteBtn) {
+    v2smallDeleteBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to delete the Fast (English) model files to free space (~142 MB)?')) return;
       try {
-        const bytesFreed = await invoke('delete_moonshine_model');
+        const bytesFreed = await invoke('delete_moonshine_v2_small_model');
         const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
-        showToast(`Moonshine Base model files deleted. Freed ${mbFreed} MB ✓`, 'success');
+        showToast(`Fast (English) model deleted. Freed ${mbFreed} MB ✓`, 'success');
+        updateOfflineStatus();
+      } catch (err) {
+        showToast('Failed to delete model files: ' + err, 'error');
+      }
+    });
+  }
+
+  // Pro (English) download button
+  if (v2mediumDownloadBtn) {
+    v2mediumDownloadBtn.addEventListener('click', async () => {
+      try {
+        v2mediumDownloadBtn.disabled = true;
+        v2mediumDownloadBtn.textContent = 'Connecting…';
+        if (progressWrapper) progressWrapper.classList.remove('hidden');
+        await invoke('download_moonshine_v2_medium_model');
+      } catch (err) {
+        showToast('Failed to start download: ' + err, 'error');
+        updateOfflineStatus();
+      }
+    });
+  }
+
+  // Pro (English) delete button
+  if (v2mediumDeleteBtn) {
+    v2mediumDeleteBtn.addEventListener('click', async () => {
+      if (!confirm('Are you sure you want to delete the Pro (English) model files to free space (~269 MB)?')) return;
+      try {
+        const bytesFreed = await invoke('delete_moonshine_v2_medium_model');
+        const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
+        showToast(`Pro (English) model deleted. Freed ${mbFreed} MB ✓`, 'success');
         updateOfflineStatus();
       } catch (err) {
         showToast('Failed to delete model files: ' + err, 'error');
@@ -1629,11 +1720,11 @@ function setupSyncPage() {
 function describeSyncError(raw) {
   console.log('[sync] last_error detail:', raw);
   const m = String(raw || '').toLowerCase();
-  if (/timeout|network|connection|dns/.test(m)) return 'Connection issue — will retry automatically';
-  if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached — pausing briefly';
+  if (/timeout|network|connection|dns/.test(m)) return 'Connection issue. Will retry automatically';
+  if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached. Pausing briefly';
   if (/rejected|exceeds|too large/.test(m)) return 'Sync data exceeds size limits';
   if (/auth|credential|sign in again/.test(m)) return 'Google Drive access needs reauthorization';
-  return 'Sync error — will retry';
+  return 'Sync error. Will retry';
 }
 
 function renderSyncStatus() {
@@ -1664,11 +1755,11 @@ function renderSyncStatus() {
       // account removed) is genuinely needed. The sign-in button relabels to
       // the one-tap reconnect action.
       if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Reconnect Google Drive'; }
-      if (label) label.textContent = 'Reconnect required';
-      if (desc) desc.textContent = `Google Drive access needs reauthorization — reconnect${account ? ' as ' + account : ''} to resume syncing.`;
+      if (label) label.textContent = 'Reconnect Required';
+      if (desc) desc.textContent = `Google Drive access needs reauthorization. Reconnect${account ? ' as ' + account : ''} to resume syncing.`;
     } else {
       if (signInBtn) { signInBtn.style.display = ''; signInBtn.disabled = false; signInBtn.textContent = 'Sign in with Google'; }
-      if (label) label.textContent = 'Not signed in';
+      if (label) label.textContent = 'Not Signed In';
       if (desc) desc.textContent = 'Sign in with Google to start syncing your data.';
     }
     if (signOutBtn) signOutBtn.style.display = 'none';
@@ -1861,7 +1952,7 @@ function setupUpdaterUI() {
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Check for Updates';
           btnEl.disabled = false;
-          btnEl.className = 'btn-secondary';
+          btnEl.className = 'btn-secondary btn-sm';
           btnEl.onclick = () => window.updateManager.checkForUpdates(true);
           break;
 
@@ -1871,7 +1962,7 @@ function setupUpdaterUI() {
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Checking…';
           btnEl.disabled = true;
-          btnEl.className = 'btn-secondary';
+          btnEl.className = 'btn-secondary btn-sm';
           break;
 
         case 'available':
@@ -1883,7 +1974,7 @@ function setupUpdaterUI() {
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Download Update';
           btnEl.disabled = false;
-          btnEl.className = 'btn-primary';
+          btnEl.className = 'btn-primary btn-sm';
           btnEl.onclick = () => window.updateManager.startDownloadAndInstall();
           break;
 
@@ -1898,7 +1989,7 @@ function setupUpdaterUI() {
           }
           btnEl.textContent = `Downloading ${info.downloadProgress}%`;
           btnEl.disabled = true;
-          btnEl.className = 'btn-primary';
+          btnEl.className = 'btn-primary btn-sm';
           break;
 
         case 'ready':
@@ -1908,7 +1999,7 @@ function setupUpdaterUI() {
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Restart Fluence';
           btnEl.disabled = false;
-          btnEl.className = 'btn-primary';
+          btnEl.className = 'btn-primary btn-sm';
           btnEl.onclick = () => window.updateManager.restartApp();
           break;
 
@@ -1919,7 +2010,7 @@ function setupUpdaterUI() {
           if (progressContainer) progressContainer.style.display = 'none';
           btnEl.textContent = 'Try Again';
           btnEl.disabled = false;
-          btnEl.className = 'btn-secondary';
+          btnEl.className = 'btn-secondary btn-sm';
           btnEl.onclick = () => window.updateManager.checkForUpdates(true);
           break;
       }
@@ -2221,7 +2312,7 @@ function renderTranscriptText(text, query) {
   return safe.replace(re, (match) => {
     const info = terms.get(match.toLowerCase());
     if (info.isCandidate) {
-      const title = `Suggestion: replace with '${info.corrected}' — click to accept`;
+      const title = `Suggestion: replace with '${info.corrected}' (click to accept)`;
       return `<mark class="candidate-word" data-suggestion-id="${info.id}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
     }
     return `<mark>${match}</mark>`;

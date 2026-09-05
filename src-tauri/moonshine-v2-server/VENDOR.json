@@ -1,0 +1,9 @@
+{
+  "release": "moonshine-ai/moonshine v0.1.5",
+  "asset": "moonshine-voice-windows-x86_64.tar.gz",
+  "url": "https://github.com/moonshine-ai/moonshine/releases/download/v0.1.5/moonshine-voice-windows-x86_64.tar.gz",
+  "sha256": "97c1987e8e1cd77bb5fe3b12ce5aad5172637107e1dfda112ea9b21bac8f4b65",
+  "size_bytes": 26109939,
+  "extract_subdir": "moonshine-voice-windows-x86_64",
+  "notes": "Official prebuilt Moonshine v2 C++ core + ONNX Runtime for Windows x86_64. Extract under .vendor/moonshine/ (gitignored). CI fetches and verifies this digest before building the sidecar; the digest here is the single reviewed source of truth (mirrors the GitHub release API digest)."
+}

@@ -23,6 +23,9 @@ src-tauri/binaries/
 src-tauri/gen/
 src-tauri/bin/
 
+# React migration build output (rebuilt by web:build; never committed)
+src/dist/
+
 # IDE files
 .vscode/
 .idea/
@@ -46,6 +49,11 @@ Desktop.ini
 .tauri-dev.err.log
 dev-server.out.log
 dev-server.err.log
+dev-react.out.log
+dev-react.err.log
+autolearn-run.out.log
+autolearn-run.err.log
+cargo-test-suggestion.log
 
 # Local debug recordings
 src-tauri/debug_recordings/

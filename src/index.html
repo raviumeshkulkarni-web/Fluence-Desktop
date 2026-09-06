@@ -46,9 +46,13 @@
     </div>
 
     <span class="nav-section-label">Home</span>
-    <button type="button" class="nav-item active" data-page="history" id="nav-history" aria-current="page">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    <button type="button" class="nav-item active" data-page="dashboard" id="nav-dashboard" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 14l4-4 4 3 5-6"/></svg>
       Dashboard
+    </button>
+    <button type="button" class="nav-item" data-page="history" id="nav-history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
     </button>
     <span class="nav-section-label" style="margin-top:8px;">Configuration</span>
     <button type="button" class="nav-item" data-page="general" id="nav-general">
@@ -610,7 +614,7 @@
             <button class="btn-primary btn-sm" id="add-dict-btn">+ Add Entry</button>
           </div>
         </div>
-        <div id="dict-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
+        <div id="dict-add-row" class="hidden">
           <div class="form-row" style="flex:1;">
             <label for="dict-spoken-input">Spoken Word/Phrase</label>
             <input type="text" id="dict-spoken-input" placeholder="e.g. fluence" />
@@ -624,12 +628,12 @@
             <button class="btn-ghost btn-sm" id="dict-cancel-btn">Cancel</button>
           </div>
         </div>
-        <table class="dict-table">
+        <table class="dict-table" id="dict-table">
           <thead>
             <tr>
-              <th>Spoken</th>
-              <th>Corrected</th>
-              <th class="added-col">Added</th>
+              <th class="col-word">Spoken</th>
+              <th class="col-word">Corrected</th>
+              <th class="col-meta added-col">Added</th>
               <th class="actions">Actions</th>
             </tr>
           </thead>
@@ -654,25 +658,21 @@
       <div class="settings-section" style="margin-top:var(--spacing-lg);">
         <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
           <h2>Suggested Corrections</h2>
-          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
-            <label class="suggestions-select-all-label">
-              <input type="checkbox" id="select-all-suggestions" aria-label="Select all suggestions"> Select all
-            </label>
-            <span id="suggestions-selected-count" style="font-size:12px;color:var(--color-on-surface-variant);">0 selected</span>
+          <div class="suggestions-bulk-actions" style="display:flex;align-items:center;gap:var(--spacing-sm);">
+            <span id="suggestions-selected-count">0 selected</span>
             <button class="btn-ghost btn-small" id="dismiss-selected-btn" disabled>Dismiss Selected</button>
             <button class="btn-ghost btn-small hidden" id="clear-selection-btn">Cancel</button>
           </div>
         </div>
-        <p id="suggestions-hint" style="font-size:12px;color:var(--color-on-surface-variant);margin:0 0 var(--spacing-md) 0;padding-left:var(--spacing-md);">
-          Corrections detected from your transcriptions. Accept to add to dictionary, dismiss to ignore.
-        </p>
         <table class="dict-table" id="suggestions-table">
           <thead>
             <tr>
-              <th class="select-col"></th>
-              <th>Detected</th>
-              <th>Should Be</th>
-              <th>Seen</th>
+              <th class="select-col">
+                <input type="checkbox" id="select-all-suggestions" aria-label="Select all suggestions">
+              </th>
+              <th class="col-word">Detected</th>
+              <th class="col-word">Should Be</th>
+              <th class="col-meta seen-col">Seen</th>
               <th class="actions">Actions</th>
             </tr>
           </thead>
@@ -695,8 +695,8 @@
       </div>
     </section>
 
-    <!-- ===== HISTORY PAGE ===== -->
-    <section class="page active" id="page-history">
+    <!-- ===== DASHBOARD PAGE ===== -->
+    <section class="page active" id="page-dashboard">
       <div class="page-header">
         <h1 class="page-title" tabindex="-1">Dashboard</h1>
         <p class="page-subtitle">Your transcription activity at a glance</p>
@@ -705,42 +705,126 @@
       <!-- Hero Stats -->
       <div class="stats-grid">
         <div class="stat-card">
+          <div class="stat-eyebrow">Lifetime</div>
           <div class="stat-value" id="stat-total-words">0</div>
-          <div class="stat-label">Words Brought to Life</div>
-          <div class="stat-sub">to date</div>
+          <div class="stat-label">Words Transcribed</div>
+          <div class="stat-sub" id="stat-total-words-sub">to date</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="stat-time-saved">0h</div>
+          <div class="stat-eyebrow">Estimate · 40 WPM</div>
+          <div class="stat-value" id="stat-time-saved">0m</div>
           <div class="stat-label">Typing Time Saved</div>
-          <div class="stat-sub">to date</div>
+          <div class="stat-sub" id="stat-time-saved-sub">to date</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="stat-dictation-time">0h</div>
+          <div class="stat-eyebrow">Recorded</div>
+          <div class="stat-value" id="stat-dictation-time">0m</div>
           <div class="stat-label">Dictation Time</div>
-          <div class="stat-sub">to date</div>
+          <div class="stat-sub" id="stat-dictation-sub">to date</div>
         </div>
         <div class="stat-card">
-          <div class="stat-value" id="stat-monthly-saved">0h</div>
-          <div class="stat-label">Recent Time Saved</div>
-          <div class="stat-sub">in last 30 days</div>
+          <div class="stat-eyebrow">Last 30 days</div>
+          <div class="stat-value" id="stat-monthly-saved">0m</div>
+          <div class="stat-label">30-Day Time Saved</div>
+          <div class="stat-sub" id="stat-monthly-sub">in last 30 days</div>
         </div>
       </div>
 
-      <!-- Weekly Activity Chart - symmetrical to Android: bars with transcription count -->
-      <div class="settings-section">
-        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
-          <h2>Weekly Activity</h2>
-          <span id="chart-header-count" class="text-muted" style="font-size:var(--text-label-sm);font-family:var(--font-label);">Loading…</span>
+      <!-- Weekly Activity Chart - Area Under The Curve -->
+      <div class="settings-section dashboard-chart-card">
+        <div class="settings-section-header dashboard-chart-header">
+          <div class="dashboard-chart-titles">
+            <h2>Weekly Activity</h2>
+            <p class="chart-range" id="chart-range-label">Last 7 days</p>
+          </div>
+          <span id="chart-header-count" class="chart-summary">Loading…</span>
         </div>
-        <div class="bar-chart-container" id="weekly-chart">
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-0">0</div><div class="chart-bar" id="chart-bar-0"></div><span>Mon</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-1">0</div><div class="chart-bar" id="chart-bar-1"></div><span>Tue</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-2">0</div><div class="chart-bar" id="chart-bar-2"></div><span>Wed</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-3">0</div><div class="chart-bar" id="chart-bar-3"></div><span>Thu</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-4">0</div><div class="chart-bar" id="chart-bar-4"></div><span>Fri</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-5">0</div><div class="chart-bar" id="chart-bar-5"></div><span>Sat</span></div>
-          <div class="chart-bar-col"><div class="chart-bar-count" id="chart-count-6">0</div><div class="chart-bar" id="chart-bar-6"></div><span>Sun</span></div>
+        <div class="dashboard-chart-body" id="weekly-chart">
+          <!-- Y-Axis title (no numeric ticks: values live on the data points) -->
+          <div class="chart-y-axis" aria-hidden="true">
+            <span class="axis-title-y">Transcriptions</span>
+          </div>
+
+          <!-- Main Canvas Column -->
+          <div class="chart-canvas-col" id="chart-canvas-col">
+            <svg id="weekly-area-svg" role="img" aria-label="Weekly transcription activity area chart">
+              <defs>
+                <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#0BD6E3" stop-opacity="0.45" />
+                  <stop offset="50%" stop-color="#8B45D8" stop-opacity="0.30" />
+                  <stop offset="100%" stop-color="#8B45D8" stop-opacity="0.14" />
+                </linearGradient>
+                <linearGradient id="curve-stroke-grad" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#8B45D8" />
+                  <stop offset="50%" stop-color="#6C5CE7" />
+                  <stop offset="100%" stop-color="#0BD6E3" />
+                </linearGradient>
+                <filter id="curve-glow" x="-10%" y="-20%" width="120%" height="140%">
+                  <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0BD6E3" flood-opacity="0.35" />
+                </filter>
+              </defs>
+              <g id="weekly-chart-grid"></g>
+              <!-- Area Fill -->
+              <path id="weekly-area-path" d="" fill="url(#area-gradient)" />
+              <!-- Curve Stroke -->
+              <path id="weekly-curve-path" d="" fill="none" stroke="url(#curve-stroke-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#curve-glow)" vector-effect="non-scaling-stroke" />
+
+              <!-- Data dots + value labels (rendered by JS) -->
+              <g id="weekly-chart-points"></g>
+              <g id="weekly-chart-labels"></g>
+            </svg>
+
+            <!-- Weekday labels (counts shown once, above the curve dots) -->
+            <div class="chart-day-labels" id="chart-day-labels">
+              <div class="chart-day-cell" data-day="0"><span class="day-name">Mon</span></div>
+              <div class="chart-day-cell" data-day="1"><span class="day-name">Tue</span></div>
+              <div class="chart-day-cell" data-day="2"><span class="day-name">Wed</span></div>
+              <div class="chart-day-cell" data-day="3"><span class="day-name">Thu</span></div>
+              <div class="chart-day-cell" data-day="4"><span class="day-name">Fri</span></div>
+              <div class="chart-day-cell" data-day="5"><span class="day-name">Sat</span></div>
+              <div class="chart-day-cell" data-day="6"><span class="day-name">Sun</span></div>
+            </div>
+
+            <!-- X-Axis title -->
+            <div class="axis-title-x">Days</div>
+          </div>
+
+          <div class="chart-tooltip" id="chart-tooltip" hidden></div>
+          <div class="chart-empty" id="chart-empty" hidden>No activity this week yet — press your hotkey to dictate.</div>
         </div>
+      </div>
+
+      <!-- This Week insights — pure derivation from the 7 weekly counts,
+           no extra backend calls, so nothing sync/DB related is touched -->
+      <div class="insights-grid">
+        <div class="insight-card">
+          <div class="insight-eyebrow">Most active day</div>
+          <div class="insight-value" id="insight-best-day">–</div>
+          <div class="insight-sub" id="insight-best-day-sub">this week</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Daily average</div>
+          <div class="insight-value" id="insight-daily-avg">–</div>
+          <div class="insight-sub">transcriptions / day</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Active days</div>
+          <div class="insight-value" id="insight-active-days">–</div>
+          <div class="insight-sub" id="insight-active-sub">of 7 days</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Today</div>
+          <div class="insight-value" id="insight-today">–</div>
+          <div class="insight-sub" id="insight-today-sub">so far</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== HISTORY PAGE ===== -->
+    <section class="page" id="page-history">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">History</h1>
+        <p class="page-subtitle">Browse and search every transcription on this device</p>
       </div>
 
       <!-- Recent History -->
@@ -763,6 +847,12 @@
             </svg>
             <div class="empty-state-title">No transcriptions yet</div>
             <div class="empty-state-hint">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> to start your first transcription</div>
+          </div>
+          <div class="empty-state hidden" id="history-no-results">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <div class="empty-state-title">No matches</div>
+            <div class="empty-state-hint" id="history-no-results-hint">Nothing matches your search.</div>
+            <button class="btn-ghost btn-sm" id="history-clear-search-btn">Clear search</button>
           </div>
         </div>
         <div style="padding:var(--spacing-md);display:flex;justify-content:center;" id="history-load-more" class="hidden">

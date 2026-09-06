@@ -131,6 +131,7 @@ input, textarea {
 .bg-gradient           { background: var(--color-canvas); }
 
 /* ── Card - luminance + ultra-thin border ──────────────────────── */
+/* Card - luminance + ultra-thin border */
 .glass-card {
   background: var(--color-surface);
   border: 1px solid var(--color-border);
@@ -143,7 +144,7 @@ input, textarea {
   border-radius: var(--radius-lg);
 }
 
-/* ── Button Base ───────────────────────────────────────────────── */
+/* Button Base */
 button {
   font-family: var(--font-body);
   cursor: pointer;
@@ -153,96 +154,112 @@ button {
 }
 
 button:focus-visible {
-  outline: 1.5px solid var(--color-border-focus);
+  outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
 
-/* Primary - monochrome filled. Transparent 1px border keeps the same
-   box as the bordered secondary/danger variants so side-by-side
-   buttons share one height. */
+/* Primary - crisp high-contrast tactile action */
 .btn-primary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
-  padding: 10px 20px;
-  background: var(--color-interactive);
-  color: var(--color-on-surface);
+  padding: 8px 18px;
+  background: var(--color-on-surface);
+  color: var(--color-canvas);
   font-size: var(--text-label-lg);
-  font-weight: 500;
-  border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  font-weight: 600;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: var(--radius-sm);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
   transition: var(--transition-fast);
+  letter-spacing: -0.01em;
 }
 
 .btn-primary:hover {
-  background: var(--color-interactive-hover);
+  background: #FFFFFF;
+  color: #000000;
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
 }
 
 .btn-primary:active {
-  transform: scale(0.98);
-  background: var(--color-interactive-active);
+  transform: translateY(0) scale(0.98);
+  background: #E4E4E7;
 }
 
-/* Secondary - surface elevation + ultra-thin border */
+/* Secondary - surface elevation + crisp border */
 .btn-secondary {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-sm);
-  padding: 10px 20px;
+  padding: 8px 16px;
   background: var(--color-surface-elevated);
   color: var(--color-on-surface);
   font-size: var(--text-label-lg);
   font-weight: 500;
   border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
 }
 
 .btn-secondary:hover {
   background: var(--color-surface-menu);
+  border-color: rgba(255, 255, 255, 0.16);
+  color: #FFFFFF;
 }
 
 .btn-secondary:active {
   transform: scale(0.98);
+  background: var(--color-surface-secondary);
 }
 
-/* Ghost - transparent, same 1px box as the other variants */
+/* Ghost - transparent, crisp hover state */
 .btn-ghost {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: var(--spacing-xs);
-  padding: 8px 14px;
+  padding: 7px 12px;
   background: transparent;
   color: var(--color-on-surface-variant);
   font-size: var(--text-label-lg);
   border: 1px solid transparent;
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
+  transition: var(--transition-fast);
 }
 
 .btn-ghost:hover {
   background: var(--color-hover);
   color: var(--color-on-surface);
+  border-color: var(--color-border-muted);
 }
 
 .btn-ghost:active {
   transform: scale(0.98);
 }
 
-/* Danger - semantic red. Base padding matches primary/secondary so
-   paired buttons (Download + Delete) share one height. */
+/* Danger - semantic red */
 .btn-danger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
   background: var(--color-error-container);
-  color: var(--color-error);
-  border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-md);
-  padding: 10px 20px;
+  color: #F87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-sm);
+  padding: 8px 16px;
   font-size: var(--text-label-lg);
+  font-weight: 500;
+  transition: var(--transition-fast);
 }
 
 .btn-danger:hover {
-  background: rgba(239, 68, 68, 0.25);
+  background: rgba(239, 68, 68, 0.22);
+  border-color: rgba(239, 68, 68, 0.5);
+  color: #FCA5A5;
 }
 
 .btn-danger:active {
@@ -261,28 +278,31 @@ button:focus-visible {
   font-size: var(--text-label-sm);
 }
 
-/* ── Input Base - ultra-thin border ────────────────────────────── */
-input, select, textarea {
+/* ── Input Base ────────────────────────────────────────────────── */
+input:not([type="checkbox"]):not([type="radio"]), select, textarea {
   font-family: var(--font-body);
   font-size: var(--text-body-md);
   color: var(--color-on-surface);
   background: var(--color-surface-elevated);
   border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-md);
+  border-radius: var(--radius-sm);
   padding: 10px 14px;
   outline: none;
   transition: var(--transition-fast);
   width: 100%;
+  box-sizing: border-box;
 }
 
-input:focus, select:focus, textarea:focus {
+input:not([type="checkbox"]):not([type="radio"]):focus,
+select:focus,
+textarea:focus,
+input:not([type="checkbox"]):not([type="radio"]):focus-visible,
+select:focus-visible,
+textarea:focus-visible {
   background: var(--color-surface-menu);
-  border-color: var(--color-interactive-hover);
-}
-
-input:focus-visible, select:focus-visible, textarea:focus-visible {
-  outline: 1.5px solid var(--color-border-focus);
-  outline-offset: 1px;
+  border-color: rgba(255, 255, 255, 0.3);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  outline: none;
 }
 
 input::placeholder {
@@ -293,10 +313,90 @@ select {
   appearance: none;
   -webkit-appearance: none;
   cursor: pointer;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23808080' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A0A0A0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
   background-position: right 12px center;
   padding-right: 36px;
+  border-radius: var(--radius-sm);
+}
+
+select option {
+  background: var(--color-surface-secondary);
+  color: var(--color-on-surface);
+  padding: 8px 12px;
+}
+
+/* ── Checkbox (Tactile Monochrome Square) ───────────────────────── */
+input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 14px !important;
+  height: 14px !important;
+  min-width: 14px !important;
+  min-height: 14px !important;
+  max-width: 14px !important;
+  max-height: 14px !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  aspect-ratio: 1 / 1;
+  background: #141414 !important;
+  border: 1px solid #3A3A3A !important;
+  border-radius: 0 !important; /* Perfectly squared - zero border radius */
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  outline: none !important;
+  box-shadow: none !important;
+  box-sizing: border-box !important;
+  flex-shrink: 0;
+}
+
+input[type="checkbox"]:hover {
+  background: #1E1E1E !important;
+  border-color: #666666 !important;
+}
+
+input[type="checkbox"]:focus,
+input[type="checkbox"]:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
+  border-color: #8E8E8E !important;
+}
+
+input[type="checkbox"]:checked {
+  background: #E2E2E2 !important;
+  border-color: #E2E2E2 !important;
+}
+
+input[type="checkbox"]:checked::before {
+  content: "";
+  width: 3.5px;
+  height: 7px;
+  border: solid #0D0D0D;
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+  display: block;
+}
+
+input[type="checkbox"]:indeterminate {
+  background: #E2E2E2 !important;
+  border-color: #E2E2E2 !important;
+}
+
+input[type="checkbox"]:indeterminate::before {
+  content: "";
+  width: 8px;
+  height: 2px;
+  background: #0D0D0D;
+  border-radius: 0;
+  display: block;
+}
+
+input[type="checkbox"]:disabled {
+  opacity: 0.35 !important;
+  cursor: not-allowed;
 }
 
 /* ── Form Rows ─────────────────────────────────────────────────── */
@@ -317,21 +417,26 @@ select {
   gap: var(--spacing-sm);
 }
 
-.input-with-btn input { flex: 1; }
+.input-with-btn input,
+.input-with-btn select {
+  flex: 1;
+  min-width: 0;
+}
 .input-with-btn button { flex-shrink: 0; }
 
 /* ── Status Dot ────────────────────────────────────────────────── */
+/* Status Dot */
 .dot { width: 8px; height: 8px; border-radius: var(--radius-full); }
-.dot-success { background: var(--color-success); }
-.dot-error   { background: var(--color-error); }
+.dot-success { background: var(--color-success); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.dot-error   { background: var(--color-error); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
 .dot-idle    { background: var(--color-ink-muted); }
 
-/* ── Toggle Switch - luminance + ultra-thin border ─────────────── */
+/* Toggle Switch - tactile hardware switch */
 .toggle-switch {
   position: relative;
   display: inline-flex;
-  width: 44px;
-  height: 24px;
+  width: 42px;
+  height: 22px;
   flex-shrink: 0;
 }
 
@@ -345,7 +450,7 @@ select {
 .toggle-track {
   position: absolute;
   inset: 0;
-  background: var(--color-surface-secondary);
+  background: var(--color-surface-elevated);
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-full);
   cursor: pointer;
@@ -354,38 +459,61 @@ select {
 
 .toggle-thumb {
   position: absolute;
-  top: 3px;
-  left: 3px;
+  top: 2px;
+  left: 2px;
   width: 16px;
   height: 16px;
   background: var(--color-on-surface-variant);
   border-radius: var(--radius-full);
-  transition: transform 0.25s var(--ease-spring), background-color 0.2s ease;
+  transition: transform 0.22s var(--ease-spring), background-color 0.15s ease, width 0.15s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
 }
 
 .toggle-switch:active .toggle-thumb {
-  width: 20px;
+  width: 19px;
 }
 
 .toggle-switch input:checked ~ .toggle-track {
-  background: var(--color-selected);
+  background: rgba(255, 255, 255, 0.22);
+  border-color: rgba(255, 255, 255, 0.4);
+  box-shadow: none;
 }
 
 .toggle-switch input:checked ~ .toggle-track .toggle-thumb {
   transform: translateX(20px);
-  background: var(--color-on-surface);
+  background: #FFFFFF;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
 }
 
 .toggle-switch input:checked:active ~ .toggle-track .toggle-thumb {
-  transform: translateX(14px);
+  transform: translateX(17px);
 }
 
 .toggle-switch input:focus-visible ~ .toggle-track {
-  outline: 1.5px solid var(--color-border-focus);
+  outline: 2px solid rgba(255, 255, 255, 0.3);
   outline-offset: 2px;
 }
 
-/* ── Badge ─────────────────────────────────────────────────────── */
+/* Keycap / Keyboard Shortcut Badge */
+.kbd-keycap, kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-on-surface);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-structural);
+  border-bottom: 2px solid #222228;
+  border-radius: var(--radius-xs);
+  padding: 2px 7px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  letter-spacing: 0.02em;
+  user-select: none;
+}
+
+/* Badges and Chips */
 .badge {
   display: inline-flex;
   align-items: center;
@@ -398,9 +526,26 @@ select {
   text-transform: uppercase;
 }
 
-.badge-primary { background: var(--color-interactive); color: var(--color-on-surface-variant); }
-.badge-success { background: var(--color-success-container); color: var(--color-success); }
-.badge-error   { background: var(--color-error-container); color: var(--color-error); }
+.badge-primary { background: rgba(0, 229, 255, 0.12); color: var(--color-brand-cyan); border: 1px solid rgba(0, 229, 255, 0.25); }
+.badge-success { background: var(--color-success-container); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.25); }
+.badge-error   { background: var(--color-error-container); color: var(--color-error); border: 1px solid rgba(239, 68, 68, 0.25); }
+.badge-warning { background: var(--color-warning-container); color: var(--color-warning); border: 1px solid rgba(245, 158, 11, 0.25); }
+
+/* Technical Spec Chip */
+.spec-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-label);
+  font-size: 11px;
+  padding: 2px 8px;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-variant);
+  letter-spacing: 0.01em;
+}
+
 
 /* ── Divider ───────────────────────────────────────────────────── */
 .divider {
@@ -485,11 +630,11 @@ select {
 .toast.success { background: var(--color-toast-success); }
 .toast.error   { background: var(--color-toast-error); }
 
-/* ── Custom Titlebar - ultra-thin bottom border ────────────────── */
+/* ── Custom Titlebar ────────────────────────────────────────────── */
 .titlebar {
   height: 32px;
-  background: transparent;
-  border-bottom: 1px solid var(--color-border-muted);
+  background: var(--color-canvas);
+  border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
   align-items: center;

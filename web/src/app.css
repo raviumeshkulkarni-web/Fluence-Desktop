@@ -1,0 +1,16 @@
+/* Fluence React shell — token/style layer.
+ *
+ * The frozen vanilla stylesheet layer is reused VERBATIM (single source
+ * stays in ../src/css). No token is redefined here and no shadcn/Tailwind
+ * theme is introduced in this slice, so the visual result cannot drift
+ * from the current UI. (Tailwind + full shadcn theming is a later slice.)
+ */
+@import '../../src/css/design-tokens.css';
+@import '../../src/css/global.css';
+@import '../../src/css/settings.css';
+
+/* React mount node participates in body's flex column exactly as the
+ * vanilla titlebar + .app-shell children do. */
+#root {
+  display: contents;
+}

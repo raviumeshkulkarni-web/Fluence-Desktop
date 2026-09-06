@@ -7,6 +7,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "pwsh -File dev.ps1",
+    "web:build": "npm run build --prefix web",
+    "web:watch": "npm run watch --prefix web",
     "build": "tauri build",
     "check": "cd src-tauri && cargo check",
     "clippy": "cd src-tauri && cargo clippy"

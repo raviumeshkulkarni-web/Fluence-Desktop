@@ -5,8 +5,8 @@
   "version": "1.19.0",
   "build": {
     "frontendDist": "../src",
-    "beforeDevCommand": "",
-    "beforeBuildCommand": ""
+    "beforeDevCommand": "npm run web:build",
+    "beforeBuildCommand": "npm run web:build"
   },
   "app": {
     "withGlobalTauri": true,
@@ -23,7 +23,7 @@
         "visible": false,
         "decorations": false,
         "transparent": true,
-        "url": "index.html",
+        "url": "dist/index.html",
         "dragDropEnabled": false,
         "theme": "Dark"
       },

@@ -1,0 +1,29 @@
+{
+  "name": "fluence-web",
+  "version": "1.19.0",
+  "description": "Fluence Windows main-window UI — React + TypeScript + Vite migration (incremental, vanilla preserved in ../src)",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -b && vite build",
+    "watch": "vite build --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+  },
+  "dependencies": {
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@radix-ui/react-slot": "^1.2.0",
+    "@types/node": "^22.9.0",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.8.0",
+    "vite": "^6.3.0"
+  }
+}

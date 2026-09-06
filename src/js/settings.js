@@ -16,7 +16,7 @@ const { listen } = window.__TAURI__.event;
 
 // ── State ───────────────────────────────────────────────────────
 let currentSettings = null;
-let currentPage = 'history';
+let currentPage = 'dashboard';
 let historyPage = 0;
 let activeRecorder = null;
 let pendingHotkey = '';
@@ -69,9 +69,10 @@ window.addEventListener('DOMContentLoaded', async () => {
 
   // Refresh data when window is focused
   window.addEventListener('focus', () => {
-    if (currentPage === 'history') {
-      loadHistory(true);
+    if (currentPage === 'dashboard') {
       loadDashboardStats();
+    } else if (currentPage === 'history') {
+      loadHistory(true);
     } else if (currentPage === 'dictionary') {
       loadDictionary();
       loadSuggestions();
@@ -175,7 +176,7 @@ function populateUI(s) {
 
 // ── Navigation ───────────────────────────────────────────────────
 
-const PAGE_ORDER = ['history', 'general', 'providers', 'dictionary', 'snippets', 'sync', 'about'];
+const PAGE_ORDER = ['dashboard', 'history', 'general', 'providers', 'dictionary', 'snippets', 'sync', 'about'];
 
 function setupNavigation() {
   document.querySelectorAll('.nav-item').forEach(item => {
@@ -191,6 +192,8 @@ function setupNavigation() {
 
 function navigateTo(page) {
   if (currentPage === page) return;
+  // Ignore unknown targets (e.g. stale tray events) instead of blanking the UI.
+  if (PAGE_ORDER.indexOf(page) === -1) return;
 
   const currentIndex = PAGE_ORDER.indexOf(currentPage);
   const targetIndex = PAGE_ORDER.indexOf(page);
@@ -231,9 +234,14 @@ function _performNavigation(page) {
   document.querySelector(`#page-${page} .page-title`)?.focus();
 
   // Lazy load data for specific pages
+  // Dashboard owns stats + chart; History owns the transcription list.
+  // No backend calls changed — same get_account_stats / get_history /
+  // get_weekly_activity commands, only split by visible page.
+  if (page === 'dashboard') {
+    loadDashboardStats();
+  }
   if (page === 'history') {
     loadHistory(true);
-    loadDashboardStats();
   }
   if (page === 'dictionary') {
     loadDictionary();
@@ -593,9 +601,28 @@ function setupHistory() {
     searchTimeout = setTimeout(() => loadHistory(true, e.target.value), 300);
   });
 
-  document.getElementById('load-more-btn')?.addEventListener('click', () => {
+  let historyLoadingMore = false;
+  document.getElementById('load-more-btn')?.addEventListener('click', async () => {
+    if (historyLoadingMore) return;
+    const btn = document.getElementById('load-more-btn');
+    historyLoadingMore = true;
+    if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
     historyPage++;
-    loadHistory(false, document.getElementById('history-search')?.value);
+    try {
+      const loaded = await loadHistory(false, document.getElementById('history-search')?.value);
+      // A failed fetch must not consume the page, or the next retry
+      // would silently skip a page of results.
+      if (loaded === null) historyPage = Math.max(0, historyPage - 1);
+    } finally {
+      historyLoadingMore = false;
+      if (btn) { btn.disabled = false; btn.textContent = 'Load More'; }
+    }
+  });
+
+  document.getElementById('history-clear-search-btn')?.addEventListener('click', () => {
+    const searchInput = document.getElementById('history-search');
+    if (searchInput) searchInput.value = '';
+    loadHistory(true, '');
   });
 
   document.getElementById('clear-history-btn')?.addEventListener('click', async () => {
@@ -728,6 +755,7 @@ async function loadHistory(reset, search = '') {
 
     const list = document.getElementById('history-list');
     const emptyEl = document.getElementById('history-empty');
+    const noResultsEl = document.getElementById('history-no-results');
 
     if (reset && list) {
       list.querySelectorAll('.history-item, .history-group-header').forEach(el => el.remove());
@@ -735,22 +763,255 @@ async function loadHistory(reset, search = '') {
     }
 
     if (entries.length === 0 && historyPage === 0) {
-      if (emptyEl) emptyEl.style.display = '';
+      if (historySearchQuery) {
+        if (emptyEl) emptyEl.style.display = 'none';
+        if (noResultsEl) {
+          noResultsEl.classList.remove('hidden');
+          setText('history-no-results-hint', 'Nothing matches "' + historySearchQuery + '" on this device.');
+        }
+      } else {
+        if (noResultsEl) noResultsEl.classList.add('hidden');
+        if (emptyEl) emptyEl.style.display = '';
+      }
     } else {
       if (emptyEl) emptyEl.style.display = 'none';
+      if (noResultsEl) noResultsEl.classList.add('hidden');
       entries.forEach(entry => renderHistoryItem(entry, list));
       const distinctDays = new Set();
       list?.querySelectorAll('.history-group-header')?.forEach(h => {
         if (h.dataset.dayKey) distinctDays.add(h.dataset.dayKey);
       });
       list?.classList.toggle('single-day', distinctDays.size <= 1);
+      updateHistoryGroupCounts(list);
     }
 
     const loadMore = document.getElementById('history-load-more');
     if (loadMore) loadMore.classList.toggle('hidden', entries.length < 50);
+    return entries.length;
   } catch (err) {
     showToast('Failed to load history: ' + err, 'error');
+    return null;
   }
+}
+
+let lastDayCounts = [0, 0, 0, 0, 0, 0, 0];
+let lastWeekStartMs = 0;
+let chartResizeObs = null;
+
+function renderWeeklyAreaChart(dayCounts, weekStartMs) {
+  const svg = document.getElementById('weekly-area-svg');
+  const areaPath = document.getElementById('weekly-area-path');
+  const curvePath = document.getElementById('weekly-curve-path');
+  const pointsGroup = document.getElementById('weekly-chart-points');
+  const labelsGroup = document.getElementById('weekly-chart-labels');
+  const gridGroup = document.getElementById('weekly-chart-grid');
+  if (!svg || !areaPath || !curvePath || !pointsGroup) return;
+
+  lastDayCounts = Array.isArray(dayCounts) && dayCounts.length === 7 ? dayCounts.slice() : [0, 0, 0, 0, 0, 0, 0];
+  if (weekStartMs) lastWeekStartMs = weekStartMs;
+
+  // Measure the real canvas width so the curve never stretches.
+  // Falls back to a sensible default before first layout.
+  const canvasCol = document.getElementById('chart-canvas-col');
+  const measuredW = canvasCol ? canvasCol.clientWidth : 0;
+  const width = Math.max(280, Math.min(1400, measuredW || 640));
+  const height = 244;
+  const paddingX = 14;
+  const baselineY = height - 14;
+  const topY = 20;
+  const availHeight = baselineY - topY;
+  const stepX = (width - paddingX * 2) / 6;
+
+  svg.setAttribute('viewBox', '0 0 ' + width + ' ' + height);
+  svg.removeAttribute('preserveAspectRatio');
+  const grad = document.querySelector('#curve-stroke-grad');
+  if (grad) {
+    grad.setAttribute('gradientUnits', 'userSpaceOnUse');
+    grad.setAttribute('x1', '0');
+    grad.setAttribute('y1', '0');
+    grad.setAttribute('x2', String(width));
+    grad.setAttribute('y2', '0');
+  }
+
+  const maxCount = Math.max.apply(null, lastDayCounts.concat([1]));
+  const points = [];
+
+  for (let i = 0; i < 7; i++) {
+    const x = paddingX + i * stepX;
+    const factor = Math.min(1, Math.max(0, lastDayCounts[i] / maxCount));
+    const y = lastDayCounts[i] > 0 ? baselineY - factor * availHeight : baselineY;
+    points.push({ x: x, y: y, count: lastDayCounts[i] });
+  }
+
+  // Grid lines track the same geometry (no stretched static lines)
+  if (gridGroup) {
+    while (gridGroup.firstChild) gridGroup.removeChild(gridGroup.firstChild);
+    const ns = 'http://www.w3.org/2000/svg';
+    const rows = [
+      { y: topY, strong: false },
+      { y: topY + availHeight / 2, strong: false },
+      { y: baselineY, strong: true }
+    ];
+    rows.forEach(function (row) {
+      const line = document.createElementNS(ns, 'line');
+      line.setAttribute('x1', paddingX);
+      line.setAttribute('x2', width - paddingX);
+      line.setAttribute('y1', row.y.toFixed(1));
+      line.setAttribute('y2', row.y.toFixed(1));
+      line.setAttribute('stroke', row.strong ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)');
+      line.setAttribute('stroke-width', '1');
+      if (!row.strong) line.setAttribute('stroke-dasharray', '3 3');
+      gridGroup.appendChild(line);
+    });
+  }
+
+  // Smooth spline through points (Catmull-Rom to Bezier)
+  let dCurve = 'M ' + points[0].x.toFixed(1) + ' ' + points[0].y.toFixed(1);
+  for (let i = 0; i < points.length - 1; i++) {
+    const p0 = points[i === 0 ? 0 : i - 1];
+    const p1 = points[i];
+    const p2 = points[i + 1];
+    const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = Math.min(baselineY, Math.max(topY - 6, p1.y + (p2.y - p0.y) / 6));
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = Math.min(baselineY, Math.max(topY - 6, p2.y - (p3.y - p1.y) / 6));
+
+    dCurve += ' C ' + cp1x.toFixed(1) + ' ' + cp1y.toFixed(1) + ', ' + cp2x.toFixed(1) + ' ' + cp2y.toFixed(1) + ', ' + p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
+  }
+
+  const dArea = dCurve + ' L ' + points[6].x.toFixed(1) + ' ' + baselineY + ' L ' + points[0].x.toFixed(1) + ' ' + baselineY + ' Z';
+
+  curvePath.setAttribute('d', dCurve);
+  areaPath.setAttribute('d', dArea);
+
+  // Dots + numeric labels above each dot
+  while (pointsGroup.firstChild) {
+    pointsGroup.removeChild(pointsGroup.firstChild);
+  }
+  if (labelsGroup) {
+    while (labelsGroup.firstChild) labelsGroup.removeChild(labelsGroup.firstChild);
+  }
+
+  const ns = 'http://www.w3.org/2000/svg';
+  const colors = ['#8B45D8', '#854BD9', '#7855DC', '#5F69E0', '#3E95E2', '#1DBEE3', '#0BD6E3'];
+  const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  let peakIdx = 0;
+  lastDayCounts.forEach(function (c, i) { if (c > lastDayCounts[peakIdx]) peakIdx = i; });
+  const total = lastDayCounts.reduce(function (a, b) { return a + b; }, 0);
+  const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+  const tooltip = document.getElementById('chart-tooltip');
+  const showTip = function (idx, cx, cy) {
+    if (!tooltip || !canvasCol) return;
+    const pct = (cx / width) * 100;
+    tooltip.hidden = false;
+    tooltip.innerHTML = '<strong>' + lastDayCounts[idx] + '</strong> · ' + dayNames[idx];
+    tooltip.style.left = pct + '%';
+    tooltip.style.top = (cy - 6) + 'px';
+  };
+  const hideTip = function () { if (tooltip) tooltip.hidden = true; };
+
+  points.forEach(function (pt, idx) {
+    const isPeak = total > 0 && pt.count === maxCount && pt.count > 0;
+
+    const halo = document.createElementNS(ns, 'circle');
+    halo.setAttribute('cx', pt.x.toFixed(1));
+    halo.setAttribute('cy', pt.y.toFixed(1));
+    halo.setAttribute('r', pt.count > 0 ? (isPeak ? '7' : '6') : '3');
+    halo.setAttribute('fill', colors[idx]);
+    halo.setAttribute('opacity', pt.count > 0 ? '0.22' : '0.05');
+    pointsGroup.appendChild(halo);
+
+    const dot = document.createElementNS(ns, 'circle');
+    dot.setAttribute('cx', pt.x.toFixed(1));
+    dot.setAttribute('cy', pt.y.toFixed(1));
+    dot.setAttribute('r', pt.count > 0 ? (isPeak ? '4' : '3.4') : '2.2');
+    dot.setAttribute('fill', isPeak ? '#FFFFFF' : '#0D0D0D');
+    dot.setAttribute('stroke', colors[idx]);
+    dot.setAttribute('stroke-width', '2');
+    dot.classList.add('chart-data-dot');
+    dot.setAttribute('tabindex', '0');
+    dot.setAttribute('role', 'img');
+    dot.setAttribute('aria-label', dayNames[idx] + ': ' + pt.count + ' transcriptions');
+    dot.addEventListener('mouseenter', function () { showTip(idx, pt.x, pt.y); });
+    dot.addEventListener('mouseleave', hideTip);
+    dot.addEventListener('focus', function () { showTip(idx, pt.x, pt.y); });
+    dot.addEventListener('blur', hideTip);
+    pointsGroup.appendChild(dot);
+
+    if (labelsGroup && pt.count > 0) {
+      const label = document.createElementNS(ns, 'text');
+      label.setAttribute('x', pt.x.toFixed(1));
+      label.setAttribute('y', Math.max(10, pt.y - 12).toFixed(1));
+      label.setAttribute('class', 'chart-value-label' + (isPeak ? ' is-peak' : ''));
+      label.textContent = String(pt.count);
+      labelsGroup.appendChild(label);
+    }
+  });
+
+  if (!reduced) {
+    curvePath.style.opacity = '0';
+    areaPath.style.opacity = '0';
+    requestAnimationFrame(function () {
+      curvePath.style.transition = 'opacity 0.35s ease';
+      areaPath.style.transition = 'opacity 0.45s ease';
+      curvePath.style.opacity = '1';
+      areaPath.style.opacity = '1';
+    });
+  } else {
+    curvePath.style.opacity = '1';
+    areaPath.style.opacity = '1';
+  }
+
+  // Weekday footer states: today + peak
+  let todayIdx = -1;
+  if (lastWeekStartMs) {
+    const diff = Date.now() - lastWeekStartMs;
+    todayIdx = Math.floor(diff / 86400000);
+    if (todayIdx < 0 || todayIdx > 6) todayIdx = -1;
+  }
+  document.querySelectorAll('#chart-day-labels .chart-day-cell').forEach(function (cell) {
+    const i = Number(cell.getAttribute('data-day'));
+    cell.classList.toggle('is-today', i === todayIdx);
+    cell.classList.toggle('is-peak', total > 0 && i === peakIdx && lastDayCounts[i] > 0);
+  });
+
+  // Week insights strip — pure derivation from the same 7 counts already
+  // in memory. No new IPC, no DB access: Android can reuse this 1:1 later.
+  const activeDays = lastDayCounts.filter(function (c) { return c > 0; }).length;
+  const avg = total > 0 ? total / 7 : 0;
+  setText('insight-best-day', total > 0 ? dayNames[peakIdx] : '–');
+  setText('insight-best-day-sub', total > 0 ? lastDayCounts[peakIdx] + ' transcriptions' : 'no activity yet');
+  setText('insight-daily-avg', total > 0 ? (avg >= 10 ? String(Math.round(avg)) : avg.toFixed(1)) : '0');
+  setText('insight-active-days', String(activeDays));
+  setText('insight-active-sub', 'of 7 days' + (activeDays === 7 ? ' · perfect week' : ''));
+  setText('insight-today', todayIdx >= 0 ? String(lastDayCounts[todayIdx]) : '–');
+  setText('insight-today-sub', todayIdx >= 0 ? dayNames[todayIdx] + ' · so far' : 'outside this week');
+
+  const emptyEl = document.getElementById('chart-empty');
+  if (emptyEl) emptyEl.hidden = total !== 0;
+
+  svg.setAttribute('aria-label', 'Weekly transcription activity: ' + total + ' transcriptions this week. ' +
+    lastDayCounts.map(function (c, i) { return dayNames[i] + ' ' + c; }).join(', '));
+
+  setupChartResize();
+}
+
+function setupChartResize() {
+  if (chartResizeObs || !window.ResizeObserver) return;
+  const canvasCol = document.getElementById('chart-canvas-col');
+  if (!canvasCol) return;
+  let t = null;
+  chartResizeObs = new ResizeObserver(function () {
+    if (t) clearTimeout(t);
+    t = setTimeout(function () {
+      // Re-render with identical data at the new width — no backend call.
+      renderWeeklyAreaChart(lastDayCounts, lastWeekStartMs);
+    }, 120);
+  });
+  chartResizeObs.observe(canvasCol);
 }
 
 async function loadDashboardStats() {
@@ -816,23 +1077,25 @@ async function loadDashboardStats() {
       dayCounts[dow === 0 ? 6 : dow - 1]++;
     });
 
-    const maxCount = Math.max(...dayCounts, 1);
-    for (let i = 0; i < 7; i++) {
-      const bar = document.getElementById(`chart-bar-${i}`);
-      const countEl = document.getElementById(`chart-count-${i}`);
-      if (bar) {
-        const factor = Math.min(1, Math.max(0, dayCounts[i] / maxCount));
-        bar.style.transform = `scaleY(${factor})`;
-        bar.classList.toggle('animated', dayCounts[i] > 0);
-      }
-      if (countEl) countEl.textContent = dayCounts[i] > 0 ? String(dayCounts[i]) : '';
-    }
+    renderWeeklyAreaChart(dayCounts, bStats.week_start_ms);
+    // Week range label, e.g. "Jun 2 – Jun 8"
+    try {
+      const start = new Date(bStats.week_start_ms);
+      const end = new Date(bStats.week_start_ms + 6 * 86400000);
+      const fmt = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' });
+      setText('chart-range-label', fmt.format(start) + ' – ' + fmt.format(end));
+    } catch (_) { /* range label is decorative */ }
+    // KPI sub-labels derived from the same payload — no extra backend calls.
+    setText('stat-total-words-sub', '+' + (weeklyWords >= 1000 ? (weeklyWords / 1000).toFixed(1) + 'K' : String(weeklyWords)) + ' this week');
+    setText('stat-time-saved-sub', 'at ~40 WPM · to date');
     const weeklyHoursSaved = (weeklyWords / 40 / 60);
     const weeklyDictationHours = (weeklyDurationMs / 3600000);
     const weeklyWordsLabel = weeklyWords >= 1000 ? (weeklyWords / 1000).toFixed(1) + 'K' : weeklyWords.toLocaleString();
     const weeklySavedLabel = weeklyHoursSaved >= 1 ? weeklyHoursSaved.toFixed(1) + 'h saved' : Math.round(weeklyHoursSaved * 60) + 'm saved';
     const weeklyDictLabel = weeklyDictationHours >= 1 ? weeklyDictationHours.toFixed(1) + 'h spoken' : Math.round(weeklyDictationHours * 60) + 'm spoken';
     setText('chart-header-count', weeklyWordsLabel + ' words · ' + weeklySavedLabel + ' · ' + weeklyDictLabel);
+    setText('stat-dictation-sub', weeklyDictLabel + ' · last 7 days');
+    setText('stat-monthly-sub', (monthlyWords >= 1000 ? (monthlyWords / 1000).toFixed(1) + 'K' : String(monthlyWords)) + ' words · last 30 days');
   } catch (err) {
     console.error('Failed to load dashboard stats:', err);
   }
@@ -842,6 +1105,7 @@ window.deleteHistoryItem = async (id) => {
   try {
     await invoke('delete_history_entry', { id });
     document.querySelector(`[data-history-id="${id}"]`)?.remove();
+    updateHistoryGroupCounts(document.getElementById('history-list'));
     showToast('Deleted', 'success');
   } catch (err) {
     showToast('Failed to delete: ' + err, 'error');
@@ -1038,9 +1302,10 @@ async function listenForTauriEvents() {
   });
 
   await listen('history-updated', () => {
-    if (currentPage === 'history') {
-      loadHistory(true);
+    if (currentPage === 'dashboard') {
       loadDashboardStats();
+    } else if (currentPage === 'history') {
+      loadHistory(true);
     }
   });
 }
@@ -1498,9 +1763,9 @@ function renderDictTable() {
       tr.innerHTML = `
         <td class="spoken-word">${escapeHtml(entry.spoken)}</td>
         <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
-        <td>${autoAddedKeys.has(autoKey) ? '<span class="source-badge">auto</span>' : ''}</td>
+        <td class="col-meta added-col">${autoAddedKeys.has(autoKey) ? '<span class="source-badge">auto</span>' : ''}</td>
         <td class="actions">
-          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${entry.id}" style="color:var(--color-error)">Delete</button>
+          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${entry.id}">Delete</button>
         </td>
       `;
       tr.querySelector('.dict-delete-btn')?.addEventListener('click', () => deleteDictEntry(entry.id));
@@ -1916,19 +2181,12 @@ const SUGGESTIONS_HINT_MANUAL =
 const SUGGESTIONS_HINT_AUTO =
   'Auto-accept is on: repeat corrections land straight in the dictionary as auto-added; anything still needing a decision appears here.';
 
-function suggestionGroupHeader(title, sub) {
-  return `<tr data-srow="1" class="suggestions-group-row"><td colspan="5">`
-    + `<div class="suggestions-group-title">${title}</div>`
-    + (sub ? `<div class="suggestions-group-sub">${sub}</div>` : '')
-    + `</td></tr>`;
-}
-
 function suggestionRowHtml(s, actionsHtml, seenLabel) {
   return `
     <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${s.id}" aria-label="Select suggestion"></td>
     <td class="spoken-word">${escapeHtml(s.spoken)}</td>
     <td class="corrected-word">${escapeHtml(s.corrected)}</td>
-    <td class="frequency">${seenLabel}</td>
+    <td class="col-meta seen-col frequency">${seenLabel}</td>
     <td class="actions">${actionsHtml}</td>
   `;
 }
@@ -1938,10 +2196,8 @@ function appendSuggestionRow(tbody, s, preserved) {
   tr.dataset.srow = '1';
   tr.dataset.suggestionId = s.id;
   tr.innerHTML = suggestionRowHtml(s, `
-    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${s.id}"
-      style="color:var(--color-success)">Accept</button>
-    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${s.id}"
-      style="color:var(--color-error)">Dismiss</button>
+    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${s.id}">Accept</button>
+    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${s.id}">Dismiss</button>
   `, `${s.frequency}x`);
   tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
   tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
@@ -1967,7 +2223,7 @@ function renderSuggestionsTable(suggestions, autoMode = false) {
 
   if (hint) hint.textContent = autoMode ? SUGGESTIONS_HINT_AUTO : SUGGESTIONS_HINT_MANUAL;
 
-  // Remove all rendered rows (data + group headers); the empty row stays.
+  // Remove all rendered rows; the empty row stays.
   tbody.querySelectorAll('tr[data-srow]').forEach(r => r.remove());
 
   const showReview = suggestions.length > 0;
@@ -1979,10 +2235,6 @@ function renderSuggestionsTable(suggestions, autoMode = false) {
   }
   if (emptyRow) emptyRow.style.display = 'none';
 
-  if (autoMode) tbody.insertAdjacentHTML('beforeend', suggestionGroupHeader(
-    'Ready to review',
-    'Observed repeatedly - Accept adds to the dictionary, Dismiss blocks the pair permanently.'
-  ));
   suggestions.forEach(s => appendSuggestionRow(tbody, s, preserved));
   refreshBulkBar();
 }
@@ -2005,7 +2257,8 @@ function refreshBulkBar() {
   if (all) {
     const boxes = [...document.querySelectorAll('.suggestion-select')];
     all.disabled = boxes.length === 0;
-    all.checked = boxes.length > 0 && boxes.every(b => b.checked);
+    all.checked = boxes.length > 0 && ids.length === boxes.length;
+    all.indeterminate = boxes.length > 0 && ids.length > 0 && ids.length < boxes.length;
   }
 }
 
@@ -2090,7 +2343,7 @@ function setupUpdaterUI() {
           btnEl.textContent = 'Check for Updates';
           btnEl.disabled = false;
           btnEl.className = 'btn-secondary btn-sm';
-          btnEl.onclick = () => window.updateManager.checkForUpdates(true);
+          btnEl['onclick'] = () => window.updateManager.checkForUpdates(true);
           break;
 
         case 'checking':
@@ -2112,7 +2365,7 @@ function setupUpdaterUI() {
           btnEl.textContent = 'Download Update';
           btnEl.disabled = false;
           btnEl.className = 'btn-primary btn-sm';
-          btnEl.onclick = () => window.updateManager.startDownloadAndInstall();
+          btnEl['onclick'] = () => window.updateManager.startDownloadAndInstall();
           break;
 
         case 'downloading':
@@ -2137,7 +2390,7 @@ function setupUpdaterUI() {
           btnEl.textContent = 'Restart Fluence';
           btnEl.disabled = false;
           btnEl.className = 'btn-primary btn-sm';
-          btnEl.onclick = () => window.updateManager.restartApp();
+          btnEl['onclick'] = () => window.updateManager.restartApp();
           break;
 
         case 'failed':
@@ -2148,7 +2401,7 @@ function setupUpdaterUI() {
           btnEl.textContent = 'Try Again';
           btnEl.disabled = false;
           btnEl.className = 'btn-secondary btn-sm';
-          btnEl.onclick = () => window.updateManager.checkForUpdates(true);
+          btnEl['onclick'] = () => window.updateManager.checkForUpdates(true);
           break;
       }
     }
@@ -2165,7 +2418,7 @@ function setupUpdaterUI() {
           if (btnText) btnText.textContent = 'Check for Updates';
           sidebarBtn.disabled = false;
           sidebarBtn.className = 'sidebar-update-btn';
-          sidebarBtn.onclick = () => window.updateManager.checkForUpdates(true);
+          sidebarBtn['onclick'] = () => window.updateManager.checkForUpdates(true);
           
           if (sidebarStatus && sidebarStatus.style.display === 'block') {
             sidebarStatus.textContent = '✓ Up to date';
@@ -2200,7 +2453,7 @@ function setupUpdaterUI() {
           if (btnText) btnText.textContent = `Download v${info.version}`;
           sidebarBtn.disabled = false;
           sidebarBtn.className = 'sidebar-update-btn btn-has-update';
-          sidebarBtn.onclick = () => window.updateManager.startDownloadAndInstall();
+          sidebarBtn['onclick'] = () => window.updateManager.startDownloadAndInstall();
           if (sidebarStatus) {
             sidebarStatus.textContent = `v${info.version} ready to download`;
             sidebarStatus.style.display = 'block';
@@ -2233,7 +2486,7 @@ function setupUpdaterUI() {
           if (btnText) btnText.textContent = 'Restart Fluence';
           sidebarBtn.disabled = false;
           sidebarBtn.className = 'sidebar-update-btn btn-ready';
-          sidebarBtn.onclick = () => window.updateManager.restartApp();
+          sidebarBtn['onclick'] = () => window.updateManager.restartApp();
           if (sidebarStatus) {
             sidebarStatus.textContent = 'Restart to apply update';
             sidebarStatus.style.display = 'block';
@@ -2248,7 +2501,7 @@ function setupUpdaterUI() {
           if (btnText) btnText.textContent = 'Try Again';
           sidebarBtn.disabled = false;
           sidebarBtn.className = 'sidebar-update-btn';
-          sidebarBtn.onclick = () => window.updateManager.checkForUpdates(true);
+          sidebarBtn['onclick'] = () => window.updateManager.checkForUpdates(true);
           if (sidebarStatus) {
             sidebarStatus.textContent = "Couldn't check updates";
             sidebarStatus.style.display = 'block';
@@ -2310,7 +2563,11 @@ function renderHistoryItem(entry, container) {
     const header = document.createElement('div');
     header.className = 'history-group-header';
     header.dataset.dayKey = dayKey;
-    header.textContent = historyGroupForDate(date);
+    const label = document.createElement('span');
+    label.textContent = historyGroupForDate(date);
+    const count = document.createElement('span');
+    count.className = 'history-group-count';
+    header.append(label, count);
     container.appendChild(header);
     historyGroupKey = dayKey;
   }
@@ -2323,7 +2580,10 @@ function renderHistoryItem(entry, container) {
 
   div.innerHTML = `
     <div class="history-item-header">
-      <span class="history-item-time" title="${titleAttr}">${timeStr}</span>
+      <span class="history-meta-wrap">
+        <span class="history-item-time" title="${titleAttr}">${timeStr}</span>
+        <span class="history-item-meta">${historyItemMeta(entry)}</span>
+      </span>
       <div class="history-actions">
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         ${foreign ? '<span class="badge badge-primary" title="Synced from another account">cloud</span>' : ''}
@@ -2356,6 +2616,49 @@ function renderHistoryItem(entry, container) {
 
 function dayKeyFor(date) {
   return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+}
+
+// Counts items per rendered day-group from the DOM (no backend call).
+// Re-run after every page append so counts stay correct with Load more.
+// Also marks the true last item so the timeline rail stops at its dot.
+function updateHistoryGroupCounts(list) {
+  if (!list) return;
+  let lastItem = null;
+  list.querySelectorAll('.history-group-header').forEach(header => {
+    let n = 0;
+    let el = header.nextElementSibling;
+    while (el && !el.classList.contains('history-group-header')) {
+      if (el.classList.contains('history-item')) { n++; lastItem = el; }
+      el = el.nextElementSibling;
+    }
+    // A header left with zero items (after a delete) shows nothing.
+    if (n === 0) {
+      header.remove();
+      return;
+    }
+    const countEl = header.querySelector('.history-group-count');
+    if (countEl) countEl.textContent = n === 1 ? '1 transcription' : n + ' transcriptions';
+  });
+  list.querySelectorAll('.history-item.is-last').forEach(el => el.classList.remove('is-last'));
+  if (!lastItem) {
+    const items = list.querySelectorAll('.history-item');
+    lastItem = items.length ? items[items.length - 1] : null;
+  }
+  if (lastItem) lastItem.classList.add('is-last');
+}
+
+// "12 words · 45s" from fields the entry already carries (text +
+// duration_ms). Pure derivation — nothing new fetched, nothing synced.
+function historyItemMeta(entry) {
+  const parts = [];
+  const words = String(entry.text || '').trim().split(/\s+/).filter(Boolean).length;
+  if (words > 0) parts.push(words === 1 ? '1 word' : words + ' words');
+  const ms = Number(entry.duration_ms) || 0;
+  if (ms > 0) {
+    const s = Math.round(ms / 1000);
+    parts.push(s < 60 ? s + 's' : Math.floor(s / 60) + 'm ' + String(s % 60).padStart(2, '0') + 's');
+  }
+  return escapeHtml(parts.join(' · '));
 }
 
 function historyGroupForDate(date) {

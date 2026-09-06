@@ -1,4 +1,4 @@
-# Fluence Security Changes — Frontend Verification Script
+# Fluence Security Changes - Frontend Verification Script
 # Checks Change 3 (CSP), Change 4 (safe DOM), Change 5 (onclick), Change 7 (capabilities)
 # Run: pwsh tests\verify-security.ps1
 

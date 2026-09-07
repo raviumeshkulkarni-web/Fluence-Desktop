@@ -8,6 +8,7 @@ import {
   TrendingDown,
   TrendingUp,
 } from 'lucide-react';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import {
   Card,
@@ -457,17 +458,21 @@ export function DashboardPage() {
           <h1 className="page-title" tabIndex={-1}>Dashboard</h1>
           <p className="page-subtitle">Your transcription activity at a glance</p>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          id="dashboard-refresh-btn"
-          title="Refresh dashboard"
-          aria-label="Refresh dashboard"
-          onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
-        >
-          <RefreshCw size={14} aria-hidden="true" />
-          Refresh
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size="sm"
+              id="dashboard-refresh-btn"
+              aria-label="Refresh dashboard"
+              onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
+            >
+              <RefreshCw size={14} aria-hidden="true" />
+              Refresh
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent>Refresh dashboard</TooltipContent>
+        </Tooltip>
       </div>
 
       <div className="kpi-grid">

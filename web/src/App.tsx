@@ -10,6 +10,7 @@ import { ProvidersPage } from '@/routes/ProvidersPage';
 import { SnippetsPage } from '@/routes/SnippetsPage';
 import { SyncPage } from '@/routes/SyncPage';
 import { Toaster } from '@/components/fluence/Toasts';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { updaterStore } from '@/ipc/updater';
 import { hideMainWindow } from '@/ipc/tauri';
 import { isHotkeyRecording } from '@/ipc/general';
@@ -128,30 +129,32 @@ export function App() {
 
   return (
     <>
-      <Titlebar />
-      <div className="app-shell">
-        <Sidebar route={route} onNavigate={navigateTo} />
-        <main className="content-area" role="main">
-          {route === 'about' ? (
-            <AboutPage />
-          ) : route === 'dashboard' ? (
-            <DashboardPage />
-          ) : route === 'sync' ? (
-            <SyncPage />
-          ) : route === 'dictionary' ? (
-            <DictionaryPage />
-          ) : route === 'general' ? (
-            <GeneralPage />
-          ) : route === 'history' ? (
-            <HistoryPage />
-          ) : route === 'providers' ? (
-            <ProvidersPage />
-          ) : (
-            <SnippetsPage />
-          )}
-        </main>
-      </div>
-      <Toaster />
+      <TooltipProvider>
+        <Titlebar />
+        <div className="app-shell">
+          <Sidebar route={route} onNavigate={navigateTo} />
+          <main className="content-area" role="main">
+            {route === 'about' ? (
+              <AboutPage />
+            ) : route === 'dashboard' ? (
+              <DashboardPage />
+            ) : route === 'sync' ? (
+              <SyncPage />
+            ) : route === 'dictionary' ? (
+              <DictionaryPage />
+            ) : route === 'general' ? (
+              <GeneralPage />
+            ) : route === 'history' ? (
+              <HistoryPage />
+            ) : route === 'providers' ? (
+              <ProvidersPage />
+            ) : (
+              <SnippetsPage />
+            )}
+          </main>
+        </div>
+        <Toaster />
+      </TooltipProvider>
     </>
   );
 }

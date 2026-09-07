@@ -580,6 +580,20 @@
   transition: transform 0.35s var(--ease-spring);
 }
 
+/* ——— Progress meter variant: block-level download meter (8px structural
+   track, flat fill). Same paint language as the vanilla offline
+   downloader it replaces. ——— */
+.progress-track.progress-meter {
+  height: 8px;
+  background: var(--color-border-structural);
+  border-radius: var(--radius-xs);
+}
+.progress-track.progress-meter .progress-fill {
+  background: rgba(255, 255, 255, 0.3);
+  box-shadow: none;
+  transition: transform 0.2s ease;
+}
+
 /* ——— RadioGroup (round sibling of the square checkbox) ——— */
 .radio-group {
   display: flex;

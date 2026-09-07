@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
+import { TooltipProvider } from '@/components/ui/tooltip';
 import { WizardTitlebar } from './WizardTitlebar';
 import { saveApiKey } from './ipc';
 import { StepWelcome } from './steps/StepWelcome';
@@ -180,7 +181,8 @@ export function Wizard() {
   const progress = ((step - 1) / (TOTAL_STEPS - 1)) * 100;
 
   return (
-    <div className="wizard-page">
+    <TooltipProvider>
+      <div className="wizard-page">
       <WizardTitlebar />
       <div className="wizard-shell" role="dialog" aria-modal="true" aria-label="Fluence setup wizard">
         <div id="wiz-step-announcer" className="sr-only" role="status" aria-live="polite" />
@@ -258,5 +260,6 @@ export function Wizard() {
         </div>
       </div>
     </div>
+    </TooltipProvider>
   );
 }

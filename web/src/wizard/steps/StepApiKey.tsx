@@ -3,6 +3,7 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
@@ -209,16 +210,20 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                variant="ghost"
-                title="Fetch models"
-                aria-label="Fetch transcription models from API"
-                style={{ flexShrink: 0 }}
-                className={fetching ? 'animate-spin' : undefined}
-                onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
-              >
-                <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    aria-label="Fetch transcription models from API"
+                    style={{ flexShrink: 0 }}
+                    className={fetching ? 'animate-spin' : undefined}
+                    onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
+                  >
+                    <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Fetch models</TooltipContent>
+              </Tooltip>
             </div>
           </Field>
           <Field label="Agent Mode Model" htmlFor="wiz-llm-model-select">
@@ -235,16 +240,20 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                variant="ghost"
-                title="Fetch LLM models"
-                aria-label="Fetch language models from API"
-                style={{ flexShrink: 0 }}
-                className={fetching ? 'animate-spin' : undefined}
-                onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
-              >
-                <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
-              </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    aria-label="Fetch language models from API"
+                    style={{ flexShrink: 0 }}
+                    className={fetching ? 'animate-spin' : undefined}
+                    onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
+                  >
+                    <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Fetch LLM models</TooltipContent>
+              </Tooltip>
             </div>
           </Field>
         </div>

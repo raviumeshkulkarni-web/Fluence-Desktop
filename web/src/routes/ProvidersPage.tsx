@@ -10,6 +10,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
+import { Progress } from '@/components/ui/progress';
 import { toast } from '@/components/fluence/Toasts';
 import {
   CustomProviderIcon,
@@ -653,16 +656,20 @@ export function ProvidersPage() {
                     ))}
                   </SelectContent>
                 </Select>
-                <Button
-                  variant="ghost"
-                  id="stt-fetch-models-btn"
-                  className={sttFetching ? 'animate-spin' : undefined}
-                  title="Fetch models from API"
-                  aria-label="Fetch speech-to-text models from API"
-                  onClick={() => void doFetchModels('stt', forms.current.stt, false)}
-                >
-                  <RefreshIcon />
-                </Button>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      variant="ghost"
+                      id="stt-fetch-models-btn"
+                      className={sttFetching ? 'animate-spin' : undefined}
+                      aria-label="Fetch speech-to-text models from API"
+                      onClick={() => void doFetchModels('stt', forms.current.stt, false)}
+                    >
+                      <RefreshIcon />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>Fetch models from API</TooltipContent>
+                </Tooltip>
               </div>
             </Field>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
@@ -683,31 +690,26 @@ export function ProvidersPage() {
               <span className="text-body-md" style={{ fontWeight: 600 }}>Choose a model</span>
               <span className="text-muted" style={{ fontSize: 'var(--text-label-sm)' }}>Pick the option that fits how you dictate. You can change this any time.</span>
             </div>
-            <div className="offline-model-list" role="radiogroup" aria-label="Offline speech recognition model">
+            <RadioGroupPrimitive.Root
+              value={engine}
+              onValueChange={(v) => selectEngine(v)}
+              className="offline-model-list"
+              aria-label="Offline speech recognition model"
+            >
               {OFFLINE_ENGINES.map((cfg) => {
                 const selected = engine === cfg.engine;
                 const isInstalled = installed[cfg.engine] === true;
                 const isDownloading = downloading === cfg.engine;
                 return (
-                  <div
+                  <RadioGroupPrimitive.Item
                     key={cfg.engine}
-                      className={`offline-model-card ui-focus-ring${selected ? ' selected' : ''}`}
+                    asChild
+                    value={cfg.engine}
+                  >
+                  <div
                     id={cfg.cardId}
                     data-engine={cfg.engine}
-                    role="radio"
-                    aria-checked={selected ? 'true' : 'false'}
-                    tabIndex={0}
-                    onClick={(e) => {
-                      if ((e.target as Element).closest('button')) return;
-                      selectEngine(cfg.engine);
-                    }}
-                    onKeyDown={(e) => {
-                      if ((e.target as Element).closest('button')) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        selectEngine(cfg.engine);
-                      }
-                    }}
+                      className={`offline-model-card ui-focus-ring${selected ? ' selected' : ''}`}
                   >
                     <div className="offline-model-card-top">
                       <span className="offline-radio" aria-hidden="true"></span>
@@ -739,7 +741,10 @@ export function ProvidersPage() {
                         id={cfg.downloadBtnId}
                         style={{ minWidth: 140 }}
                         disabled={isInstalled || isDownloading}
-                        onClick={() => void onDownload(cfg)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          void onDownload(cfg);
+                        }}
                       >
                         {isInstalled ? 'Installed' : isDownloading ? 'Connecting…' : 'Download Model'}
                       </Button>
@@ -748,23 +753,33 @@ export function ProvidersPage() {
                         id={cfg.deleteBtnId}
                         className={isInstalled ? undefined : 'hidden'}
                         style={{ minWidth: 140 }}
-                        onClick={() => setDeleteTarget(cfg)}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setDeleteTarget(cfg);
+                        }}
                       >
                         Delete Model
                       </Button>
                     </div>
                   </div>
+                  </RadioGroupPrimitive.Item>
                 );
               })}
-            </div>
+            </RadioGroupPrimitive.Root>
             <div id="offline-progress-wrapper" className={progressVisible ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', background: 'var(--color-surface-secondary)', padding: 14, borderRadius: 'var(--radius-md)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
                 <span id="offline-progress-status" style={{ fontWeight: 500 }}>{progressStatus}</span>
                 <span id="offline-progress-percentage" style={{ fontWeight: 600, color: 'var(--color-on-surface)' }}>{progressPct.toFixed(0)}%</span>
               </div>
-              <div style={{ width: '100%', height: 8, background: 'var(--color-border-structural)', borderRadius: 'var(--radius-xs)', overflow: 'hidden' }} role="progressbar" aria-label="Offline model download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(progressPct)} id="offline-progress-track">
-                <div id="offline-progress-fill" style={{ width: `${progressPct}%`, height: '100%', background: 'rgba(255,255,255,0.30)', borderRadius: 'var(--radius-xs)', transition: 'width 0.2s ease' }}></div>
-              </div>
+              <Progress
+                value={progressPct}
+                aria-label="Offline model download progress"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={Math.round(progressPct)}
+                id="offline-progress-track"
+                className="progress-meter"
+              />
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--color-on-surface-variant)' }}>
                 <span id="offline-progress-bytes">{progressBytes}</span>
                 <Button variant="ghost" size="xs" id="offline-cancel-btn" onClick={() => void onCancelDownload()}>Cancel</Button>
@@ -832,16 +847,20 @@ export function ProvidersPage() {
                   ))}
                 </SelectContent>
               </Select>
-              <Button
-                variant="ghost"
-                id="llm-fetch-models-btn"
-                className={llmFetching ? 'animate-spin' : undefined}
-                title="Fetch models from API"
-                aria-label="Fetch language models from API"
-                  onClick={() => void doFetchModels('llm', forms.current.llm, false)}
-                >
-                  <RefreshIcon />
-                </Button>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    id="llm-fetch-models-btn"
+                    className={llmFetching ? 'animate-spin' : undefined}
+                    aria-label="Fetch language models from API"
+                    onClick={() => void doFetchModels('llm', forms.current.llm, false)}
+                  >
+                    <RefreshIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Fetch models from API</TooltipContent>
+              </Tooltip>
               </div>
             </Field>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>

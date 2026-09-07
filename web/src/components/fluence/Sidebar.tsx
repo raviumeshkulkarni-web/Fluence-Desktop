@@ -1,98 +1,50 @@
 import { useEffect, useRef, useState } from 'react';
+import type { LucideIcon } from 'lucide-react';
+import {
+  BookOpen,
+  Braces,
+  Download,
+  History,
+  Info,
+  LayoutDashboard,
+  PanelLeftClose,
+  PanelLeftOpen,
+  RefreshCw,
+  RotateCcw,
+  Server,
+  Settings2,
+} from 'lucide-react';
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipPortal,
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 import type { Route } from '@/App';
 
-const NAV: { page: Route; label: string; icon: React.ReactNode }[] = [
-  {
-    page: 'dashboard',
-    label: 'Dashboard',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M3 3v16a2 2 0 0 0 2 2h16" />
-        <path d="M7 14l4-4 4 3 5-6" />
-      </svg>
-    ),
-  },
-  {
-    page: 'history',
-    label: 'History',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10" />
-        <polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
-  {
-    page: 'general',
-    label: 'General',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14" />
-      </svg>
-    ),
-  },
-  {
-    page: 'providers',
-    label: 'Providers',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <rect x="2" y="3" width="20" height="14" rx="2" />
-        <path d="M8 21h8M12 17v4" />
-      </svg>
-    ),
-  },
-  {
-    page: 'dictionary',
-    label: 'Dictionary',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-        <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-      </svg>
-    ),
-  },
-  {
-    page: 'snippets',
-    label: 'Snippets',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3" />
-        <path d="M12 8v8M9 11l3-3 3 3" />
-      </svg>
-    ),
-  },
-  {
-    page: 'sync',
-    label: 'Sync',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <path d="M21 12a9 9 0 1 1-2.64-6.36" />
-        <polyline points="21 3 21 9 15 9" />
-      </svg>
-    ),
-  },
-  {
-    page: 'about',
-    label: 'About',
-    icon: (
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="10" />
-        <line x1="12" y1="8" x2="12" y2="12" />
-        <line x1="12" y1="16" x2="12.01" y2="16" />
-      </svg>
-    ),
-  },
+const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
+  { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { page: 'history', label: 'History', icon: History },
+  { page: 'general', label: 'General', icon: Settings2 },
+  { page: 'providers', label: 'Providers', icon: Server },
+  { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
+  { page: 'snippets', label: 'Snippets', icon: Braces },
+  { page: 'sync', label: 'Sync', icon: RefreshCw },
+  { page: 'about', label: 'About', icon: Info },
 ];
 
 export function Sidebar({
   route,
   onNavigate,
+  collapsed,
+  onToggleCollapsed,
 }: {
   route: Route;
   onNavigate: (page: Route) => void;
+  collapsed: boolean;
+  onToggleCollapsed: () => void;
 }) {
   const [appVersion, setAppVersion] = useState('1.0.0');
   const updater = useUpdater();
@@ -118,10 +70,22 @@ export function Sidebar({
 
   const widget = renderWidget(appVersion, showUpToDate);
 
+  const UpdateIcon = updater.state === 'available'
+    ? Download
+    : updater.state === 'ready'
+      ? RotateCcw
+      : RefreshCw;
+
   return (
-    <nav className="sidebar" role="navigation" aria-label="Settings navigation">
-      <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <nav
+      className={collapsed ? 'sidebar collapsed' : 'sidebar'}
+      role="navigation"
+      aria-label="Settings navigation"
+      data-collapsed={collapsed ? 'true' : 'false'}
+    >
+      <div className="sidebar-logo">
+        <div className="sidebar-brand">
+        <svg className="sidebar-logo-mark" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
           <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
           <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 2" strokeLinecap="round" />
@@ -134,19 +98,38 @@ export function Sidebar({
             </linearGradient>
           </defs>
         </svg>
-        <span className="logo-text" style={{ fontWeight: 600, fontSize: 22, letterSpacing: '-0.03em', display: 'inline-flex', alignItems: 'baseline' }}>
+        <span className="logo-text">
           flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
-          <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 20, marginLeft: 6, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
+          <span className="logo-tagline">Transcribe</span>
         </span>
+        </div>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <button
+              type="button"
+              className="sidebar-collapse-toggle"
+              aria-label={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+              aria-expanded={!collapsed}
+              onClick={onToggleCollapsed}
+            >
+              {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
+            </button>
+          </TooltipTrigger>
+          <TooltipPortal>
+            <TooltipContent side="right">
+              {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+            </TooltipContent>
+          </TooltipPortal>
+        </Tooltip>
       </div>
 
       <span className="nav-section-label">Home</span>
       {NAV.slice(0, 2).map((item) => (
-        <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
+        <NavButton key={item.page} item={item} active={route === item.page} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
       <span className="nav-section-label" style={{ marginTop: 8 }}>Configuration</span>
       {NAV.slice(2).map((item) => (
-        <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
+        <NavButton key={item.page} item={item} active={route === item.page} collapsed={collapsed} onNavigate={onNavigate} />
       ))}
 
       <div className="sidebar-footer">
@@ -176,14 +159,36 @@ export function Sidebar({
               style={{ width: `${updater.progress}%` }}
             />
           </div>
-          <button
-            id="sidebar-update-btn"
-            className={widget.btnClass}
-            disabled={widget.btnDisabled}
-            onClick={widget.onAction}
-          >
-            <span id="sidebar-update-btn-text">{widget.btnText}</span>
-          </button>
+          {collapsed ? (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  id="sidebar-update-btn"
+                  className={widget.btnClass}
+                  disabled={widget.btnDisabled}
+                  onClick={widget.onAction}
+                  aria-label={widget.btnText}
+                >
+                  <UpdateIcon className="sidebar-update-icon update-icon" aria-hidden="true" />
+                  <span id="sidebar-update-btn-text">{widget.btnText}</span>
+                </button>
+              </TooltipTrigger>
+              <TooltipPortal>
+                <TooltipContent side="right">{widget.btnText}</TooltipContent>
+              </TooltipPortal>
+            </Tooltip>
+          ) : (
+            <button
+              id="sidebar-update-btn"
+              className={widget.btnClass}
+              disabled={widget.btnDisabled}
+              onClick={widget.onAction}
+              title={widget.btnText}
+            >
+              <UpdateIcon className="sidebar-update-icon update-icon" aria-hidden="true" />
+              <span id="sidebar-update-btn-text">{widget.btnText}</span>
+            </button>
+          )}
         </div>
       </div>
     </nav>
@@ -243,23 +248,40 @@ export function Sidebar({
 function NavButton({
   item,
   active,
+  collapsed,
   onNavigate,
 }: {
   item: (typeof NAV)[number];
   active: boolean;
+  collapsed: boolean;
   onNavigate: (page: Route) => void;
 }) {
-  return (
+  const Icon = item.icon;
+  const button = (
     <button
       type="button"
       className={active ? 'nav-item active' : 'nav-item'}
       data-page={item.page}
       id={`nav-${item.page}`}
       aria-current={active ? 'page' : undefined}
+      aria-label={collapsed ? item.label : undefined}
       onClick={() => onNavigate(item.page)}
     >
-      {item.icon}
-      {item.label}
+      <Icon className="nav-icon" aria-hidden="true" />
+      <span className="nav-item-label">{item.label}</span>
     </button>
   );
+
+  if (collapsed) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>{button}</TooltipTrigger>
+        <TooltipPortal>
+          <TooltipContent side="right">{item.label}</TooltipContent>
+        </TooltipPortal>
+      </Tooltip>
+    );
+  }
+
+  return button;
 }

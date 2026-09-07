@@ -40,12 +40,31 @@ const PAGE_ORDER: Route[] = [
   'about',
 ];
 
+const SIDEBAR_COLLAPSED_KEY = 'fluence_sidebar_collapsed';
+
+function readSidebarCollapsed(): boolean {
+  try {
+    return window.localStorage.getItem(SIDEBAR_COLLAPSED_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
 // Main-window shell. Mirrors the vanilla chrome contract:
 // custom titlebar, sidebar navigation with View-Transitions page changes,
 // focus moved to the new page title for assistive technology.
 export function App() {
   const [route, setRoute] = useState<Route>('about');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(SIDEBAR_COLLAPSED_KEY, String(sidebarCollapsed));
+    } catch {
+      // Local persistence is an enhancement; the shell still works without it.
+    }
+  }, [sidebarCollapsed]);
 
   // Mirrors vanilla UpdateManager.init() timers (delayed + hourly policy).
   useEffect(() => {
@@ -80,6 +99,14 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setPaletteOpen((open) => !open);
+        return;
+      }
+
+      // Ctrl/Cmd+B toggles the shell navigation density without stealing
+      // focus from editable fields.
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'b' && !isInput) {
+        e.preventDefault();
+        setSidebarCollapsed((collapsed) => !collapsed);
         return;
       }
 
@@ -143,7 +170,12 @@ export function App() {
       <TooltipProvider>
         <Titlebar />
         <div className="app-shell">
-          <Sidebar route={route} onNavigate={navigateTo} />
+          <Sidebar
+            route={route}
+            onNavigate={navigateTo}
+            collapsed={sidebarCollapsed}
+            onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          />
           <main className="content-area" role="main">
             {route === 'about' ? (
               <AboutPage />
@@ -170,6 +202,8 @@ export function App() {
           onOpenChange={setPaletteOpen}
           currentRoute={route}
           onNavigate={navigateTo}
+          sidebarCollapsed={sidebarCollapsed}
+          onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
         />
       </TooltipProvider>
     </>

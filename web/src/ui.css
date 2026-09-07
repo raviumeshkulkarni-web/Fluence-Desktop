@@ -218,7 +218,7 @@
   padding: 0;
   margin: 0;
   background: var(--color-surface);
-  border: 1px solid #3A3A3A;
+  border: 1px solid var(--color-border-structural);
   border-radius: 0;
   cursor: pointer;
   display: inline-grid;
@@ -232,7 +232,7 @@
 }
 .checkbox:hover {
   background: var(--color-surface-secondary);
-  border-color: #666666;
+  border-color: var(--color-outline);
 }
 .checkbox:focus-visible {
   border-color: var(--color-ink-muted);
@@ -295,20 +295,20 @@
   background: var(--color-on-surface-variant);
   border-radius: var(--radius-full);
   transition: transform 0.22s var(--ease-spring), background-color 0.15s ease, width 0.15s ease;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  box-shadow: var(--shadow-sm);
   display: block;
 }
 .switch:active .switch-thumb {
   width: 19px;
 }
 .switch[data-state='checked'] .switch-track {
-  background: rgba(255, 255, 255, 0.22);
-  border-color: rgba(255, 255, 255, 0.4);
+  background: var(--color-interactive-active);
+  border-color: var(--color-border-focus);
 }
 .switch[data-state='checked'] .switch-thumb {
   transform: translateX(20px);
-  background: #ffffff;
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  background: var(--color-on-primary);
+  box-shadow: var(--shadow-sm);
 }
 .switch[data-state='checked']:active .switch-thumb {
   transform: translateX(17px);
@@ -317,7 +317,7 @@
   outline: none;
 }
 .switch:focus-visible .switch-track {
-  outline: 2px solid rgba(255, 255, 255, 0.3);
+  outline: 2px solid var(--color-border-focus);
   outline-offset: 2px;
 }
 .switch[data-disabled] {
@@ -353,8 +353,8 @@
 .select-trigger:focus,
 .select-trigger:focus-visible {
   background-color: var(--color-surface-menu);
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 1px var(--color-border-focus);
   outline: none;
 }
 .select-trigger[data-placeholder] {
@@ -568,7 +568,7 @@
 .progress-track {
   position: relative;
   height: 3px;
-  background: rgba(255, 255, 255, 0.06);
+  background: var(--color-interactive);
   overflow: hidden;
   flex-shrink: 0;
 }
@@ -589,7 +589,7 @@
   border-radius: var(--radius-xs);
 }
 .progress-track.progress-meter .progress-fill {
-  background: rgba(255, 255, 255, 0.3);
+  background: var(--color-border-focus);
   box-shadow: none;
   transition: transform 0.2s ease;
 }
@@ -610,7 +610,7 @@
   padding: 0;
   margin: 0;
   background: var(--color-surface);
-  border: 1px solid #3A3A3A;
+  border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-full);
   cursor: pointer;
   display: inline-grid;
@@ -624,7 +624,7 @@
 }
 .radio-item:hover {
   background: var(--color-surface-secondary);
-  border-color: #666666;
+  border-color: var(--color-outline);
 }
 .radio-item:focus-visible {
   border-color: var(--color-ink-muted);
@@ -689,7 +689,7 @@
 .chart-tooltip .chart-tooltip-value {
   font-family: var(--font-display);
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-on-primary);
 }
 .chart-tooltip .chart-tooltip-label {
   color: var(--color-on-surface-variant);
@@ -735,7 +735,7 @@
   font-family: var(--font-display);
   font-size: 28px;
   font-weight: 600;
-  color: #ffffff;
+  color: var(--color-on-primary);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -809,45 +809,111 @@
   align-items: center;
 }
 
-/* ——— Command palette (CMDK anatomy, shadcn `command`) ——— */
+/* ——— Command palette (CMDK anatomy, canonical shadcn/ui) ——— */
+.command-dialog.dialog-content {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 160px);
+  padding: 0;
+  overflow: hidden;
+  top: 16%;
+  transform: translate(-50%, -16%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+.command-dialog.dialog-content[data-state='open'] {
+  animation: ui-command-in-aligned 0.15s var(--ease-standard);
+}
+.command-dialog.dialog-content[data-state='closed'] {
+  animation: ui-command-out-aligned 0.12s var(--ease-exit);
+}
+@keyframes ui-command-in-aligned {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -16%) translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -16%) scale(1);
+  }
+}
+@keyframes ui-command-out-aligned {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -16%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -16%) translateY(-4px) scale(0.98);
+  }
+}
 .command-root {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--color-surface-menu);
+  background: transparent;
+  width: 100%;
+}
+.command-body {
+  border-radius: var(--radius-md);
+  overflow: hidden;
 }
 .command-input-wrap {
-  position: relative;
-  padding: var(--spacing-sm);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  height: 48px;
+  padding: 0 var(--spacing-md);
+  background: transparent;
+  border-bottom: 1px solid var(--color-border-structural);
+  box-sizing: border-box;
 }
 .command-input-icon {
-  position: absolute;
-  left: calc(var(--spacing-sm) + 14px);
-  top: 50%;
-  transform: translateY(-50%);
+  position: static;
+  transform: none;
   width: 16px;
   height: 16px;
   color: var(--color-ink-muted);
+  flex-shrink: 0;
   pointer-events: none;
 }
-/* The search field is painted by the app's canonical input base
- * (global.css `input:not([type=checkbox]):not([type=radio])`): filled
- * --color-surface-elevated, --color-border-structural border, --radius-sm,
- * and the shared focus glow. Icon sits inside the field exactly like the
- * app's own .search-wrapper pattern (settings.css): the deep scope beats
- * the global input base (0,2,1) on padding-left without touching the
- * frozen rule. 38px = 14px base pad + 16px icon + 8px gap. */
 .command-dialog .command-input-wrap .command-input {
+  flex: 1;
   width: 100%;
-  padding-left: 38px;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  font-weight: 400;
+  color: var(--color-on-surface);
+  line-height: normal;
+}
+.command-dialog .command-input-wrap .command-input:focus,
+.command-dialog .command-input-wrap .command-input:focus-visible {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.command-dialog .command-input-wrap .command-input::placeholder {
+  color: var(--color-ink-muted);
 }
 .command-list {
   overflow-y: auto;
-  max-height: min(340px, calc(100vh - 180px));
-  padding: var(--spacing-xs);
+  max-height: min(340px, calc(100vh - 220px));
+  padding: 6px 8px;
+  background: transparent;
 }
 .command-empty {
-  padding: var(--spacing-md);
+  padding: var(--spacing-lg) var(--spacing-md);
   text-align: center;
   font-family: var(--font-body);
   font-size: var(--text-label-lg);
@@ -859,29 +925,44 @@
   display: flex;
   flex-direction: column;
 }
+[cmdk-group-heading],
 .command-group-heading {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-family: var(--font-body);
-  font-size: var(--text-label-sm);
+  padding: 8px 10px 4px;
+  font-family: var(--font-label);
+  font-size: 10px;
   font-weight: 600;
-  color: var(--color-ink-muted);
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  color: var(--color-ink-muted);
 }
 .command-item {
   display: flex;
   align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-xs);
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 12px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
   font-family: var(--font-body);
   font-size: var(--text-label-lg);
-  color: var(--color-on-surface);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
   cursor: pointer;
   user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
 }
-.command-item[data-selected='true'] {
+.command-item:hover:not([data-selected='true']) {
   background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.command-item[data-selected='true'],
+.command-item[aria-selected='true'] {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border-structural);
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
 .command-item[data-disabled='true'] {
   opacity: 0.4;
@@ -892,81 +973,44 @@
   height: 16px;
   color: var(--color-ink-muted);
   flex-shrink: 0;
+  transition: color var(--transition-fast);
 }
-.command-item[data-selected='true'] .command-item-icon {
-  color: var(--color-on-surface);
+.command-item[data-selected='true'] .command-item-icon,
+.command-item[aria-selected='true'] .command-item-icon {
+  color: #FFFFFF;
+}
+.command-item[data-current='true'] .command-item-icon {
+  color: var(--color-brand-cyan);
 }
 .command-separator {
   height: 1px;
-  background: var(--color-border);
-  margin: var(--spacing-xs) 0;
+  background: var(--color-border-structural);
+  margin: 6px 4px;
+  border: none;
 }
 .command-shortcut {
   margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: var(--text-label-sm);
   color: var(--color-ink-muted);
-  letter-spacing: 0.02em;
   white-space: nowrap;
 }
-[cmdk-group-heading] {
-  padding: var(--spacing-xs) var(--spacing-sm);
-  font-family: var(--font-body);
-  font-size: var(--text-label-sm);
+.command-current {
+  font-family: var(--font-label);
+  font-size: 10px;
   font-weight: 600;
-  color: var(--color-ink-muted);
+  color: var(--color-brand-cyan);
+  letter-spacing: 0.08em;
   text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-/* ——— Command palette dialog (CommandDialog over Dialog) ——— */
-.command-dialog.dialog-content {
-  width: min(520px, calc(100vw - 32px));
-  max-height: calc(100vh - 120px);
-  padding: 0;
-  overflow: hidden;
-  top: 22%;
-  transform: translate(-50%, -22%);
-}
-.command-dialog.dialog-content[data-state='open'] {
-  animation: ui-command-in 0.15s var(--ease-standard);
-}
-.command-dialog.dialog-content[data-state='closed'] {
-  animation: ui-command-out 0.12s var(--ease-exit);
-}
-/* Palette enter/exit stays anchored at the 22% geometry: the shared
- * dialog keyframes settle at center (-50%,-50%) and would snap on
- * completion. Same durations/easings as the motion discipline. */
-@keyframes ui-command-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, -22%) translateY(-6px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translate(-50%, -22%) scale(1);
-  }
-}
-@keyframes ui-command-out {
-  from {
-    opacity: 1;
-    transform: translate(-50%, -22%) scale(1);
-  }
-  to {
-    opacity: 0;
-    transform: translate(-50%, -22%) translateY(-4px) scale(0.98);
-  }
-}
-.command-body {
-  border-radius: var(--radius-md);
-  overflow: hidden;
+  padding: 2px 6px;
+  background: rgba(11, 214, 227, 0.10);
+  border: 1px solid rgba(11, 214, 227, 0.25);
+  border-radius: var(--radius-xs);
 }
 .command-footer {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin: 0;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-top: 1px solid var(--color-border);
+  background: var(--color-surface-secondary);
 }
 .command-hint {
   display: inline-flex;
@@ -980,4 +1024,175 @@
   width: 13px;
   height: 13px;
   color: var(--color-ink-muted);
+}
+
+/* ——— Collapsible sidebar shell ———
+ * The frozen settings stylesheet owns the original 230px layout. These
+ * additive states keep that layout intact while giving the React shell a
+ * compact, keyboard-accessible navigation mode. */
+.sidebar {
+  overflow-x: hidden;
+  transition: width 0.18s var(--ease-standard);
+}
+.sidebar:not(.collapsed) {
+  width: 248px;
+}
+.sidebar-logo {
+  position: relative;
+  transition: padding 0.18s var(--ease-standard), margin 0.18s var(--ease-standard);
+}
+.sidebar:not(.collapsed) .sidebar-logo {
+  padding: 0 14px 16px;
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sidebar-logo-mark {
+  flex: 0 0 auto;
+}
+.logo-tagline {
+  margin-left: 4px;
+  color: var(--color-on-surface-variant);
+  font-family: 'Allura', cursive;
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1;
+}
+.sidebar-collapse-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), opacity 0.15s var(--ease-standard);
+}
+.sidebar-collapse-toggle:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.sidebar-collapse-toggle:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.sidebar-collapse-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+.nav-item-label {
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.12s var(--ease-standard);
+}
+.sidebar-update-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+/* ——— Deliberate compact navigation rail (collapsed state) ——— */
+.sidebar.collapsed {
+  width: 64px;
+}
+.sidebar.collapsed .sidebar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.sidebar.collapsed .sidebar-brand {
+  display: none;
+}
+.sidebar.collapsed .sidebar-collapse-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  opacity: 1;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.sidebar.collapsed .sidebar-collapse-toggle:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.sidebar.collapsed .sidebar-collapse-toggle:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.sidebar.collapsed .sidebar-collapse-toggle svg {
+  width: 17px;
+  height: 17px;
+}
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-section-label,
+.sidebar.collapsed .nav-item-label,
+.sidebar.collapsed .sidebar-version-label,
+.sidebar.collapsed .sidebar-update-status,
+.sidebar.collapsed #sidebar-update-btn-text {
+  display: none;
+}
+.sidebar.collapsed .nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 2px 10px;
+  padding: 0;
+  width: 44px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.sidebar.collapsed .nav-item svg {
+  margin: 0;
+  width: 17px;
+  height: 17px;
+}
+.sidebar.collapsed .sidebar-footer {
+  padding: 12px 10px;
+  margin-top: auto;
+}
+.sidebar.collapsed .sidebar-update-widget {
+  align-items: center;
+  width: 100%;
+}
+.sidebar.collapsed .sidebar-update-btn {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+}
+.sidebar.collapsed .sidebar-update-progress-bar {
+  width: 100%;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-logo,
+  .sidebar-logo-mark,
+  .sidebar-collapse-toggle,
+  .nav-item-label {
+    transition: none !important;
+  }
 }

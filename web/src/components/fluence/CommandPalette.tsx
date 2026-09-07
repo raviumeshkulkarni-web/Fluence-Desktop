@@ -1,22 +1,24 @@
 import * as React from 'react';
 import {
   BookOpen,
-  Cloud,
-  Command,
+  Command as CommandIcon,
   History,
   Info,
   LayoutDashboard,
   Minimize2,
+  PanelLeftClose,
+  PanelLeftOpen,
   RefreshCcw,
-  SearchX,
+  RefreshCw,
+  Search,
   Server,
-  Settings,
+  Settings2,
   Sparkles,
   X,
-  Zap,
+  Braces,
 } from 'lucide-react';
 import {
-  CommandDialog,
+  Command,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -53,16 +55,18 @@ interface CommandPaletteProps {
   onOpenChange: (open: boolean) => void;
   currentRoute: Route;
   onNavigate: (page: Route) => void;
+  sidebarCollapsed: boolean;
+  onToggleSidebar: () => void;
 }
 
 const PAGE_META: Record<Route, { label: string; icon: React.ReactNode }> = {
   dashboard: { label: 'Dashboard', icon: <LayoutDashboard className="command-item-icon" /> },
   history: { label: 'History', icon: <History className="command-item-icon" /> },
-  general: { label: 'General', icon: <Settings className="command-item-icon" /> },
+  general: { label: 'General', icon: <Settings2 className="command-item-icon" /> },
   providers: { label: 'Providers', icon: <Server className="command-item-icon" /> },
   dictionary: { label: 'Dictionary', icon: <BookOpen className="command-item-icon" /> },
-  snippets: { label: 'Snippets', icon: <Zap className="command-item-icon" /> },
-  sync: { label: 'Sync', icon: <Cloud className="command-item-icon" /> },
+  snippets: { label: 'Snippets', icon: <Braces className="command-item-icon" /> },
+  sync: { label: 'Sync', icon: <RefreshCw className="command-item-icon" /> },
   about: { label: 'About', icon: <Info className="command-item-icon" /> },
 };
 
@@ -71,10 +75,26 @@ export function CommandPalette({
   onOpenChange,
   currentRoute,
   onNavigate,
+  sidebarCollapsed,
+  onToggleSidebar,
 }: CommandPaletteProps) {
   const close = () => onOpenChange(false);
 
+  const navigatedRef = React.useRef(false);
+  const opener = React.useRef<Element | null>(null);
+
+  React.useEffect(() => {
+    if (open) {
+      navigatedRef.current = false;
+      opener.current = document.activeElement;
+    } else if (!navigatedRef.current && opener.current instanceof HTMLElement && opener.current.isConnected) {
+      opener.current.focus();
+      opener.current = null;
+    }
+  }, [open]);
+
   const navigate = (page: Route) => {
+    navigatedRef.current = true;
     onNavigate(page);
     close();
   };
@@ -90,10 +110,22 @@ export function CommandPalette({
       },
     },
     {
+      id: 'toggle-sidebar',
+      label: sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar',
+      icon: sidebarCollapsed
+        ? <PanelLeftOpen className="command-item-icon" />
+        : <PanelLeftClose className="command-item-icon" />,
+      shortcut: 'Ctrl B',
+      onSelect: () => {
+        onToggleSidebar();
+        close();
+      },
+    },
+    {
       id: 'focus-history-search',
       label: 'Focus history search',
-      icon: <SearchX className="command-item-icon" />,
-      shortcut: 'Ctrl K',
+      icon: <Search className="command-item-icon" />,
+      shortcut: 'Ctrl F',
       onSelect: () => {
         navigate('history');
         window.setTimeout(() => requestHistorySearchFocus(), 50);
@@ -145,7 +177,7 @@ export function CommandPalette({
             Search for pages and actions.
           </DialogDescription>
         </DialogHeader>
-        <CommandDialog className="command-body">
+        <Command className="command-body">
           <CommandInput placeholder="Type a command or search…" autoFocus />
           <CommandList>
             <CommandEmpty>No matching command found.</CommandEmpty>
@@ -173,21 +205,25 @@ export function CommandPalette({
                 >
                   {p.icon}
                   <span>{p.label}</span>
-                  {p.id === currentRoute ? <CommandShortcut>current</CommandShortcut> : null}
+                  {p.id === currentRoute ? (
+                    <CommandShortcut>
+                      <span className="command-current">Current</span>
+                    </CommandShortcut>
+                  ) : null}
                 </CommandItem>
               ))}
             </CommandGroup>
           </CommandList>
           <DialogFooter className="command-footer">
             <span className="command-hint">
-              <Command className="command-hint-icon" />
+              <CommandIcon className="command-hint-icon" />
               <kbd>Ctrl K</kbd>
             </span>
             <DialogClose asChild>
               <Button variant="ghost" size="xs">Close</Button>
             </DialogClose>
           </DialogFooter>
-        </CommandDialog>
+        </Command>
       </DialogContent>
     </Dialog>
   );

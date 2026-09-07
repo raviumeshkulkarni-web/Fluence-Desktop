@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import {
   addSnippet,
@@ -16,6 +21,7 @@ import {
 export function SnippetsPage() {
   const [enabled, setEnabled] = useState(false);
   const [entries, setEntries] = useState<Snippet[]>([]);
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [trigger, setTrigger] = useState('');
   const [expansion, setExpansion] = useState('');
@@ -28,6 +34,8 @@ export function SnippetsPage() {
       setEntries(store.snippets || []);
     } catch (err) {
       toast('Failed to load snippets: ' + String(err), 'error');
+    } finally {
+      setLoading(false);
     }
   }, []);
 
@@ -102,16 +110,14 @@ export function SnippetsPage() {
             <div className="setting-desc">Dictate a short trigger like &quot;my linkedin&quot; and Fluence pastes your expansion text instead</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="snippets-enabled-cb"
                 aria-label="Enable text expansion"
                 checked={enabled}
-                onChange={(e) => void onToggle(e.target.checked)}
+                onCheckedChange={(v) => void onToggle(v)}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
 
@@ -121,9 +127,8 @@ export function SnippetsPage() {
         </div>
         {showAdd && (
           <div id="snippet-add-row" style={{ padding: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-md)', alignItems: 'flex-end' }}>
-            <div className="form-row" style={{ flex: 1 }}>
-              <label htmlFor="snippet-trigger-input">Spoken Trigger</label>
-              <input
+            <Field label="Spoken Trigger" htmlFor="snippet-trigger-input" style={{ flex: 1 }}>
+              <Input
                 ref={triggerRef}
                 type="text"
                 id="snippet-trigger-input"
@@ -132,10 +137,9 @@ export function SnippetsPage() {
                 value={trigger}
                 onChange={(e) => setTrigger(e.target.value)}
               />
-            </div>
-            <div className="form-row" style={{ flex: 2 }}>
-              <label htmlFor="snippet-expansion-input">Expansion Text</label>
-              <input
+            </Field>
+            <Field label="Expansion Text" htmlFor="snippet-expansion-input" style={{ flex: 2 }}>
+              <Input
                 type="text"
                 id="snippet-expansion-input"
                 maxLength={500}
@@ -143,7 +147,7 @@ export function SnippetsPage() {
                 value={expansion}
                 onChange={(e) => setExpansion(e.target.value)}
               />
-            </div>
+            </Field>
             <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
               <Button variant="primary" size="sm" id="snippet-save-btn" onClick={() => void onSave()}>Save</Button>
               <Button variant="ghost" size="sm" id="snippet-cancel-btn" onClick={closeAdd}>Cancel</Button>
@@ -159,21 +163,29 @@ export function SnippetsPage() {
             </tr>
           </thead>
           <tbody id="snippet-table-body">
-            {entries.length === 0 && (
+            {loading && (
+              <tr>
+                <td colSpan={3}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && entries.length === 0 && (
               <tr id="snippet-empty-row">
                 <td colSpan={3}>
                   <div className="empty-state">
-                    <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3" />
-                      <path d="M12 8v8M9 11l3-3 3 3" />
-                    </svg>
+                    <Zap className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
                     <div className="empty-state-title">No snippets yet</div>
                     <div className="empty-state-hint">Add a trigger phrase and its expansion, e.g. &quot;my email&quot; becomes your full email address</div>
                   </div>
                 </td>
               </tr>
             )}
-            {entries.map((entry) => (
+            {!loading && entries.map((entry) => (
               <tr key={entry.id} data-snippet-id={entry.id}>
                 <td className="spoken-word">{entry.trigger}</td>
                 <td className="corrected-word">{entry.expansion}</td>

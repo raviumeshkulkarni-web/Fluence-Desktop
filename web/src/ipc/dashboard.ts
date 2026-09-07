@@ -21,3 +21,19 @@ export const getAccountStats = () =>
 
 export const getWeeklyActivity = (startOfWeekUtc: string) =>
   invokeCmd<string[]>('get_weekly_activity', { startOfWeekUtc });
+
+// History-proof dashboard source: daily UTC buckets from the synced
+// stats ledger (local ∪ remote), never the local history table.
+// since_ms bounds the read server-side (bucket only days >= since);
+// omit it for the full All-time series. O(days), never O(events).
+export interface DailyBucket {
+  day_start_ms: number;
+  sessions: number;
+  words: number;
+  duration_ms: number;
+}
+
+export const getAccountActivity = (sinceMs?: number) =>
+  invokeCmd<DailyBucket[]>('get_account_activity', {
+    sinceMs: sinceMs ?? null,
+  });

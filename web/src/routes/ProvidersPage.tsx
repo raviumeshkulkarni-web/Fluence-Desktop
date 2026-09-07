@@ -1,5 +1,15 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/dialog';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { toast } from '@/components/fluence/Toasts';
 import {
   CustomProviderIcon,
@@ -234,6 +244,7 @@ export function ProvidersPage() {
   const [progressStatus, setProgressStatus] = useState('Downloading ASR Engine…');
   const [progressPct, setProgressPct] = useState(0);
   const [progressBytes, setProgressBytes] = useState('0 / 0 MB');
+  const [deleteTarget, setDeleteTarget] = useState<EngineCfg | null>(null);
 
   const sttKeyTimer = useRef<number | null>(null);
   const llmKeyTimer = useRef<number | null>(null);
@@ -275,7 +286,7 @@ export function ProvidersPage() {
 
   const setModelList = useCallback(
     (kind: ProviderKind, models: string[], current: string) => {
-      // Vanilla rebuilds the <select> from the fetched ids; when the
+      // Vanilla rebuilds the dropdown from the fetched ids; when the
       // current model is absent the browser falls back to the first
       // option, which is then what a later persist collects.
       const model = models.includes(current) ? current : models[0];
@@ -555,14 +566,7 @@ export function ProvidersPage() {
     }
   };
 
-  const onDeleteModel = async (cfg: EngineCfg) => {
-    if (
-      !window.confirm(
-        `Are you sure you want to delete the ${cfg.delName} model files to free space (${cfg.delSize})?`,
-      )
-    ) {
-      return;
-    }
+  const doDeleteModel = async (cfg: EngineCfg) => {
     try {
       const bytesFreed = await cfg.deleteCmd();
       const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
@@ -612,20 +616,18 @@ export function ProvidersPage() {
         </div>
         <div style={{ padding: '0 var(--spacing-md) var(--spacing-md)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
           <div id="stt-credentials-wrapper" className={isOffline ? 'hidden' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-            <div className="form-row">
-              <label htmlFor="stt-base-url">API Endpoint</label>
-              <input
+            <Field label="API Endpoint" htmlFor="stt-base-url">
+              <Input
                 type="url"
                 id="stt-base-url"
                 placeholder="https://api.groq.com/openai"
                 value={stt.baseUrl}
                 onChange={(e) => setForm('stt', { ...forms.current.stt, baseUrl: e.target.value })}
               />
-            </div>
-            <div className="form-row">
-              <label htmlFor="stt-api-key">API Key</label>
+            </Field>
+            <Field label="API Key" htmlFor="stt-api-key">
               <div className="input-with-btn">
-                <input
+                <Input
                   type="password"
                   id="stt-api-key"
                   placeholder="sk-•••••••••••••••"
@@ -635,19 +637,22 @@ export function ProvidersPage() {
                 />
                 <Button variant="secondary" id="stt-save-key-btn" style={{ whiteSpace: 'nowrap' }} onClick={() => void onSaveKey('stt')}>Save Key</Button>
               </div>
-            </div>
-            <div className="form-row">
-              <label htmlFor="stt-model-select">Model</label>
+            </Field>
+            <Field label="Model" htmlFor="stt-model-select">
               <div className="input-with-btn">
-                <select
-                  id="stt-model-select"
+                <Select
                   value={stt.model}
-                  onChange={(e) => setForm('stt', { ...forms.current.stt, model: e.target.value })}
+                  onValueChange={(v) => setForm('stt', { ...forms.current.stt, model: v })}
                 >
-                  {stt.models.map((m) => (
-                    <option key={m} value={m}>{m}</option>
-                  ))}
-                </select>
+                  <SelectTrigger id="stt-model-select">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {stt.models.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
                 <Button
                   variant="ghost"
                   id="stt-fetch-models-btn"
@@ -659,7 +664,7 @@ export function ProvidersPage() {
                   <RefreshIcon />
                 </Button>
               </div>
-            </div>
+            </Field>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
               <Button variant="secondary" id="stt-test-btn" onClick={() => void onTest('stt')}>Test Connection</Button>
               <div className="connection-status" id="stt-status" role="status">
@@ -686,7 +691,7 @@ export function ProvidersPage() {
                 return (
                   <div
                     key={cfg.engine}
-                    className={`offline-model-card${selected ? ' selected' : ''}`}
+                      className={`offline-model-card ui-focus-ring${selected ? ' selected' : ''}`}
                     id={cfg.cardId}
                     data-engine={cfg.engine}
                     role="radio"
@@ -743,7 +748,7 @@ export function ProvidersPage() {
                         id={cfg.deleteBtnId}
                         className={isInstalled ? undefined : 'hidden'}
                         style={{ minWidth: 140 }}
-                        onClick={() => void onDeleteModel(cfg)}
+                        onClick={() => setDeleteTarget(cfg)}
                       >
                         Delete Model
                       </Button>
@@ -790,20 +795,18 @@ export function ProvidersPage() {
           })}
         </div>
         <div style={{ padding: '0 var(--spacing-md) var(--spacing-md)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <div className="form-row">
-            <label htmlFor="llm-base-url">API Endpoint</label>
-            <input
+          <Field label="API Endpoint" htmlFor="llm-base-url">
+            <Input
               type="url"
               id="llm-base-url"
               placeholder="https://api.groq.com/openai"
               value={llm.baseUrl}
               onChange={(e) => setForm('llm', { ...forms.current.llm, baseUrl: e.target.value })}
             />
-          </div>
-          <div className="form-row">
-            <label htmlFor="llm-api-key">API Key</label>
+          </Field>
+          <Field label="API Key" htmlFor="llm-api-key">
             <div className="input-with-btn">
-              <input
+              <Input
                 type="password"
                 id="llm-api-key"
                 placeholder="sk-•••••••••••••••"
@@ -813,31 +816,34 @@ export function ProvidersPage() {
               />
               <Button variant="secondary" id="llm-save-key-btn" style={{ whiteSpace: 'nowrap' }} onClick={() => void onSaveKey('llm')}>Save Key</Button>
             </div>
-          </div>
-          <div className="form-row">
-            <label htmlFor="llm-model-select">Model</label>
+          </Field>
+          <Field label="Model" htmlFor="llm-model-select">
             <div className="input-with-btn">
-              <select
-                id="llm-model-select"
+              <Select
                 value={llm.model}
-                onChange={(e) => setForm('llm', { ...forms.current.llm, model: e.target.value })}
+                onValueChange={(v) => setForm('llm', { ...forms.current.llm, model: v })}
               >
-                {llm.models.map((m) => (
-                  <option key={m} value={m}>{m}</option>
-                ))}
-              </select>
+                <SelectTrigger id="llm-model-select">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {llm.models.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <Button
                 variant="ghost"
                 id="llm-fetch-models-btn"
                 className={llmFetching ? 'animate-spin' : undefined}
                 title="Fetch models from API"
                 aria-label="Fetch language models from API"
-                onClick={() => void doFetchModels('llm', forms.current.llm, false)}
-              >
-                <RefreshIcon />
-              </Button>
-            </div>
-          </div>
+                  onClick={() => void doFetchModels('llm', forms.current.llm, false)}
+                >
+                  <RefreshIcon />
+                </Button>
+              </div>
+            </Field>
           <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
             <Button variant="secondary" id="llm-test-btn" onClick={() => void onTest('llm')}>Test Connection</Button>
             <div className="connection-status" id="llm-status" role="status">
@@ -851,6 +857,24 @@ export function ProvidersPage() {
       <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--spacing-md)' }}>
         <Button variant="primary" id="save-providers-btn" style={{ minWidth: 120 }} onClick={() => void onSaveAll()}>Save Changes</Button>
       </div>
+
+      <ConfirmDialog
+        open={deleteTarget !== null}
+        onOpenChange={(open) => {
+          if (!open) setDeleteTarget(null);
+        }}
+        title="Delete Model"
+        body={
+          deleteTarget
+            ? `Are you sure you want to delete the ${deleteTarget.delName} model files to free space (${deleteTarget.delSize})?`
+            : null
+        }
+        confirmLabel="Delete Model"
+        danger
+        onConfirm={() => {
+          if (deleteTarget) void doDeleteModel(deleteTarget);
+        }}
+      />
     </section>
   );
 }

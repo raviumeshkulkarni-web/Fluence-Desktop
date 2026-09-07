@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 
@@ -74,9 +75,11 @@ export function AboutPage() {
             </div>
 
             <div id="update-progress-container" style={{ display: updater.state === 'downloading' ? 'block' : 'none', width: '100%', maxWidth: 280, marginTop: 4 }}>
-              <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.1)', borderRadius: 2, overflow: 'hidden' }} role="progressbar" aria-label="Update download progress" aria-valuemin={0} aria-valuemax={100} aria-valuenow={updater.progress} id="update-progress-track">
-                <div id="update-progress-fill" style={{ width: `${updater.progress}%`, height: '100%', background: 'var(--color-brand-cyan)', transition: 'width 0.2s ease' }} />
-              </div>
+              <Progress
+                id="update-progress-track"
+                aria-label="Update download progress"
+                value={updater.progress}
+              />
               <div style={{ fontSize: 11, color: 'var(--color-outline)', textAlign: 'center', marginTop: 4 }} id="update-progress-text">
                 {updater.progress}%
               </div>

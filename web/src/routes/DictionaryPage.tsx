@@ -1,5 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { BookOpen, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import {
   acceptSuggestion,
@@ -47,6 +53,7 @@ export function DictionaryPage() {
 
   const [entries, setEntries] = useState<DictEntry[]>([]);
   const [autoAdded, setAutoAdded] = useState<Set<string>>(new Set());
+  const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [spoken, setSpoken] = useState('');
   const [corrected, setCorrected] = useState('');
@@ -55,7 +62,6 @@ export function DictionaryPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const sigRef = useRef<string | null>(null);
-  const selectAllRef = useRef<HTMLInputElement>(null);
 
   const loadDict = useCallback(async () => {
     try {
@@ -108,6 +114,7 @@ export function DictionaryPage() {
       if (cancelled) return;
       await loadDict();
       await loadSugg();
+      if (!cancelled) setLoading(false);
       void expireStaleSuggestions().catch(() => undefined);
     })();
     const timer = window.setInterval(() => {
@@ -118,16 +125,6 @@ export function DictionaryPage() {
       window.clearInterval(timer);
     };
   }, [loadDict, loadSugg]);
-
-  // Select-all tri-state (vanilla sets .indeterminate imperatively).
-  useEffect(() => {
-    const el = selectAllRef.current;
-    if (!el) return;
-    el.indeterminate =
-      suggestions.length > 0 &&
-      selected.size > 0 &&
-      selected.size < suggestions.length;
-  });
 
   const openAdd = () => {
     setShowAdd(true);
@@ -254,16 +251,14 @@ export function DictionaryPage() {
             <div className="setting-desc">Suggest transcription corrections based on detected patterns</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="auto-learn-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="auto-learn-cb"
                 aria-label="Auto-learn transcription corrections"
                 checked={learn}
-                onChange={(e) => setAutoLearn(e.target.checked)}
+                onCheckedChange={(v) => setAutoLearn(v)}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -272,18 +267,16 @@ export function DictionaryPage() {
             <div className="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="auto-accept-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="auto-accept-cb"
                 aria-label="Auto-accept repeated correction suggestions"
                 checked={accept}
                 disabled={!learn}
                 title={!learn ? 'Requires Auto-Learn' : undefined}
-                onChange={(e) => setSettingField('auto_accept_enabled', e.target.checked)}
+                onCheckedChange={(v) => setSettingField('auto_accept_enabled', v)}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
       </div>
@@ -299,9 +292,8 @@ export function DictionaryPage() {
         </div>
         {showAdd && (
           <div id="dict-add-row">
-            <div className="form-row" style={{ flex: 1 }}>
-              <label htmlFor="dict-spoken-input">Spoken Word/Phrase</label>
-              <input
+            <Field label="Spoken Word/Phrase" htmlFor="dict-spoken-input" style={{ flex: 1 }}>
+              <Input
                 ref={spokenRef}
                 type="text"
                 id="dict-spoken-input"
@@ -309,17 +301,16 @@ export function DictionaryPage() {
                 value={spoken}
                 onChange={(e) => setSpoken(e.target.value)}
               />
-            </div>
-            <div className="form-row" style={{ flex: 1 }}>
-              <label htmlFor="dict-corrected-input">Corrected Form</label>
-              <input
+            </Field>
+            <Field label="Corrected Form" htmlFor="dict-corrected-input" style={{ flex: 1 }}>
+              <Input
                 type="text"
                 id="dict-corrected-input"
                 placeholder="e.g. Fluence"
                 value={corrected}
                 onChange={(e) => setCorrected(e.target.value)}
               />
-            </div>
+            </Field>
             <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
               <Button variant="primary" size="sm" id="dict-save-btn" onClick={() => void onSave()}>Save</Button>
               <Button variant="ghost" size="sm" id="dict-cancel-btn" onClick={closeAdd}>Cancel</Button>
@@ -336,21 +327,29 @@ export function DictionaryPage() {
             </tr>
           </thead>
           <tbody id="dict-table-body">
-            {entries.length === 0 && (
+            {loading && (
+              <tr>
+                <td colSpan={4}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && entries.length === 0 && (
               <tr id="dict-empty-row">
                 <td colSpan={4}>
                   <div className="empty-state">
-                    <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                      <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                    </svg>
+                    <BookOpen className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
                     <div className="empty-state-title">No dictionary entries yet</div>
                     <div className="empty-state-hint">Add corrections for words that are often misheard during transcription</div>
                   </div>
                 </td>
               </tr>
             )}
-            {entries.map((entry) => (
+            {!loading && entries.map((entry) => (
               <tr key={entry.id} data-dict-id={entry.id}>
                 <td className="spoken-word">{entry.spoken}</td>
                 <td className="corrected-word">{entry.corrected}</td>
@@ -389,14 +388,18 @@ export function DictionaryPage() {
           <thead>
             <tr>
               <th className="select-col">
-                <input
-                  ref={selectAllRef}
-                  type="checkbox"
+                <Checkbox
                   id="select-all-suggestions"
                   aria-label="Select all suggestions"
                   disabled={suggestions.length === 0}
-                  checked={suggestions.length > 0 && selected.size === suggestions.length}
-                  onChange={(e) => toggleSelectAll(e.target.checked)}
+                  checked={
+                    suggestions.length > 0 && selected.size === suggestions.length
+                      ? true
+                      : selected.size > 0
+                        ? 'indeterminate'
+                        : false
+                  }
+                  onCheckedChange={(v) => toggleSelectAll(v === true)}
                 />
               </th>
               <th className="col-word">Detected</th>
@@ -406,31 +409,37 @@ export function DictionaryPage() {
             </tr>
           </thead>
           <tbody id="suggestions-table-body">
-            {suggestions.length === 0 && (
+            {loading && (
+              <tr>
+                <td colSpan={5}>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                    <Skeleton style={{ height: 40 }} />
+                  </div>
+                </td>
+              </tr>
+            )}
+            {!loading && suggestions.length === 0 && (
               <tr id="suggestions-empty-row">
                 <td colSpan={5}>
                   <div className="empty-state">
-                    <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                      <path d="M9 18h6" />
-                      <path d="M10 22h4" />
-                      <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14" />
-                    </svg>
+                    <Lightbulb className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
                     <div className="empty-state-title">No suggestions yet</div>
                     <div className="empty-state-hint">Correction suggestions will appear here as you use dictation regularly</div>
                   </div>
                 </td>
               </tr>
             )}
-            {suggestions.map((s) => (
+            {!loading && suggestions.map((s) => (
               <tr key={s.id} data-srow="1" data-suggestion-id={s.id}>
                 <td className="select-col">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     className="suggestion-select"
                     data-suggestion-id={s.id}
                     aria-label="Select suggestion"
                     checked={selected.has(s.id)}
-                    onChange={(e) => toggleSelect(s.id, e.target.checked)}
+                    onCheckedChange={(v) => toggleSelect(s.id, v === true)}
                   />
                 </td>
                 <td className="spoken-word">{s.spoken}</td>

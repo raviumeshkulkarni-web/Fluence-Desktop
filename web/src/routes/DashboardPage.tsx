@@ -1,19 +1,52 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from 'react';
-import { getAccountStats, getWeeklyActivity } from '@/ipc/dashboard';
-import { subscribeHistoryUpdated } from '@/ipc/history';
+  Copy,
+  Minus,
+  MoreHorizontal,
+  RefreshCw,
+  TrendingDown,
+  TrendingUp,
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
+import { Skeleton } from '@/components/ui/skeleton';
+import {
+  ChartContainer,
+  ChartTooltip,
+  ChartTooltipContent,
+  type ChartConfig,
+} from '@/components/ui/chart';
+import { toast } from '@/components/fluence/Toasts';
+import {
+  getAccountActivity,
+  type DailyBucket,
+} from '@/ipc/dashboard';
+import { copyText, subscribeHistoryUpdated } from '@/ipc/history';
+import { subscribeSyncStatus } from '@/ipc/sync';
 
-const CHART_HEIGHT = 244;
-const PADDING_X = 14;
-const BASELINE_Y = CHART_HEIGHT - 14;
-const TOP_Y = 20;
-const AVAIL_HEIGHT = BASELINE_Y - TOP_Y;
-const DAY_NAMES = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
-const DOT_COLORS = ['#8B45D8', '#854BD9', '#7855DC', '#5F69E0', '#3E95E2', '#1DBEE3', '#0BD6E3'];
+const DAY_MS = 86400000;
+
+// THE Kotlin parity contract: UTC-midnight day starts; weeks aggregate
+// Monday-to-Sunday by UTC Monday; sums compose across days/weeks/months
+// identically from the same bucket rows. No local-timezone math anywhere.
+function utcDayStart(ms: number): number {
+  return Math.floor(ms / DAY_MS) * DAY_MS;
+}
 
 function formatDurationMs(ms: number): string {
   if (!(ms > 0)) {
@@ -88,513 +121,475 @@ function AnimatedStat({ id, value }: { id: string; value: string }) {
   }, [value]);
 
   return (
-    <div className="stat-value" id={id}>
+    <div className="kpi-value" id={id}>
       {display}
     </div>
   );
 }
 
-interface ChartPoint {
-  x: number;
-  y: number;
+interface DashboardKpi {
+  id: string;
+  title: string;
+  value: string;
+  foot: string;
+}
+
+type Range = '7d' | '30d' | '90d' | 'all';
+
+interface RangePoint {
+  label: string;
   count: number;
 }
 
-// Vanilla renderWeeklyAreaChart geometry, verbatim: measured canvas width
-// clamped to [280, 1400] (640 fallback), Catmull-Rom to Bezier spline.
-function chartPoints(dayCounts: number[], width: number): ChartPoint[] {
-  const maxCount = Math.max(...dayCounts, 1);
-  const stepX = (width - PADDING_X * 2) / 6;
-  return dayCounts.map((c, i) => {
-    const x = PADDING_X + i * stepX;
-    const factor = Math.min(1, Math.max(0, c / maxCount));
-    return { x, y: c > 0 ? BASELINE_Y - factor * AVAIL_HEIGHT : BASELINE_Y, count: c };
+interface WindowTotals {
+  sessions: number;
+  words: number;
+  durationMs: number;
+}
+
+// Sum buckets with day_start_ms in [startMs, endMs). Pure UTC range math.
+function sumWindow(
+  buckets: DailyBucket[],
+  startMs: number,
+  endMs: number,
+): WindowTotals {
+  let sessions = 0;
+  let words = 0;
+  let durationMs = 0;
+  for (const b of buckets) {
+    if (b.day_start_ms >= startMs && b.day_start_ms < endMs) {
+      sessions += b.sessions;
+      words += b.words;
+      durationMs += b.duration_ms;
+    }
+  }
+  return { sessions, words, durationMs };
+}
+
+function spokenLabel(ms: number): string {
+  const hours = ms / 3600000;
+  return hours >= 1
+    ? hours.toFixed(1) + 'h spoken'
+    : Math.round(hours * 60) + 'm spoken';
+}
+
+// Re-derive one range view from cached buckets (no IPC): daily points for
+// 7/30/90 days, adaptive daily/weekly/monthly for All-time (capped so
+// recharts stays flat at any history length).
+function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
+  const today = utcDayStart(Date.now());
+  if (range === 'all') {
+    const first = buckets.length > 0 ? buckets[0].day_start_ms : today;
+    const spanDays = Math.max(1, Math.round((today - first) / DAY_MS) + 1);
+    if (spanDays <= 92) {
+      return dailyPoints(buckets, spanDays, (d) =>
+        d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      );
+    }
+    if (spanDays <= 730) {
+      const weeks = new Map<number, number>();
+      for (const b of buckets) {
+        const monday = b.day_start_ms - ((new Date(b.day_start_ms).getUTCDay() + 6) % 7) * DAY_MS;
+        weeks.set(monday, (weeks.get(monday) ?? 0) + b.sessions);
+      }
+      return [...weeks.entries()]
+        .sort((a, b) => a[0] - b[0])
+        .map(([monday, count]) => ({
+          label: new Date(monday).toLocaleDateString(undefined, {
+            month: 'short',
+            day: 'numeric',
+          }),
+          count,
+        }));
+    }
+    const months = new Map<number, number>();
+    for (const b of buckets) {
+      const d = new Date(b.day_start_ms);
+      const key = d.getUTCFullYear() * 12 + d.getUTCMonth();
+      months.set(key, (months.get(key) ?? 0) + b.sessions);
+    }
+    return [...months.entries()]
+      .sort((a, b) => a[0] - b[0])
+      .map(([key, count]) => ({
+        label: new Date(Date.UTC(Math.floor(key / 12), key % 12, 1)).toLocaleDateString(
+          undefined,
+          { month: 'short', year: 'numeric' },
+        ),
+        count,
+      }));
+  }
+  const n = range === '7d' ? 7 : range === '30d' ? 30 : 90;
+  return dailyPoints(buckets, n, (d) =>
+    range === '7d'
+      ? d.toLocaleDateString(undefined, { weekday: 'short' })
+      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+  );
+}
+
+function dailyPoints(
+  buckets: DailyBucket[],
+  n: number,
+  label: (d: Date) => string,
+): RangePoint[] {
+  const byDay = new Map(buckets.map((b) => [b.day_start_ms, b.sessions]));
+  const today = utcDayStart(Date.now());
+  return Array.from({ length: n }, (_, k) => {
+    const dayMs = today - (n - 1 - k) * DAY_MS;
+    const d = new Date(dayMs);
+    return {
+      label: label(d),
+      count: byDay.get(dayMs) ?? 0,
+    };
   });
 }
 
-function curvePath(points: ChartPoint[]): string {
-  let d = 'M ' + points[0].x.toFixed(1) + ' ' + points[0].y.toFixed(1);
-  for (let i = 0; i < points.length - 1; i++) {
-    const p0 = points[i === 0 ? 0 : i - 1];
-    const p1 = points[i];
-    const p2 = points[i + 1];
-    const p3 = points[i + 2 < points.length ? i + 2 : i + 1];
-    const cp1x = p1.x + (p2.x - p0.x) / 6;
-    const cp1y = Math.min(BASELINE_Y, Math.max(TOP_Y - 6, p1.y + (p2.y - p0.y) / 6));
-    const cp2x = p2.x - (p3.x - p1.x) / 6;
-    const cp2y = Math.min(BASELINE_Y, Math.max(TOP_Y - 6, p2.y - (p3.y - p1.y) / 6));
-    d +=
-      ' C ' + cp1x.toFixed(1) + ' ' + cp1y.toFixed(1) + ', ' +
-      cp2x.toFixed(1) + ' ' + cp2y.toFixed(1) + ', ' +
-      p2.x.toFixed(1) + ' ' + p2.y.toFixed(1);
-  }
-  return d;
-}
-
-function prefersReducedMotion(): boolean {
+// Session-count momentum badge for the active range. All-time and
+// uncovered prior windows show nothing rather than a fabricated delta.
+function TrendBadge({
+  buckets,
+  range,
+}: {
+  buckets: DailyBucket[];
+  range: Range;
+}) {
+  const span = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : 0;
+  if (buckets.length === 0 || span === 0) return null;
+  const today = utcDayStart(Date.now());
+  const firstDay = buckets[0].day_start_ms;
+  // The prior window must be fully covered, or the delta would mislead.
+  if (firstDay > today - (2 * span - 1) * DAY_MS) return null;
+  const current = sumWindow(buckets, today - (span - 1) * DAY_MS, today + DAY_MS);
+  const prior = sumWindow(
+    buckets,
+    today - (2 * span - 1) * DAY_MS,
+    today - (span - 1) * DAY_MS,
+  );
+  const delta = current.sessions - prior.sessions;
+  const variant = delta > 0 ? 'success' : delta < 0 ? 'destructive' : 'secondary';
+  const Icon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
+  const text = `${delta > 0 ? '+' : delta < 0 ? '-' : '±'}${delta !== 0 ? Math.abs(delta) : '0'} vs prior ${span}d`;
   return (
-    typeof window.matchMedia === 'function' &&
-    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+    <Badge variant={variant}>
+      <Icon size={12} aria-hidden="true" />
+      {text}
+    </Badge>
   );
 }
 
-// Curve + area with vanilla's fade-in (replayed on every data change,
-// skipped under reduced motion).
-function ChartPaths({ dCurve, dArea }: { dCurve: string; dArea: string }) {
-  const reduced = useMemo(prefersReducedMotion, []);
-  const [faded, setFaded] = useState(reduced);
-  useEffect(() => {
-    if (reduced) return;
-    const raf = requestAnimationFrame(() => setFaded(true));
-    return () => {
-      cancelAnimationFrame(raf);
-      setFaded(false);
-    };
-  }, [dCurve, dArea, reduced]);
-  const curveStyle = reduced
-    ? { opacity: 1 }
-    : { opacity: faded ? 1 : 0, transition: 'opacity 0.35s ease' };
-  const areaStyle = reduced
-    ? { opacity: 1 }
-    : { opacity: faded ? 1 : 0, transition: 'opacity 0.45s ease' };
-  return (
-    <>
-      <path id="weekly-area-path" d={dArea} fill="url(#area-gradient)" style={areaStyle} />
-      <path
-        id="weekly-curve-path"
-        d={dCurve}
-        fill="none"
-        stroke="url(#curve-stroke-grad)"
-        strokeWidth="2"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        filter="url(#curve-glow)"
-        vectorEffect="non-scaling-stroke"
-        style={curveStyle}
-      />
-    </>
-  );
-}
-
-interface StatTexts {
-  totalWords: string;
-  timeSaved: string;
-  dictation: string;
-  monthly: string;
-  totalWordsSub: string;
-  timeSavedSub: string;
-  dictationSub: string;
-  monthlySub: string;
-  headerCount: string;
-  rangeLabel: string;
-}
-
-const STATIC_STATS: StatTexts = {
-  totalWords: '0',
-  timeSaved: '0m',
-  dictation: '0m',
-  monthly: '0m',
-  totalWordsSub: 'to date',
-  timeSavedSub: 'to date',
-  dictationSub: 'to date',
-  monthlySub: 'in last 30 days',
-  headerCount: 'Loading…',
-  rangeLabel: 'Last 7 days',
+const chartConfig: ChartConfig = {
+  sessions: { label: 'Sessions', color: '#0BD6E3' },
 };
 
-// Vanilla keeps dashboard DOM across navigation (no re-skeleton, no
-// re-animation, stale data until reload). These module caches reproduce
-// exactly that across React remounts.
-let cachedStats: StatTexts | null = null;
-let cachedCounts: number[] | null = null;
-let cachedWeekStartMs = 0;
+// Module cache (stale-then-reload across remounts, no re-skeleton).
+let cachedBuckets: DailyBucket[] | null = null;
+let dashboardLoaded = false;
 let skeletonCleared = false;
 
-// Faithful port of the vanilla Dashboard surface (#page-dashboard +
-// loadDashboardStats/renderWeeklyAreaChart/setupChartResize, boot skeleton
-// handling). Same DOM ids/classes, same copy, same derivations, same
-// silent console-error failure path (stats keep their defaults).
 export function DashboardPage() {
-  const [stats, setStats] = useState<StatTexts>(cachedStats ?? STATIC_STATS);
-  const [dayCounts, setDayCounts] = useState<number[]>(
-    cachedCounts ?? [0, 0, 0, 0, 0, 0, 0],
-  );
-  const [weekStartMs, setWeekStartMs] = useState(cachedWeekStartMs);
-  const [loaded, setLoaded] = useState(cachedCounts !== null);
+  const [buckets, setBuckets] = useState<DailyBucket[]>(cachedBuckets ?? []);
+  const [loaded, setLoaded] = useState(dashboardLoaded);
   const [skeleton, setSkeleton] = useState(!skeletonCleared);
-  const [chartWidth, setChartWidth] = useState(640);
-  const [tipIdx, setTipIdx] = useState<number | null>(null);
-  const canvasColRef = useRef<HTMLDivElement>(null);
+  const [range, setRange] = useState<Range>('7d');
+  const bucketsRef = useRef(buckets);
+  bucketsRef.current = buckets;
+  const lastFetchRef = useRef(0);
+  const inflightRef = useRef<Promise<void> | null>(null);
+  const accountRef = useRef<string | null | undefined>(undefined);
+  const reduced = useMemo(
+    () =>
+      typeof window.matchMedia === 'function' &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches,
+    [],
+  );
+
+  // Full authoritative snapshot (mount, account switch): replaces the
+  // cache. Refresh paths use topUp below and merge by day instead.
+  const fullLoad = useCallback(async () => {
+    const list = await getAccountActivity(undefined);
+    cachedBuckets = [...list].sort((a, b) => a.day_start_ms - b.day_start_ms);
+    setBuckets(cachedBuckets);
+    lastFetchRef.current = Date.now();
+    dashboardLoaded = true;
+    setLoaded(true);
+  }, []);
+
+  const topUp = useCallback(async () => {
+    const have = bucketsRef.current;
+    const since = have.length > 0 ? have[0].day_start_ms : undefined;
+    const list = await getAccountActivity(since);
+    const merged = new Map(have.map((b) => [b.day_start_ms, b]));
+    list.forEach((b) => merged.set(b.day_start_ms, b));
+    cachedBuckets = [...merged.values()].sort((a, b) => a.day_start_ms - b.day_start_ms);
+    setBuckets(cachedBuckets);
+    lastFetchRef.current = Date.now();
+    dashboardLoaded = true;
+    setLoaded(true);
+  }, []);
+
+  // 30s freshness TTL + in-flight coalescing: focus/event/refresh storms
+  // collapse into at most one request per window.
+  const refresh = useCallback(async () => {
+    if (inflightRef.current) {
+      await inflightRef.current.catch(() => undefined);
+      return;
+    }
+    if (Date.now() - lastFetchRef.current < 30_000 && bucketsRef.current.length > 0) {
+      return;
+    }
+    const p = topUp().catch((err) => {
+      console.error('Failed to load dashboard stats:', err);
+    });
+    inflightRef.current = p;
+    try {
+      await p;
+    } finally {
+      if (inflightRef.current === p) inflightRef.current = null;
+    }
+  }, [topUp]);
 
   useEffect(() => {
     let cancelled = false;
-    const load = async () => {
-      try {
-        const bStats = await getAccountStats();
-        if (cancelled) return;
-        const totalWords = bStats.total_words;
-        const weeklyWords = bStats.weekly_words;
-        const weeklyDurationMs = bStats.weekly_duration_ms;
-        const monthlyWords = bStats.monthly_words;
-
-        const weeklyHoursSaved = weeklyWords / 40 / 60;
-        const weeklyDictationHours = weeklyDurationMs / 3600000;
-        const weeklyWordsLabel =
-          weeklyWords >= 1000
-            ? (weeklyWords / 1000).toFixed(1) + 'K'
-            : weeklyWords.toLocaleString();
-        const weeklySavedLabel =
-          weeklyHoursSaved >= 1
-            ? weeklyHoursSaved.toFixed(1) + 'h saved'
-            : Math.round(weeklyHoursSaved * 60) + 'm saved';
-        const weeklyDictLabel =
-          weeklyDictationHours >= 1
-            ? weeklyDictationHours.toFixed(1) + 'h spoken'
-            : Math.round(weeklyDictationHours * 60) + 'm spoken';
-
-        let rangeLabel = 'Last 7 days';
-        try {
-          const start = new Date(bStats.week_start_ms);
-          const end = new Date(bStats.week_start_ms + 6 * 86400000);
-          const fmt = new Intl.DateTimeFormat('en-US', {
-            month: 'short',
-            day: 'numeric',
-          });
-          rangeLabel = fmt.format(start) + ' – ' + fmt.format(end);
-        } catch {
-          /* range label is decorative */
-        }
-
-        const next: StatTexts = {
-          totalWords: formatTotalWords(totalWords),
-          timeSaved: formatDurationMs((totalWords / 40) * 60000),
-          dictation: formatDurationMs(bStats.total_duration_ms),
-          monthly: formatDurationMs((monthlyWords / 40 / 60) * 3600000),
-          totalWordsSub:
-            '+' +
-            (weeklyWords >= 1000
-              ? (weeklyWords / 1000).toFixed(1) + 'K'
-              : String(weeklyWords)) +
-            ' this week',
-          timeSavedSub: 'at ~40 WPM · to date',
-          dictationSub: weeklyDictLabel + ' · last 7 days',
-          monthlySub:
-            (monthlyWords >= 1000
-              ? (monthlyWords / 1000).toFixed(1) + 'K'
-              : String(monthlyWords)) + ' words · last 30 days',
-          headerCount:
-            weeklyWordsLabel + ' words · ' + weeklySavedLabel + ' · ' + weeklyDictLabel,
-          rangeLabel,
-        };
-        cachedStats = next;
-        setStats(next);
-
-        const monday = new Date(bStats.week_start_ms);
-        let timestamps: string[];
-        if (bStats.source === 'account' && Array.isArray(bStats.weekly_timestamps)) {
-          timestamps = bStats.weekly_timestamps;
-        } else {
-          timestamps = await getWeeklyActivity(monday.toISOString());
-          if (cancelled) return;
-        }
-        const counts = [0, 0, 0, 0, 0, 0, 0];
-        timestamps.forEach((ts) => {
-          const d = new Date(ts);
-          const dow = d.getUTCDay();
-          counts[dow === 0 ? 6 : dow - 1]++;
-        });
-        cachedCounts = counts;
-        cachedWeekStartMs = bStats.week_start_ms;
-        setDayCounts(counts);
-        setWeekStartMs(bStats.week_start_ms);
-        setLoaded(true);
-      } catch (err) {
-        console.error('Failed to load dashboard stats:', err);
+    fullLoad()
+      .catch((err) => console.error('Failed to load dashboard stats:', err))
+      .finally(() => {
+        skeletonCleared = true;
+        if (!cancelled) setSkeleton(false);
+      });
+    const onRefresh = () => void refresh();
+    window.addEventListener('fluence:refresh-dashboard', onRefresh);
+    let unlistenHistory: (() => void) | undefined;
+    void subscribeHistoryUpdated(() => void refresh()).then((u) => {
+      unlistenHistory = u;
+    });
+    let unlistenSync: (() => void) | undefined;
+    // Account switch: drop the other account's buckets, full reload.
+    void subscribeSyncStatus((s) => {
+      const key = s?.account_key ?? null;
+      if (accountRef.current === undefined) {
+        accountRef.current = key;
+        return;
       }
-    };
-    void load().finally(() => {
-      skeletonCleared = true;
-      if (!cancelled) setSkeleton(false);
+      if (key !== accountRef.current) {
+        accountRef.current = key;
+        cachedBuckets = null;
+        setBuckets([]);
+        lastFetchRef.current = 0;
+        void fullLoad().catch((err) =>
+          console.error('Failed to load dashboard stats:', err),
+        );
+      } else {
+        void refresh();
+      }
+    }).then((u) => {
+      unlistenSync = u;
     });
-    let unlisten: (() => void) | undefined;
-    void subscribeHistoryUpdated(() => void load()).then((u) => {
-      unlisten = u;
-    });
-    const onFocus = () => void load();
+    const onFocus = () => void refresh();
     window.addEventListener('focus', onFocus);
     return () => {
       cancelled = true;
-      unlisten?.();
+      unlistenHistory?.();
+      unlistenSync?.();
       window.removeEventListener('focus', onFocus);
+      window.removeEventListener('fluence:refresh-dashboard', onRefresh);
     };
-  }, []);
+  }, [fullLoad, refresh]);
 
-  // ResizeObserver re-renders identical data at the new width — no
-  // backend call (vanilla setupChartResize, 120ms debounce).
-  useEffect(() => {
-    const el = canvasColRef.current;
-    if (!el || typeof ResizeObserver === 'undefined') return;
-    const measure = () =>
-      setChartWidth((prev) => {
-        const next = Math.max(280, Math.min(1400, el.clientWidth || 640));
-        return prev === next ? prev : next;
-      });
-    measure();
-    let t: number | null = null;
-    const obs = new ResizeObserver(() => {
-      if (t !== null) window.clearTimeout(t);
-      t = window.setTimeout(measure, 120);
-    });
-    obs.observe(el);
-    return () => {
-      if (t !== null) window.clearTimeout(t);
-      obs.disconnect();
-    };
-  }, []);
+  const summary = useMemo(() => {
+    const today = utcDayStart(Date.now());
+    const lifetime = sumWindow(buckets, 0, today + DAY_MS);
+    const last7 = sumWindow(buckets, today - 6 * DAY_MS, today + DAY_MS);
+    const last30 = sumWindow(buckets, today - 29 * DAY_MS, today + DAY_MS);
+    const last90 = sumWindow(buckets, today - 89 * DAY_MS, today + DAY_MS);
+    return { lifetime, last7, last30, last90 };
+  }, [buckets]);
 
-  const now = Date.now();
-  const total = dayCounts.reduce((a, b) => a + b, 0);
-  let peakIdx = 0;
-  dayCounts.forEach((c, i) => {
-    if (c > dayCounts[peakIdx]) peakIdx = i;
-  });
-  const maxCount = Math.max(...dayCounts, 1);
-  const activeDays = dayCounts.filter((c) => c > 0).length;
-  const avg = total > 0 ? total / 7 : 0;
-  let todayIdx = -1;
-  if (weekStartMs) {
-    todayIdx = Math.floor((now - weekStartMs) / 86400000);
-    if (todayIdx < 0 || todayIdx > 6) todayIdx = -1;
-  }
+  const kpis = useMemo((): DashboardKpi[] => {
+    const totals =
+      range === '7d'
+        ? { ...summary.last7, scope: 'in last 7 days' }
+        : range === '30d'
+          ? { ...summary.last30, scope: 'in last 30 days' }
+          : range === '90d'
+            ? { ...summary.last90, scope: 'in last 90 days' }
+            : { ...summary.lifetime, scope: 'all time' };
+    return [
+      {
+        id: 'stat-total-words',
+        title: 'Words Transcribed',
+        value: formatTotalWords(totals.words),
+        foot: `${totals.sessions.toLocaleString()} sessions · ${totals.scope}`,
+      },
+      {
+        id: 'stat-time-saved',
+        title: 'Typing Time Saved',
+        value: formatDurationMs((totals.words / 40) * 60000),
+        foot: `at ~40 WPM · ${totals.scope}`,
+      },
+      {
+        id: 'stat-dictation-time',
+        title: 'Dictation Time',
+        value: formatDurationMs(totals.durationMs),
+        foot: `${spokenLabel(totals.durationMs)} · ${totals.scope}`,
+      },
+      {
+        id: 'stat-sessions',
+        title: 'Sessions',
+        value: totals.sessions.toLocaleString(),
+        foot: totals.scope === 'all time' ? 'all time' : `in last ${range === '7d' ? 7 : range === '30d' ? 30 : 90} days`,
+      },
+    ];
+  }, [summary, range]);
 
-  const points = useMemo(
-    () => chartPoints(loaded ? dayCounts : [0, 0, 0, 0, 0, 0, 0], chartWidth),
-    [loaded, dayCounts, chartWidth],
-  );
-  const dCurve = useMemo(() => curvePath(points), [points]);
-  const dArea = useMemo(
-    () =>
-      dCurve +
-      ' L ' + points[6].x.toFixed(1) + ' ' + BASELINE_Y +
-      ' L ' + points[0].x.toFixed(1) + ' ' + BASELINE_Y + ' Z',
-    [dCurve, points],
-  );
+  const points = useMemo(() => viewData(buckets, range), [buckets, range]);
+  const rangeTotal = points.reduce((a, p) => a + p.count, 0);
+  // Recharts does not auto-size the axis: 4-digit counts overflow a 32px
+  // gutter and the SVG viewport clips their leading digit.
+  const yWidth = points.some((p) => p.count >= 1000) ? 44 : 32;
 
-  const showChart = loaded;
-  const tip = tipIdx !== null ? { count: dayCounts[tipIdx], x: points[tipIdx].x, y: points[tipIdx].y } : null;
+  const copyValue = (value: string) => {
+    copyText(value).then(() => toast('Copied to clipboard', 'success'));
+  };
 
   return (
     <section className="page active" id="page-dashboard">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Dashboard</h1>
-        <p className="page-subtitle">Your transcription activity at a glance</p>
+      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--spacing-md)' }}>
+        <div>
+          <h1 className="page-title" tabIndex={-1}>Dashboard</h1>
+          <p className="page-subtitle">Your transcription activity at a glance</p>
+        </div>
+        <Button
+          variant="ghost"
+          size="sm"
+          id="dashboard-refresh-btn"
+          title="Refresh dashboard"
+          aria-label="Refresh dashboard"
+          onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
+        >
+          <RefreshCw size={14} aria-hidden="true" />
+          Refresh
+        </Button>
       </div>
 
-      <div className="stats-grid">
-        <div className={`stat-card${skeleton ? ' skeleton' : ''}`}>
-          <div className="stat-eyebrow">Lifetime</div>
-          <AnimatedStat id="stat-total-words" value={stats.totalWords} />
-          <div className="stat-label">Words Transcribed</div>
-          <div className="stat-sub" id="stat-total-words-sub">{stats.totalWordsSub}</div>
-        </div>
-        <div className={`stat-card${skeleton ? ' skeleton' : ''}`}>
-          <div className="stat-eyebrow">Estimate · 40 WPM</div>
-          <AnimatedStat id="stat-time-saved" value={stats.timeSaved} />
-          <div className="stat-label">Typing Time Saved</div>
-          <div className="stat-sub" id="stat-time-saved-sub">{stats.timeSavedSub}</div>
-        </div>
-        <div className={`stat-card${skeleton ? ' skeleton' : ''}`}>
-          <div className="stat-eyebrow">Recorded</div>
-          <AnimatedStat id="stat-dictation-time" value={stats.dictation} />
-          <div className="stat-label">Dictation Time</div>
-          <div className="stat-sub" id="stat-dictation-sub">{stats.dictationSub}</div>
-        </div>
-        <div className={`stat-card${skeleton ? ' skeleton' : ''}`}>
-          <div className="stat-eyebrow">Last 30 days</div>
-          <AnimatedStat id="stat-monthly-saved" value={stats.monthly} />
-          <div className="stat-label">30-Day Time Saved</div>
-          <div className="stat-sub" id="stat-monthly-sub">{stats.monthlySub}</div>
-        </div>
+      <div className="kpi-grid">
+        {skeleton && buckets.length === 0
+          ? ['stat-total-words', 'stat-time-saved', 'stat-dictation-time', 'stat-sessions'].map(
+              (id) => (
+                <Card key={id}>
+                  <CardHeader>
+                    <Skeleton style={{ height: 14, width: '55%' }} />
+                  </CardHeader>
+                  <CardContent>
+                    <Skeleton className="kpi-skel" />
+                    <Skeleton style={{ height: 12, width: '70%' }} />
+                  </CardContent>
+                </Card>
+              ),
+            )
+          : kpis.map((kpi) => (
+              <Card key={kpi.id}>
+                <CardHeader>
+                  <CardTitle>{kpi.title}</CardTitle>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        aria-label={`${kpi.title} options`}
+                      >
+                        <MoreHorizontal size={14} aria-hidden="true" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem onSelect={() => copyValue(kpi.value)}>
+                        <Copy size={14} aria-hidden="true" />
+                        Copy value
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </CardHeader>
+                <CardContent>
+                  <AnimatedStat id={kpi.id} value={kpi.value} />
+                  <div className="kpi-trendrow">
+                    <TrendBadge buckets={buckets} range={range} />
+                    <div className="kpi-foot">{kpi.foot}</div>
+                  </div>
+                </CardContent>
+              </Card>
+            ))}
       </div>
 
-      <div className="settings-section dashboard-chart-card">
-        <div className="settings-section-header dashboard-chart-header">
-          <div className="dashboard-chart-titles">
-            <h2>Weekly Activity</h2>
-            <p className="chart-range" id="chart-range-label">{stats.rangeLabel}</p>
-          </div>
-          <span id="chart-header-count" className="chart-summary">{stats.headerCount}</span>
-        </div>
-        <div className="dashboard-chart-body" id="weekly-chart">
-          <div className="chart-y-axis" aria-hidden="true">
-            <span className="axis-title-y">Transcriptions</span>
-          </div>
-
-          <div className="chart-canvas-col" id="chart-canvas-col" ref={canvasColRef}>
-            <svg
-              id="weekly-area-svg"
-              role="img"
-              aria-label={
-                loaded
-                  ? 'Weekly transcription activity: ' + total + ' transcriptions this week. ' +
-                    dayCounts.map((c, i) => DAY_NAMES[i] + ' ' + c).join(', ')
-                  : 'Weekly transcription activity area chart'
-              }
-              viewBox={`0 0 ${chartWidth} ${CHART_HEIGHT}`}
-            >
-              <defs>
-                <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor="#0BD6E3" stopOpacity="0.45" />
-                  <stop offset="50%" stopColor="#8B45D8" stopOpacity="0.30" />
-                  <stop offset="100%" stopColor="#8B45D8" stopOpacity="0.14" />
-                </linearGradient>
-                <linearGradient
-                  id="curve-stroke-grad"
-                  x1="0"
-                  y1="0"
-                  x2={String(chartWidth)}
-                  y2="0"
-                  gradientUnits="userSpaceOnUse"
-                >
-                  <stop offset="0%" stopColor="#8B45D8" />
-                  <stop offset="50%" stopColor="#6C5CE7" />
-                  <stop offset="100%" stopColor="#0BD6E3" />
-                </linearGradient>
-                <filter id="curve-glow" x="-10%" y="-20%" width="120%" height="140%">
-                  <feDropShadow dx="0" dy="2" stdDeviation="4" floodColor="#0BD6E3" floodOpacity="0.35" />
-                </filter>
-              </defs>
-              {showChart && (
-                <>
-                  <g id="weekly-chart-grid">
-                    {[TOP_Y, TOP_Y + AVAIL_HEIGHT / 2, BASELINE_Y].map((y, i) => (
-                      <line
-                        key={y}
-                        x1={PADDING_X}
-                        x2={chartWidth - PADDING_X}
-                        y1={y.toFixed(1)}
-                        y2={y.toFixed(1)}
-                        stroke={i === 2 ? 'rgba(255,255,255,0.14)' : 'rgba(255,255,255,0.06)'}
-                        strokeWidth="1"
-                        strokeDasharray={i === 2 ? undefined : '3 3'}
+      <div style={{ marginTop: 'var(--spacing-md)', display: 'flex', flexDirection: 'column', flex: '1 0 auto' }}>
+        <Card className="chart-fill">
+          <CardHeader>
+            <div>
+              <CardTitle>Activity</CardTitle>
+              <CardDescription>Transcription sessions</CardDescription>
+            </div>
+            <Tabs value={range} onValueChange={(v) => setRange(v as Range)}>
+              <TabsList aria-label="Activity range">
+                <TabsTrigger value="7d">Last 7 days</TabsTrigger>
+                <TabsTrigger value="30d">Last 30 days</TabsTrigger>
+                <TabsTrigger value="90d">Last 90 days</TabsTrigger>
+                <TabsTrigger value="all">All time</TabsTrigger>
+              </TabsList>
+            </Tabs>
+          </CardHeader>
+          <CardContent>
+            {loaded && rangeTotal === 0 ? (
+              <div className="chart-empty" id="chart-empty">
+                No activity in this range yet — press your hotkey to dictate.
+              </div>
+            ) : (
+              <ChartContainer config={chartConfig} height="100%">
+                <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#0BD6E3" stopOpacity={0.45} />
+                      <stop offset="50%" stopColor="#8B45D8" stopOpacity={0.3} />
+                      <stop offset="100%" stopColor="#8B45D8" stopOpacity={0.14} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={24}
+                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    width={yWidth}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                  />
+                  <ChartTooltip
+                    cursor={{ stroke: 'rgba(255,255,255,0.12)' }}
+                    content={
+                      <ChartTooltipContent
+                        valueFormatter={(v, label) =>
+                          `${v} session${v === 1 ? '' : 's'} · ${label}`
+                        }
                       />
-                    ))}
-                  </g>
-                  <ChartPaths dCurve={dCurve} dArea={dArea} />
-                  <g id="weekly-chart-points">
-                    {points.map((pt, idx) => {
-                      const isPeak = total > 0 && pt.count === maxCount && pt.count > 0;
-                      return (
-                        <g key={idx}>
-                          <circle
-                            cx={pt.x.toFixed(1)}
-                            cy={pt.y.toFixed(1)}
-                            r={pt.count > 0 ? (isPeak ? '7' : '6') : '3'}
-                            fill={DOT_COLORS[idx]}
-                            opacity={pt.count > 0 ? '0.22' : '0.05'}
-                          />
-                          <circle
-                            cx={pt.x.toFixed(1)}
-                            cy={pt.y.toFixed(1)}
-                            r={pt.count > 0 ? (isPeak ? '4' : '3.4') : '2.2'}
-                            fill={isPeak ? '#FFFFFF' : '#0D0D0D'}
-                            stroke={DOT_COLORS[idx]}
-                            strokeWidth="2"
-                            className="chart-data-dot"
-                            tabIndex={0}
-                            role="img"
-                            aria-label={DAY_NAMES[idx] + ': ' + pt.count + ' transcriptions'}
-                            onMouseEnter={() => setTipIdx(idx)}
-                            onMouseLeave={() => setTipIdx(null)}
-                            onFocus={() => setTipIdx(idx)}
-                            onBlur={() => setTipIdx(null)}
-                          />
-                          {pt.count > 0 && (
-                            <text
-                              x={pt.x.toFixed(1)}
-                              y={Math.max(10, pt.y - 12).toFixed(1)}
-                              className={'chart-value-label' + (isPeak ? ' is-peak' : '')}
-                            >
-                              {String(pt.count)}
-                            </text>
-                          )}
-                        </g>
-                      );
-                    })}
-                  </g>
-                  <g id="weekly-chart-labels"></g>
-                </>
-              )}
-            </svg>
-            <div className="chart-day-labels" id="chart-day-labels">
-              {DAY_NAMES.map((day, i) => (
-                <div
-                  key={day}
-                  className={
-                    'chart-day-cell' +
-                    (loaded && i === todayIdx ? ' is-today' : '') +
-                    (loaded && total > 0 && i === peakIdx && dayCounts[i] > 0 ? ' is-peak' : '')
-                  }
-                  data-day={i}
-                >
-                  <span className="day-name">{day}</span>
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div className="chart-tooltip" id="chart-tooltip" hidden={tip === null}>
-            {tip !== null && (
-              <>
-                <strong>{tip.count}</strong> · {DAY_NAMES[tipIdx ?? 0]}
-              </>
+                    }
+                  />
+                  <Area
+                    type="monotone"
+                    dataKey="count"
+                    name="sessions"
+                    stroke="var(--color-brand-cyan)"
+                    strokeWidth={2}
+                    fill="url(#dashAreaGrad)"
+                    dot={false}
+                    activeDot={{ r: 4 }}
+                    isAnimationActive={!reduced}
+                  />
+                </AreaChart>
+              </ChartContainer>
             )}
-          </div>
-          <div className="chart-empty" id="chart-empty" hidden={total !== 0 || !loaded}>
-            No activity this week yet — press your hotkey to dictate.
-          </div>
-        </div>
-
-        <div className="insights-grid">
-          <div className="insight-card">
-            <div className="insight-eyebrow">Most active day</div>
-            <div className="insight-value" id="insight-best-day">
-              {loaded && total > 0 ? DAY_NAMES[peakIdx] : '–'}
-            </div>
-            <div className="insight-sub" id="insight-best-day-sub">
-              {loaded && total > 0 ? dayCounts[peakIdx] + ' transcriptions' : loaded ? 'no activity yet' : 'this week'}
-            </div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-eyebrow">Daily average</div>
-            <div className="insight-value" id="insight-daily-avg">
-              {loaded ? (total > 0 ? (avg >= 10 ? String(Math.round(avg)) : avg.toFixed(1)) : '0') : '–'}
-            </div>
-            <div className="insight-sub">transcriptions / day</div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-eyebrow">Active days</div>
-            <div className="insight-value" id="insight-active-days">
-              {loaded ? String(activeDays) : '–'}
-            </div>
-            <div className="insight-sub" id="insight-active-sub">
-              of 7 days{loaded && activeDays === 7 ? ' · perfect week' : ''}
-            </div>
-          </div>
-          <div className="insight-card">
-            <div className="insight-eyebrow">Today</div>
-            <div className="insight-value" id="insight-today">
-              {loaded ? (todayIdx >= 0 ? String(dayCounts[todayIdx]) : '–') : '–'}
-            </div>
-            <div className="insight-sub" id="insight-today-sub">
-              {loaded
-                ? todayIdx >= 0
-                  ? DAY_NAMES[todayIdx] + ' · so far'
-                  : 'outside this week'
-                : 'so far'}
-            </div>
-          </div>
-        </div>
+          </CardContent>
+        </Card>
       </div>
     </section>
   );

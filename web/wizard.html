@@ -1,0 +1,15 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Same contract as src/wizard.html: Tauri IPC only, no remote code. -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self';" />
+  <title>Welcome to Fluence</title>
+</head>
+<body>
+  <div id="wizard-root"></div>
+  <script type="module" src="/src/wizard/main.tsx"></script>
+</body>
+</html>

@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import {
   getCachedSettings,
@@ -19,6 +28,11 @@ import {
 } from '@/ipc/general';
 
 type HotkeyKey = 'hotkey' | 'agent_hotkey';
+
+// Radix Select items reject empty-string values; the device list uses ""
+// for "System Default", so a sentinel stands in at the kit boundary and is
+// mapped back before persistence. Stored values never change.
+const SYSTEM_DEFAULT_DEVICE = '__system_default__';
 
 function str(value: unknown, fallback: string): string {
   return typeof value === 'string' && value ? value : fallback;
@@ -261,7 +275,7 @@ export function GeneralPage() {
                 ref={(el) => {
                   displays.current.hotkey = el;
                 }}
-                className={`hotkey-display${recording === 'hotkey' ? ' recording' : ''}`}
+                className={`hotkey-display ui-focus-ring${recording === 'hotkey' ? ' recording' : ''}`}
                 id="hotkey-display"
                 tabIndex={0}
                 role="button"
@@ -283,17 +297,18 @@ export function GeneralPage() {
                   {recording === 'hotkey' ? pendingText : hotkey}
                 </span>
               </div>
-              <button
+              <Button
                 ref={(el) => {
                   clearBtns.current.hotkey = el;
                 }}
                 type="button"
-                className="btn-ghost btn-small"
+                variant="ghost"
+                size="sm"
                 id="hotkey-clear-btn"
                 onClick={() => onResetHotkey('hotkey', DEFAULT_HOTKEY)}
               >
                 Reset
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -303,18 +318,24 @@ export function GeneralPage() {
             <div className="setting-desc">How the hotkey controls recording</div>
           </div>
           <div className="setting-control">
-            <select
-              id="recording-mode-select"
-              className="select-md"
-              aria-label="Transcription mode behavior"
-              value={recordingMode}
-              onChange={(e) =>
-                bindSelect(setRecordingMode, 'recording_mode', 'hotkeys')(e.target.value)
-              }
-            >
-              <option value="push_to_toggle">Push-to-Toggle</option>
-              <option value="hold_to_record">Hold-to-Record</option>
-            </select>
+            <Field>
+              <Select
+                value={recordingMode}
+                onValueChange={bindSelect(setRecordingMode, 'recording_mode', 'hotkeys')}
+              >
+                <SelectTrigger
+                  id="recording-mode-select"
+                  className="select-md"
+                  aria-label="Transcription mode behavior"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
+                  <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -328,7 +349,7 @@ export function GeneralPage() {
                 ref={(el) => {
                   displays.current.agent_hotkey = el;
                 }}
-                className={`hotkey-display${recording === 'agent_hotkey' ? ' recording' : ''}`}
+                className={`hotkey-display ui-focus-ring${recording === 'agent_hotkey' ? ' recording' : ''}`}
                 id="agent-hotkey-display"
                 tabIndex={0}
                 role="button"
@@ -350,17 +371,18 @@ export function GeneralPage() {
                   {recording === 'agent_hotkey' ? pendingText : agentHotkey}
                 </span>
               </div>
-              <button
+              <Button
                 ref={(el) => {
                   clearBtns.current.agent_hotkey = el;
                 }}
                 type="button"
-                className="btn-ghost btn-small"
+                variant="ghost"
+                size="sm"
                 id="agent-hotkey-clear-btn"
                 onClick={() => onResetHotkey('agent_hotkey', DEFAULT_AGENT_HOTKEY)}
               >
                 Reset
-              </button>
+              </Button>
             </div>
           </div>
         </div>
@@ -370,18 +392,24 @@ export function GeneralPage() {
             <div className="setting-desc">How the agent hotkey controls recording</div>
           </div>
           <div className="setting-control">
-            <select
-              id="agent-recording-mode-select"
-              className="select-md"
-              aria-label="Agent mode behavior"
-              value={agentRecordingMode}
-              onChange={(e) =>
-                bindSelect(setAgentRecordingMode, 'agent_recording_mode', 'hotkeys')(e.target.value)
-              }
-            >
-              <option value="push_to_toggle">Push-to-Toggle</option>
-              <option value="hold_to_record">Hold-to-Record</option>
-            </select>
+            <Field>
+              <Select
+                value={agentRecordingMode}
+                onValueChange={bindSelect(setAgentRecordingMode, 'agent_recording_mode', 'hotkeys')}
+              >
+                <SelectTrigger
+                  id="agent-recording-mode-select"
+                  className="select-md"
+                  aria-label="Agent mode behavior"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
+                  <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
       </div>
@@ -394,17 +422,25 @@ export function GeneralPage() {
             <div className="setting-desc">Choose between the full telemetry card, compact pill, or minimal circular bubble</div>
           </div>
           <div className="setting-control">
-            <select
-              id="overlay-style-select"
-              className="select-md"
-              aria-label="Overlay style"
-              value={overlayStyle}
-              onChange={(e) => bindSelect(setOverlayStyle, 'overlay_style')(e.target.value)}
-            >
-              <option value="full">Full Status Island</option>
-              <option value="compact">Compact Pill</option>
-              <option value="bubble">Minimal Bubble</option>
-            </select>
+            <Field>
+              <Select
+                value={overlayStyle}
+                onValueChange={bindSelect(setOverlayStyle, 'overlay_style')}
+              >
+                <SelectTrigger
+                  id="overlay-style-select"
+                  className="select-md"
+                  aria-label="Overlay style"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="full">Full Status Island</SelectItem>
+                  <SelectItem value="compact">Compact Pill</SelectItem>
+                  <SelectItem value="bubble">Minimal Bubble</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -413,17 +449,25 @@ export function GeneralPage() {
             <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
           </div>
           <div className="setting-control">
-            <select
-              id="overlay-position-select"
-              className="select-md"
-              aria-label="Overlay position"
-              value={overlayPosition}
-              onChange={(e) => bindSelect(setOverlayPosition, 'overlay_position')(e.target.value)}
-            >
-              <option value="bottom_right">Bottom Right</option>
-              <option value="bottom_left">Bottom Left</option>
-              <option value="center">Center Bottom</option>
-            </select>
+            <Field>
+              <Select
+                value={overlayPosition}
+                onValueChange={bindSelect(setOverlayPosition, 'overlay_position')}
+              >
+                <SelectTrigger
+                  id="overlay-position-select"
+                  className="select-md"
+                  aria-label="Overlay position"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="bottom_right">Bottom Right</SelectItem>
+                  <SelectItem value="bottom_left">Bottom Left</SelectItem>
+                  <SelectItem value="center">Center Bottom</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
       </div>
@@ -436,21 +480,33 @@ export function GeneralPage() {
             <div className="setting-desc">Select the audio input device for voice recording</div>
           </div>
           <div className="setting-control">
-            <select
-              id="audio-device-select"
-              className="select-lg"
-              aria-label="Microphone input device"
-              value={audioDevice}
-              onChange={(e) => bindSelect(setAudioDevice, 'audio_device_id')(e.target.value)}
-            >
-              <option value="">System Default</option>
-              {devices.map((name) => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-              {audioDevice && !devices.includes(audioDevice) && (
-                <option value={audioDevice}>{audioDevice}</option>
-              )}
-            </select>
+            <Field>
+              <Select
+                value={audioDevice || SYSTEM_DEFAULT_DEVICE}
+                onValueChange={(v) =>
+                  bindSelect(setAudioDevice, 'audio_device_id')(
+                    v === SYSTEM_DEFAULT_DEVICE ? '' : v,
+                  )
+                }
+              >
+                <SelectTrigger
+                  id="audio-device-select"
+                  className="select-lg"
+                  aria-label="Microphone input device"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={SYSTEM_DEFAULT_DEVICE}>System Default</SelectItem>
+                  {devices.map((name) => (
+                    <SelectItem key={name} value={name}>{name}</SelectItem>
+                  ))}
+                  {audioDevice && !devices.includes(audioDevice) && (
+                    <SelectItem value={audioDevice}>{audioDevice}</SelectItem>
+                  )}
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -459,31 +515,39 @@ export function GeneralPage() {
             <div className="setting-desc">Hint to the STT model about the spoken language</div>
           </div>
           <div className="setting-control">
-            <select
-              id="language-select"
-              className="select-md"
-              aria-label="Transcription language"
-              value={language}
-              onChange={(e) => bindSelect(setLanguage, 'language')(e.target.value)}
-            >
-              <option value="en">English</option>
-              <option value="auto">Auto-detect</option>
-              <option value="es">Spanish</option>
-              <option value="fr">French</option>
-              <option value="de">German</option>
-              <option value="zh">Chinese</option>
-              <option value="ja">Japanese</option>
-              <option value="hi">Hindi</option>
-              <option value="ar">Arabic</option>
-              <option value="pt">Portuguese</option>
-              <option value="it">Italian</option>
-              <option value="nl">Dutch</option>
-              <option value="ko">Korean</option>
-              <option value="ru">Russian</option>
-              <option value="mr">Marathi</option>
-              <option value="pa">Punjabi</option>
-              <option value="hu">Hungarian</option>
-            </select>
+            <Field>
+              <Select
+                value={language}
+                onValueChange={bindSelect(setLanguage, 'language')}
+              >
+                <SelectTrigger
+                  id="language-select"
+                  className="select-md"
+                  aria-label="Transcription language"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="en">English</SelectItem>
+                  <SelectItem value="auto">Auto-detect</SelectItem>
+                  <SelectItem value="es">Spanish</SelectItem>
+                  <SelectItem value="fr">French</SelectItem>
+                  <SelectItem value="de">German</SelectItem>
+                  <SelectItem value="zh">Chinese</SelectItem>
+                  <SelectItem value="ja">Japanese</SelectItem>
+                  <SelectItem value="hi">Hindi</SelectItem>
+                  <SelectItem value="ar">Arabic</SelectItem>
+                  <SelectItem value="pt">Portuguese</SelectItem>
+                  <SelectItem value="it">Italian</SelectItem>
+                  <SelectItem value="nl">Dutch</SelectItem>
+                  <SelectItem value="ko">Korean</SelectItem>
+                  <SelectItem value="ru">Russian</SelectItem>
+                  <SelectItem value="mr">Marathi</SelectItem>
+                  <SelectItem value="pa">Punjabi</SelectItem>
+                  <SelectItem value="hu">Hungarian</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -492,19 +556,27 @@ export function GeneralPage() {
             <div className="setting-desc">Automatically rewrite or clean up text before pasting</div>
           </div>
           <div className="setting-control">
-            <select
-              id="ai-polish-select"
-              className="select-md"
-              aria-label="AI polish style"
-              value={aiPolish}
-              onChange={(e) => bindSelect(setAiPolish, 'ai_polish_style')(e.target.value)}
-            >
-              <option value="none">None (Raw)</option>
-              <option value="clean">Clean Fillers &amp; Grammar</option>
-              <option value="professional">Professional Tone</option>
-              <option value="bullet_points">Bulleted List</option>
-              <option value="translate_en">Translate to English</option>
-            </select>
+            <Field>
+              <Select
+                value={aiPolish}
+                onValueChange={bindSelect(setAiPolish, 'ai_polish_style')}
+              >
+                <SelectTrigger
+                  id="ai-polish-select"
+                  className="select-md"
+                  aria-label="AI polish style"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">None (Raw)</SelectItem>
+                  <SelectItem value="clean">Clean Fillers &amp; Grammar</SelectItem>
+                  <SelectItem value="professional">Professional Tone</SelectItem>
+                  <SelectItem value="bullet_points">Bulleted List</SelectItem>
+                  <SelectItem value="translate_en">Translate to English</SelectItem>
+                </SelectContent>
+              </Select>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -513,16 +585,14 @@ export function GeneralPage() {
             <div className="setting-desc">Play a short chime when a transcription finishes</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="sound-on-complete-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="sound-on-complete-cb"
                 aria-label="Play a sound when transcription completes"
                 checked={sound}
-                onChange={(e) => bindCheck(setSound, 'sound_on_complete')(e.target.checked)}
+                onCheckedChange={bindCheck(setSound, 'sound_on_complete')}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
       </div>
@@ -535,16 +605,14 @@ export function GeneralPage() {
             <div className="setting-desc">Automatically start Fluence when you log in to Windows</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="autostart-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="autostart-cb"
                 aria-label="Launch at Windows startup"
                 checked={autostart}
-                onChange={(e) => bindCheck(setAutostart, 'auto_start', 'autostart')(e.target.checked)}
+                onCheckedChange={bindCheck(setAutostart, 'auto_start', 'autostart')}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -553,16 +621,14 @@ export function GeneralPage() {
             <div className="setting-desc">Silence music, videos, and calls while you dictate</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="duck-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="duck-cb"
                 aria-label="Mute background apps while dictating"
                 checked={duck}
-                onChange={(e) => bindCheck(setDuck, 'duck_enabled')(e.target.checked)}
+                onCheckedChange={bindCheck(setDuck, 'duck_enabled')}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
         <div className="setting-row">
@@ -571,16 +637,14 @@ export function GeneralPage() {
             <div className="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch" id="auto-grab-toggle">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="auto-grab-cb"
                 aria-label="Grab highlighted text when entering Agent Mode"
                 checked={autoGrab}
-                onChange={(e) => bindCheck(setAutoGrab, 'auto_grab_highlight')(e.target.checked)}
+                onCheckedChange={bindCheck(setAutoGrab, 'auto_grab_highlight')}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
       </div>

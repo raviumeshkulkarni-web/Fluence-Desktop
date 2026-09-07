@@ -6,7 +6,12 @@ import {
   useRef,
   useState,
 } from 'react';
+import { Search, Mic, X } from 'lucide-react';
 import { toast } from '@/components/fluence/Toasts';
+import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/dialog';
+import { Input } from '@/components/ui/input';
+import { Skeleton } from '@/components/ui/skeleton';
 import { acceptSuggestion } from '@/ipc/dictionary';
 import {
   clearHistory,
@@ -63,7 +68,7 @@ function historyGroupForDate(date: Date): string {
   });
 }
 
-function formatHistoryTimestamp(ts: string): string {
+export function formatHistoryTimestamp(ts: string): string {
   const date = new Date(ts);
   const now = new Date();
   const diff = now.getTime() - date.getTime();
@@ -90,7 +95,9 @@ function formatHistoryTimestamp(ts: string): string {
   });
 }
 
-function historyItemMeta(entry: HistoryEntry): string {
+// Also reused by the Dashboard recent-activity rows (entry shape kept
+// structural so both call sites typecheck).
+export function historyItemMeta(entry: { text: string; duration_ms: number }): string {
   const parts: string[] = [];
   const words = String(entry.text || '')
     .trim()
@@ -160,6 +167,8 @@ export function HistoryPage() {
   const [flashId, setFlashId] = useState<string | null>(null);
   const [menu, setMenu] = useState<{ x: number; y: number; rowId: string } | null>(null);
   const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
+  const [confirmClear, setConfirmClear] = useState(false);
+  const [initialLoading, setInitialLoading] = useState(true);
 
   const pageRef = useRef(0);
   const searchInputRef = useRef('');
@@ -196,7 +205,7 @@ export function HistoryPage() {
   );
 
   useEffect(() => {
-    void load(true);
+    void load(true).then(() => setInitialLoading(false));
     let unlisten: (() => void) | undefined;
     void subscribeHistoryUpdated(() => void load(true)).then((u) => {
       unlisten = u;
@@ -357,8 +366,7 @@ export function HistoryPage() {
     }
   };
 
-  const onClearAll = async () => {
-    if (!window.confirm('Clear all transcription history?')) return;
+  const doClearAll = async () => {
     try {
       await clearHistory();
       toast('History cleared', 'success');
@@ -438,11 +446,11 @@ export function HistoryPage() {
       <div className="settings-section" style={{ overflow: 'hidden' }}>
         <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2>Recent Transcriptions</h2>
-          <button type="button" className="btn-danger btn-xs" id="clear-history-btn" onClick={() => void onClearAll()}>Clear All</button>
+          <Button variant="danger" size="xs" id="clear-history-btn" onClick={() => setConfirmClear(true)}>Clear All</Button>
         </div>
         <div className="search-wrapper">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
-          <input
+          <Search size={15} strokeWidth={2} aria-hidden="true" />
+          <Input
             ref={searchFieldRef}
             type="search"
             id="history-search"
@@ -459,29 +467,31 @@ export function HistoryPage() {
           onKeyDown={onListKeyDown}
           onContextMenu={onListContextMenu}
         >
-          {showEmpty && (
+          {initialLoading && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', padding: 'var(--spacing-md)' }}>
+              <Skeleton style={{ height: 64 }} />
+              <Skeleton style={{ height: 64 }} />
+              <Skeleton style={{ height: 64 }} />
+            </div>
+          )}
+          {!initialLoading && showEmpty && (
             <div className="empty-state" id="history-empty">
-              <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z" />
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                <line x1="12" y1="19" x2="12" y2="23" />
-                <line x1="8" y1="23" x2="16" y2="23" />
-              </svg>
+              <Mic className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
               <div className="empty-state-title">No transcriptions yet</div>
               <div className="empty-state-hint">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> to start your first transcription</div>
             </div>
           )}
-          {showNoResults && (
+          {!initialLoading && showNoResults && (
             <div className="empty-state" id="history-no-results">
-              <svg className="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8" /><line x1="21" y1="21" x2="16.65" y2="16.65" /></svg>
+              <Search className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
               <div className="empty-state-title">No matches</div>
               <div className="empty-state-hint" id="history-no-results-hint">
                 {query ? `Nothing matches "${query}" on this device.` : 'Nothing matches your search.'}
               </div>
-              <button type="button" className="btn-ghost btn-sm" id="history-clear-search-btn" onClick={onClearSearch}>Clear search</button>
+              <Button variant="ghost" size="sm" id="history-clear-search-btn" onClick={onClearSearch}>Clear search</Button>
             </div>
           )}
-          {groups.map((group) => (
+          {!initialLoading && groups.map((group) => (
             <div key={group.dayKey}>
               <div className="history-group-header" data-day-key={group.dayKey}>
                 <span>{group.label}</span>
@@ -516,30 +526,31 @@ export function HistoryPage() {
                       </span>
                       <div className="history-actions">
                         <span className={`badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}`}>{entry.mode}</span>
-                        <button
-                          type="button"
-                          className="btn-ghost history-copy-btn"
-                          style={{ padding: '2px 8px', fontSize: 11 }}
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="history-copy-btn"
                           onClick={(e) => {
                             e.stopPropagation();
                             copyItem(entry.text, entry.id);
                           }}
                         >
                           Copy
-                        </button>
-                        <button
-                          type="button"
-                          className="btn-ghost history-delete-btn"
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="xs"
+                          className="history-delete-btn"
                           data-history-id={entry.id}
                           aria-label="Delete transcription"
-                          style={{ padding: '2px 8px', fontSize: 11, color: 'var(--color-error)' }}
+                          style={{ color: 'var(--color-error)' }}
                           onClick={(e) => {
                             e.stopPropagation();
                             void deleteItem(entry.id);
                           }}
                         >
-                          x
-                        </button>
+                          <X size={12} aria-hidden="true" />
+                        </Button>
                       </div>
                     </div>
                     <div
@@ -560,15 +571,14 @@ export function HistoryPage() {
           id="history-load-more"
           className={lastCount < 50 ? 'hidden' : undefined}
         >
-          <button
-            type="button"
-            className="btn-ghost"
+          <Button
+            variant="ghost"
             id="load-more-btn"
             disabled={loadingMore}
             onClick={() => void onLoadMore()}
           >
             {loadingMore ? 'Loading…' : 'Load More'}
-          </button>
+          </Button>
         </div>
       </div>
 
@@ -616,6 +626,16 @@ export function HistoryPage() {
           </button>
         </div>
       )}
+
+      <ConfirmDialog
+        open={confirmClear}
+        onOpenChange={setConfirmClear}
+        title="Clear History"
+        body="Clear all transcription history?"
+        confirmLabel="Clear All"
+        danger
+        onConfirm={() => void doClearAll()}
+      />
     </section>
   );
 }

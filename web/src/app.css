@@ -1,16 +1,61 @@
 /* Fluence React shell — token/style layer.
  *
  * The frozen vanilla stylesheet layer is reused VERBATIM (single source
- * stays in ../src/css). No token is redefined here and no shadcn/Tailwind
- * theme is introduced in this slice, so the visual result cannot drift
- * from the current UI. (Tailwind + full shadcn theming is a later slice.)
+ * stays in ../src/css). ui.css below adds ONLY new component classes for
+ * the Radix-anatomy kit (shadcn Path B, no Tailwind/preflight); every
+ * value references an existing token, so nothing can drift.
  */
 @import '../../src/css/design-tokens.css';
 @import '../../src/css/global.css';
 @import '../../src/css/settings.css';
+@import './ui.css';
 
 /* React mount node participates in body's flex column exactly as the
  * vanilla titlebar + .app-shell children do. */
 #root {
   display: contents;
+}
+
+/* Phase 2 route compositions: kit Select sizing inside the frozen vanilla
+ * layouts. Values mirror the frozen settings.css/global.css rules cited —
+ * the kit trigger's own width:100% would otherwise lose its size context
+ * (settings.css loads before ui.css, so bare .select-md loses the cascade).
+ */
+.select-trigger.select-md {
+  width: 180px; /* frozen .select-md */
+}
+.select-trigger.select-lg {
+  width: 220px; /* frozen .select-lg */
+}
+.input-with-btn .select-trigger {
+  flex: 1 1 0%; /* frozen .input-with-btn select */
+  min-width: 0;
+}
+
+/* Phase 3 Task 15: the History right-click menu speaks the kit dropdown
+ * language. The kit ships no ContextMenu primitive and ui.css is locked,
+ * so the cursor-anchored custom menu stays; only its paint converges onto
+ * the .dropdown-content/.dropdown-item tokens (same cascade position wins
+ * ties with the frozen settings.css rules).
+ */
+.history-context-menu {
+  background: var(--color-surface-menu);
+}
+.history-context-menu button {
+  font-size: var(--text-label-lg);
+  padding: 7px 10px;
+  border-radius: var(--radius-xs);
+}
+
+/* Phase 3 Task 21: 800px-minimum narrow guard (main window minWidth 800,
+ * sidebar 230 + content padding leaves ~500px for rows). Wrap-only rules:
+ * inert at widths where content fits; stacking only where a flex row would
+ * otherwise overflow. Row gaps already come from each rule's own `gap`.
+ */
+.setting-row,
+.input-with-btn,
+#dict-add-row,
+#snippet-add-row,
+.history-item-header {
+  flex-wrap: wrap;
 }

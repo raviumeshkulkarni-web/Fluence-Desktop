@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import {
   getSyncStatus,
@@ -166,16 +168,14 @@ export function SyncPage() {
             <div className="setting-desc">Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
           </div>
           <div className="setting-control">
-            <label className="toggle-switch">
-              <input
-                type="checkbox"
+            <Field>
+              <Switch
                 id="sync-enabled-cb"
                 aria-label="Enable background sync"
                 checked={enabled}
-                onChange={(e) => void onToggle(e.target.checked)}
+                onCheckedChange={(v) => void onToggle(v)}
               />
-              <div className="toggle-track"><div className="toggle-thumb" /></div>
-            </label>
+            </Field>
           </div>
         </div>
       </div>

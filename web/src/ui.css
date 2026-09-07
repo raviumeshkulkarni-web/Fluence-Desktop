@@ -817,37 +817,29 @@
   background: var(--color-surface-menu);
 }
 .command-input-wrap {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: 0 14px;
-  border-bottom: 1px solid var(--color-border);
-  background: transparent;
-  border-radius: var(--radius-md) var(--radius-md) 0 0;
-}
-.command-input-wrap:focus-within {
-  border-bottom-color: var(--color-border-structural);
+  position: relative;
+  padding: var(--spacing-sm);
 }
 .command-input-icon {
+  position: absolute;
+  left: calc(var(--spacing-sm) + 14px);
+  top: 50%;
+  transform: translateY(-50%);
   width: 16px;
   height: 16px;
   color: var(--color-ink-muted);
-  flex-shrink: 0;
+  pointer-events: none;
 }
-.command-input {
+/* The search field is painted by the app's canonical input base
+ * (global.css `input:not([type=checkbox]):not([type=radio])`): filled
+ * --color-surface-elevated, --color-border-structural border, --radius-sm,
+ * and the shared focus glow. Icon sits inside the field exactly like the
+ * app's own .search-wrapper pattern (settings.css): the deep scope beats
+ * the global input base (0,2,1) on padding-left without touching the
+ * frozen rule. 38px = 14px base pad + 16px icon + 8px gap. */
+.command-dialog .command-input-wrap .command-input {
   width: 100%;
-  height: 52px;
-  background: transparent;
-  border: 0;
-  outline: none;
-  color: var(--color-on-surface);
-  font-family: var(--font-body);
-  font-size: var(--text-body-md);
-  padding: 0;
-  margin: 0;
-}
-.command-input::placeholder {
-  color: var(--color-ink-muted);
+  padding-left: 38px;
 }
 .command-list {
   overflow-y: auto;

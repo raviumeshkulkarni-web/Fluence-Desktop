@@ -11,6 +11,7 @@ import { SnippetsPage } from '@/routes/SnippetsPage';
 import { SyncPage } from '@/routes/SyncPage';
 import { Toaster } from '@/components/fluence/Toasts';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { CommandPalette } from '@/components/fluence/CommandPalette';
 import { updaterStore } from '@/ipc/updater';
 import { hideMainWindow } from '@/ipc/tauri';
 import { isHotkeyRecording } from '@/ipc/general';
@@ -44,6 +45,7 @@ const PAGE_ORDER: Route[] = [
 // focus moved to the new page title for assistive technology.
 export function App() {
   const [route, setRoute] = useState<Route>('about');
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   // Mirrors vanilla UpdateManager.init() timers (delayed + hourly policy).
   useEffect(() => {
@@ -64,16 +66,25 @@ export function App() {
         (el instanceof HTMLElement && el.isContentEditable);
 
       // Escape - close window (a recording hotkey capture consumes Esc
-      // first; the shell yields while one is active).
+      // first; the shell yields while one is active). When the command
+      // palette is open, Esc is handled by the dialog and closes it.
       if (e.key === 'Escape' && !isInput) {
         if (isHotkeyRecording()) return;
+        if (paletteOpen) return;
         e.preventDefault();
         hideMainWindow().catch(() => undefined);
         return;
       }
 
-      // Ctrl+F / Ctrl+K - focus history search
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'f' || e.key === 'k')) {
+      // Ctrl+K / Cmd+K - open command palette
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
+
+      // Ctrl+F / Cmd+F - focus history search
+      if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
         if (route !== 'history') navigateTo('history');
         requestHistorySearchFocus();
@@ -91,7 +102,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [route]);
+  }, [route, paletteOpen]);
 
   const navigateTo = useCallback(
     (page: Route) => {
@@ -154,6 +165,12 @@ export function App() {
           </main>
         </div>
         <Toaster />
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          currentRoute={route}
+          onNavigate={navigateTo}
+        />
       </TooltipProvider>
     </>
   );

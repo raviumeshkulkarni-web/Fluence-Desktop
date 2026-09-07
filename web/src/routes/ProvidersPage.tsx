@@ -705,6 +705,13 @@ export function ProvidersPage() {
                     key={cfg.engine}
                     asChild
                     value={cfg.engine}
+                    onKeyDown={(e) => {
+                      if ((e.target as Element).closest('button')) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        selectEngine(cfg.engine);
+                      }
+                    }}
                   >
                   <div
                     id={cfg.cardId}

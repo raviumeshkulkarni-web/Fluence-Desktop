@@ -438,6 +438,8 @@ fn scheduler_thread(app: AppHandle, core: Arc<Mutex<SchedulerCore>>, rx: Receive
         }
         log::info!("sync pass starting");
         finish_guarded(&core, run_pass);
+        // Remote stats rows may have landed: drop the dashboard cache.
+        crate::sync::stores::StatsDirtyStore::invalidate_activity_cache();
         log::info!("sync pass finished");
         let _ = app.emit(
             "sync-status",

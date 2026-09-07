@@ -261,6 +261,7 @@ pub fn run() {
             sync::scheduler::sync_sign_out,
             // Account-level combined statistics
             sync::scheduler::get_account_stats,
+            sync::stores::get_account_activity,
             // Misc
             get_app_version,
         ])

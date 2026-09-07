@@ -745,6 +745,7 @@ impl StatsDirtyStore {
             ever_pushed: false,
         });
         let _ = Self::save_rows(&rows);
+        Self::invalidate_activity_cache();
     }
 
     /// One-time per-account seed: convert pre-existing history rows into
@@ -826,6 +827,117 @@ impl StatsDirtyStore {
             .collect()
     }
 
+    // ── Dashboard activity view (history-proof daily buckets) ─────────────
+    //
+    // Read-only view over the synced stats ledger for the history-proof
+    // dashboard: one bucket per UTC day, computed server-side so payloads
+    // are O(days), never O(events). No ledger writes, no sync interaction,
+    // no schema change. Day math is UTC-midnight based so the bucket rule
+    // is trivially Kotlin-replicable from the same synced rows (THE Kotlin
+    // parity contract: day_start_ms = UTC midnight of the day containing
+    // timestamp_ms; sums compose across days/weeks/months identically).
+
+    /// Same row normalization as `account_event_rows` (timestamp wins, else
+    /// UTC midnight of `item.day`), duplicated deliberately so the frozen
+    /// command path above is untouched.
+    fn normalize_stat_row(r: &StatEventRow) -> (i64, i64, i64, i64) {
+        let ts = if r.item.timestamp_ms > 0 {
+            r.item.timestamp_ms
+        } else {
+            chrono::NaiveDate::parse_from_str(&r.item.day, "%Y-%m-%d")
+                .ok()
+                .and_then(|d| d.and_hms_opt(0, 0, 0))
+                .map(|t| t.and_utc().timestamp_millis())
+                .unwrap_or(0)
+        };
+        (
+            ts,
+            r.item.duration_ms.unwrap_or(0),
+            r.item.words.unwrap_or(0),
+            r.item.chars.unwrap_or(0),
+        )
+    }
+
+    /// Shared filter+normalize used by the signed-out view below.
+    fn normalize_rows(rows: Vec<StatEventRow>) -> Vec<(i64, i64, i64, i64)> {
+        let active_days: HashSet<String> = rows
+            .iter()
+            .filter(|r| r.item.timestamp_ms > 0 || r.item.chars.unwrap_or(0) != 0)
+            .map(|r| r.item.day.clone())
+            .collect();
+        rows.iter()
+            .filter(|r| {
+                !(r.item.timestamp_ms == 0
+                    && r.item.chars.unwrap_or(0) == 0
+                    && active_days.contains(&r.item.day))
+            })
+            .map(Self::normalize_stat_row)
+            .collect()
+    }
+
+    /// All local ledger rows regardless of attribution (signed-out view),
+    /// with the same aggregate-collapse rule as the account view so zero
+    /// rows never count sessions.
+    fn local_normalized_rows() -> Vec<(i64, i64, i64, i64)> {
+        Self::normalize_rows(Self::load_rows())
+    }
+
+    fn bucket_events(rows: Vec<(i64, i64, i64, i64)>, since_ms: Option<i64>) -> Vec<DailyBucket> {
+        let mut days: std::collections::BTreeMap<i64, (i64, i64, i64)> =
+            std::collections::BTreeMap::new();
+        for (ts, duration_ms, words, _chars) in rows {
+            if ts < 0 {
+                continue;
+            }
+            if let Some(since) = since_ms {
+                if ts < since {
+                    continue;
+                }
+            }
+            let day_start_ms = ts - ts.rem_euclid(ACTIVITY_DAY_MS);
+            let entry = days.entry(day_start_ms).or_insert((0, 0, 0));
+            entry.0 += 1;
+            entry.1 += words;
+            entry.2 += duration_ms;
+        }
+        days.into_iter()
+            .map(
+                |(day_start_ms, (sessions, words, duration_ms))| DailyBucket {
+                    day_start_ms,
+                    sessions,
+                    words,
+                    duration_ms,
+                },
+            )
+            .collect()
+    }
+
+    fn cached_event_rows(
+        key: Option<String>,
+        load: impl FnOnce() -> ActivityRows,
+    ) -> ActivityRows {
+        if let Ok(guard) = ACTIVITY_CACHE.lock() {
+            if let Some((cached_key, rows)) = guard.as_ref() {
+                if *cached_key == key {
+                    return rows.clone();
+                }
+            }
+        }
+        let rows = load();
+        if let Ok(mut guard) = ACTIVITY_CACHE.lock() {
+            *guard = Some((key, rows.clone()));
+        }
+        rows
+    }
+
+    /// Drop the dashboard activity cache. Called on local record and on
+    /// completed sync passes; the next read reloads lazily from the file.
+    pub(crate) fn invalidate_activity_cache() {
+        if let Ok(mut guard) = ACTIVITY_CACHE.lock() {
+            *guard = None;
+        }
+    }
+
     /// UNIT D - growth gauge: rows + envelope bytes vs 8 MiB headroom for the given account.
     /// Pure, no I/O beyond reading the local ledger; callers surface via existing diagnostics path.
     pub fn gauge_for_account(account_hash: &str) -> (usize, usize, usize) {
@@ -844,6 +956,44 @@ impl StatsDirtyStore {
         let headroom = crate::sync::drive::MAX_DOMAIN_BYTES.saturating_sub(bytes);
         (rows, bytes, headroom)
     }
+}
+
+/// One UTC day of dictation activity.
+#[derive(Debug, Clone, Serialize)]
+pub struct DailyBucket {
+    pub day_start_ms: i64,
+    pub sessions: i64,
+    pub words: i64,
+    pub duration_ms: i64,
+}
+
+const ACTIVITY_DAY_MS: i64 = 86_400_000;
+
+/// Process-level read cache: account key (`None` = signed-out all-rows
+/// view) plus normalized event rows. Lazy-loaded on first read;
+/// invalidated on local record and on completed sync passes (remote rows
+/// land there — see the hook in the scheduler thread).
+/// Normalized event rows: (timestamp_ms, duration_ms, words, chars).
+type ActivityRows = Vec<(i64, i64, i64, i64)>;
+
+static ACTIVITY_CACHE: std::sync::Mutex<Option<(Option<String>, ActivityRows)>> =
+    std::sync::Mutex::new(None);
+
+/// History-proof dashboard activity: daily UTC buckets from the synced
+/// stats ledger (local ∪ remote), never the local history table.
+/// Signed out, buckets cover ALL local ledger rows regardless of
+/// attribution (dirty-only filtering would hide signed-in-era rows).
+#[tauri::command]
+pub fn get_account_activity(since_ms: Option<i64>) -> Result<Vec<DailyBucket>, String> {
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|email| crate::sync::metadata::account_hash_from_email(&email));
+    let rows = StatsDirtyStore::cached_event_rows(account_hash.clone(), || match &account_hash {
+        Some(hash) => StatsDirtyStore::account_event_rows(hash),
+        None => StatsDirtyStore::local_normalized_rows(),
+    });
+    Ok(StatsDirtyStore::bucket_events(rows, since_ms))
 }
 
 impl DirtyStore for StatsDirtyStore {
@@ -1416,6 +1566,72 @@ mod tests {
         assert!(
             !STATS_RECONCILIATION_ENABLED,
             "reconciliation must be OFF by default"
+        );
+    }
+
+    #[test]
+    fn account_activity_buckets_pin_utc_boundaries() {
+        let _guard = store_test_guard();
+        // Fixed UTC midnight: 2026-08-31T00:00:00Z.
+        let monday = chrono::NaiveDate::from_ymd_opt(2026, 8, 31)
+            .unwrap()
+            .and_hms_opt(0, 0, 0)
+            .unwrap()
+            .and_utc()
+            .timestamp_millis();
+        let day = 86_400_000i64;
+        let buckets = StatsDirtyStore::bucket_events(
+            vec![
+                (monday + 3_600_000, 5_000, 10, 50),
+                (monday + 7_200_000, 3_000, 5, 20),
+                (monday + day + 1_000, 2_000, 7, 30),
+            ],
+            None,
+        );
+        assert_eq!(buckets.len(), 2);
+        assert_eq!(buckets[0].day_start_ms, monday);
+        assert_eq!(
+            (
+                buckets[0].sessions,
+                buckets[0].words,
+                buckets[0].duration_ms
+            ),
+            (2, 15, 8_000)
+        );
+        assert_eq!(buckets[1].day_start_ms, monday + day);
+        assert_eq!(
+            (
+                buckets[1].sessions,
+                buckets[1].words,
+                buckets[1].duration_ms
+            ),
+            (1, 7, 2_000)
+        );
+        // since_ms filters server-side before bucketing.
+        let tail = StatsDirtyStore::bucket_events(
+            vec![
+                (monday + 3_600_000, 5_000, 10, 50),
+                (monday + day + 1_000, 2_000, 7, 30),
+            ],
+            Some(monday + day),
+        );
+        assert_eq!(tail.len(), 1);
+        assert_eq!(tail[0].day_start_ms, monday + day);
+
+        // Signed-out view keeps rows regardless of attribution.
+        let mk = |account: Option<&str>, ts: i64| StatEventRow {
+            item: StatsItem::from_history_row("row", ts, "hello world test", 500),
+            account: account.map(str::to_string),
+            dirty: true,
+            ever_pushed: false,
+        };
+        let normalized = StatsDirtyStore::normalize_rows(vec![
+            mk(Some("hash"), monday + 1_000),
+            mk(None, monday + 2_000),
+        ]);
+        assert_eq!(
+            normalized,
+            vec![(monday + 1_000, 500, 3, 16), (monday + 2_000, 500, 3, 16)]
         );
     }
 }

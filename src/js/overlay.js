@@ -38,8 +38,15 @@ let agentRetryContext = null;
 let lastAgentStartAt = 0;
 const AGENT_LLM_WATCHDOG_MS = 25000;
 
-function beginSession() {
-  activeSessionId = ++nextSessionId;
+function beginSession(explicitId) {
+  if (typeof explicitId === 'number' && explicitId > 0) {
+    activeSessionId = explicitId;
+    if (explicitId > nextSessionId) {
+      nextSessionId = explicitId;
+    }
+  } else {
+    activeSessionId = ++nextSessionId;
+  }
   return activeSessionId;
 }
 
@@ -61,11 +68,56 @@ function resetTransientUi() {
   agentRetryContext = null;
 }
 
+// ── Native State Reconciliation ─────────────────────────────────
+
+async function reconcileWithNativeState() {
+  try {
+    const state = await invoke('get_hotkey_state');
+    if (!state) return;
+
+    // If native recording is active or owned in Rust, restore local state
+    if (state.active_owner === 1 || state.active_owner === 2) {
+      const isAgent = state.active_owner === 2;
+      const nativeSessionId = (typeof state.session_id === 'number' && state.session_id > 0)
+        ? state.session_id
+        : 1;
+
+      if (isSessionActive(nativeSessionId) && (currentState === 'recording' || currentState === 'agent')) {
+        return;
+      }
+
+      activeSessionId = nativeSessionId;
+      if (nativeSessionId > nextSessionId) {
+        nextSessionId = nativeSessionId;
+      }
+
+      resetTransientUi();
+      setState(isAgent ? 'agent' : 'recording');
+      setMode(isAgent ? 'agent' : 'stt');
+
+      try {
+        const prefs = await getRecordingPreferences();
+        setOverlayCorner(prefs.overlayPosition);
+        await applyOverlayStyle(prefs.overlayStyle);
+        await invoke('show_overlay', { position: prefs.overlayPosition });
+        updateRecHint();
+        if (overlayRoot) overlayRoot.classList.add('active');
+        startTimer();
+      } catch (uiErr) {
+        console.warn('Failed to restore overlay UI during reconcile:', uiErr);
+      }
+      console.log(`[RECONCILE] Restored native recording session ${nativeSessionId} (mode=${isAgent ? 'agent' : 'stt'})`);
+    }
+  } catch (err) {
+    console.warn('Failed to reconcile native hotkey state:', err);
+  }
+}
+
 // ── Initialization ──────────────────────────────────────────────
 
 window.addEventListener('DOMContentLoaded', async () => {
   aura = new AuraVisualizer('waveform-canvas');
-  setupEventListeners();
+  await setupEventListeners();
   setupDiscardButton();
   setupStopButton();
   setupRetryButton();
@@ -78,6 +130,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     const prefs = await getRecordingPreferences();
     applyOverlayStyle(prefs.overlayStyle);
   } catch {}
+  await reconcileWithNativeState();
+});
+
+window.addEventListener('pageshow', () => {
+  reconcileWithNativeState().catch(() => {});
 });
 
 // ── Tauri Event Listeners ───────────────────────────────────────
@@ -85,9 +142,12 @@ window.addEventListener('DOMContentLoaded', async () => {
 async function setupEventListeners() {
 
   // Hotkey events from Rust (Transcription Mode)
-  await listen('hotkey-start-recording', async () => {
+  await listen('hotkey-start-recording', async (evt) => {
     console.log('hotkey-start-recording event received');
-    const sessionId = beginSession();
+    const incomingSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : undefined;
+    const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
     setState('recording');
     setMode('stt');
@@ -131,15 +191,36 @@ async function setupEventListeners() {
     }
   });
 
-  await listen('hotkey-stop-recording', async () => {
-    const sessionId = activeSessionId;
-    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
+  await listen('hotkey-stop-recording', async (evt) => {
+    let sessionId = activeSessionId;
+    const payloadSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : 0;
+
+    // Reload recovery: if JS state was reset (activeSessionId === 0)
+    // but Rust provided an active session_id, adopt it.
+    if (activeSessionId === 0 && payloadSessionId > 0) {
+      activeSessionId = payloadSessionId;
+      sessionId = payloadSessionId;
+      currentState = 'recording';
+    } else if (payloadSessionId > 0 && activeSessionId !== payloadSessionId) {
+      console.warn(`[OVERLAY] Ignoring stop event for session ${payloadSessionId} (current=${activeSessionId})`);
+      return;
+    }
+
+    const sessionActive = isSessionActive(sessionId);
+    const stateCondition = (currentState === 'recording' || currentState === 'agent');
+    if (!sessionActive || !stateCondition) {
+      console.warn(`[OVERLAY] Stop guard rejected: sessionActive=${sessionActive}, stateCondition=${stateCondition}, currentState=${currentState}`);
+      return;
+    }
+
     stopTimer();
     await stopAndTranscribe(false, sessionId);
   });
 
   // Hotkey events from Rust (Agent Mode)
-  await listen('hotkey-start-agent-recording', async () => {
+  await listen('hotkey-start-agent-recording', async (evt) => {
     console.log('hotkey-start-agent-recording event received');
     // Debounce (A4): a duplicate start arriving <300ms into an agent
     // recording is a hotkey bounce, not intent - dropping it protects the
@@ -147,7 +228,11 @@ async function setupEventListeners() {
     const now = Date.now();
     if (currentState === 'agent' && now - lastAgentStartAt < 300) return;
     lastAgentStartAt = now;
-    const sessionId = beginSession();
+
+    const incomingSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : undefined;
+    const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
     setState('agent');
     setMode('agent');
@@ -191,9 +276,28 @@ async function setupEventListeners() {
     }
   });
 
-  await listen('hotkey-stop-agent-recording', async () => {
-    const sessionId = activeSessionId;
-    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
+  await listen('hotkey-stop-agent-recording', async (evt) => {
+    let sessionId = activeSessionId;
+    const payloadSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : 0;
+
+    if (activeSessionId === 0 && payloadSessionId > 0) {
+      activeSessionId = payloadSessionId;
+      sessionId = payloadSessionId;
+      currentState = 'agent';
+    } else if (payloadSessionId > 0 && activeSessionId !== payloadSessionId) {
+      console.warn(`[OVERLAY] Ignoring stop agent event for session ${payloadSessionId} (current=${activeSessionId})`);
+      return;
+    }
+
+    const sessionActive = isSessionActive(sessionId);
+    const stateCondition = (currentState === 'recording' || currentState === 'agent');
+    if (!sessionActive || !stateCondition) {
+      console.warn(`[OVERLAY] Stop agent guard rejected: sessionActive=${sessionActive}, stateCondition=${stateCondition}, currentState=${currentState}`);
+      return;
+    }
+
     stopTimer();
     await stopAndTranscribe(true, sessionId);
   });

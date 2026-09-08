@@ -5,7 +5,8 @@
   "version": "1.19.0",
   "build": {
     "frontendDist": "../src",
-    "beforeDevCommand": "npm run web:build",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev --prefix web",
     "beforeBuildCommand": "npm run web:build"
   },
   "app": {

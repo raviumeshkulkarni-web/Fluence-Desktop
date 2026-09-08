@@ -13,12 +13,11 @@ import {
   Search,
   Server,
   Settings2,
-  Sparkles,
   X,
   Braces,
 } from 'lucide-react';
 import {
-  Command,
+  CommandDialog,
   CommandEmpty,
   CommandGroup,
   CommandInput,
@@ -26,15 +25,11 @@ import {
   CommandList,
   CommandSeparator,
   CommandShortcut,
+  highlightMatch,
 } from '@/components/ui/command';
 import {
-  Dialog,
   DialogClose,
-  DialogContent,
-  DialogDescription,
   DialogFooter,
-  DialogHeader,
-  DialogTitle,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
 import { hideMainWindow, minimizeMainWindow } from '@/ipc/tauri';
@@ -79,6 +74,11 @@ export function CommandPalette({
   onToggleSidebar,
 }: CommandPaletteProps) {
   const close = () => onOpenChange(false);
+  const [search, setSearch] = React.useState('');
+
+  React.useEffect(() => {
+    if (!open) setSearch('');
+  }, [open]);
 
   const navigatedRef = React.useRef(false);
   const opener = React.useRef<Element | null>(null);
@@ -134,7 +134,7 @@ export function CommandPalette({
     {
       id: 'check-updates',
       label: 'Check for updates',
-      icon: <Sparkles className="command-item-icon" />,
+      icon: <RefreshCw className="command-item-icon" />,
       onSelect: () => {
         void updaterStore.checkForUpdates(true);
         close();
@@ -169,62 +169,57 @@ export function CommandPalette({
   }));
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="command-dialog">
-        <DialogHeader className="sr-only">
-          <DialogTitle>Command palette</DialogTitle>
-          <DialogDescription>
-            Search for pages and actions.
-          </DialogDescription>
-        </DialogHeader>
-        <Command className="command-body">
-          <CommandInput placeholder="Type a command or search…" autoFocus />
-          <CommandList>
-            <CommandEmpty>No matching command found.</CommandEmpty>
-            <CommandGroup heading="Actions">
-              {actions.map((a) => (
-                <CommandItem key={a.id} value={`${a.id} ${a.label}`} onSelect={a.onSelect}>
-                  {a.icon}
-                  <span>{a.label}</span>
-                  {a.shortcut ? (
-                    <CommandShortcut>
-                      <kbd>{a.shortcut}</kbd>
-                    </CommandShortcut>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-            <CommandSeparator />
-            <CommandGroup heading="Go to">
-              {pages.map((p) => (
-                <CommandItem
-                  key={p.id}
-                  value={`${p.id} ${p.label}`}
-                  onSelect={p.onSelect}
-                  data-current={p.id === currentRoute ? 'true' : 'false'}
-                >
-                  {p.icon}
-                  <span>{p.label}</span>
-                  {p.id === currentRoute ? (
-                    <CommandShortcut>
-                      <span className="command-current">Current</span>
-                    </CommandShortcut>
-                  ) : null}
-                </CommandItem>
-              ))}
-            </CommandGroup>
-          </CommandList>
-          <DialogFooter className="command-footer">
-            <span className="command-hint">
-              <CommandIcon className="command-hint-icon" />
-              <kbd>Ctrl K</kbd>
-            </span>
-            <DialogClose asChild>
-              <Button variant="ghost" size="xs">Close</Button>
-            </DialogClose>
-          </DialogFooter>
-        </Command>
-      </DialogContent>
-    </Dialog>
+    <CommandDialog open={open} onOpenChange={onOpenChange}>
+      <CommandInput
+        placeholder="Type a command or search…"
+        autoFocus
+        value={search}
+        onValueChange={setSearch}
+      />
+      <CommandList>
+        <CommandEmpty>No matching command found.</CommandEmpty>
+        <CommandGroup heading="Actions">
+          {actions.map((a) => (
+            <CommandItem key={a.id} value={`${a.id} ${a.label}`} onSelect={a.onSelect}>
+              {a.icon}
+              <span>{highlightMatch(a.label, search)}</span>
+              {a.shortcut ? (
+                <CommandShortcut>
+                  <kbd>{a.shortcut}</kbd>
+                </CommandShortcut>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+        <CommandSeparator />
+        <CommandGroup heading="Go to">
+          {pages.map((p) => (
+            <CommandItem
+              key={p.id}
+              value={`${p.id} ${p.label}`}
+              onSelect={p.onSelect}
+              data-current={p.id === currentRoute ? 'true' : 'false'}
+            >
+              {p.icon}
+              <span>{highlightMatch(p.label, search)}</span>
+              {p.id === currentRoute ? (
+                <CommandShortcut>
+                  <span className="command-current">Current</span>
+                </CommandShortcut>
+              ) : null}
+            </CommandItem>
+          ))}
+        </CommandGroup>
+      </CommandList>
+      <DialogFooter className="command-footer">
+        <span className="command-hint">
+          <CommandIcon className="command-hint-icon" />
+          <kbd>Ctrl K</kbd>
+        </span>
+        <DialogClose asChild>
+          <Button variant="ghost" size="xs">Close</Button>
+        </DialogClose>
+      </DialogFooter>
+    </CommandDialog>
   );
 }

@@ -19,16 +19,21 @@
 @font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/geist-mono-latin-500.woff2') format('woff2'); }
 
 :root {
-  /* Surface Hierarchy (Design System Original) */
-  --color-canvas:                #0D0D0D;
+  /* Surface Hierarchy (Design System v2.1 Canonical) */
+  --color-canvas:                #121212;
   --color-surface:               #141414;
   --color-surface-secondary:     #1E1E1E;
   --color-surface-elevated:      #262626;
   --color-surface-menu:          #2E2E2E;
   --color-surface-dialog:        #2E2E2E;
+  --color-panel:                 var(--color-surface-secondary);
+  --color-panel-elevated:        var(--color-surface-elevated);
+  --color-dialog:                var(--color-surface-dialog);
+  --color-dialog-elevated:       #363636;
+  --color-input-bg:              #262626;
 
   /* Backward compatibility aliases */
-  --color-background:            var(--color-canvas);
+  --color-background:            #0D0D0D;
   --color-surface-container:     var(--color-surface);
   --color-surface-container-high: var(--color-surface-elevated);
   --color-surface-container-highest: var(--color-surface-menu);
@@ -49,16 +54,24 @@
   --color-outline:               #808080;
   --color-outline-variant:       rgba(255, 255, 255, 0.05);
 
-  /* Text / Ink Hierarchy (Design System Original) */
-  --color-on-surface:            #E2E2E2;
-  --color-on-surface-variant:    #A0A0A0;
-  --color-on-background:         #E2E2E2;
-  --color-on-primary:            #FFFFFF;
-  --color-ink-muted:             #8E8E8E;
-  --color-ink-disabled:          #4A4A4A;
+  /* Text / Ink Hierarchy (Design System v2.1 Canonical - WCAG AA calibrated) */
+  --color-text-primary:          #E2E2E2;
+  --color-text-secondary:        #A0A0A0;
+  --color-text-tertiary:         #8E8E8E;
+  --color-text-disabled:         #4A4A4A;
+  --color-text-link:             #B197FC;
 
-  /* Semantic (Design System Original) */
+  /* Text Backward compatibility aliases */
+  --color-on-surface:            var(--color-text-primary);
+  --color-on-surface-variant:    var(--color-text-secondary);
+  --color-on-background:         var(--color-text-primary);
+  --color-on-primary:            #FFFFFF;
+  --color-ink-muted:             var(--color-text-tertiary);
+  --color-ink-disabled:          var(--color-text-disabled);
+
+  /* Semantic (Design System v2.1 Canonical - WCAG AA calibrated) */
   --color-error:                 #EF4444;
+  --color-error-text:            #F87171;
   --color-error-container:       rgba(239, 68, 68, 0.15);
   --color-success:               #22C55E;
   --color-success-container:     rgba(34, 197, 94, 0.15);

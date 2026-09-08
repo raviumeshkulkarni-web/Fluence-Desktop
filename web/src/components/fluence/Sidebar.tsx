@@ -17,7 +17,6 @@ import {
 import {
   Tooltip,
   TooltipContent,
-  TooltipPortal,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { getAppVersion } from '@/ipc/tauri';
@@ -115,11 +114,9 @@ export function Sidebar({
               {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
             </button>
           </TooltipTrigger>
-          <TooltipPortal>
-            <TooltipContent side="right">
-              {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
-            </TooltipContent>
-          </TooltipPortal>
+          <TooltipContent side="right">
+            {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+          </TooltipContent>
         </Tooltip>
       </div>
 
@@ -173,9 +170,7 @@ export function Sidebar({
                   <span id="sidebar-update-btn-text">{widget.btnText}</span>
                 </button>
               </TooltipTrigger>
-              <TooltipPortal>
-                <TooltipContent side="right">{widget.btnText}</TooltipContent>
-              </TooltipPortal>
+              <TooltipContent side="right">{widget.btnText}</TooltipContent>
             </Tooltip>
           ) : (
             <button
@@ -276,9 +271,7 @@ function NavButton({
     return (
       <Tooltip>
         <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipPortal>
-          <TooltipContent side="right">{item.label}</TooltipContent>
-        </TooltipPortal>
+        <TooltipContent side="right">{item.label}</TooltipContent>
       </Tooltip>
     );
   }

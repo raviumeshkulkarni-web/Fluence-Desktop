@@ -325,7 +325,7 @@
   cursor: not-allowed;
 }
 
-/* ——— Select (vanilla native-select chrome on a Radix trigger) ——— */
+/* ——— Select (Radix trigger with Lucide chevron) ——— */
 .select-trigger {
   display: inline-flex;
   align-items: center;
@@ -336,12 +336,9 @@
   font-size: var(--text-body-md);
   color: var(--color-on-surface);
   background-color: var(--color-surface-elevated);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' stroke='%23A0A0A0' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 12px center;
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-sm);
-  padding: 10px 36px 10px 14px;
+  padding: 10px 12px 10px 14px;
   outline: none;
   cursor: pointer;
   box-sizing: border-box;
@@ -363,6 +360,14 @@
 .select-trigger[data-disabled] {
   opacity: 0.45;
   cursor: not-allowed;
+}
+.select-icon {
+  color: var(--color-on-surface-variant);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.select-trigger[data-state='open'] .select-icon {
+  transform: rotate(180deg);
 }
 .select-content {
   min-width: var(--radix-select-trigger-width);
@@ -1009,8 +1014,15 @@
   border: 1px solid rgba(11, 214, 227, 0.25);
   border-radius: var(--radius-xs);
 }
-.command-footer {
-  background: var(--color-surface-secondary);
+.command-footer,
+.command-dialog .command-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 8px 14px;
+  background: transparent;
+  border-top: 1px solid var(--color-border-structural);
 }
 .command-hint {
   display: inline-flex;
@@ -1025,6 +1037,16 @@
   height: 13px;
   color: var(--color-ink-muted);
 }
+
+/* ——— Search Highlight ——— */
+.search-highlight {
+  background: var(--color-mark-search);
+  color: var(--color-brand-cyan);
+  border-radius: var(--radius-2xs);
+  padding: 0 2px;
+  font-weight: 500;
+}
+
 
 /* ——— Collapsible sidebar shell ———
  * The frozen settings stylesheet owns the original 230px layout. These
@@ -1192,7 +1214,11 @@
   .sidebar-logo,
   .sidebar-logo-mark,
   .sidebar-collapse-toggle,
-  .nav-item-label {
+  .nav-item-label,
+  .select-icon {
     transition: none !important;
+  }
+  .skeleton {
+    animation: none !important;
   }
 }

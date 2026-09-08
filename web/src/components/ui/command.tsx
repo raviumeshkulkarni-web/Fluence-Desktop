@@ -1,7 +1,16 @@
 import * as React from 'react';
 import { Command as CommandPrimitive } from 'cmdk';
 import { Search } from 'lucide-react';
+import type { DialogProps } from '@radix-ui/react-dialog';
 import { cn } from '@/lib/cn';
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from './dialog';
+export { highlightMatch } from '@/lib/highlight';
 
 // shadcn `command` (CMDK) anatomy over the Radix-backed command library.
 // Every value below is bridged to a frozen token in ui.css - no token is
@@ -18,13 +27,29 @@ const Command = React.forwardRef<
 ));
 Command.displayName = CommandPrimitive.displayName;
 
+export interface CommandDialogProps extends DialogProps {
+  children: React.ReactNode;
+  className?: string;
+  commandClassName?: string;
+}
+
 const CommandDialog = ({
   children,
+  className,
+  commandClassName,
   ...props
-}: React.ComponentPropsWithoutRef<typeof CommandPrimitive>) => (
-  <Command {...props}>
-    {children}
-  </Command>
+}: CommandDialogProps) => (
+  <Dialog {...props}>
+    <DialogContent className={cn('command-dialog', className)}>
+      <DialogHeader className="sr-only">
+        <DialogTitle>Command palette</DialogTitle>
+        <DialogDescription>Search for pages and actions.</DialogDescription>
+      </DialogHeader>
+      <Command className={cn('command-body', commandClassName)}>
+        {children}
+      </Command>
+    </DialogContent>
+  </Dialog>
 );
 CommandDialog.displayName = 'CommandDialog';
 

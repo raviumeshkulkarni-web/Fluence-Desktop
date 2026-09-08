@@ -88,6 +88,10 @@ export function App() {
       // first; the shell yields while one is active). When the command
       // palette is open, Esc is handled by the dialog and closes it.
       if (e.key === 'Escape' && !isInput) {
+        // A Radix dialog/menu layer handled Esc (it runs a capture-phase
+        // listener and calls preventDefault) - close that layer, leave the
+        // main window visible.
+        if (e.defaultPrevented) return;
         if (isHotkeyRecording()) return;
         if (paletteOpen) return;
         e.preventDefault();

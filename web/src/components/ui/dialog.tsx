@@ -2,6 +2,15 @@ import * as React from 'react';
 import * as DialogPrimitive from '@radix-ui/react-dialog';
 import { cn } from '@/lib/cn';
 import { Button } from './button';
+import {
+  AlertDialog,
+  AlertDialogContent,
+  AlertDialogHeader,
+  AlertDialogFooter,
+  AlertDialogTitle,
+  AlertDialogAction,
+  AlertDialogCancel,
+} from './alert-dialog';
 
 // shadcn-canonical Dialog anatomy over Radix. Overlay policy (single source):
 // click-outside closes, Esc closes, focus is trapped and returned to the
@@ -70,8 +79,9 @@ export interface ConfirmDialogProps {
   onConfirm: () => void;
 }
 
-// window.confirm replacement. Cancel renders first so Radix autofocus lands
-// on the safe action; Esc and overlay click both resolve to cancel.
+// window.confirm replacement backed by Radix AlertDialog (role="alertdialog").
+// Cancel renders first so Radix autofocus lands on the safe action;
+// Esc and action click both resolve appropriately.
 function ConfirmDialog({
   open,
   onOpenChange,
@@ -91,30 +101,32 @@ function ConfirmDialog({
       opener.current.focus();
       opener.current = null;
     }
-  }, [open ]);
+  }, [open]);
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
-        <DialogHeader>
-          <DialogTitle>{title}</DialogTitle>
-        </DialogHeader>
+    <AlertDialog open={open} onOpenChange={onOpenChange}>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>{title}</AlertDialogTitle>
+        </AlertDialogHeader>
         <div className="dialog-body">{body}</div>
-        <DialogFooter>
-          <DialogClose asChild>
+        <AlertDialogFooter>
+          <AlertDialogCancel asChild>
             <Button variant="secondary">Cancel</Button>
-          </DialogClose>
-          <Button
-            variant={danger ? 'danger' : 'primary'}
-            onClick={() => {
-              onConfirm();
-              onOpenChange(false);
-            }}
-          >
-            {confirmLabel}
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
+          </AlertDialogCancel>
+          <AlertDialogAction asChild>
+            <Button
+              variant={danger ? 'danger' : 'primary'}
+              onClick={() => {
+                onConfirm();
+                onOpenChange(false);
+              }}
+            >
+              {confirmLabel}
+            </Button>
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
   );
 }
 

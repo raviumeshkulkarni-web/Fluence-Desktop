@@ -1,7 +1,6 @@
 import {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -12,6 +11,12 @@ import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from '@/components/ui/context-menu';
 import { acceptSuggestion } from '@/ipc/dictionary';
 import {
   clearHistory,
@@ -165,19 +170,14 @@ export function HistoryPage() {
   const [lastCount, setLastCount] = useState(0);
   const [loadingMore, setLoadingMore] = useState(false);
   const [flashId, setFlashId] = useState<string | null>(null);
-  const [menu, setMenu] = useState<{ x: number; y: number; rowId: string } | null>(null);
-  const [menuPos, setMenuPos] = useState<{ left: number; top: number } | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
 
   const pageRef = useRef(0);
   const searchInputRef = useRef('');
   searchInputRef.current = searchInput;
-  const entriesRef = useRef<HistoryEntry[]>([]);
-  entriesRef.current = entries;
   const searchTimer = useRef<number | null>(null);
   const searchFieldRef = useRef<HTMLInputElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
   const flashTimer = useRef<number | null>(null);
 
   const load = useCallback(
@@ -242,61 +242,6 @@ export function HistoryPage() {
     [],
   );
 
-  const hideMenu = useCallback(() => setMenu(null), []);
-
-  const hideMenuAndRefocus = useCallback(() => {
-    setMenu((current) => {
-      if (current) {
-        const row = document.querySelector(
-          `[data-history-id="${current.rowId}"]`,
-        );
-        if (row instanceof HTMLElement) row.focus();
-      }
-      return null;
-    });
-  }, []);
-
-  // While the context menu is open, any click/scroll dismisses it and Esc
-  // closes it with focus back on the row. The keydown listener uses the
-  // capture phase so it preempts the shell Esc handler exactly like
-  // vanilla's stopImmediatePropagation ordering.
-  useEffect(() => {
-    if (!menu) return;
-    const onClick = () => hideMenu();
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation();
-        hideMenuAndRefocus();
-      }
-    };
-    const onScroll = () => hideMenu();
-    document.addEventListener('click', onClick);
-    document.addEventListener('keydown', onKeyDown, true);
-    window.addEventListener('scroll', onScroll, true);
-    return () => {
-      document.removeEventListener('click', onClick);
-      document.removeEventListener('keydown', onKeyDown, true);
-      window.removeEventListener('scroll', onScroll, true);
-    };
-  }, [menu, hideMenu, hideMenuAndRefocus]);
-
-  // Clamp the menu into the viewport after mount, before paint.
-  useLayoutEffect(() => {
-    if (!menu) {
-      setMenuPos(null);
-      return;
-    }
-    const rect = menuRef.current?.getBoundingClientRect();
-    if (!rect) {
-      setMenuPos({ left: menu.x, top: menu.y });
-      return;
-    }
-    setMenuPos({
-      left: Math.min(menu.x, window.innerWidth - rect.width - 8),
-      top: Math.min(menu.y, window.innerHeight - rect.height - 8),
-    });
-  }, [menu]);
-
   const copyItem = (text: string, id: string) => {
     // Verbatim vanilla: no rejection handler; failures stay silent.
     copyText(text).then(() => {
@@ -330,11 +275,6 @@ export function HistoryPage() {
     }
     await loadPendingSuggestionMap(true);
     await load(true, searchInputRef.current);
-  };
-
-  const openMenu = (rowId: string | undefined, x: number, y: number) => {
-    if (!rowId) return;
-    setMenu({ x, y, rowId });
   };
 
   const onSearchInput = (value: string) => {
@@ -406,16 +346,27 @@ export function HistoryPage() {
 
   const onListKeyDown = (e: React.KeyboardEvent) => {
     const target = e.target instanceof Element ? e.target : null;
-    if (e.key === 'F10' && e.shiftKey) {
-      const row =
-        target?.closest?.('.history-item') ??
-        document.activeElement?.closest?.('.history-item');
-      if (!(row instanceof HTMLElement)) return;
+
+    // Keyboard context menu: Shift+F10 / Context Menu key opens the row's
+    // Radix menu at the row bounds (same focus the mouse right-click uses).
+    if (e.key === 'ContextMenu' || (e.shiftKey && e.key === 'F10')) {
+      const item = target?.closest?.('.history-item');
+      if (!(item instanceof HTMLElement)) return;
       e.preventDefault();
-      const rect = row.getBoundingClientRect();
-      openMenu(row.dataset.historyId, rect.left + 8, rect.top);
+      e.stopPropagation();
+      const rect = item.getBoundingClientRect();
+      item.dispatchEvent(
+        new MouseEvent('contextmenu', {
+          bubbles: true,
+          cancelable: true,
+          view: window,
+          clientX: rect.left + Math.min(rect.width, 96),
+          clientY: rect.top + Math.min(rect.height, 28),
+        })
+      );
       return;
     }
+
     if (e.key !== 'Enter' && e.key !== ' ') return;
     const mark = target?.closest?.('.candidate-word');
     if (!(mark instanceof HTMLElement)) return;
@@ -423,18 +374,6 @@ export function HistoryPage() {
     e.stopPropagation();
     void acceptMark(mark.dataset.suggestionId);
   };
-
-  const onListContextMenu = (e: React.MouseEvent) => {
-    const target = e.target instanceof Element ? e.target : null;
-    const row = target?.closest('.history-item');
-    if (!(row instanceof HTMLElement)) return;
-    e.preventDefault();
-    openMenu(row.dataset.historyId, e.clientX, e.clientY);
-  };
-
-  const menuEntry = menu
-    ? entriesRef.current.find((e) => e.id === menu.rowId)
-    : undefined;
 
   return (
     <section className="page active" id="page-history">
@@ -465,7 +404,6 @@ export function HistoryPage() {
           style={{ maxHeight: 400, overflowY: 'auto' }}
           className={groups.length <= 1 ? 'single-day' : undefined}
           onKeyDown={onListKeyDown}
-          onContextMenu={onListContextMenu}
         >
           {initialLoading && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', padding: 'var(--spacing-md)' }}>
@@ -502,65 +440,83 @@ export function HistoryPage() {
               {group.items.map((entry) => {
                 const date = new Date(entry.timestamp);
                 return (
-                  <div
-                    key={entry.id}
-                    className={`history-item${flashId === entry.id ? ' copy-flash' : ''}${lastEntryId === entry.id ? ' is-last' : ''}`}
-                    data-history-id={entry.id}
-                    tabIndex={0}
-                    role="button"
-                    aria-label="Copy transcription to clipboard"
-                    onClick={() => copyItem(entry.text, entry.id)}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return;
-                      if (e.key !== 'Enter' && e.key !== ' ') return;
-                      e.preventDefault();
-                      copyItem(entry.text, entry.id);
-                    }}
-                  >
-                    <div className="history-item-header">
-                      <span className="history-meta-wrap">
-                        <span className="history-item-time" title={date.toLocaleString()}>
-                          {formatHistoryTimestamp(entry.timestamp)}
-                        </span>
-                        <span className="history-item-meta">{historyItemMeta(entry)}</span>
-                      </span>
-                      <div className="history-actions">
-                        <span className={`badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}`}>{entry.mode}</span>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          className="history-copy-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            copyItem(entry.text, entry.id);
+                  <ContextMenu key={entry.id}>
+                    <ContextMenuTrigger asChild>
+                      <div
+                        className={`history-item${flashId === entry.id ? ' copy-flash' : ''}${lastEntryId === entry.id ? ' is-last' : ''}`}
+                        data-history-id={entry.id}
+                        tabIndex={0}
+                        role="button"
+                        aria-label="Copy transcription to clipboard"
+                        onClick={() => copyItem(entry.text, entry.id)}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return;
+                          if (e.key !== 'Enter' && e.key !== ' ') return;
+                          e.preventDefault();
+                          copyItem(entry.text, entry.id);
+                        }}
+                      >
+                        <div className="history-item-header">
+                          <span className="history-meta-wrap">
+                            <span className="history-item-time" title={date.toLocaleString()}>
+                              {formatHistoryTimestamp(entry.timestamp)}
+                            </span>
+                            <span className="history-item-meta">{historyItemMeta(entry)}</span>
+                          </span>
+                          <div className="history-actions">
+                            <span className={`badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}`}>{entry.mode}</span>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="history-copy-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                copyItem(entry.text, entry.id);
+                              }}
+                            >
+                              Copy
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="xs"
+                              className="history-delete-btn"
+                              data-history-id={entry.id}
+                              aria-label="Delete transcription"
+                              style={{ color: 'var(--color-error)' }}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                void deleteItem(entry.id);
+                              }}
+                            >
+                              <X size={12} aria-hidden="true" />
+                            </Button>
+                          </div>
+                        </div>
+                        <div
+                          className="history-item-text"
+                          onClick={onTextClick}
+                          dangerouslySetInnerHTML={{
+                            __html: renderTranscriptText(entry.text, query, markers),
                           }}
-                        >
-                          Copy
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="xs"
-                          className="history-delete-btn"
-                          data-history-id={entry.id}
-                          aria-label="Delete transcription"
-                          style={{ color: 'var(--color-error)' }}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            void deleteItem(entry.id);
-                          }}
-                        >
-                          <X size={12} aria-hidden="true" />
-                        </Button>
+                        />
                       </div>
-                    </div>
-                    <div
-                      className="history-item-text"
-                      onClick={onTextClick}
-                      dangerouslySetInnerHTML={{
-                        __html: renderTranscriptText(entry.text, query, markers),
-                      }}
-                    />
-                  </div>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent className="history-context-menu">
+                      <ContextMenuItem
+                        data-action="copy"
+                        onClick={() => copyItem(entry.text, entry.id)}
+                      >
+                        Copy
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        data-action="delete"
+                        style={{ color: 'var(--color-error-text)' }}
+                        onClick={() => void deleteItem(entry.id)}
+                      >
+                        Delete
+                      </ContextMenuItem>
+                    </ContextMenuContent>
+                  </ContextMenu>
                 );
               })}
             </div>
@@ -581,51 +537,6 @@ export function HistoryPage() {
           </Button>
         </div>
       </div>
-
-      {menu && (
-        <div
-          ref={menuRef}
-          className="history-context-menu"
-          role="menu"
-          style={
-            menuPos
-              ? { position: 'fixed', left: menuPos.left, top: menuPos.top }
-              : { position: 'fixed', left: menu.x, top: menu.y }
-          }
-          onClick={(e) => e.stopPropagation()}
-          onContextMenu={(e) => e.preventDefault()}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.stopPropagation();
-              hideMenuAndRefocus();
-            }
-          }}
-        >
-          <button
-            type="button"
-            role="menuitem"
-            data-action="copy"
-            autoFocus
-            onClick={() => {
-              if (menuEntry) copyItem(menuEntry.text, menuEntry.id);
-              hideMenu();
-            }}
-          >
-            Copy
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            data-action="delete"
-            onClick={() => {
-              void deleteItem(menu.rowId);
-              hideMenu();
-            }}
-          >
-            Delete
-          </button>
-        </div>
-      )}
 
       <ConfirmDialog
         open={confirmClear}

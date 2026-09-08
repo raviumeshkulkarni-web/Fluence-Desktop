@@ -1,10 +1,10 @@
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check } from 'lucide-react';
+import { Check, ChevronDown } from 'lucide-react';
 import { cn } from '@/lib/cn';
 
-// shadcn-canonical Select anatomy over Radix. Trigger paints as the vanilla
-// native select (input base + chevron); list paints in the menu language.
+// shadcn-canonical Select anatomy over Radix. Trigger paints with theme-aware
+// Lucide ChevronDown; list paints in the menu language.
 // Always use the full structure: Root > Trigger(Value) + Content > Item.
 const Select = SelectPrimitive.Root;
 const SelectGroup = SelectPrimitive.Group;
@@ -16,6 +16,9 @@ const SelectTrigger = React.forwardRef<
 >(({ className, children, ...props }, ref) => (
   <SelectPrimitive.Trigger ref={ref} className={cn('select-trigger', className)} {...props}>
     {children}
+    <SelectPrimitive.Icon asChild>
+      <ChevronDown className="select-icon" size={14} strokeWidth={2} aria-hidden="true" />
+    </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));
 SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;

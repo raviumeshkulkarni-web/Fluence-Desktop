@@ -542,7 +542,7 @@
   margin: 0 var(--spacing-sm);
 }
 
-/* ——— Tooltip (menu paint; inherits stacking context, never portaled) ——— */
+/* ——— Tooltip (menu paint; portaled by default) ——— */
 .tooltip-content {
   background: var(--color-surface-menu);
   border: 1px solid var(--color-border);
@@ -700,15 +700,59 @@
   color: var(--color-on-surface-variant);
   margin-left: 6px;
 }
+/* Android-parity hover overlay: crosshair + halo dot + point-anchored chip,
+   positioned from measured geometry in DashboardPage (hoverGeom). The layer
+   is pointer-transparent so hover keeps reaching the chart; the chip reuses
+   .chart-tooltip paint and can never clip because it is clamped in JS. */
+.chart-hover-host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chart-hover-host > .chart-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chart-hover-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.chart-crosshair {
+  position: absolute;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.chart-hover-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-brand-cyan);
+  box-shadow: 0 0 0 3px rgba(11, 214, 227, 0.25);
+}
+.chart-hover-chip {
+  position: absolute;
+  white-space: nowrap;
+}
 
 /* ——— Motion & focus discipline (Task 7) ———
  *
  * ONE scale, frozen tokens only:
  *   micro (hover/press/focus)  -> var(--transition-fast)   0.12s
  *   structural (track/thumb)   -> var(--transition-base)   0.18s
+ *     (exception: switch thumb snap -> 0.22s var(--ease-spring); the
+ *     overshoot is the toggle's tactile feedback, kept deliberately)
  *   overlay enter              -> 0.15s var(--ease-standard) (dialog, tooltip)
  *   overlay exit               -> <=0.12s var(--ease-exit)   (never above 250ms)
  *   progress fill              -> 0.35s var(--ease-spring)   (wizard parity)
+ *     (exception: block download meter -> 0.2s ease; high-frequency
+ *     progress must not wobble, so no spring overshoot there)
  *   skeleton pulse             -> loading indicator only (never decorative)
  *
  * Reduced motion: the frozen global guard in global.css collapses every

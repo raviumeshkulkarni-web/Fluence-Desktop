@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
   Copy,
@@ -28,8 +29,6 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
   type ChartConfig,
 } from '@/components/ui/chart';
 import { toast } from '@/components/fluence/Toasts';
@@ -447,6 +446,56 @@ export function DashboardPage() {
   // gutter and the SVG viewport clips their leading digit.
   const yWidth = points.some((p) => p.count >= 1000) ? 44 : 32;
 
+  // Android-parity hover chip: anchored to the active data point, clamped
+  // horizontally into the plot, flipping below the point when there is no
+  // room above. Driven by native mouse position (no recharts event API),
+  // so the geometry is explicit: left gutter = yWidth, right/top margins
+  // mirror the AreaChart margin prop, X labels occupy ~30px at the bottom.
+  const hostRef = useRef<HTMLDivElement>(null);
+  const chipRef = useRef<HTMLDivElement>(null);
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  const [chipBox, setChipBox] = useState({ w: 0, h: 0 });
+  useLayoutEffect(() => {
+    const el = chipRef.current;
+    if (el == null) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    setChipBox((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
+  });
+  const onPlotMove = (e: ReactMouseEvent) => {
+    const el = hostRef.current;
+    if (el == null || points.length === 0) {
+      setHoverIdx(null);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    const plotL = yWidth;
+    const plotR = rect.width - 8;
+    const frac = (e.clientX - rect.left - plotL) / Math.max(1, plotR - plotL);
+    const idx = Math.round(frac * (points.length - 1));
+    setHoverIdx(Math.min(points.length - 1, Math.max(0, idx)));
+  };
+  const hovered = hoverIdx != null && points[hoverIdx] != null ? points[hoverIdx] : null;
+  const hostW = hostRef.current?.offsetWidth ?? 0;
+  const hostH = hostRef.current?.offsetHeight ?? 0;
+  const yMax = Math.max(1, ...points.map((p) => p.count));
+  const hoverGeom = (() => {
+    if (hovered == null || hoverIdx == null || hostW <= 0 || hostH <= 0) return null;
+    const plotL = yWidth;
+    const plotR = hostW - 8;
+    const plotT = 8;
+    const plotB = hostH - 30;
+    const frac = points.length < 2 ? 0.5 : hoverIdx / (points.length - 1);
+    const dotX = plotL + frac * Math.max(0, plotR - plotL);
+    const dotY = plotT + (1 - hovered.count / yMax) * Math.max(0, plotB - plotT);
+    const left =
+      chipBox.w >= plotR - plotL
+        ? plotL
+        : Math.min(Math.max(dotX - chipBox.w / 2, plotL), plotR - chipBox.w);
+    const above = dotY - 15 - chipBox.h;
+    return { dotX, dotY, plotT, plotB, left, top: above < 0 ? dotY + 15 : above };
+  })();
+
   const copyValue = (value: string) => {
     copyText(value).then(() => toast('Copied to clipboard', 'success'));
   };
@@ -545,6 +594,12 @@ export function DashboardPage() {
                 No activity in this range yet — press your hotkey to dictate.
               </div>
             ) : (
+              <div
+                ref={hostRef}
+                className="chart-hover-host"
+                onMouseMove={onPlotMove}
+                onMouseLeave={() => setHoverIdx(null)}
+              >
               <ChartContainer config={chartConfig} height="100%">
                 <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
@@ -569,16 +624,6 @@ export function DashboardPage() {
                     axisLine={false}
                     tick={{ fill: '#A0A0A0', fontSize: 12 }}
                   />
-                  <ChartTooltip
-                    cursor={{ stroke: 'rgba(255,255,255,0.12)' }}
-                    content={
-                      <ChartTooltipContent
-                        valueFormatter={(v, label) =>
-                          `${v} session${v === 1 ? '' : 's'} · ${label}`
-                        }
-                      />
-                    }
-                  />
                   <Area
                     type="monotone"
                     dataKey="count"
@@ -587,11 +632,38 @@ export function DashboardPage() {
                     strokeWidth={2}
                     fill="url(#dashAreaGrad)"
                     dot={false}
-                    activeDot={{ r: 4 }}
                     isAnimationActive={!reduced}
+                    animationDuration={225}
                   />
                 </AreaChart>
               </ChartContainer>
+              {hovered != null && hoverGeom != null && (
+                <div className="chart-hover-layer" aria-hidden="true">
+                  <div
+                    className="chart-crosshair"
+                    style={{
+                      left: hoverGeom.dotX,
+                      top: hoverGeom.plotT,
+                      height: Math.max(0, hoverGeom.plotB - hoverGeom.plotT),
+                    }}
+                  />
+                  <div
+                    className="chart-hover-dot"
+                    style={{ left: hoverGeom.dotX - 4, top: hoverGeom.dotY - 4 }}
+                  />
+                  <div
+                    ref={chipRef}
+                    className="chart-tooltip chart-hover-chip"
+                    style={{ left: hoverGeom.left, top: hoverGeom.top }}
+                  >
+                    <span className="chart-tooltip-value">
+                      {hovered.count} session{hovered.count === 1 ? '' : 's'} ·
+                    </span>
+                    <span className="chart-tooltip-label">{hovered.label}</span>
+                  </div>
+                </div>
+              )}
+              </div>
             )}
           </CardContent>
         </Card>

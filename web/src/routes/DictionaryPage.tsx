@@ -147,7 +147,7 @@ export function DictionaryPage() {
       const entry = await addDictionaryEntry(s, c);
       setEntries((prev) => [...prev, entry]);
       closeAdd();
-      toast('Entry added ✓', 'success');
+      toast('Entry added', 'success');
     } catch (err) {
       toast('Failed to add entry: ' + String(err), 'error');
     }
@@ -168,7 +168,7 @@ export function DictionaryPage() {
     try {
       const count = await importDictionaryFile();
       if (count === null) return;
-      toast(`Imported ${count} entries ✓`, 'success');
+      toast(`Imported ${count} entries`, 'success');
       await loadDict();
     } catch (err) {
       toast('Import failed: ' + String(err), 'error');
@@ -186,7 +186,7 @@ export function DictionaryPage() {
   const onAccept = async (id: string) => {
     try {
       await acceptSuggestion(id);
-      toast('Added to dictionary ✓', 'success');
+      toast('Added to dictionary', 'success');
       await loadSugg();
       await loadDict();
     } catch (err) {

@@ -32,18 +32,17 @@
   min-width: 0;
 }
 
-/* Phase 3 Task 15: the History right-click menu speaks the kit dropdown
- * language. The kit ships no ContextMenu primitive and ui.css is locked,
- * so the cursor-anchored custom menu stays; only its paint converges onto
- * the .dropdown-content/.dropdown-item tokens (same cascade position wins
- * ties with the frozen settings.css rules).
+/* History context menu: Radix kit primitive wearing the dropdown tokens
+ * (same cascade position wins ties with the frozen settings.css rules).
+ * The frozen .history-context-menu positioning rules below are dead for the
+ * cursor-anchored custom menu — only the paint overrides here apply.
  */
 .history-context-menu {
   background: var(--color-surface-menu);
 }
-.history-context-menu button {
-  font-size: var(--text-label-lg);
-  padding: 7px 10px;
+  .history-context-menu button {
+    font-size: var(--text-label-lg);
+    padding: var(--spacing-7) var(--spacing-10);
   border-radius: var(--radius-xs);
 }
 
@@ -58,4 +57,173 @@
 #snippet-add-row,
 .history-item-header {
   flex-wrap: wrap;
+}
+
+/* History viewport fill (audit P0): the frozen 400px cap on #history-list
+ * (plus the outer .content-area page scroll) produced nested scrollers and
+ * dead space below the card on tall windows. The section becomes a flex
+ * column that fills the scrollport; the list is the single internal
+ * scroller; the Load More footer stays pinned beneath it. Frozen
+ * settings.css is untouched — these React-layer rules win by cascade order
+ * (app.css loads after the frozen layer).
+ *
+ * Single-scroller guarantee: the page itself is fixed to the scrollport
+ * height with overflow hidden, so the outer page never scrolls on this
+ * route. Search, filters, and day-group headers stay frozen; only the
+ * transcription rows move inside #history-list (whose sticky group
+ * headers ride on the frozen .history-group-header rule).
+ */
+#page-history {
+  /* Flex item of .content-area: exactly fill the scrollport; inner list
+   * shrinks (min-height: 0) instead of pushing the page into scrolling. */
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+}
+#page-history .settings-section {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+#history-list {
+  max-height: none;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+}
+
+/* History expand-in-place (P1): click/Enter toggles the full transcript;
+ * copying is explicit (Copy button, context menu, Ctrl+C) so native text
+ * selection works. Expanded rows pin their actions visible.
+ */
+.history-item.is-expanded .history-item-text {
+  display: block;
+  overflow: visible;
+}
+.history-item.is-expanded .history-copy-btn,
+.history-item.is-expanded .history-delete-btn {
+  opacity: 1;
+}
+
+/* History multi-select (P1): accent edge + hover wash; toolbar pins under
+ * the search chrome and only exists while the selection is non-empty.
+ */
+.history-item.is-selected {
+  background: var(--color-hover);
+  box-shadow: inset 2px 0 0 var(--color-brand-cyan);
+}
+.history-selection-bar {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  padding: var(--spacing-sm) var(--spacing-18);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface-secondary);
+}
+.history-selection-count {
+  font-family: var(--font-label);
+  font-size: var(--text-label-xs);
+  font-weight: 600;
+  color: var(--color-on-surface-variant);
+  margin-right: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* History filter bar: single top row, never wraps. Date Tabs sit left;
+ * sort + count pin right; provider/sort use compact triggers. The provider
+ * control stays mounted and animates its width (not mount/unmount), so the
+ * row never jumps when it appears.
+ */
+.history-filter-bar {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--spacing-12);
+  padding: var(--spacing-10) var(--spacing-18);
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+  min-width: 0;
+}
+.history-filter-controls {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: var(--spacing-12);
+  flex: 1 1 auto;
+  min-width: 0;
+  margin-left: auto;
+  justify-content: flex-end;
+}
+.history-filter-controls .select-trigger {
+  width: 150px;
+  flex: none;
+}
+.history-filter-controls .select-trigger > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.history-filter-anim {
+  display: flex;
+  min-width: 0;
+  max-width: 0;
+  opacity: 0;
+  visibility: hidden;
+  overflow: hidden;
+  transition:
+    max-width 0.18s var(--ease-standard),
+    opacity 0.18s var(--ease-standard),
+    visibility 0s linear 0.18s;
+}
+.history-filter-anim.is-visible {
+  max-width: 200px;
+  opacity: 1;
+  visibility: visible;
+  transition:
+    max-width 0.18s var(--ease-standard),
+    opacity 0.18s var(--ease-standard);
+}
+@media (prefers-reduced-motion: reduce) {
+  .history-filter-anim {
+    transition: none;
+  }
+}
+.history-shown-count {
+  font-family: var(--font-label);
+  font-size: var(--text-label-xs);
+  color: var(--color-ink-muted);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* Collapsible day groups (P2): the sticky header is a button wearing the
+ * frozen .history-group-header paint; only UA button defaults are reset.
+ */
+button.history-group-header {
+  width: 100%;
+  border-top: none;
+  border-left: none;
+  border-right: none;
+  background: var(--color-surface-secondary);
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+  .history-group-label {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--spacing-6);
+}
+.history-group-header svg {
+  transition: transform 0.12s var(--ease-standard);
+}
+.history-group-header svg.is-collapsed {
+  transform: rotate(-90deg);
 }

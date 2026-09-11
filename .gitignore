@@ -66,3 +66,6 @@ vs_buildtools.exe
 # Local agent/design tooling
 .claude/
 .impeccable/
+
+# Local scratch/test logs (never committed)
+scratch/

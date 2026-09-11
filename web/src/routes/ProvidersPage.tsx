@@ -328,8 +328,8 @@ export function ProvidersPage() {
           if (!silent) {
             toast(
               res.filtered !== false
-                ? `Loaded ${models.length} models ✓`
-                : `Loaded ${models.length} models (unrecognized endpoint - showing all) ✓`,
+                ? `Loaded ${models.length} models`
+                : `Loaded ${models.length} models (unrecognized endpoint - showing all)`,
               'success',
             );
           }
@@ -340,7 +340,7 @@ export function ProvidersPage() {
             return;
           }
           setModelList(kind, models, current);
-          if (!silent) toast(`Loaded ${models.length} models ✓`, 'success');
+          if (!silent) toast(`Loaded ${models.length} models`, 'success');
         }
       } catch (err) {
         if (!silent) toast('Failed to fetch models: ' + String(err), 'error');
@@ -465,7 +465,7 @@ export function ProvidersPage() {
       setProgressStatus('Extracting model files…');
       setProgressPct(progress);
     } else if (status === 'completed') {
-      toast('Offline model downloaded and installed successfully ✓', 'success');
+      toast('Offline model downloaded and installed successfully', 'success');
       void refreshOfflineStatus();
     } else if (status === 'error') {
       toast('Offline download failed: ' + payload.errorMessage, 'error');
@@ -515,7 +515,7 @@ export function ProvidersPage() {
     try {
       await saveApiKey(keyTarget(kind, f.preset), key);
       setForm(kind, { ...f, apiKey: '' });
-      toast(`${f.preset} API key saved securely ✓`, 'success');
+      toast(`${f.preset} API key saved securely`, 'success');
     } catch (err) {
       toast('Failed to save key: ' + String(err), 'error');
     }
@@ -544,7 +544,7 @@ export function ProvidersPage() {
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
     }
-    toast('Provider settings saved ✓', 'success');
+    toast('Provider settings saved', 'success');
   };
 
   const selectEngine = (name: string) => {
@@ -573,7 +573,7 @@ export function ProvidersPage() {
     try {
       const bytesFreed = await cfg.deleteCmd();
       const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
-      toast(`${cfg.delName} model deleted. Freed ${mbFreed} MB ✓`, 'success');
+      toast(`${cfg.delName} model deleted. Freed ${mbFreed} MB`, 'success');
       void refreshOfflineStatus();
     } catch (err) {
       toast('Failed to delete model files: ' + String(err), 'error');

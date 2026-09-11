@@ -233,11 +233,9 @@ export function SyncPage() {
   );
 }
 
-// Raw backend sync errors are never rendered; full detail stays in the
-// console for diagnosis (mirrors vanilla describeSyncError).
+// Raw backend sync errors are never rendered; users get a friendly one-liner.
 function syncErr(raw: unknown): string | null {
   if (!raw) return null;
-  console.log('[sync] last_error detail:', raw);
   const m = String(raw).toLowerCase();
   if (/timeout|network|connection|dns/.test(m)) return 'Connection issue. Will retry automatically';
   if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached. Pausing briefly';

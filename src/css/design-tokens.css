@@ -147,6 +147,16 @@
   --spacing-2xl:  48px;
   --spacing-3xl:  64px;
 
+  /* Declared micro-rhythm (audit): values shared with the frozen section
+   * chrome — 18px horizontal gutters, 12px section padding, 10px/7px/6px
+   * control rhythm. Numeric names; the t-shirt scale above stays canonical.
+   * Additive only: no existing token is renamed or revalued. */
+  --spacing-6:   6px;
+  --spacing-7:   7px;
+  --spacing-10:  10px;
+  --spacing-12:  12px;
+  --spacing-18:  18px;
+
   /* Corner Radius */
   --radius-2xs:   2px;
   --radius-xs:    3px;

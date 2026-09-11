@@ -61,7 +61,7 @@ export function SnippetsPage() {
       await setSnippetsEnabled(on);
       setEnabled(on);
       toast(
-        on ? 'Text expansion enabled \u2713' : 'Text expansion disabled',
+        on ? 'Text expansion enabled' : 'Text expansion disabled',
         'success',
       );
     } catch (err) {
@@ -80,7 +80,7 @@ export function SnippetsPage() {
       const entry = await addSnippet(t, e);
       setEntries((prev) => [...prev, entry]);
       closeAdd();
-      toast('Snippet added \u2713', 'success');
+      toast('Snippet added', 'success');
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
     }

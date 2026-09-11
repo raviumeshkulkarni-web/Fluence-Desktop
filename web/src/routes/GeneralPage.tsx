@@ -252,7 +252,7 @@ export function GeneralPage() {
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
     }
-    toast('Settings saved ✓', 'success');
+    toast('Settings saved', 'success');
   };
 
   return (

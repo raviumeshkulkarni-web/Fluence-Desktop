@@ -82,6 +82,14 @@ jobs:
       - name: install frontend dependencies
         run: npm ci
 
+      # The React migration (v1.20.0+) builds via tauri.conf
+      # beforeBuildCommand `npm run web:build`, which needs web/node_modules
+      # (tsc, vite). Root `npm ci` does not install them (no workspaces),
+      # and a fresh checkout has no node_modules — without this step the
+      # build fails instantly with `'tsc' is not recognized` (v1.20.0 run 54).
+      - name: install web frontend dependencies
+        run: npm ci --prefix web
+
       - name: build and release
         uses: tauri-apps/tauri-action@v0.6.2
         env:

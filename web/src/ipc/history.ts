@@ -15,8 +15,21 @@ export interface HistoryEntry {
 
 // Command names + argument shapes reproduced exactly from vanilla
 // (loadHistory/deleteHistoryItem/setupHistory-clear/copyHistoryItem).
-export const getHistory = (page: number, searchQuery: string | null) =>
-  invokeCmd<HistoryEntry[]>('get_history', { page, searchQuery });
+// sinceMs/untilMs are optional, timezone-agnostic epoch-milliseconds on the
+// timestamp_ms column; History passes them for Today/Yesterday windows so the
+// backend bounds the query instead of the client paging the whole table.
+export const getHistory = (
+  page: number,
+  searchQuery: string | null,
+  sinceMs?: number,
+  untilMs?: number,
+) =>
+  invokeCmd<HistoryEntry[]>('get_history', {
+    page,
+    searchQuery,
+    sinceMs: sinceMs ?? null,
+    untilMs: untilMs ?? null,
+  });
 
 export const deleteHistoryEntry = (id: string) =>
   invokeCmd<void>('delete_history_entry', { id });

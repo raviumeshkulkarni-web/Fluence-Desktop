@@ -4,7 +4,8 @@
 use anyhow::Result;
 use chrono::{Datelike, TimeZone, Utc};
 use dirs::data_local_dir;
-use rusqlite::{params, Connection};
+use rusqlite::types::Value;
+use rusqlite::{params, params_from_iter, Connection};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -361,40 +362,62 @@ pub fn add_history_entry(
 // Tauri commands
 
 #[tauri::command]
-pub fn get_history(page: u32, search_query: Option<String>) -> Result<Vec<HistoryEntry>, String> {
+pub fn get_history(
+    page: u32,
+    search_query: Option<String>,
+    since_ms: Option<i64>,
+    until_ms: Option<i64>,
+) -> Result<Vec<HistoryEntry>, String> {
+    with_db(|conn| query_history(conn, page, search_query, since_ms, until_ms))
+        .map_err(|e| e.to_string())
+}
+
+// Extracted so the window filters are unit-testable against an in-memory
+// connection (production path has the same SQL, no duplication).
+fn query_history(
+    conn: &Connection,
+    page: u32,
+    search_query: Option<String>,
+    since_ms: Option<i64>,
+    until_ms: Option<i64>,
+) -> Result<Vec<HistoryEntry>> {
     let page_size = 50i64;
     let offset = (page as i64) * page_size;
 
-    with_db(|conn| {
-        let query = search_query.as_deref().unwrap_or("").trim().to_string();
-        let rows: Result<Vec<HistoryEntry>, _> = if query.is_empty() {
-            let mut stmt = conn.prepare(
-                "SELECT id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, model, language, deleted_at
-                 FROM history WHERE deleted_at IS NULL
-                 ORDER BY timestamp_ms DESC LIMIT ?1 OFFSET ?2",
-            )?;
-            let res = stmt.query_map(params![page_size, offset], map_row)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| anyhow::anyhow!(e));
-            res
-        } else {
-            let escaped_query = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
-            let pattern = format!("%{}%", escaped_query);
-            let mut stmt = conn.prepare(
-                "SELECT id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, model, language, deleted_at
-                 FROM history WHERE text LIKE ?1 ESCAPE '\\' AND deleted_at IS NULL
-                 ORDER BY timestamp_ms DESC LIMIT ?2 OFFSET ?3",
-            )?;
-            let res = stmt.query_map(params![pattern, page_size, offset], map_row)
-                .map_err(|e| anyhow::anyhow!(e))?
-                .collect::<Result<Vec<_>, _>>()
-                .map_err(|e| anyhow::anyhow!(e));
-            res
-        };
-        rows
-    })
-    .map_err(|e| e.to_string())
+    let query = search_query.as_deref().unwrap_or("").trim().to_string();
+    let mut sql = String::from(
+        "SELECT id, timestamp, text, mode, duration_ms, provider, char_count, timestamp_ms, model, language, deleted_at
+         FROM history WHERE deleted_at IS NULL",
+    );
+    let mut params: Vec<Value> = Vec::new();
+    if !query.is_empty() {
+        let escaped_query = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let pattern = format!("%{}%", escaped_query);
+        sql.push_str(" AND text LIKE ? ESCAPE '\\'");
+        params.push(Value::Text(pattern));
+    }
+    // Optional inclusive/exclusive window on timestamp_ms (Indexed by
+    // idx_history_timestamp_ms). Today/Yesterday on the History route pass
+    // a tight window so the paging loop only walks that slice of the table
+    // instead of every page of history.
+    if let Some(since) = since_ms {
+        sql.push_str(" AND timestamp_ms >= ?");
+        params.push(Value::Integer(since));
+    }
+    if let Some(until) = until_ms {
+        sql.push_str(" AND timestamp_ms < ?");
+        params.push(Value::Integer(until));
+    }
+    sql.push_str(" ORDER BY timestamp_ms DESC LIMIT ? OFFSET ?");
+    params.push(Value::Integer(page_size));
+    params.push(Value::Integer(offset));
+    let mut stmt = conn.prepare(&sql)?;
+    let res = stmt
+        .query_map(params_from_iter(params), map_row)
+        .map_err(|e| anyhow::anyhow!(e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| anyhow::anyhow!(e));
+    res
 }
 
 fn map_row(row: &rusqlite::Row) -> rusqlite::Result<HistoryEntry> {
@@ -662,6 +685,66 @@ mod tests {
             params![id, "2024-04-18T16:00:00.123Z", "hello", 1713456000123i64],
         )
         .unwrap();
+    }
+
+    fn insert_row_at(conn: &Connection, id: &str, ts_text: &str, ts_ms: i64) {
+        conn.execute(
+            "INSERT INTO history (id, timestamp, text, timestamp_ms)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![id, ts_text, "sample", ts_ms],
+        )
+        .unwrap();
+    }
+
+    // Window filter: Today/Yesterday must be served by a tight range scan on
+    // idx_history_timestamp_ms, returning exactly the in-window rows. Guards
+    // a regression to the full-table page-through the route used before.
+    #[test]
+    fn get_history_window_bounds_rows_and_uses_index() {
+        let conn = migrated_conn();
+        insert_row_at(&conn, "a", "2024-04-16T10:00:00.000Z", 1713261600000i64);
+        insert_row_at(&conn, "b", "2024-04-17T10:00:00.000Z", 1713348000000i64);
+        insert_row_at(&conn, "c", "2024-04-18T10:00:00.000Z", 1713434400000i64);
+
+        // Window [day, day+1) = only "b".
+        let rows = query_history(
+            &conn,
+            0,
+            None,
+            Some(1713348000000i64),
+            Some(1713434400000i64),
+        )
+        .unwrap();
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(ids, vec!["b".to_string()]);
+
+        // Open-ended since (Today-style): rows >= window start.
+        let rows = query_history(&conn, 0, None, Some(1713348000000i64), None).unwrap();
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(ids, vec!["c".to_string(), "b".to_string()]);
+
+        // No bounds = every row, newest first (prior behavior preserved).
+        let rows = query_history(&conn, 0, None, None, None).unwrap();
+        let ids: Vec<String> = rows.iter().map(|r| r.id.clone()).collect();
+        assert_eq!(ids, vec!["c".to_string(), "b".to_string(), "a".to_string()]);
+
+        // The bounded query must seek the range index, not scan + temp sort.
+        let plan: Vec<String> = conn
+            .prepare(
+                "EXPLAIN QUERY PLAN SELECT id FROM history
+                 WHERE deleted_at IS NULL AND timestamp_ms >= ? AND timestamp_ms < ?
+                 ORDER BY timestamp_ms DESC LIMIT 50",
+            )
+            .unwrap()
+            .query_map(params![1713348000000i64, 1713434400000i64], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(
+            plan.iter().any(|d| d.contains("idx_history_timestamp_ms")),
+            "bounded query did not use idx_history_timestamp_ms, plan: {:?}",
+            plan
+        );
     }
 
     fn column_names(conn: &Connection, table: &str) -> Vec<String> {

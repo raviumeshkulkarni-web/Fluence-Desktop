@@ -556,12 +556,24 @@ export function HistoryPage() {
     void (async () => {
       const q = queryRef.current;
       const acc: HistoryEntry[] = [];
+      // Date windows are applied server-side (timestamp_ms bounds on the
+      // paged reads), so Today/Yesterday never page through the whole table:
+      // each fetch is a tight indexed range scan and the loop stops as soon
+      // as a short page confirms the window is exhausted. Mirrors the
+      // client-side viewEntries filter exactly (t >= t0 for today;
+      // t0-day <= t < t0 for yesterday).
+      const day = 86400000;
+      const start = new Date();
+      start.setHours(0, 0, 0, 0);
+      const t0 = start.getTime();
+      const sinceMs = dateFilter === 'today' ? t0 : dateFilter === 'yesterday' ? t0 - day : undefined;
+      const untilMs = dateFilter === 'yesterday' ? t0 : undefined;
       let p = 0;
       for (;;) {
         if (cancelled) return;
         let list: HistoryEntry[];
         try {
-          list = await getHistory(p, q || null);
+          list = await getHistory(p, q || null, sinceMs, untilMs);
         } catch {
           if (!cancelled) setFullStatus('idle');
           return;
@@ -582,7 +594,7 @@ export function HistoryPage() {
     return () => {
       cancelled = true;
     };
-  }, [fullActive, query, fullBump]);
+  }, [fullActive, query, fullBump, dateFilter]);
 
   // Ctrl+F/K focus request from the shell (vanilla focuses + selects).
   useEffect(() => {

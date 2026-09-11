@@ -82,8 +82,21 @@ fn run_migration(conn: &Connection) -> Result<()> {
             language        TEXT,
             deleted_at      INTEGER
         );
-        CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);",
+        CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
+        -- Perf: paged reads ORDER BY timestamp_ms DESC; the legacy index is on
+        -- the TEXT timestamp column and cannot serve that sort (measured:
+        -- full SCAN + TEMP B-TREE on every page). Additive, idempotent.",
     )?;
+
+    // Ensure the timestamp_ms index on pre-existing databases (already at
+    // user_version 3) that were created before the index was added to the
+    // schema batches above. A perf-only index must never break init, so a
+    // failure here is logged, not propagated.
+    if let Err(e) = conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_history_timestamp_ms ON history(timestamp_ms DESC);",
+    ) {
+        log::warn!("History DB timestamp_ms index ensure failed: {}", e);
+    };
 
     let user_version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
 
@@ -249,6 +262,7 @@ fn migrate_v2_to_v3(conn: &Connection) -> Result<()> {
         DROP TABLE history;
         ALTER TABLE history_new RENAME TO history;
         CREATE INDEX IF NOT EXISTS idx_history_timestamp ON history(timestamp DESC);
+        CREATE INDEX IF NOT EXISTS idx_history_timestamp_ms ON history(timestamp_ms DESC);
         PRAGMA user_version = 3",
     )?;
     tx.commit()?;
@@ -618,6 +632,27 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migration(&conn).unwrap();
         conn
+    }
+
+    // Perf guard: paged reads ORDER BY timestamp_ms DESC. The legacy index is
+    // on the TEXT timestamp column and cannot serve that sort (measured: full
+    // SCAN + TEMP B-TREE on every page). This index must survive migration.
+    #[test]
+    fn timestamp_ms_index_exists_after_migration() {
+        let conn = migrated_conn();
+        let mut stmt = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'history'")
+            .unwrap();
+        let names: Vec<String> = stmt
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert!(
+            names.iter().any(|n| n == "idx_history_timestamp_ms"),
+            "missing idx_history_timestamp_ms, got {:?}",
+            names
+        );
     }
 
     fn insert_row(conn: &Connection, id: &str, _server_file_id: Option<&str>) {

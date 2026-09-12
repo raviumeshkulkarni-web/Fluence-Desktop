@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
 import {
   Copy,
   Minus,
@@ -134,9 +134,26 @@ interface DashboardKpi {
 
 type Range = '7d' | '30d' | '90d' | 'all';
 
+// Chart metric: area reads the sessions trend, bars read discrete words per
+// bucket. One toggle switches both type and metric together (never a 2x2
+// matrix). Both series derive from the same synced ledger buckets; words use
+// the same whitespace-delimited counting on both platforms.
+type Metric = 'sessions' | 'words';
+
+const METRIC_KEY = 'fluence_chart_metric';
+
+function readMetric(): Metric {
+  try {
+    return window.localStorage.getItem(METRIC_KEY) === 'words' ? 'words' : 'sessions';
+  } catch {
+    return 'sessions';
+  }
+}
+
 interface RangePoint {
   label: string;
   count: number;
+  words: number;
 }
 
 interface WindowTotals {
@@ -185,35 +202,39 @@ function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
       );
     }
     if (spanDays <= 730) {
-      const weeks = new Map<number, number>();
+      const weeks = new Map<number, { sessions: number; words: number }>();
       for (const b of buckets) {
         const monday = b.day_start_ms - ((new Date(b.day_start_ms).getUTCDay() + 6) % 7) * DAY_MS;
-        weeks.set(monday, (weeks.get(monday) ?? 0) + b.sessions);
+        const prev = weeks.get(monday) ?? { sessions: 0, words: 0 };
+        weeks.set(monday, { sessions: prev.sessions + b.sessions, words: prev.words + b.words });
       }
       return [...weeks.entries()]
         .sort((a, b) => a[0] - b[0])
-        .map(([monday, count]) => ({
+        .map(([monday, totals]) => ({
           label: new Date(monday).toLocaleDateString(undefined, {
             month: 'short',
             day: 'numeric',
           }),
-          count,
+          count: totals.sessions,
+          words: totals.words,
         }));
     }
-    const months = new Map<number, number>();
+    const months = new Map<number, { sessions: number; words: number }>();
     for (const b of buckets) {
       const d = new Date(b.day_start_ms);
       const key = d.getUTCFullYear() * 12 + d.getUTCMonth();
-      months.set(key, (months.get(key) ?? 0) + b.sessions);
+      const prev = months.get(key) ?? { sessions: 0, words: 0 };
+      months.set(key, { sessions: prev.sessions + b.sessions, words: prev.words + b.words });
     }
     return [...months.entries()]
       .sort((a, b) => a[0] - b[0])
-      .map(([key, count]) => ({
+      .map(([key, totals]) => ({
         label: new Date(Date.UTC(Math.floor(key / 12), key % 12, 1)).toLocaleDateString(
           undefined,
           { month: 'short', year: 'numeric' },
         ),
-        count,
+        count: totals.sessions,
+        words: totals.words,
       }));
   }
   const n = range === '7d' ? 7 : range === '30d' ? 30 : 90;
@@ -229,14 +250,16 @@ function dailyPoints(
   n: number,
   label: (d: Date) => string,
 ): RangePoint[] {
-  const byDay = new Map(buckets.map((b) => [b.day_start_ms, b.sessions]));
+  const byDay = new Map(buckets.map((b) => [b.day_start_ms, b]));
   const today = utcDayStart(Date.now());
   return Array.from({ length: n }, (_, k) => {
     const dayMs = today - (n - 1 - k) * DAY_MS;
     const d = new Date(dayMs);
+    const bucket = byDay.get(dayMs);
     return {
       label: label(d),
-      count: byDay.get(dayMs) ?? 0,
+      count: bucket?.sessions ?? 0,
+      words: bucket?.words ?? 0,
     };
   });
 }
@@ -284,6 +307,15 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const [loaded, setLoaded] = useState(dashboardLoaded);
   const [skeleton, setSkeleton] = useState(!skeletonCleared);
   const [range, setRange] = useState<Range>('7d');
+  const [metric, setMetric] = useState<Metric>(readMetric);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(METRIC_KEY, metric);
+    } catch {
+      // Persistence is an enhancement; the chart still works without it.
+    }
+  }, [metric]);
   const bucketsRef = useRef(buckets);
   bucketsRef.current = buckets;
   const lastFetchRef = useRef(0);
@@ -451,10 +483,11 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   }, [summary, range]);
 
   const points = useMemo(() => viewData(buckets, range), [buckets, range]);
-  const rangeTotal = points.reduce((a, p) => a + p.count, 0);
+  const activeValue = (p: RangePoint) => (metric === 'sessions' ? p.count : p.words);
+  const rangeTotal = points.reduce((a, p) => a + activeValue(p), 0);
   // Recharts does not auto-size the axis: 4-digit counts overflow a 32px
   // gutter and the SVG viewport clips their leading digit.
-  const yWidth = points.some((p) => p.count >= 1000) ? 44 : 32;
+  const yWidth = points.some((p) => activeValue(p) >= 1000) ? 44 : 32;
 
   // Android-parity hover chip: anchored to the active data point, clamped
   // horizontally into the plot, flipping below the point when there is no
@@ -488,7 +521,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const hovered = hoverIdx != null && points[hoverIdx] != null ? points[hoverIdx] : null;
   const hostW = hostRef.current?.offsetWidth ?? 0;
   const hostH = hostRef.current?.offsetHeight ?? 0;
-  const yMax = Math.max(1, ...points.map((p) => p.count));
+  const yMax = Math.max(1, ...points.map((p) => activeValue(p)));
   const hoverGeom = (() => {
     if (hovered == null || hoverIdx == null || hostW <= 0 || hostH <= 0) return null;
     const plotL = yWidth;
@@ -497,7 +530,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
     const plotB = hostH - 30;
     const frac = points.length < 2 ? 0.5 : hoverIdx / (points.length - 1);
     const dotX = plotL + frac * Math.max(0, plotR - plotL);
-    const dotY = plotT + (1 - hovered.count / yMax) * Math.max(0, plotB - plotT);
+    const dotY = plotT + (1 - activeValue(hovered) / yMax) * Math.max(0, plotB - plotT);
     const left =
       chipBox.w >= plotR - plotL
         ? plotL
@@ -587,8 +620,17 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
           <CardHeader>
             <div>
               <CardTitle>Activity</CardTitle>
-              <CardDescription>Transcription sessions</CardDescription>
+              <CardDescription>
+                {metric === 'sessions' ? 'Transcription sessions' : 'Words transcribed'}
+              </CardDescription>
             </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+            <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
+              <TabsList aria-label="Chart metric">
+                <TabsTrigger value="sessions">Sessions</TabsTrigger>
+                <TabsTrigger value="words">Words</TabsTrigger>
+              </TabsList>
+            </Tabs>
             <Tabs value={range} onValueChange={(v) => setRange(v as Range)}>
               <TabsList aria-label="Activity range">
                 <TabsTrigger value="7d">Last 7 days</TabsTrigger>
@@ -597,6 +639,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                 <TabsTrigger value="all">All time</TabsTrigger>
               </TabsList>
             </Tabs>
+            </div>
           </CardHeader>
           <CardContent>
             {loaded && rangeTotal === 0 ? (
@@ -611,6 +654,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                 onMouseLeave={() => setHoverIdx(null)}
               >
               <ChartContainer config={themedConfig} height="100%">
+                {metric === 'sessions' ? (
                 <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
@@ -638,6 +682,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                     tickLine={false}
                     axisLine={false}
                     tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tickFormatter={(v: number) => v.toLocaleString()}
                   />
                   <Area
                     type="monotone"
@@ -651,6 +696,41 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                     animationDuration={225}
                   />
                 </AreaChart>
+                ) : (
+                <BarChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
+                  <defs>
+                    <linearGradient id="dashBarGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={duo.a} stopOpacity={0.9} />
+                      <stop offset="100%" stopColor={duo.c} stopOpacity={0.9} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />
+                  <XAxis
+                    dataKey="label"
+                    tickLine={false}
+                    axisLine={false}
+                    minTickGap={24}
+                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                  />
+                  <YAxis
+                    allowDecimals={false}
+                    width={yWidth}
+                    tickLine={false}
+                    axisLine={false}
+                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tickFormatter={(v: number) => v.toLocaleString()}
+                  />
+                  <Bar
+                    dataKey="words"
+                    name="words"
+                    fill="url(#dashBarGrad)"
+                    radius={[3, 3, 0, 0]}
+                    maxBarSize={26}
+                    isAnimationActive={!reduced}
+                    animationDuration={225}
+                  />
+                </BarChart>
+                )}
               </ChartContainer>
               {hovered != null && hoverGeom != null && (
                 <div className="chart-hover-layer" aria-hidden="true">
@@ -672,7 +752,11 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                     style={{ left: hoverGeom.left, top: hoverGeom.top }}
                   >
                     <span className="chart-tooltip-value">
-                      {hovered.count} session{hovered.count === 1 ? '' : 's'} ·
+                      {activeValue(hovered).toLocaleString()}{' '}
+                      {metric === 'sessions'
+                        ? `session${activeValue(hovered) === 1 ? '' : 's'}`
+                        : `word${activeValue(hovered) === 1 ? '' : 's'}`}{' '}
+                      ·
                     </span>
                     <span className="chart-tooltip-label">{hovered.label}</span>
                   </div>

@@ -228,6 +228,15 @@ button.history-group-header {
   transform: rotate(-90deg);
 }
 
+/* Light theme: recharts sets grid/tick paint as presentation attributes,
+ * so CSS wins without touching the chart code. */
+[data-theme="light"] .recharts-cartesian-grid line {
+  stroke: rgba(0, 0, 0, 0.08);
+}
+[data-theme="light"] .recharts-cartesian-axis-tick text {
+  fill: #71717A;
+}
+
 /* Sidebar theme toggle: one-click dark/light for the settings shell.
  * Sits in the footer above the update widget so it is visible on every
  * route; icon-only 44x36 in the collapsed rail with tooltip. Overlay and

@@ -211,3 +211,87 @@
   --z-modal:    200;
   --z-toast:    300;
 }
+
+/* ====================================================
+   Light theme — settings shell only (owner decision).
+   Same token names, recalibrated values: neutral zinc surfaces
+   (no beige), hairline black borders, soft shadows, deepened
+   functional teal for AA contrast on white. Overlay and wizard
+   windows never set data-theme so they keep the dark :root values.
+   Equal specificity to :root, later in cascade, so it wins.
+   ==================================================== */
+[data-theme="light"] {
+  /* Surface Hierarchy */
+  --color-canvas:                #EFF0F3;
+  --color-surface:               #FFFFFF;
+  --color-surface-secondary:     #F5F5F7;
+  --color-surface-elevated:      #FFFFFF;
+  --color-surface-menu:          #FFFFFF;
+  --color-surface-dialog:        #FFFFFF;
+  --color-dialog-elevated:       #F5F5F7;
+  --color-input-bg:              #FFFFFF;
+  --color-surface-sunken:        #E7E8EC;
+
+  /* Backward compatibility aliases */
+  --color-background:            #EFF0F3;
+
+  /* Borders / Divider */
+  --color-border:                rgba(0, 0, 0, 0.08);
+  --color-border-subtle:         rgba(0, 0, 0, 0.05);
+  --color-divider:               #E2E3E6;
+  --color-border-structural:     #DFE0E4;
+  --color-border-muted:          rgba(0, 0, 0, 0.04);
+  --color-border-focus:          rgba(14, 116, 144, 0.55);
+  --color-border-focus-glow:     rgba(14, 116, 144, 0.16);
+
+  /* Backward compat */
+  --color-outline:               #A1A1AA;
+  --color-outline-variant:       rgba(0, 0, 0, 0.06);
+
+  /* Text / Ink Hierarchy (WCAG AA on white: primary ~15:1, secondary ~7:1) */
+  --color-text-primary:          #18181B;
+  --color-text-secondary:        #52525B;
+  --color-text-tertiary:         #71717A;
+  --color-text-disabled:         #A1A1AA;
+  --color-text-link:             #6D28D9;
+
+  /* Semantic */
+  --color-error:                 #DC2626;
+  --color-error-text:            #B91C1C;
+  --color-error-container:       rgba(220, 38, 38, 0.08);
+  --color-success:               #15803D;
+  --color-success-container:     rgba(21, 128, 61, 0.10);
+  --color-warning:               #B45309;
+  --color-warning-container:     rgba(180, 83, 9, 0.10);
+
+  /* Brand / Accent — amethyst frozen (logo), functional cyan deepened
+   * to teal for contrast on white. Logo-mark gradient stops untouched. */
+  --color-brand-cyan:            #0E7490;
+  --color-brand-cyan-soft:       rgba(14, 116, 144, 0.8);
+  --color-brand-accent-glow:     rgba(14, 116, 144, 0.12);
+
+  /* Accent Modifiers */
+  --color-mark-search:           rgba(14, 116, 144, 0.16);
+  --color-mark-candidate:        rgba(180, 83, 9, 0.16);
+  --color-mark-candidate-hover:  rgba(180, 83, 9, 0.28);
+  --color-mark-candidate-border: rgba(180, 83, 9, 0.55);
+  --color-toast-success:         rgba(21, 128, 61, 0.08);
+  --color-toast-error:           rgba(220, 38, 38, 0.08);
+  --color-copy-flash:            rgba(21, 128, 61, 0.08);
+
+  /* State Modifiers */
+  --color-hover:                 rgba(0, 0, 0, 0.04);
+  --color-active:                rgba(0, 0, 0, 0.07);
+  --color-selected:              rgba(0, 0, 0, 0.07);
+  --color-interactive:           rgba(0, 0, 0, 0.05);
+  --color-interactive-hover:     rgba(0, 0, 0, 0.08);
+  --color-interactive-active:    rgba(0, 0, 0, 0.12);
+  --color-placeholder:           rgba(113, 113, 122, 0.9);
+
+  /* Elevation / Shadow — soft, no glow stacking */
+  --shadow-sm:  0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md:  0 4px 16px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-lg:  0 12px 32px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.08);
+  --shadow-glow-cyan: 0 0 12px rgba(14, 116, 144, 0.14);
+  --shadow-glow-amethyst: 0 0 12px rgba(124, 58, 237, 0.14);
+}

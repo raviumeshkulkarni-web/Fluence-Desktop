@@ -1788,3 +1788,72 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   color: var(--color-error);
   border-color: var(--color-error);
 }
+
+/* ====================================================
+   Light theme overrides — settings shell only.
+   Additive: dark rules above are untouched. Overlay and wizard
+   windows never set data-theme so they keep dark values.
+   ==================================================== */
+[data-theme="light"] .nav-item.active,
+[data-theme="light"] .nav-item.active svg,
+[data-theme="light"] .sidebar-update-btn:hover,
+[data-theme="light"] .hotkey-display:hover,
+[data-theme="light"] .provider-card.selected,
+[data-theme="light"] .dict-table .corrected-word {
+  color: #18181B;
+}
+[data-theme="light"] .sidebar-update-progress-fill {
+  box-shadow: none;
+}
+[data-theme="light"] .sidebar-update-btn:hover,
+[data-theme="light"] .provider-card:hover,
+[data-theme="light"] .offline-model-card:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+}
+[data-theme="light"] .provider-card.selected,
+[data-theme="light"] .offline-model-card.selected {
+  border-color: rgba(0, 0, 0, 0.4);
+}
+[data-theme="light"] .offline-model-card.selected .offline-radio {
+  border-color: #18181B;
+}
+[data-theme="light"] .offline-model-card.selected .offline-radio::after {
+  background: #18181B;
+  box-shadow: none;
+}
+[data-theme="light"] .hotkey-display {
+  border-bottom-color: #D4D4D8;
+}
+[data-theme="light"] .hotkey-display:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+}
+[data-theme="light"] .hotkey-display:focus-visible,
+[data-theme="light"] .offline-model-card:focus-visible {
+  outline-color: rgba(14, 116, 144, 0.55);
+}
+[data-theme="light"] .history-item-text mark {
+  color: #0E7490;
+}
+[data-theme="light"] .history-item-text .candidate-word {
+  color: #92400E;
+}
+[data-theme="light"] .history-item:hover::before {
+  border-color: var(--color-brand-cyan);
+  box-shadow: none;
+}
+[data-theme="light"] .dict-table .select-col input[type="checkbox"] {
+  border-color: #D4D4D8 !important;
+  background: #FFFFFF !important;
+}
+[data-theme="light"] .dict-table .actions .suggestion-accept-btn:hover {
+  color: #15803D;
+}
+[data-theme="light"] .dict-table .actions .suggestion-dismiss-btn:hover,
+[data-theme="light"] .dict-table .actions .dict-delete-btn:hover,
+[data-theme="light"] #dismiss-selected-btn:not(:disabled):hover,
+[data-theme="light"] .history-context-menu button[data-action="delete"] {
+  color: #DC2626;
+}
+[data-theme="light"] .chart-empty {
+  background: rgba(255, 255, 255, 0.7);
+}

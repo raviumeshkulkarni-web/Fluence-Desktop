@@ -751,3 +751,71 @@ textarea:disabled {
     animation: spin 1.5s linear infinite !important;
   }
 }
+
+/* ====================================================
+   Light theme overrides — settings shell only.
+   Additive: dark rules above are untouched. Overlay and wizard
+   windows never set data-theme so they keep dark values.
+   ==================================================== */
+[data-theme="light"] ::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.18);
+}
+[data-theme="light"] .btn-primary {
+  border-color: rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] .btn-primary:hover {
+  border-color: rgba(0, 0, 0, 0.25);
+}
+[data-theme="light"] .btn-primary:active {
+  color: #18181B;
+}
+[data-theme="light"] .btn-secondary:hover {
+  border-color: rgba(0, 0, 0, 0.16);
+  color: #18181B;
+}
+[data-theme="light"] .btn-danger {
+  color: #DC2626;
+}
+[data-theme="light"] .btn-danger:hover {
+  color: #B91C1C;
+}
+[data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):focus,
+[data-theme="light"] select:focus,
+[data-theme="light"] textarea:focus {
+  border-color: rgba(14, 116, 144, 0.55);
+  box-shadow: 0 0 0 1px rgba(14, 116, 144, 0.35);
+}
+[data-theme="light"] input[type="checkbox"] {
+  background: #FFFFFF !important;
+  border-color: #D4D4D8 !important;
+}
+[data-theme="light"] input[type="checkbox"]:hover {
+  background: #F4F4F5 !important;
+  border-color: #A1A1AA !important;
+}
+[data-theme="light"] input[type="checkbox"]:focus,
+[data-theme="light"] input[type="checkbox"]:focus-visible {
+  border-color: #52525B !important;
+}
+[data-theme="light"] input[type="checkbox"]:checked,
+[data-theme="light"] input[type="checkbox"]:indeterminate {
+  background: #18181B !important;
+  border-color: #18181B !important;
+}
+[data-theme="light"] input[type="checkbox"]:checked::before {
+  border-color: #FFFFFF;
+}
+[data-theme="light"] input[type="checkbox"]:indeterminate::before {
+  background: #FFFFFF;
+}
+[data-theme="light"] .toggle-switch input:checked ~ .toggle-track {
+  background: #18181B;
+  border-color: #18181B;
+}
+[data-theme="light"] .toggle-switch input:focus-visible ~ .toggle-track {
+  outline-color: rgba(14, 116, 144, 0.55);
+}
+[data-theme="light"] .kbd-keycap,
+[data-theme="light"] kbd {
+  border-bottom-color: #D4D4D8;
+}

@@ -976,7 +976,7 @@ function renderWeeklyAreaChart(dayCounts, weekStartMs) {
   }
 
   const ns = 'http://www.w3.org/2000/svg';
-  const colors = ['#0BD6E3', '#0BD6E3', '#0BD6E3', '#0BD6E3', '#0BD6E3', '#0BD6E3', '#0BD6E3'];
+  const colors = ['#8E7CC3', '#8A86C6', '#7F92C6', '#749CC5', '#6AA6C4', '#62AFC3', '#5FB4C2'];
   const dayNames = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
   let peakIdx = 0;
   lastDayCounts.forEach(function (c, i) { if (c > lastDayCounts[peakIdx]) peakIdx = i; });

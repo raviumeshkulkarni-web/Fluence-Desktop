@@ -604,9 +604,14 @@ export function DashboardPage() {
                 <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0BD6E3" stopOpacity={0.28} />
-                      <stop offset="50%" stopColor="#0BD6E3" stopOpacity={0.12} />
-                      <stop offset="100%" stopColor="#0BD6E3" stopOpacity={0.04} />
+                      <stop offset="0%" stopColor="#8E7CC3" stopOpacity={0.22} />
+                      <stop offset="50%" stopColor="#7498C6" stopOpacity={0.1} />
+                      <stop offset="100%" stopColor="#5FB4C2" stopOpacity={0.03} />
+                    </linearGradient>
+                    <linearGradient id="dashStrokeGrad" x1="0" y1="0" x2="1" y2="0">
+                      <stop offset="0%" stopColor="#8E7CC3" />
+                      <stop offset="55%" stopColor="#7498C6" />
+                      <stop offset="100%" stopColor="#5FB4C2" />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />
@@ -628,7 +633,7 @@ export function DashboardPage() {
                     type="monotone"
                     dataKey="count"
                     name="sessions"
-                    stroke="var(--color-brand-cyan)"
+                    stroke="url(#dashStrokeGrad)"
                     strokeWidth={2}
                     fill="url(#dashAreaGrad)"
                     dot={false}

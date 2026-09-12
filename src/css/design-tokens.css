@@ -98,8 +98,10 @@
 
   /* Brand Signature Gradients — DEPRECATED for surfaces (anti-slop lock).
    * Kept only because the logo-mark SVG gradient stops reference these hues.
-   * Do not use for progress fills, dots, chart strokes, or button glows;
-   * those are flat --color-brand-cyan now. */
+   * Do not use for progress fills, dots, or button glows; those are flat
+   * --color-brand-cyan. EXCEPTION (owner direction): the dashboard chart
+   * uses a muted amethyst-to-cyan duo (#8E7CC3 → #7498C6 → #5FB4C2,
+   * desaturated, no glow) defined at the chart, not from these tokens. */
   --brand-gradient:              linear-gradient(135deg, #8B45D8 0%, #0BD6E3 100%);
   --brand-gradient-h:            linear-gradient(90deg, #8B45D8 0%, #0BD6E3 100%);
   --brand-gradient-v:            linear-gradient(180deg, #8B45D8 0%, #0BD6E3 100%);

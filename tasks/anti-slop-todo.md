@@ -17,7 +17,7 @@ Plan: `tasks/anti-slop-plan.md`. Branch: `ui/anti-slop-professional-polish`. Do 
 - [x] Verification: build green; wizard 6 steps render; motion math unchanged
 
 ## Slice 4: Dashboard chart de-glow + About copy
-- [x] Chart stroke flat cyan, fill flat low-alpha, remove glow filter use
+- [x] Chart uses muted amethyst-cyan duo per owner (desaturated, no glow), React + vanilla in sync
 - [x] About copy plain function, no poetry; keep IDs and updater logic
 - [x] Verification: dashboard renders; tooltip intact; no em dashes
 

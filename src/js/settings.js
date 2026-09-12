@@ -197,8 +197,15 @@ function setupNavigation() {
   });
 
   // Listen for tray navigate events
-  listen('navigate-to', (evt) => navigateTo(evt.payload));
+  listen('navigate-to', (evt) => {
+    lastTrayNavigateAt = Date.now();
+    navigateTo(evt.payload);
+  });
 }
+
+// Timestamp of the last tray-driven navigation, so the show-handler below
+// can tell an explicit target (e.g. History) apart from a plain open.
+let lastTrayNavigateAt = 0;
 
 function navigateTo(page) {
   if (currentPage === page) return;
@@ -1398,6 +1405,17 @@ async function listenForTauriEvents() {
     } else if (currentPage === 'history') {
       loadHistory(true);
     }
+  });
+
+  // The main window is hidden, never destroyed — without this it reopens
+  // wherever it was left (e.g. About). Reset to dashboard on every show,
+  // unless a tray navigate-to (e.g. History) lands right after.
+  await listen('window-visibility', (evt) => {
+    if (evt.payload !== true) return;
+    setTimeout(() => {
+      if (Date.now() - lastTrayNavigateAt < 500) return;
+      navigateTo('dashboard');
+    }, 60);
   });
 }
 

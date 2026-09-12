@@ -481,13 +481,6 @@ body {
   opacity: 1;
 }
 
-/* The bubble tier repurposes .card-footer as an absolutely-positioned hover
-   discard badge; giving non-bubble tiers a positioning context for the
-   stop-and-save button must not touch that badge. */
-.overlay-root:not(.style-bubble) .card-footer {
-  position: relative;
-}
-
 /* ── Recording Indicator ───────────────────────────────────────── */
 .card-rec {
   display: flex;
@@ -660,58 +653,6 @@ body {
 .card-discard:active {
   background: rgba(255, 255, 255, 0.10);
   transform: scale(0.97);
-}
-
-/* ── Stop-and-Save Button ──────────────────────────────────────── */
-/* The bubble tier repurposes its card-footer as the hover discard
-   badge, so the stop control must never appear there. All rules are
-   guarded with :not(.style-bubble) - the existing bubble declarations
-   are untouched and the badge stays pixel-identical. */
-.card-stop {
-  display: none;
-}
-
-.overlay-root:not(.style-bubble) .card-stop {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  right: 54px; /* full tier: discard 28px + 8px gap + right pad 18px */
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
-  border: none;
-  background: transparent;
-  color: var(--color-on-surface);
-  cursor: pointer;
-  padding: 0;
-  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
-  -webkit-app-region: no-drag;
-  flex-shrink: 0;
-}
-
-.overlay-root:not(.style-bubble) .card-stop:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--color-on-surface);
-}
-
-.overlay-root:not(.style-bubble) .card-stop:focus-visible {
-  outline: 1.5px solid var(--color-border-focus);
-  outline-offset: 1px;
-}
-
-.overlay-root:not(.style-bubble) .card-stop:active {
-  background: rgba(255, 255, 255, 0.10);
-  transform: translateY(-50%) scale(0.97);
-}
-
-/* Compact pill shows discard (×) only — the stop-and-save square lives
-   in the full card footer. Regression from stop-and-save rollout hid
-   behind :not(.style-bubble); this explicitly excludes compact. */
-.overlay-root.style-compact .card-stop {
-  display: none !important;
 }
 
 /* ── Status Icons (success/error) ──────────────────────────────── */

@@ -17,7 +17,6 @@ const recLabel    = document.getElementById('rec-label');
 const modeBadge   = document.getElementById('mode-badge');
 const cardTimer   = document.getElementById('card-timer');
 const cardDiscard = document.getElementById('card-discard');
-const cardStop    = document.getElementById('card-stop');
 const statusMsg   = document.getElementById('status-msg');
 const statusRetry = document.getElementById('status-retry');
 const recHint     = document.getElementById('rec-hint');
@@ -119,7 +118,6 @@ window.addEventListener('DOMContentLoaded', async () => {
   aura = new AuraVisualizer('waveform-canvas');
   await setupEventListeners();
   setupDiscardButton();
-  setupStopButton();
   setupRetryButton();
   setupHotkeyBusyFeedback();
   // Reset synchronously before any awaits so a hotkey that fires while the
@@ -707,19 +705,6 @@ function setupDiscardButton() {
       });
     }
   }
-}
-
-function setupStopButton() {
-  if (!cardStop) return;
-  cardStop.addEventListener('click', async (e) => {
-    e.stopPropagation();
-    // Same path as the hotkey-stop handlers: stop the timer and transcribe,
-    // choosing the mode by the current state (recording → STT, agent → Agent).
-    const sessionId = activeSessionId;
-    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) return;
-    stopTimer();
-    await stopAndTranscribe(currentState === 'agent', sessionId);
-  });
 }
 
 async function getRecordingPreferences() {

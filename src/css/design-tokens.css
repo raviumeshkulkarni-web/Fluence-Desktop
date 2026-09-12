@@ -9,7 +9,8 @@
    RADIUS RULE: cards 12, inputs/selects 8, buttons 8, badges/pills 999,
    checkboxes 0 (square hardware), toggles pill by nature, dialogs 12.
    TYPE: Sora display + Hanken Grotesk body + Geist Mono labels. Allura
-   is deprecated (wordmark goes sans, see Slice 2).
+   is reserved for the logo wordmark ONLY (logo frozen, owner decision);
+   never use Allura anywhere else.
    ==================================================== */
 
 /* Bundled fonts - served locally from src/fonts/ (no network at runtime) */

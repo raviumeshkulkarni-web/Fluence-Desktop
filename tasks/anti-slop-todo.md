@@ -8,9 +8,8 @@ Plan: `tasks/anti-slop-plan.md`. Branch: `ui/anti-slop-professional-polish`. Do 
 - [x] Verification: typecheck + web build green; grep shows definitions exist
 
 ## Slice 2: Wordmark cleanup
-- [x] Remove Allura spans (src/index.html x2, Sidebar, AboutPage, ui.css tagline → sans)
-- [x] Unify `fluenceTranscribe` to `Fluence Transcribe`
-- [x] Verification: grep zero `Allura`; routes render; IDs unchanged
+- [x] REVERTED by owner (logo frozen, Allura reserved for logo only) — no wordmark change ships
+- [x] `fluenceTranscribe` step-title string kept as `Fluence Transcribe` (announcer text, not logo — revert on request)
 
 ## Slice 3: Wizard + progress de-gradient
 - [x] Step dot active + progress fills go flat cyan, no glow shadow

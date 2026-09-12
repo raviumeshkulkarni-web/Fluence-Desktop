@@ -52,12 +52,10 @@ export function StepWelcome() {
         Welcome to flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
         <span
           style={{
-            fontFamily: 'var(--font-display)',
-            fontWeight: 600,
+            fontFamily: "'Allura',cursive",
+            fontWeight: 400,
             fontSize: 'var(--text-label-lg)',
-            letterSpacing: '0.08em',
-            textTransform: 'uppercase',
-            marginLeft: 8,
+            marginLeft: 6,
             lineHeight: 1,
             color: 'var(--color-on-surface-variant)',
           }}

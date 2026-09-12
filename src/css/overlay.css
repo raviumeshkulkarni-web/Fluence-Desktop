@@ -641,12 +641,11 @@ body {
   background: rgba(255, 255, 255, 0.10);
 }
 
-/* Compact tier mirrors its smaller discard: 22px round chip */
-.overlay-root:not(.style-bubble).style-compact .card-stop {
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  right: 34px; /* compact discard 22px + 12px gap (compact footer has no right padding) */
+/* Compact pill shows discard (×) only — the stop-and-save square lives
+   in the full card footer. Regression from stop-and-save rollout hid
+   behind :not(.style-bubble); this explicitly excludes compact. */
+.overlay-root.style-compact .card-stop {
+  display: none !important;
 }
 
 /* ── Status Icons (success/error) ──────────────────────────────── */

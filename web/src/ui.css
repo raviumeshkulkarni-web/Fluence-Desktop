@@ -1293,6 +1293,6 @@
   background: #E7E8EC;
 }
 [data-theme="light"] .switch[data-state='checked'] .switch-track {
-  background: #18181B;
-  border-color: #18181B;
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
 }

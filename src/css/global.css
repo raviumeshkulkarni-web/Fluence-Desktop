@@ -810,8 +810,8 @@ textarea:disabled {
   background: #FFFFFF;
 }
 [data-theme="light"] .toggle-switch input:checked ~ .toggle-track {
-  background: #18181B;
-  border-color: #18181B;
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
 }
 [data-theme="light"] .toggle-switch input:focus-visible ~ .toggle-track {
   outline-color: rgba(14, 116, 144, 0.55);

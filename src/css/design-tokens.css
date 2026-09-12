@@ -1,6 +1,15 @@
 /* ====================================================
    Fluence Windows - Design Tokens
    "Acoustic Precision Instrument" - Studio-grade desktop UI
+   THEME LOCK (anti-slop program, owner decision): dark only for now.
+   No light-mode work in this branch. data-theme="dark" is intentional.
+   ACCENT LOCK: --color-brand-cyan is the single functional accent.
+   White is reserved for primary buttons + selected text. Amethyst stays
+   ONLY inside the logo-mark gradient. No new gradient washes.
+   RADIUS RULE: cards 12, inputs/selects 8, buttons 8, badges/pills 999,
+   checkboxes 0 (square hardware), toggles pill by nature, dialogs 12.
+   TYPE: Sora display + Hanken Grotesk body + Geist Mono labels. Allura
+   is deprecated (wordmark goes sans, see Slice 2).
    ==================================================== */
 
 /* Bundled fonts - served locally from src/fonts/ (no network at runtime) */
@@ -44,6 +53,8 @@
 
   /* Borders / Divider (Design System Original) */
   --color-border:                rgba(255, 255, 255, 0.05);
+  --color-border-subtle:         rgba(255, 255, 255, 0.03);
+  --color-surface-sunken:        #0D0D0D;
   --color-divider:               #2A2A2A;
   --color-border-structural:     #2A2A2A;
   --color-border-muted:          rgba(255, 255, 255, 0.03);

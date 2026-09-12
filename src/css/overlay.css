@@ -241,8 +241,8 @@ body {
    `.overlay-root.active .card-footer { opacity: 1 }` rule. */
 .overlay-root.style-bubble .card-footer {
   position: absolute;
-  top: -10px;
-  right: -10px;
+  top: -6px;
+  right: -6px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -259,6 +259,11 @@ body {
   opacity: 0 !important;
   scale: 0.8;
   pointer-events: none !important;
+  /* The root is a drag region: the whole chip (not just the glyph button)
+   * must opt out, otherwise edge clicks start a window drag or land on the
+   * footer halo with no handler — a dead close button. */
+  -webkit-app-region: no-drag;
+  cursor: pointer;
   transition: opacity 180ms ease, scale 180ms var(--ease-premium) !important;
 }
 

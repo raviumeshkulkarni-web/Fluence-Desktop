@@ -671,24 +671,41 @@ function playCompletionChime() {
 // ── Recording Flow ──────────────────────────────────────────────
 
 function setupDiscardButton() {
+  // Shared discard path: stop the capture, invalidate the session so any
+  // late transcription result is dropped, then hide. No text is injected.
+  const discardRecording = async (e) => {
+    if (e) e.stopPropagation();
+    stopTimer();
+    // NOTE (A10): beginSession() invalidates any in-flight agent/transcription
+    // session; its late result is dropped by isSessionActive guards. An
+    // orphaned backend LLM request (if any) still runs to completion but can
+    // no longer touch UI, clipboard, or history. Accepted behavior - true
+    // backend cancellation is Class B (needs explicit approval).
+    const sessionId = beginSession();
+    resetTransientUi();
+    try {
+      await invoke('stop_recording');
+    } catch (err) {
+      console.error('Stop recording failed:', err);
+    }
+    await fadeAndHide(sessionId);
+  };
   if (cardDiscard) {
-    cardDiscard.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      stopTimer();
-      // NOTE (A10): beginSession() invalidates any in-flight agent/transcription
-      // session; its late result is dropped by isSessionActive guards. An
-      // orphaned backend LLM request (if any) still runs to completion but can
-      // no longer touch UI, clipboard, or history. Accepted behavior - true
-      // backend cancellation is Class B (needs explicit approval).
-      const sessionId = beginSession();
-      resetTransientUi();
-      try {
-        await invoke('stop_recording');
-      } catch (err) {
-        console.error('Stop recording failed:', err);
-      }
-      await fadeAndHide(sessionId);
-    });
+    cardDiscard.addEventListener('click', discardRecording);
+    // Bubble tier: the visible chip is a 20px badge with a 12px invisible
+    // halo that belongs to the footer container, not the button. Clicks on
+    // the halo/padding would otherwise hit the footer (no handler) or start
+    // a window drag — a dead close button. Forward those to the same path.
+    // Guarded to bubble tier and non-button targets so full/compact tiers
+    // and the button itself never double-fire.
+    const badge = cardDiscard.parentElement;
+    if (badge) {
+      badge.addEventListener('click', (e) => {
+        if (!overlayRoot || !overlayRoot.classList.contains('style-bubble')) return;
+        if (e.target instanceof Element && e.target.closest('#card-discard')) return;
+        void discardRecording(e);
+      });
+    }
   }
 }
 

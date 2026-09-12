@@ -196,7 +196,7 @@ export function App() {
             {route === 'about' ? (
               <AboutPage />
             ) : route === 'dashboard' ? (
-              <DashboardPage />
+              <DashboardPage theme={theme} />
             ) : route === 'sync' ? (
               <SyncPage />
             ) : route === 'dictionary' ? (

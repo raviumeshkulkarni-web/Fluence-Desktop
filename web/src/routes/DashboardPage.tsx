@@ -27,10 +27,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  ChartContainer,
-  type ChartConfig,
-} from '@/components/ui/chart';
+import { ChartContainer } from '@/components/ui/chart';
 import { toast } from '@/components/fluence/Toasts';
 import {
   getAccountActivity,
@@ -38,6 +35,7 @@ import {
 } from '@/ipc/dashboard';
 import { copyText, subscribeHistoryUpdated } from '@/ipc/history';
 import { subscribeSyncStatus } from '@/ipc/sync';
+import type { Theme } from '@/lib/theme';
 
 const DAY_MS = 86400000;
 
@@ -276,16 +274,12 @@ function TrendBadge({
   );
 }
 
-const chartConfig: ChartConfig = {
-  sessions: { label: 'Sessions', color: '#0BD6E3' },
-};
-
 // Module cache (stale-then-reload across remounts, no re-skeleton).
 let cachedBuckets: DailyBucket[] | null = null;
 let dashboardLoaded = false;
 let skeletonCleared = false;
 
-export function DashboardPage() {
+export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const [buckets, setBuckets] = useState<DailyBucket[]>(cachedBuckets ?? []);
   const [loaded, setLoaded] = useState(dashboardLoaded);
   const [skeleton, setSkeleton] = useState(!skeletonCleared);
@@ -300,6 +294,22 @@ export function DashboardPage() {
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches,
     [],
+  );
+
+  // Chart duo follows the settings-shell theme (owner direction: muted
+  // amethyst-to-cyan, desaturated, no glow). Light stops deepen for white.
+  const duo =
+    theme === 'dark'
+      ? { a: '#8E7CC3', b: '#7498C6', c: '#5FB4C2' }
+      : { a: '#6E5AA8', b: '#4E7FA8', c: '#2E8B99' };
+  const themedConfig = useMemo(
+    () => ({
+      sessions: {
+        label: 'Sessions',
+        color: theme === 'dark' ? '#0BD6E3' : '#0E7490',
+      },
+    }),
+    [theme],
   );
 
   // Full authoritative snapshot (mount, account switch): replaces the
@@ -600,18 +610,18 @@ export function DashboardPage() {
                 onMouseMove={onPlotMove}
                 onMouseLeave={() => setHoverIdx(null)}
               >
-              <ChartContainer config={chartConfig} height="100%">
+              <ChartContainer config={themedConfig} height="100%">
                 <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#8E7CC3" stopOpacity={0.22} />
-                      <stop offset="50%" stopColor="#7498C6" stopOpacity={0.1} />
-                      <stop offset="100%" stopColor="#5FB4C2" stopOpacity={0.03} />
+                      <stop offset="0%" stopColor={duo.a} stopOpacity={0.22} />
+                      <stop offset="50%" stopColor={duo.b} stopOpacity={0.1} />
+                      <stop offset="100%" stopColor={duo.c} stopOpacity={0.03} />
                     </linearGradient>
                     <linearGradient id="dashStrokeGrad" x1="0" y1="0" x2="1" y2="0">
-                      <stop offset="0%" stopColor="#8E7CC3" />
-                      <stop offset="55%" stopColor="#7498C6" />
-                      <stop offset="100%" stopColor="#5FB4C2" />
+                      <stop offset="0%" stopColor={duo.a} />
+                      <stop offset="55%" stopColor={duo.b} />
+                      <stop offset="100%" stopColor={duo.c} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />

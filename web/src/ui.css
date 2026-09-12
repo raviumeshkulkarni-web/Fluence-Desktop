@@ -580,8 +580,7 @@
 .progress-fill {
   height: 100%;
   width: 100%;
-  background: var(--brand-gradient-h);
-  box-shadow: 0 0 8px rgba(139, 69, 216, 0.6);
+  background: var(--color-brand-cyan);
   transition: transform 0.35s var(--ease-spring);
 }
 

@@ -687,8 +687,7 @@ body {
 .step-dot.active {
   width: 20px;
   border-radius: var(--radius-xs);
-  background: var(--brand-gradient-h);
-  box-shadow: 0 0 8px rgba(139, 69, 216, 0.45);
+  background: var(--color-brand-cyan);
 }
 
 .step-dot.done {

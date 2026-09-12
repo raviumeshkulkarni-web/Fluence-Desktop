@@ -95,7 +95,10 @@
   --color-brand-amethyst-soft:   rgba(139, 69, 216, 0.8);
   --color-brand-cyan-soft:       rgba(11, 214, 227, 0.8);
 
-  /* Brand Signature Gradients */
+  /* Brand Signature Gradients — DEPRECATED for surfaces (anti-slop lock).
+   * Kept only because the logo-mark SVG gradient stops reference these hues.
+   * Do not use for progress fills, dots, chart strokes, or button glows;
+   * those are flat --color-brand-cyan now. */
   --brand-gradient:              linear-gradient(135deg, #8B45D8 0%, #0BD6E3 100%);
   --brand-gradient-h:            linear-gradient(90deg, #8B45D8 0%, #0BD6E3 100%);
   --brand-gradient-v:            linear-gradient(180deg, #8B45D8 0%, #0BD6E3 100%);

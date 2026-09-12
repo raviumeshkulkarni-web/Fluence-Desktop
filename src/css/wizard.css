@@ -53,10 +53,9 @@ body {
 
 .progress-bar-fill {
   height: 100%;
-  background: var(--brand-gradient-h);
+  background: var(--color-brand-cyan);
   transition: width 0.35s var(--ease-spring);
   position: relative;
-  box-shadow: 0 0 8px rgba(139, 69, 216, 0.6);
 }
 
 /* Wizard Steps Container */
@@ -654,8 +653,7 @@ body {
 .step-dot.active {
   width: 20px;
   border-radius: var(--radius-xs);
-  background: var(--brand-gradient-h);
-  box-shadow: 0 0 8px rgba(139, 69, 216, 0.45);
+  background: var(--color-brand-cyan);
 }
 
 .step-dot.done {

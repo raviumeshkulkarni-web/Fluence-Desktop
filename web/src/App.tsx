@@ -16,6 +16,7 @@ import { updaterStore } from '@/ipc/updater';
 import { hideMainWindow } from '@/ipc/tauri';
 import { isHotkeyRecording } from '@/ipc/general';
 import { requestHistorySearchFocus } from '@/ipc/history';
+import { useTheme } from '@/lib/theme';
 
 export type Route =
   | 'dashboard'
@@ -57,6 +58,7 @@ export function App() {
   const [route, setRoute] = useState<Route>('about');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
+  const { theme, toggleTheme } = useTheme();
 
   useEffect(() => {
     try {
@@ -114,6 +116,14 @@ export function App() {
         return;
       }
 
+      // Ctrl/Cmd+Shift+L toggles the settings-shell theme (dark/light).
+      // Overlay and wizard windows never see this; they stay dark.
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l' && !isInput) {
+        e.preventDefault();
+        toggleTheme();
+        return;
+      }
+
       // Ctrl+F / Cmd+F - focus history search
       if ((e.ctrlKey || e.metaKey) && e.key === 'f') {
         e.preventDefault();
@@ -133,7 +143,7 @@ export function App() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [route, paletteOpen]);
+  }, [route, paletteOpen, toggleTheme]);
 
   const navigateTo = useCallback(
     (page: Route) => {
@@ -179,6 +189,8 @@ export function App() {
             onNavigate={navigateTo}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
+            theme={theme}
+            onToggleTheme={toggleTheme}
           />
           <main className="content-area" role="main">
             {route === 'about' ? (
@@ -208,6 +220,8 @@ export function App() {
           onNavigate={navigateTo}
           sidebarCollapsed={sidebarCollapsed}
           onToggleSidebar={() => setSidebarCollapsed((collapsed) => !collapsed)}
+          theme={theme}
+          onToggleTheme={toggleTheme}
         />
       </TooltipProvider>
     </>

@@ -7,12 +7,14 @@ import {
   History,
   Info,
   LayoutDashboard,
+  Moon,
   PanelLeftClose,
   PanelLeftOpen,
   RefreshCw,
   RotateCcw,
   Server,
   Settings2,
+  Sun,
 } from 'lucide-react';
 import {
   Tooltip,
@@ -21,6 +23,7 @@ import {
 } from '@/components/ui/tooltip';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
+import type { Theme } from '@/lib/theme';
 import type { Route } from '@/App';
 
 const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
@@ -39,11 +42,15 @@ export function Sidebar({
   onNavigate,
   collapsed,
   onToggleCollapsed,
+  theme,
+  onToggleTheme,
 }: {
   route: Route;
   onNavigate: (page: Route) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }) {
   const [appVersion, setAppVersion] = useState('1.0.0');
   const updater = useUpdater();
@@ -130,6 +137,42 @@ export function Sidebar({
       ))}
 
       <div className="sidebar-footer">
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="sidebar-theme-btn"
+                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+                aria-pressed={theme === 'light'}
+                onClick={onToggleTheme}
+              >
+                {theme === 'dark'
+                  ? <Sun className="sidebar-theme-icon" aria-hidden="true" />
+                  : <Moon className="sidebar-theme-icon" aria-hidden="true" />}
+              </button>
+            </TooltipTrigger>
+            <TooltipContent side="right">
+              {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+            </TooltipContent>
+          </Tooltip>
+        ) : (
+          <button
+            type="button"
+            className="sidebar-theme-btn"
+            aria-label={theme === 'dark' ? 'Switch to light mode (Ctrl+Shift+L)' : 'Switch to dark mode (Ctrl+Shift+L)'}
+            aria-pressed={theme === 'light'}
+            title={theme === 'dark' ? 'Switch to light mode (Ctrl+Shift+L)' : 'Switch to dark mode (Ctrl+Shift+L)'}
+            onClick={onToggleTheme}
+          >
+            {theme === 'dark'
+              ? <Sun className="sidebar-theme-icon" aria-hidden="true" />
+              : <Moon className="sidebar-theme-icon" aria-hidden="true" />}
+            <span className="sidebar-theme-label">
+              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+            </span>
+          </button>
+        )}
         <div className="sidebar-update-widget" id="sidebar-update-widget">
           <div className={widget.labelClass} id="sidebar-version-label">{widget.label}</div>
           <div

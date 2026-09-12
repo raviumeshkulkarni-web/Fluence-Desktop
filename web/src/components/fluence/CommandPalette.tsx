@@ -13,6 +13,8 @@ import {
   Search,
   Server,
   Settings2,
+  Sun,
+  Moon,
   X,
   Braces,
 } from 'lucide-react';
@@ -35,6 +37,7 @@ import { Button } from '@/components/ui/button';
 import { hideMainWindow, minimizeMainWindow } from '@/ipc/tauri';
 import { updaterStore } from '@/ipc/updater';
 import { requestHistorySearchFocus } from '@/ipc/history';
+import type { Theme } from '@/lib/theme';
 import type { Route } from '@/App';
 
 export interface PaletteAction {
@@ -52,6 +55,8 @@ interface CommandPaletteProps {
   onNavigate: (page: Route) => void;
   sidebarCollapsed: boolean;
   onToggleSidebar: () => void;
+  theme: Theme;
+  onToggleTheme: () => void;
 }
 
 const PAGE_META: Record<Route, { label: string; icon: React.ReactNode }> = {
@@ -72,6 +77,8 @@ export function CommandPalette({
   onNavigate,
   sidebarCollapsed,
   onToggleSidebar,
+  theme,
+  onToggleTheme,
 }: CommandPaletteProps) {
   const close = () => onOpenChange(false);
   const [search, setSearch] = React.useState('');
@@ -118,6 +125,18 @@ export function CommandPalette({
       shortcut: 'Ctrl B',
       onSelect: () => {
         onToggleSidebar();
+        close();
+      },
+    },
+    {
+      id: 'toggle-theme',
+      label: theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode',
+      icon: theme === 'dark'
+        ? <Sun className="command-item-icon" />
+        : <Moon className="command-item-icon" />,
+      shortcut: 'Ctrl Shift L',
+      onSelect: () => {
+        onToggleTheme();
         close();
       },
     },

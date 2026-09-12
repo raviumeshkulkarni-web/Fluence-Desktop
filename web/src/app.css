@@ -227,3 +227,53 @@ button.history-group-header {
 .history-group-header svg.is-collapsed {
   transform: rotate(-90deg);
 }
+
+/* Sidebar theme toggle: one-click dark/light for the settings shell.
+ * Sits in the footer above the update widget so it is visible on every
+ * route; icon-only 44x36 in the collapsed rail with tooltip. Overlay and
+ * wizard windows never render this. All paint from frozen tokens. */
+.sidebar-theme-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  padding: 7px 12px;
+  margin-bottom: var(--spacing-sm);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.sidebar-theme-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+  border-color: var(--color-border-muted);
+}
+.sidebar-theme-btn:active {
+  transform: scale(0.98);
+}
+.sidebar-theme-btn:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.sidebar-theme-icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+}
+.sidebar-theme-label {
+  white-space: nowrap;
+  overflow: hidden;
+}
+.sidebar.collapsed .sidebar-theme-btn {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  margin: 0 auto var(--spacing-sm);
+}

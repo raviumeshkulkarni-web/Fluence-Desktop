@@ -25,3 +25,10 @@ Plan: `tasks/anti-slop-plan.md`. Branch: `ui/anti-slop-professional-polish`. Do 
 - [x] Each slice verified individually
 - [x] Single branch, commits per slice, no merge to main
 - [x] Ready for owner testing
+
+## Light mode (settings shell only, dark default, overlay/wizard untouched)
+- [x] Slice 1: theme plumbing (`lib/theme.ts`, pre-render apply, sidebar toggle, palette cmd, Ctrl+Shift+L)
+- [x] Slice 2: `[data-theme="light"]` token block (zinc surfaces, deepened teal, AA measured)
+- [x] Slice 3: additive light overrides (global/settings/ui/app css; dark rules untouched)
+- [x] Slice 4: theme-aware dashboard duo (deepened light stops, themed legend color)
+- [x] Slice 5: gates — typecheck+build green, zero backend files, all pairs AA (measured 3.99-17.72)

@@ -183,6 +183,10 @@
   --ease-exit:         cubic-bezier(0.4, 0.0, 1, 1);
   --ease-structural:   cubic-bezier(0.65, 0, 0.35, 1);
   --ease-spring:       cubic-bezier(0.34, 1.2, 0.64, 1);
+  /* Overlay premium motion + material (additive only — nothing renamed) */
+  --ease-premium:      cubic-bezier(0.16, 1, 0.3, 1);
+  --overlay-gradient:  linear-gradient(180deg, #17171a 0%, #0e0e10 100%);
+  --overlay-text-dim:  #B8B8B8;
 
   /* Z-index */
   --z-overlay:  100;

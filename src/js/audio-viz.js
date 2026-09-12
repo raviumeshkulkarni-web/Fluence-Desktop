@@ -358,7 +358,7 @@ class AuraVisualizer {
     if (this.currentState === 'idle') {
       const heartbeatPeriod = 4000;
       const heartbeatPhase = (timestamp % heartbeatPeriod) / heartbeatPeriod;
-      const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.08;
+      const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.12;
       this.smoothedAmplitude = heartbeatPulse;
     } else if (this.currentState === 'recording' || this.currentState === 'agent') {
       // If amplitude events stall (emit drops, event-loop hiccup), settle the
@@ -408,12 +408,15 @@ class AuraVisualizer {
     const isAgent = this.currentState === 'agent' || this.currentState === 'agent_transcribing';
 
     const isBubble = this.overlayRoot?.classList.contains('style-bubble');
+    const isCompact = this.overlayRoot?.classList.contains('style-compact');
     // Token-backed colors: agent = --color-brand-cyan (#0BD6E3), STT =
     // --color-brand-amethyst (#8B45D8) in design-tokens.css. Literal values
     // are kept in sync with those tokens.
     const primaryColor = isAgent ? '#0BD6E3' : '#8B45D8';
     const forefrontColor = isAgent ? '#E6FFFA' : '#F1EAF5';
-    const primaryAlpha = 0.32;
+    // Lower base alpha on the small pill canvas — it blooms fast there.
+    // Bubble keeps full alpha: presence beats bloom control at 44px.
+    const primaryAlpha = isCompact ? 0.26 : 0.32;
 
     const centerY = H / 2;
     // Production transcription meter: 6% calm baseline, 40% height headroom,
@@ -442,7 +445,9 @@ class AuraVisualizer {
 
     // Micro-detail is gated: perfectly clean at silence, subtle at speech.
     const vib = this.smoothedAmplitude > 0.04 ? this.smoothedAmplitude : 0;
-    const lwScale = isBubble ? 0.82 : 1;
+    // Thinner ink on the pill — 1.9px blooms inside 36px height.
+    // Bubble keeps its original weight.
+    const lwScale = isBubble ? 0.82 : isCompact ? 0.9 : 1;
 
     // Wave 1: background - thin, airy, low opacity
     ctx.beginPath();

@@ -19,7 +19,7 @@
       <button type="button" class="titlebar-button" id="titlebar-maximize" aria-label="Maximize window" title="Maximize window">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.75" y="0.75" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
       </button>
-      <button type="button" class="titlebar-button titlebar-close" id="titlebar-close" aria-label="Hide to tray" title="Hide to tray">
+      <button type="button" class="titlebar-button titlebar-close" id="titlebar-close" aria-label="Minimize to tray — still listening for hotkey" title="Minimize to tray — still listening for hotkey">
         <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1v5M2 4.5L5 7.5l3-3M1 9h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </button>
     </div>
@@ -109,6 +109,7 @@
       <div class="page-header">
         <h1 class="page-title" tabindex="-1">General</h1>
         <p class="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
+        <p class="autosave-hint" aria-live="polite">All changes save automatically</p>
       </div>
 
       <!-- Hotkey -->
@@ -322,6 +323,7 @@
       <div class="page-header">
         <h1 class="page-title" tabindex="-1">AI Providers</h1>
         <p class="page-subtitle">Configure speech-to-text and language model providers</p>
+        <p class="autosave-hint" aria-live="polite">All changes save automatically — keys stay in Windows Credential Manager</p>
       </div>
 
       <!-- STT Provider -->
@@ -393,7 +395,7 @@
             <button class="btn-secondary" id="stt-test-btn">Test Connection</button>
             <div class="connection-status" id="stt-status" role="status">
               <div class="dot dot-idle"></div>
-              <span id="stt-status-text">Not Tested</span>
+              <span id="stt-status-text">Not tested yet — Test to verify</span>
             </div>
           </div>
         </div> <!-- Closes stt-credentials-wrapper -->
@@ -557,7 +559,7 @@
             <button class="btn-secondary" id="llm-test-btn">Test Connection</button>
             <div class="connection-status" id="llm-status" role="status">
               <div class="dot dot-idle"></div>
-              <span id="llm-status-text">Not Tested</span>
+              <span id="llm-status-text">Not tested yet — Test to verify</span>
             </div>
           </div>
         </div>
@@ -1000,6 +1002,7 @@
             <div class="text-headline-md" style="font-weight:600;font-size:24px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:22px;margin-left:7px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></div>
           </div>
           <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
+          <div class="text-muted" style="font-size:12px;">Closing this window never stops dictation — Fluence stays in the tray.</div>
           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
             Why type when you can simply speak? Fluence Transcribe turns your voice into precise, beautifully formatted text the instant the words leave your lips, anywhere on Windows, in any application, with zero friction and absolute privacy. This is not dictation. This is Fluence Transcribe.
           </div>

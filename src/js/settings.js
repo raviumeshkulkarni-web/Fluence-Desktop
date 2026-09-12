@@ -107,7 +107,17 @@ function setupTitlebar() {
   });
   if (closeBtn) closeBtn.addEventListener('click', () => {
     // Hide instead of close so app stays in tray
+    try { sessionStorage.setItem('fluence-tray-hint', '1'); } catch {}
     invoke('hide_main_window').catch(err => console.error('Failed to hide:', err));
+  });
+  // One-time reassurance when the window comes back from the tray.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible') return;
+    let flagged = false;
+    try { flagged = sessionStorage.getItem('fluence-tray-hint') === '1'; } catch {}
+    if (!flagged) return;
+    try { sessionStorage.removeItem('fluence-tray-hint'); } catch {}
+    showToast('Fluence stayed in the tray and kept your hotkey active', 'info');
   });
 }
 
@@ -382,11 +392,57 @@ function buildHotkeyString(e) {
 
 // ── Provider Cards ───────────────────────────────────────────────
 
+// Unsaved key drafts, stashed per preset so switching cards never wipes
+// what the user typed. Saved keys live in Credential Manager; these are
+// input-only drafts that were never saved.
+const keyDrafts = { stt: Object.create(null), llm: Object.create(null) };
+
+function stashKeyDraft(type) {
+  const grid = type === 'stt' ? '#stt-provider-grid' : '#llm-provider-grid';
+  const current = document.querySelector(`${grid} .provider-card.selected`)?.dataset.provider;
+  const val = document.getElementById(`${type}-api-key`)?.value || '';
+  if (current && val) keyDrafts[type][current] = val;
+}
+
+function restoreKeyDraft(type, preset) {
+  const keyInput = document.getElementById(`${type}-api-key`);
+  if (!keyInput) return;
+  keyInput.value = keyDrafts[type][preset] || '';
+  delete keyDrafts[type][preset];
+  updateProviderGates(type);
+}
+
+// Test/Fetch require a parseable URL + a key-like value. Buttons stay
+// enabled but validate inline so the failure explains itself in-status.
+function providerReady(type) {
+  const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim() || '';
+  const keyVal = document.getElementById(`${type}-api-key`)?.value?.trim() || '';
+  let urlOk = false;
+  try {
+    const u = new URL(baseUrl);
+    urlOk = u.protocol === 'http:' || u.protocol === 'https:';
+  } catch { urlOk = false; }
+  return { urlOk, keyOk: keyVal.length >= 8, baseUrl, keyVal };
+}
+
+function updateProviderGates(type) {
+  const { urlOk, keyOk } = providerReady(type);
+  const ready = urlOk && keyOk;
+  for (const id of [`${type}-test-btn`, `${type}-fetch-models-btn`]) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.disabled = !ready;
+    btn.title = ready ? '' : 'Enter a valid http(s) URL and an API key (8+ chars) first';
+  }
+  return ready;
+}
+
 function setupProviderCards() {
   // STT cards
   document.querySelectorAll('#stt-provider-grid .provider-card').forEach(card => {
     card.addEventListener('click', async () => {
       const preset = card.dataset.provider;
+      stashKeyDraft('stt');
       selectProviderCard('stt', preset);
       updateSttUiVisibility(preset);
       if (preset !== 'custom' && preset !== 'Local Offline') {
@@ -394,9 +450,8 @@ function setupProviderCards() {
         setSelectOption('stt-model-select', STT_PRESETS[preset]?.model || '');
       }
 
-      // Always clear the key input on switch, but try to fetch the existing key for this provider
-      const keyInput = document.getElementById('stt-api-key');
-      if (keyInput) keyInput.value = '';
+      // Restore any unsaved draft for this preset instead of wiping it.
+      restoreKeyDraft('stt', preset);
 
       const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
@@ -404,6 +459,7 @@ function setupProviderCards() {
         fetchModels('stt', true);
       }
       queuePersist('providers');
+      updateProviderGates('stt');
     });
   });
 
@@ -411,14 +467,14 @@ function setupProviderCards() {
   document.querySelectorAll('#llm-provider-grid .provider-card').forEach(card => {
     card.addEventListener('click', async () => {
       const preset = card.dataset.provider;
+      stashKeyDraft('llm');
       selectProviderCard('llm', preset);
       if (preset !== 'custom') {
         setInputValue('llm-base-url', LLM_PRESETS[preset]?.base_url || '');
         setSelectOption('llm-model-select', LLM_PRESETS[preset]?.model || '');
       }
 
-      const keyInput = document.getElementById('llm-api-key');
-      if (keyInput) keyInput.value = '';
+      restoreKeyDraft('llm', preset);
 
       const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
@@ -426,6 +482,7 @@ function setupProviderCards() {
         fetchModels('llm', true);
       }
       queuePersist('providers');
+      updateProviderGates('llm');
     });
   });
 
@@ -469,12 +526,14 @@ function setupProviderCards() {
   // Auto-fetch on API key input
   let sttFetchTimeout;
   document.getElementById('stt-api-key')?.addEventListener('input', () => {
+    updateProviderGates('stt');
     clearTimeout(sttFetchTimeout);
     sttFetchTimeout = setTimeout(() => fetchModels('stt', true), 800);
   });
 
   let llmFetchTimeout;
   document.getElementById('llm-api-key')?.addEventListener('input', () => {
+    updateProviderGates('llm');
     clearTimeout(llmFetchTimeout);
     llmFetchTimeout = setTimeout(() => fetchModels('llm', true), 800);
   });
@@ -484,10 +543,14 @@ function setupProviderCards() {
   document.getElementById('llm-test-btn')?.addEventListener('click', () => testConnection('llm'));
 
   // Auto-apply provider endpoint/model changes (debounced)
-  document.getElementById('stt-base-url')?.addEventListener('input', () => queuePersist('providers'));
-  document.getElementById('llm-base-url')?.addEventListener('input', () => queuePersist('providers'));
+  document.getElementById('stt-base-url')?.addEventListener('input', () => { queuePersist('providers'); updateProviderGates('stt'); });
+  document.getElementById('llm-base-url')?.addEventListener('input', () => { queuePersist('providers'); updateProviderGates('llm'); });
   document.getElementById('stt-model-select')?.addEventListener('change', () => queuePersist('providers'));
   document.getElementById('llm-model-select')?.addEventListener('change', () => queuePersist('providers'));
+
+  // Initial gate state once the form exists.
+  updateProviderGates('stt');
+  updateProviderGates('llm');
 }
 
 function selectProviderCard(type, preset) {
@@ -558,21 +621,32 @@ async function fetchModels(type, silent = false) {
       );
     }
   } catch (err) {
-    if (!silent) showToast('Failed to fetch models: ' + err, 'error');
+    const msg = 'Failed to fetch models: ' + err;
+    if (!silent) showToast(msg, 'error');
+    // Silent auto-fetch must still explain itself in-status — never fail quiet.
+    const statusDot = document.querySelector(`#${type}-status .dot`);
+    const statusText = document.getElementById(`${type}-status-text`);
+    if (statusDot) statusDot.className = 'dot dot-error';
+    if (statusText) statusText.textContent = String(err).replace('Error: ', '').slice(0, 120) || msg.slice(0, 120);
   } finally {
     if (btn) btn.classList.remove('animate-spin');
   }
 }
 
 async function testConnection(type) {
-  const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim();
+  const statusDot = document.querySelector(`#${type}-status .dot`);
+  const statusText = document.getElementById(`${type}-status-text`);
+  const { urlOk, keyOk, baseUrl } = providerReady(type);
+  if (!urlOk || !keyOk) {
+    if (statusDot) statusDot.className = 'dot dot-idle';
+    if (statusText) statusText.textContent = 'Enter a valid URL and key (8+ chars), then test';
+    return;
+  }
   const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
   const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
   const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
   const apiKey = await invoke('get_api_key', { target }).catch(() => '');
-  const model = document.getElementById(`${type}-model-select`)?.value || '';  
-  const statusDot = document.querySelector(`#${type}-status .dot`);
-  const statusText = document.getElementById(`${type}-status-text`);
+  const model = document.getElementById(`${type}-model-select`)?.value || '';
 
   if (statusDot) { statusDot.className = 'dot dot-idle'; }
   if (statusText) statusText.textContent = 'Testing…';
@@ -1180,10 +1254,25 @@ function queuePersist(...features) {
   features.forEach(f => persistFeatures.add(f));
   clearTimeout(persistTimer);
   persistTimer = setTimeout(flushPendingPersists, 350);
+  updateSaveButtons();
+}
+
+function updateSaveButtons() {
+  const dirty = persistFeatures.size > 0;
+  for (const id of ['save-general-btn', 'save-providers-btn']) {
+    const btn = document.getElementById(id);
+    if (!btn) continue;
+    btn.classList.toggle('is-dirty', dirty);
+    if (!btn.dataset.baseLabel) btn.dataset.baseLabel = btn.textContent.trim() || 'Save Changes';
+    btn.textContent = dirty ? `● ${btn.dataset.baseLabel}` : btn.dataset.baseLabel;
+  }
 }
 
 async function flushPendingPersists() {
-  if (!currentSettings || persistFeatures.size === 0) return;
+  if (!currentSettings || persistFeatures.size === 0) {
+    updateSaveButtons();
+    return false;
+  }
   const features = [...persistFeatures];
   persistFeatures.clear();
 
@@ -1197,6 +1286,8 @@ async function flushPendingPersists() {
 
   if (features.includes('hotkeys')) await applyHotkeyChanges();
   if (features.includes('autostart')) await applyAutostartChange();
+  updateSaveButtons();
+  return true;
 }
 
 async function applyHotkeyChanges() {
@@ -1248,12 +1339,12 @@ function collectProviderSettings() {
 
 function setupSaveButtons() {
   document.getElementById('save-general-btn')?.addEventListener('click', async () => {
-    await flushPendingPersists();
-    showToast('Settings saved ✓', 'success');
+    const flushed = await flushPendingPersists();
+    showToast(flushed ? 'All changes saved' : 'Already up to date', flushed ? 'success' : 'info');
   });
   document.getElementById('save-providers-btn')?.addEventListener('click', async () => {
-    await flushPendingPersists();
-    showToast('Provider settings saved ✓', 'success');
+    const flushed = await flushPendingPersists();
+    showToast(flushed ? 'All changes saved' : 'Already up to date', flushed ? 'success' : 'info');
   });
 }
 

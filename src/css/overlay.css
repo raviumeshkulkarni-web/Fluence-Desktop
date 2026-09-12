@@ -54,19 +54,19 @@ body {
   pointer-events: auto;
 
   transition:
-    width 120ms ease-out,
-    height 120ms ease-out,
-    scale 120ms ease-out,
+    width 200ms var(--ease-premium),
+    height 200ms var(--ease-premium),
+    scale 200ms var(--ease-premium),
     opacity 150ms ease-out,
     box-shadow 200ms ease,
     background 200ms ease,
-    border-radius 120ms ease-out;
+    border-radius 200ms var(--ease-premium);
 }
 
 /* ── Active (Expanded) State ───────────────────────────────────── */
 .overlay-root.active {
   width: 360px;
-  height: 88px;
+  height: 96px;
   opacity: 1;
   scale: 1;
   border-radius: 16px;
@@ -89,13 +89,14 @@ body {
 
 /* ── Tier 2: Compact Pill Style ────────────────────────────────── */
 .overlay-root.active.style-compact {
-  width: 144px;
+  width: 156px;
   height: 36px;
   border-radius: 9999px;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
-  padding: 0 6px 0 12px;
+  padding: 0 8px 0 14px;
+  gap: 10px;
 }
 
 .overlay-root.style-compact.corner-bottom-left,
@@ -133,14 +134,27 @@ body {
 }
 
 .overlay-root.style-compact .card-discard {
-  width: 22px;
-  height: 22px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.08);
   color: var(--color-on-surface-variant);
   display: flex;
   align-items: center;
   justify-content: center;
+  position: relative;
+  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
+}
+
+/* 44px effective target via invisible hit area — visual stays 24px */
+.overlay-root.style-compact .card-discard::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+
+.overlay-root.style-compact .card-discard:active {
+  transform: scale(0.97);
 }
 
 .overlay-root.style-compact .card-discard:hover {
@@ -148,9 +162,28 @@ body {
   color: var(--color-error);
 }
 
-.overlay-root.style-compact .status-msg,
-.overlay-root.style-compact .status-retry {
+/* Compact has no room for a text line — the message stays available via
+   title/aria (see setStatusMessage) while error shows icon + tappable retry.
+   Stop stays hidden here by explicit product decision (pill = × only). */
+.overlay-root.style-compact .status-msg {
   display: none !important;
+}
+
+.overlay-root.style-compact .status-retry {
+  top: 68%;
+  padding: 2px 10px;
+  font-size: 10px;
+}
+
+.overlay-root.style-compact.state-error .status-icon {
+  top: 36%;
+  scale: 0.65;
+}
+
+.overlay-root.style-compact.state-error .status-retry:not([hidden]) {
+  display: block !important;
+  opacity: 1;
+  pointer-events: all;
 }
 
 .overlay-root.style-compact .status-icon {
@@ -195,10 +228,10 @@ body {
 .overlay-root.style-bubble .card-waveform {
   display: block;
   opacity: 1;
-  width: 100%;
-  height: 100%;
+  width: auto;
+  height: auto;
   position: absolute;
-  inset: 0;
+  inset: 2px;
 }
 
 /* Discard badge - a small circular "×" chip anchored on the orb's
@@ -224,12 +257,29 @@ body {
   z-index: 5;
   padding: 0;
   opacity: 0 !important;
-  scale: 0.5;
+  scale: 0.8;
   pointer-events: none !important;
-  transition: opacity 150ms ease, scale 180ms cubic-bezier(0.34, 1.2, 0.64, 1) !important;
+  transition: opacity 180ms ease, scale 180ms var(--ease-premium) !important;
 }
 
-.overlay-root.style-bubble:hover .card-footer {
+/* Badge hit area — visual stays 20px, effective target 44px */
+.overlay-root.style-bubble .card-footer::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.overlay-root.style-bubble:hover .card-footer,
+.overlay-root.style-bubble:focus-within .card-footer {
+  opacity: 1 !important;
+  scale: 1;
+  pointer-events: all !important;
+}
+
+/* Failure must be reachable without hover — reuse the same badge, no
+   hitbox change. Success shows it briefly before auto-dismiss. */
+.overlay-root.style-bubble.state-error .card-footer,
+.overlay-root.style-bubble.state-success .card-footer {
   opacity: 1 !important;
   scale: 1;
   pointer-events: all !important;
@@ -297,29 +347,28 @@ body {
 }
 
 /* ── Entry / Exit Animations ──────────────────────────────────── */
-/* Entry: springy scale from the docked corner, fade 0→100%, 180ms */
+/* Entry: Expo.out rise — fade + settle, no bounce (anti-AI: real objects
+   decelerate smoothly). Exit stays faster than entry. */
 .overlay-root.active {
-  animation: palette-enter 180ms cubic-bezier(0.34, 1.2, 0.64, 1) forwards;
+  animation: palette-enter 220ms var(--ease-premium) forwards;
 }
 
 @keyframes palette-enter {
   0% {
     opacity: 0;
-    scale: 0.92;
-  }
-  65% {
-    opacity: 0.97;
-    scale: 1.015;
+    scale: 0.94;
+    translate: 0 4px;
   }
   100% {
     opacity: 1;
     scale: 1;
+    translate: 0 0;
   }
 }
 
 /* Exit: scale 100%→95%, 100ms ease-in, fade 100%→0%, 120ms */
 .overlay-root:not(.active) {
-  animation: palette-exit 120ms ease-in forwards;
+  animation: palette-exit 120ms var(--ease-exit, ease-in) forwards;
   pointer-events: none;
 }
 
@@ -344,13 +393,13 @@ body {
 .overlay-root.active.state-agent_transcribing.style-compact,
 .overlay-root.active.state-transcribing.style-bubble,
 .overlay-root.active.state-agent_transcribing.style-bubble {
-  --breathe-scale: 1.04;
-  animation: overlay-breathe 2.4s ease-in-out infinite;
+  --breathe-scale: 1.02;
+  animation: overlay-breathe 1.8s ease-in-out infinite;
 }
 
 .overlay-root.active.state-transcribing.style-bubble,
 .overlay-root.active.state-agent_transcribing.style-bubble {
-  --breathe-scale: 1.06;
+  --breathe-scale: 1.03;
 }
 
 @keyframes overlay-breathe {
@@ -370,8 +419,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  height: 32px;
+  padding: 0 18px;
+  height: 28px;
   flex-shrink: 0;
   background: transparent;
   opacity: 0;
@@ -411,8 +460,8 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 0 16px;
-  height: 28px;
+  padding: 0 18px;
+  height: 32px;
   flex-shrink: 0;
   background: transparent;
   opacity: 0;
@@ -464,9 +513,9 @@ body {
 
 .rec-label {
   font-family: var(--font-body), system-ui, sans-serif;
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
   color: var(--color-on-surface);
 }
@@ -539,11 +588,11 @@ body {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.015em;
-  padding: 4px 9px;
-  border-radius: 7px;
+  padding: 3px 10px;
+  border-radius: 999px;
   background: rgba(var(--overlay-amethyst-rgb), 0.12);
   border: 1px solid rgba(var(--overlay-amethyst-rgb), 0.22);
-  color: var(--overlay-amethyst);
+  color: #C4A5F5;
 }
 
 /* Agent mode badge - teal */
@@ -557,7 +606,7 @@ body {
 /* ── Timer ─────────────────────────────────────────────────────── */
 .card-timer {
   font-family: var(--font-label), 'SF Mono', 'Cascadia Code', monospace;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 500;
   color: var(--color-on-surface-variant);
   letter-spacing: 0.02em;
@@ -568,7 +617,7 @@ body {
 .card-discard {
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--color-ink-muted);
@@ -577,9 +626,17 @@ body {
   justify-content: center;
   cursor: pointer;
   padding: 0;
-  transition: background 150ms ease, color 150ms ease;
+  position: relative;
+  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
   -webkit-app-region: no-drag;
   flex-shrink: 0;
+}
+
+/* 44px effective target — visual stays 28px */
+.card-discard::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
 }
 
 .card-discard:hover {
@@ -594,7 +651,7 @@ body {
 
 .card-discard:active {
   background: rgba(255, 255, 255, 0.10);
-  transform: scale(0.9);
+  transform: scale(0.97);
 }
 
 /* ── Stop-and-Save Button ──────────────────────────────────────── */
@@ -613,23 +670,23 @@ body {
   position: absolute;
   top: 50%;
   transform: translateY(-50%);
-  right: 52px; /* full tier: discard 28px + 8px gap + right pad 16px */
+  right: 54px; /* full tier: discard 28px + 8px gap + right pad 18px */
   width: 28px;
   height: 28px;
-  border-radius: 6px;
+  border-radius: 8px;
   border: none;
   background: transparent;
   color: var(--color-on-surface);
   cursor: pointer;
   padding: 0;
-  transition: background 150ms ease, color 150ms ease;
+  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
   -webkit-app-region: no-drag;
   flex-shrink: 0;
 }
 
 .overlay-root:not(.style-bubble) .card-stop:hover {
-  background: var(--color-error-container);
-  color: var(--color-error);
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-on-surface);
 }
 
 .overlay-root:not(.style-bubble) .card-stop:focus-visible {
@@ -639,6 +696,7 @@ body {
 
 .overlay-root:not(.style-bubble) .card-stop:active {
   background: rgba(255, 255, 255, 0.10);
+  transform: translateY(-50%) scale(0.97);
 }
 
 /* Compact pill shows discard (×) only — the stop-and-save square lives
@@ -661,27 +719,26 @@ body {
   align-items: center;
   justify-content: center;
   pointer-events: none;
-  transition: opacity 200ms ease, scale 300ms cubic-bezier(0.34, 1.1, 0.64, 1);
+  transition: opacity 200ms ease, scale 280ms var(--ease-premium);
 }
 
 .overlay-root.state-success .status-icon.success-icon {
   opacity: 1;
   scale: 1;
   color: var(--color-success);
-  animation: status-pop 350ms cubic-bezier(0.34, 1.1, 0.64, 1);
+  animation: status-pop 280ms var(--ease-premium);
 }
 
 .overlay-root.state-error .status-icon.error-icon {
   opacity: 1;
   scale: 1;
   color: var(--color-error);
-  animation: status-pop 350ms cubic-bezier(0.34, 1.1, 0.64, 1);
+  animation: status-pop 280ms var(--ease-premium);
 }
 
 @keyframes status-pop {
-  0% { scale: 0.5; }
-  60% { scale: 1.1; }
-  100% { scale: 1; }
+  0% { scale: 0.6; opacity: 0; }
+  100% { scale: 1; opacity: 1; }
 }
 
 /* ── Status Message (end-of-flow confirmation) ─────────────────── */
@@ -698,7 +755,7 @@ body {
   color: var(--color-on-surface-variant);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 150ms ease;
+  transition: opacity 180ms ease 80ms;
 }
 
 .overlay-root.state-success .status-msg {
@@ -829,6 +886,44 @@ body {
   transition: opacity 100ms ease;
 }
 
+/* ── Premium material + anti-AI discipline ─────────────────────── */
+/* Flat monochrome ink with one accent per mode — no gradient wash, no
+   shadow stacking. Gradient is vertical light falloff only (top-lit). */
+.overlay-root.active.style-compact,
+.overlay-root.active.style-bubble {
+  background: var(--overlay-gradient);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.overlay-root.active.style-compact {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* Small-text contrast: 11px pill/app names hit 4.5:1 on dark */
+.app-pill .app-pill-name,
+.rec-hint {
+  color: var(--overlay-text-dim);
+}
+
+/* Full-card processing: waveform recedes, label carries state */
+.overlay-root.active.state-transcribing:not(.style-compact):not(.style-bubble) .card-waveform,
+.overlay-root.active.state-agent_transcribing:not(.style-compact):not(.style-bubble) .card-waveform {
+  opacity: 0.6;
+}
+
+/* Retry as real pill button */
+.status-retry {
+  padding: 6px 16px;
+  transition: opacity 180ms ease, background 150ms ease, transform 150ms var(--ease-premium);
+}
+
+.status-retry:active {
+  transform: scale(0.97);
+}
+
 /* ── Reduced motion - keep the processing spinner perceivable ──── */
 @media (prefers-reduced-motion: reduce) {
   .overlay-root.active {
@@ -838,6 +933,7 @@ body {
 
   .app-pill,
   .rec-dot,
+  .status-icon,
   .overlay-root.state-transcribing .rec-label,
   .overlay-root.state-agent_transcribing .rec-label {
     animation: none !important;

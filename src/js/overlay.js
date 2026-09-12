@@ -467,7 +467,20 @@ async function applyOverlayStyle(style) {
 // ── Status Message + Retry ──────────────────────────────────────
 
 function setStatusMessage(text) {
-  if (statusMsg) statusMsg.textContent = text || '';
+  if (statusMsg) {
+    statusMsg.textContent = text || '';
+    // Compact/bubble hide the text visually — keep it available as hover
+    // tooltip so minimal-tier users still get the failure reason.
+    if (text) statusMsg.title = text;
+    else statusMsg.removeAttribute('title');
+  }
+  // Screen-reader + tooltip path for tiers that hide .status-msg.
+  if (overlayRoot) {
+    if (text) overlayRoot.title = text;
+    else overlayRoot.removeAttribute('title');
+  }
+  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry — ${text}`);
+  else if (statusRetry) statusRetry.removeAttribute('aria-label');
 }
 
 function showRetry() {

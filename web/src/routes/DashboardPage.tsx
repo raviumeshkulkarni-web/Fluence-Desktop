@@ -514,8 +514,15 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
     const rect = el.getBoundingClientRect();
     const plotL = yWidth;
     const plotR = rect.width - 8;
-    const frac = (e.clientX - rect.left - plotL) / Math.max(1, plotR - plotL);
-    const idx = Math.round(frac * (points.length - 1));
+    const span = Math.max(1, plotR - plotL);
+    // Area points sit on the plot edges; bars sit at band centers. The
+    // hover mapping must use the same layout or the dot drifts off the bar.
+    const frac =
+      metric === 'sessions'
+        ? (e.clientX - rect.left - plotL) / span
+        : (e.clientX - rect.left - plotL) / span - 0.5 / points.length;
+    const denom = metric === 'sessions' ? points.length - 1 : points.length;
+    const idx = Math.round(frac * denom);
     setHoverIdx(Math.min(points.length - 1, Math.max(0, idx)));
   };
   const hovered = hoverIdx != null && points[hoverIdx] != null ? points[hoverIdx] : null;
@@ -528,7 +535,12 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
     const plotR = hostW - 8;
     const plotT = 8;
     const plotB = hostH - 30;
-    const frac = points.length < 2 ? 0.5 : hoverIdx / (points.length - 1);
+    const frac =
+      points.length < 2
+        ? 0.5
+        : metric === 'sessions'
+          ? hoverIdx / (points.length - 1)
+          : (hoverIdx + 0.5) / points.length;
     const dotX = plotL + frac * Math.max(0, plotR - plotL);
     const dotY = plotT + (1 - activeValue(hovered) / yMax) * Math.max(0, plotB - plotT);
     const left =

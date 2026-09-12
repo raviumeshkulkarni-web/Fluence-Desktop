@@ -55,7 +55,7 @@ function readSidebarCollapsed(): boolean {
 // custom titlebar, sidebar navigation with View-Transitions page changes,
 // focus moved to the new page title for assistive technology.
 export function App() {
-  const [route, setRoute] = useState<Route>('about');
+  const [route, setRoute] = useState<Route>('dashboard');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const { theme, toggleTheme } = useTheme();

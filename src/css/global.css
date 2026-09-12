@@ -761,6 +761,7 @@ textarea:disabled {
   background: rgba(0, 0, 0, 0.18);
 }
 [data-theme="light"] .btn-primary {
+  background: var(--color-charcoal);
   border-color: rgba(0, 0, 0, 0.15);
 }
 [data-theme="light"] .btn-primary:hover {

@@ -100,6 +100,36 @@ jobs:
           projectPath: src-tauri
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
-          releaseBody: 'See the assets below to download and install Fluence.'
+          releaseBody: |
+            ## Fluence v__VERSION__ — Light Theme, Activity Analytics & Desktop Polish
+
+            This release brings major UI and UX improvements designed for daily desktop voice typing, including full Light Theme support, new Dashboard activity metrics, and recording overlay refinements.
+
+            ### ✨ What's New
+
+            - **Light Theme Mode**:
+              - Seamless one-click theme switcher in the sidebar and Command Palette (`Ctrl+Shift+L`).
+              - Hand-calibrated light theme palette with crisp zinc surfaces, matte charcoal hardware buttons, and high-contrast WCAG AAA typography.
+              - Persists your choice across sessions while keeping recording overlays and wizards distraction-free.
+
+            - **Dashboard Words & Sessions Analytics**:
+              - Switch between **Sessions** (continuous trend area chart) and **Words** (discrete bar chart) right from the Activity card header.
+              - Synchronized with your local and cross-device synced ledger buckets.
+              - Precision hover inspector with vertical crosshairs and anchored data chips.
+
+            - **Recording Overlay Polish**:
+              - Compact pill style sized down to eliminate dead space, tightly hugging the live audio waveform.
+              - Reliable bubble close discard chip with hardened click hitboxes and non-drag window region.
+              - Streamlined controls: dictation starts and stops seamlessly with your global hotkey.
+
+            - **Visual Consistency & Typography**:
+              - Preserved iconic Fluence wordmark identity.
+              - Replaced glow drop-shadows and heavy gradient fills with flat, calm brand cyan progress indicators.
+              - Direct, functional copy across the application.
+
+            ---
+            ### 📥 Download & Install
+
+            Download the installer (`.exe` or `.msi`) below to install or update Fluence on Windows.
           releaseDraft: false
           prerelease: false

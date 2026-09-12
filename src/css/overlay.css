@@ -88,15 +88,18 @@ body {
 }
 
 /* ── Tier 2: Compact Pill Style ────────────────────────────────── */
+/* Pill = waveform + × only (stop stays hidden here by explicit product
+   decision). Width is sized so the × starts right where the waveform ends:
+   14px left pad + flex waveform + 6px gap + 24px discard + 8px right pad. */
 .overlay-root.active.style-compact {
-  width: 156px;
+  width: 118px;
   height: 36px;
   border-radius: 9999px;
   flex-direction: row;
   align-items: center;
   justify-content: space-between;
   padding: 0 8px 0 14px;
-  gap: 10px;
+  gap: 6px;
 }
 
 .overlay-root.style-compact.corner-bottom-left,

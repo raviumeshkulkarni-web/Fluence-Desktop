@@ -1120,11 +1120,13 @@
   flex: 0 0 auto;
 }
 .logo-tagline {
-  margin-left: 4px;
+  margin-left: 8px;
   color: var(--color-on-surface-variant);
-  font-family: 'Allura', cursive;
-  font-size: 19px;
-  font-weight: 400;
+  font-family: var(--font-display);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
   line-height: 1;
 }
 .sidebar-collapse-toggle {

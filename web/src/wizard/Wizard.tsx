@@ -39,7 +39,7 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
 
 const STEP_TITLES = [
   '',
-  'Welcome to fluenceTranscribe',
+  'Welcome to Fluence Transcribe',
   'Connect Your API Key',
   'Set Your Hotkey',
   'Overlay Position',

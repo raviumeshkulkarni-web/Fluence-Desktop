@@ -43,7 +43,7 @@ export function AboutPage() {
             </svg>
             <div className="text-headline-md" style={{ fontWeight: 600, fontSize: 24, letterSpacing: '-0.03em', display: 'inline-flex', alignItems: 'baseline' }}>
               flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
-              <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 22, marginLeft: 7, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, letterSpacing: '0.08em', textTransform: 'uppercase', marginLeft: 8, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
             </div>
           </div>
           <div className="text-muted text-body-md" style={{ marginTop: 4 }}>

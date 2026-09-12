@@ -50,7 +50,7 @@ export function AboutPage() {
             Version <span id="about-version">{appVersion}</span>
           </div>
           <div className="text-body-md text-muted" style={{ maxWidth: 400, lineHeight: 1.7 }}>
-            Why type when you can simply speak? Fluence Transcribe turns your voice into precise, beautifully formatted text the instant the words leave your lips, anywhere on Windows, in any application, with zero friction and absolute privacy. This is not dictation. This is Fluence Transcribe.
+            Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.
           </div>
 
           <div

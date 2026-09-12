@@ -752,24 +752,21 @@
             <svg id="weekly-area-svg" role="img" aria-label="Weekly transcription activity area chart">
               <defs>
                 <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stop-color="#0BD6E3" stop-opacity="0.45" />
-                  <stop offset="50%" stop-color="#8B45D8" stop-opacity="0.30" />
-                  <stop offset="100%" stop-color="#8B45D8" stop-opacity="0.14" />
+                  <stop offset="0%" stop-color="#0BD6E3" stop-opacity="0.28" />
+                  <stop offset="50%" stop-color="#0BD6E3" stop-opacity="0.12" />
+                  <stop offset="100%" stop-color="#0BD6E3" stop-opacity="0.04" />
                 </linearGradient>
                 <linearGradient id="curve-stroke-grad" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stop-color="#8B45D8" />
-                  <stop offset="50%" stop-color="#6C5CE7" />
+                  <stop offset="0%" stop-color="#0BD6E3" />
+                  <stop offset="50%" stop-color="#0BD6E3" />
                   <stop offset="100%" stop-color="#0BD6E3" />
                 </linearGradient>
-                <filter id="curve-glow" x="-10%" y="-20%" width="120%" height="140%">
-                  <feDropShadow dx="0" dy="2" stdDeviation="4" flood-color="#0BD6E3" flood-opacity="0.35" />
-                </filter>
               </defs>
               <g id="weekly-chart-grid"></g>
               <!-- Area Fill -->
               <path id="weekly-area-path" d="" fill="url(#area-gradient)" />
               <!-- Curve Stroke -->
-              <path id="weekly-curve-path" d="" fill="none" stroke="url(#curve-stroke-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" filter="url(#curve-glow)" vector-effect="non-scaling-stroke" />
+              <path id="weekly-curve-path" d="" fill="none" stroke="url(#curve-stroke-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
 
               <!-- Data dots + value labels (rendered by JS) -->
               <g id="weekly-chart-points"></g>
@@ -1003,9 +1000,9 @@
           </div>
           <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
           <div class="text-muted" style="font-size:12px;">Closing this window never stops dictation — Fluence stays in the tray.</div>
-          <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
-            Why type when you can simply speak? Fluence Transcribe turns your voice into precise, beautifully formatted text the instant the words leave your lips, anywhere on Windows, in any application, with zero friction and absolute privacy. This is not dictation. This is Fluence Transcribe.
-          </div>
+           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
+             Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.
+           </div>
 
           <!-- Update Status Card -->
           <div class="update-card" id="update-card" style="width:100%;max-width:420px;margin-top:12px;padding:16px;border-radius:12px;background:var(--color-surface-container);border:1px solid var(--color-outline-variant);display:flex;flex-direction:column;align-items:center;gap:10px;">

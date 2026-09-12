@@ -604,9 +604,9 @@ export function DashboardPage() {
                 <AreaChart data={points} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
                   <defs>
                     <linearGradient id="dashAreaGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#0BD6E3" stopOpacity={0.45} />
-                      <stop offset="50%" stopColor="#8B45D8" stopOpacity={0.3} />
-                      <stop offset="100%" stopColor="#8B45D8" stopOpacity={0.14} />
+                      <stop offset="0%" stopColor="#0BD6E3" stopOpacity={0.28} />
+                      <stop offset="50%" stopColor="#0BD6E3" stopOpacity={0.12} />
+                      <stop offset="100%" stopColor="#0BD6E3" stopOpacity={0.04} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />

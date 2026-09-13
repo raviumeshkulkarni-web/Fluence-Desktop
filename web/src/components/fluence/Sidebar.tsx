@@ -3,6 +3,7 @@ import type { LucideIcon } from 'lucide-react';
 import {
   BookOpen,
   Braces,
+  CircleDot,
   Download,
   History,
   Info,
@@ -30,6 +31,7 @@ const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { page: 'history', label: 'History', icon: History },
   { page: 'general', label: 'General', icon: Settings2 },
+  { page: 'bubble', label: 'Floating Bubble', icon: CircleDot },
   { page: 'providers', label: 'Providers', icon: Server },
   { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
   { page: 'snippets', label: 'Snippets', icon: Braces },

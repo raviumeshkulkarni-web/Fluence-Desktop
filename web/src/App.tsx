@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Titlebar } from '@/components/fluence/Titlebar';
 import { Sidebar } from '@/components/fluence/Sidebar';
 import { AboutPage } from '@/routes/AboutPage';
+import { BubblePage } from '@/routes/BubblePage';
 import { DashboardPage } from '@/routes/DashboardPage';
 import { DictionaryPage } from '@/routes/DictionaryPage';
 import { GeneralPage } from '@/routes/GeneralPage';
@@ -22,6 +23,7 @@ export type Route =
   | 'dashboard'
   | 'history'
   | 'general'
+  | 'bubble'
   | 'providers'
   | 'dictionary'
   | 'snippets'
@@ -34,6 +36,7 @@ const PAGE_ORDER: Route[] = [
   'dashboard',
   'history',
   'general',
+  'bubble',
   'providers',
   'dictionary',
   'snippets',
@@ -136,7 +139,7 @@ export function App() {
       // saveGeneral/saveProviders aliases).
       if ((e.ctrlKey || e.metaKey) && e.key === 's') {
         e.preventDefault();
-        if (route === 'general' || route === 'providers') {
+        if (route === 'general' || route === 'bubble' || route === 'providers') {
           window.dispatchEvent(new CustomEvent('fluence:save-page'));
         }
       }
@@ -203,6 +206,8 @@ export function App() {
               <DictionaryPage />
             ) : route === 'general' ? (
               <GeneralPage />
+            ) : route === 'bubble' ? (
+              <BubblePage />
             ) : route === 'history' ? (
               <HistoryPage />
             ) : route === 'providers' ? (

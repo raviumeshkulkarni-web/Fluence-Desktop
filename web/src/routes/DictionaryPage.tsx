@@ -237,7 +237,7 @@ export function DictionaryPage() {
   return (
     <section className="page active" id="page-dictionary">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Custom Dictionary</h1>
+        <h1 className="page-title" tabIndex={-1}>Dictionary</h1>
         <p className="page-subtitle">Correct specific words or phrases automatically after transcription</p>
       </div>
 
@@ -287,7 +287,7 @@ export function DictionaryPage() {
           <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
             <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>Import</Button>
             <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>Export</Button>
-            <Button variant="primary" size="sm" id="add-dict-btn" onClick={openAdd}>+ Add Entry</Button>
+            <Button variant="primary" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
           </div>
         </div>
         {showAdd && (
@@ -369,7 +369,7 @@ export function DictionaryPage() {
         </table>
       </div>
 
-      <div className="settings-section" style={{ marginTop: 'var(--spacing-lg)' }}>
+      <div className="settings-section">
         <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2>Suggested Corrections</h2>
           <div className="suggestions-bulk-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>

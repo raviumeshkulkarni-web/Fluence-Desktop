@@ -65,7 +65,7 @@ body {
 
 /* ── Active (Expanded) State ───────────────────────────────────── */
 .overlay-root.active {
-  width: 360px;
+  width: 320px;
   height: 96px;
   opacity: 1;
   scale: 1;
@@ -87,6 +87,21 @@ body {
   transform-origin: 50% 100%;
 }
 
+/* Top dock: same treatment mirrored — sharpen the corner hugging the edge */
+.overlay-root.corner-top-left {
+  transform-origin: 0% 0%;
+  border-radius: 6px 16px 16px 16px;
+}
+
+.overlay-root.corner-top-right {
+  transform-origin: 100% 0%;
+  border-radius: 16px 6px 16px 16px;
+}
+
+.overlay-root.corner-top-center {
+  transform-origin: 50% 0%;
+}
+
 /* ── Tier 2: Compact Pill Style ────────────────────────────────── */
 /* Pill = waveform + × only (stop stays hidden here by explicit product
    decision). Width is sized so the × starts right where the waveform ends:
@@ -104,7 +119,10 @@ body {
 
 .overlay-root.style-compact.corner-bottom-left,
 .overlay-root.style-compact.corner-bottom-right,
-.overlay-root.style-compact.corner-bottom-center {
+.overlay-root.style-compact.corner-bottom-center,
+.overlay-root.style-compact.corner-top-left,
+.overlay-root.style-compact.corner-top-right,
+.overlay-root.style-compact.corner-top-center {
   border-radius: 9999px;
 }
 
@@ -220,7 +238,10 @@ body {
 
 .overlay-root.style-bubble.corner-bottom-left,
 .overlay-root.style-bubble.corner-bottom-right,
-.overlay-root.style-bubble.corner-bottom-center {
+.overlay-root.style-bubble.corner-bottom-center,
+.overlay-root.style-bubble.corner-top-left,
+.overlay-root.style-bubble.corner-top-right,
+.overlay-root.style-bubble.corner-top-center {
   border-radius: 50%;
 }
 
@@ -237,15 +258,14 @@ body {
   inset: 2px;
 }
 
-/* Discard badge - a small circular "×" chip anchored on the orb's
-   top-right edge, half inside / half outside. It shares the bubble's edge
-   (gestalt: the two shapes read as one control group) without covering the
-   waveform face. !important overrides the base
+/* Discard badge - a small circular "×" chip floating just clear of the
+   orb's top-right edge (no waveform overlap). The invisible ::after halo
+   below keeps the 44px touch target. !important overrides the base
    `.overlay-root.active .card-footer { opacity: 1 }` rule. */
 .overlay-root.style-bubble .card-footer {
   position: absolute;
-  top: -6px;
-  right: -6px;
+  top: -16px;
+  right: -16px;
   width: 20px;
   height: 20px;
   border-radius: 50%;
@@ -374,6 +394,31 @@ body {
   }
 }
 
+/* Mass-aware entry: smaller tiers settle faster on the same expo-out curve,
+   so the 44px orb never feels laggy next to the full card. */
+.overlay-root.active.style-compact {
+  animation-duration: 180ms;
+}
+
+.overlay-root.active.style-bubble {
+  animation-duration: 160ms;
+}
+
+/* Entrance cascade (full island only): meta, waveform, and footer settle in
+   sequence behind the card rise. Scoped to :active so exits stay instant —
+   once the class drops, the base delay-free transitions take over. */
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-meta {
+  transition: opacity 150ms ease 30ms;
+}
+
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-waveform {
+  transition: opacity 150ms ease 60ms;
+}
+
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-footer {
+  transition: opacity 150ms ease 90ms;
+}
+
 /* Exit: scale 100%→95%, 100ms ease-in, fade 100%→0%, 120ms */
 .overlay-root:not(.active) {
   animation: palette-exit 120ms var(--ease-exit, ease-in) forwards;
@@ -384,10 +429,12 @@ body {
   0% {
     opacity: 0.97;
     scale: 1;
+    translate: 0 0;
   }
   100% {
     opacity: 0;
     scale: 0.95;
+    translate: 0 3px;
   }
 }
 
@@ -542,7 +589,7 @@ body {
   -webkit-backdrop-filter: blur(16px) saturate(125%);
   opacity: 0;
   transform: translateX(-50%) translateY(-4px);
-  transition: opacity 180ms ease-out, transform 180ms cubic-bezier(0.25, 0.1, 0.25, 1);
+  transition: opacity 180ms ease-out, transform 220ms var(--ease-premium);
   pointer-events: none;
 }
 
@@ -790,7 +837,8 @@ body {
 
 .overlay-root.state-transcribing .rec-label,
 .overlay-root.state-agent_transcribing .rec-label {
-  animation: pulse-processing 1.2s ease-in-out infinite;
+  /* Desynced from the 1.2s rec-dot pulse so the two never throb as one. */
+  animation: pulse-processing 1.7s ease-in-out infinite;
 }
 
 /* Processing spinner */
@@ -851,6 +899,65 @@ body {
     0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
+/* ── Optional halo glow (Floating Bubble toggle, Android pill-glow parity) ── */
+/* The rules above stay halo-free (today's flat look). With glow ON — the
+   default, i.e. `.no-glow` absent — each tier gains a stacked halo in its
+   mode accent: a tight wash for edge presence plus a wide wash for lift.
+   Amethyst while transcribing, teal in Agent mode. Borders, glass, and
+   depth shadows are repeated verbatim, never retuned. */
+.overlay-root.active:not(.no-glow):not(.state-agent):not(.state-agent_transcribing):not(.style-compact):not(.style-bubble) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 14px rgba(139, 69, 216, 0.32),
+    0 0 36px rgba(139, 69, 216, 0.16);
+}
+
+.overlay-root.state-agent.active:not(.no-glow):not(.style-compact):not(.style-bubble),
+.overlay-root.state-agent_transcribing.active:not(.no-glow):not(.style-compact):not(.style-bubble) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 14px rgba(11, 214, 227, 0.32),
+    0 0 36px rgba(11, 214, 227, 0.16);
+}
+
+.overlay-root.active.style-compact:not(.no-glow):not(.state-agent):not(.state-agent_transcribing) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 10px rgba(139, 69, 216, 0.35),
+    0 0 24px rgba(139, 69, 216, 0.18);
+}
+
+.overlay-root.active.style-compact.state-agent:not(.no-glow),
+.overlay-root.active.style-compact.state-agent_transcribing:not(.no-glow) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 10px rgba(11, 214, 227, 0.35),
+    0 0 24px rgba(11, 214, 227, 0.18);
+}
+
+.overlay-root.active.style-bubble:not(.no-glow):not(.state-agent):not(.state-agent_transcribing) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 10px rgba(139, 69, 216, 0.35),
+    0 0 24px rgba(139, 69, 216, 0.18);
+}
+
+.overlay-root.active.style-bubble.state-agent:not(.no-glow),
+.overlay-root.active.style-bubble.state-agent_transcribing:not(.no-glow) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 10px rgba(11, 214, 227, 0.35),
+    0 0 24px rgba(11, 214, 227, 0.18);
+}
+
 /* Small-text contrast: 11px pill/app names hit 4.5:1 on dark */
 .app-pill .app-pill-name,
 .rec-hint {
@@ -874,10 +981,30 @@ body {
 }
 
 /* ── Reduced motion - keep the processing spinner perceivable ──── */
+/* Policy: infinite/persistent motion collapses to static (breathe included —
+   a 1.8s scale loop is a vestibular trigger); one-shot confirmations under
+   ~300ms (status-pop) and the slowed 1.5s spinner stay so state changes
+   remain perceivable without animation. */
 @media (prefers-reduced-motion: reduce) {
   .overlay-root.active {
     animation: none;
     transition-duration: 1ms;
+  }
+
+  /* Entrance-cascade and status delays collapse too, or content pops in
+     late under an otherwise instant transition. */
+  .overlay-root.active .card-meta,
+  .overlay-root.active .card-waveform,
+  .overlay-root.active .card-footer,
+  .overlay-root .status-msg {
+    transition-delay: 0ms;
+  }
+
+  .overlay-root.active.state-transcribing.style-compact,
+  .overlay-root.active.state-agent_transcribing.style-compact,
+  .overlay-root.active.state-transcribing.style-bubble,
+  .overlay-root.active.state-agent_transcribing.style-bubble {
+    animation: none;
   }
 
   .app-pill,

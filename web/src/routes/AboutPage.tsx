@@ -22,12 +22,12 @@ export function AboutPage() {
     <section className="page active" id="page-about">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>About Fluence</h1>
-        <p className="page-subtitle">AI-powered voice typing for Windows</p>
+        <p className="page-subtitle">Voice typing for Windows</p>
       </div>
 
       <div className="settings-section">
         <div style={{ padding: 'var(--spacing-xl)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-lg)', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-12)' }}>
             <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
               <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-about)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
               <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-about)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
@@ -46,7 +46,7 @@ export function AboutPage() {
               <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 22, marginLeft: 7, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
             </div>
           </div>
-          <div className="text-muted text-body-md" style={{ marginTop: 4 }}>
+          <div className="text-muted text-body-md" style={{ marginTop: 'var(--spacing-xs)' }}>
             Version <span id="about-version">{appVersion}</span>
           </div>
           <div className="text-body-md text-muted" style={{ maxWidth: 400, lineHeight: 1.7 }}>
@@ -56,36 +56,36 @@ export function AboutPage() {
           <div
             className={updater.state === 'downloading' ? 'update-card downloading' : 'update-card'}
             id="update-card"
-            style={{ width: '100%', maxWidth: 420, marginTop: 12, padding: 16, borderRadius: 12, background: 'var(--color-surface-container)', border: '1px solid var(--color-outline-variant)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}
+            style={{ width: '100%', maxWidth: 420, marginTop: 'var(--spacing-12)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-container)', border: '1px solid var(--color-outline-variant)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-10)' }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 4 }}>
-              <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--color-on-surface)' }} id="update-status-title">
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
+              <div style={{ fontSize: 'var(--text-label-lg)', fontWeight: 600, color: 'var(--color-on-surface)' }} id="update-status-title">
                 {card.title}
               </div>
-              <div style={{ fontSize: 11, color: 'var(--color-on-surface-variant)' }} id="update-last-checked">
+              <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-on-surface-variant)' }} id="update-last-checked">
                 {updater.lastCheckedText ? `Last checked: ${updater.lastCheckedText}` : ''}
               </div>
             </div>
             <div
-              style={{ fontSize: 13, color: 'var(--color-on-surface-variant)', display: card.desc ? 'block' : 'none', textAlign: card.descAlign, lineHeight: 1.4, ...(card.descNotes ? { maxHeight: 180, overflowY: 'auto', width: '100%', boxSizing: 'border-box', padding: '10px 14px', background: 'var(--color-surface-secondary)', border: '1px solid var(--color-border-structural)', borderRadius: 'var(--radius-sm)' } : {}) }}
+              style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)', display: card.desc ? 'block' : 'none', textAlign: card.descAlign, lineHeight: 1.4, ...(card.descNotes ? { maxHeight: 180, overflowY: 'auto', width: '100%', boxSizing: 'border-box', padding: 'var(--spacing-10) var(--spacing-md)', background: 'var(--color-surface-secondary)', border: '1px solid var(--color-border-structural)', borderRadius: 'var(--radius-sm)' } : {}) }}
               id="update-status-desc"
               className={card.descNotes ? 'update-notes' : undefined}
             >
               {card.desc ?? ''}
             </div>
 
-            <div id="update-progress-container" style={{ display: updater.state === 'downloading' ? 'block' : 'none', width: '100%', maxWidth: 280, marginTop: 4 }}>
+            <div id="update-progress-container" style={{ display: updater.state === 'downloading' ? 'block' : 'none', width: '100%', maxWidth: 280, marginTop: 'var(--spacing-xs)' }}>
               <Progress
                 id="update-progress-track"
                 aria-label="Update download progress"
                 value={updater.progress}
               />
-              <div style={{ fontSize: 11, color: 'var(--color-outline)', textAlign: 'center', marginTop: 4 }} id="update-progress-text">
+              <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-outline)', textAlign: 'center', marginTop: 'var(--spacing-xs)' }} id="update-progress-text">
                 {updater.progress}%
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 8, marginTop: 4 }} id="update-status-actions">
+            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-xs)' }} id="update-status-actions">
               <Button
                 variant={card.btnPrimary ? 'primary' : 'secondary'}
                 size="sm"
@@ -131,7 +131,7 @@ export function AboutPage() {
         return { title: 'Downloading Update…', btnText: `Downloading ${updater.progress}%`, btnDisabled: true, btnPrimary: true, onAction: check };
       case 'ready':
         return {
-          title: 'Update Downloaded & Staged!', desc: 'Restart Fluence to apply the update.',
+          title: 'Update Downloaded & Staged', desc: 'Restart Fluence to apply the update.',
           descAlign: 'center' as const, descNotes: false,
           btnText: 'Restart Fluence', btnDisabled: false, btnPrimary: true, onAction: restart,
         };

@@ -50,9 +50,18 @@ pub struct AppSettings {
     #[serde(default = "default_recording_mode")]
     pub recording_mode: String, // "push_to_toggle" | "hold_to_record"
     #[serde(default = "default_overlay_position")]
-    pub overlay_position: String, // "center" | "bottom_left" | "bottom_right"
+    pub overlay_position: String, // "center" | "bottom_left" | "bottom_right" | "top_left" | "top_center" | "top_right"
     #[serde(default = "default_overlay_style")]
     pub overlay_style: String, // "full" | "compact" | "bubble"
+    /// Soft halo around the overlay border (Android pill-glow parity).
+    /// Default ON: dropping the halo is one toggle away in Floating Bubble.
+    #[serde(default = "default_true")]
+    pub overlay_glow: bool,
+    /// Foreground-app pill (icon + name floating above the overlay).
+    /// Default ON preserves today's behavior; OFF skips its fetch, poll,
+    /// and display without touching overlay layout or recording flow.
+    #[serde(default = "default_true")]
+    pub show_app_pill: bool,
     #[serde(default)]
     pub audio_device_id: Option<String>,
     #[serde(default = "default_stt_provider")]
@@ -172,6 +181,8 @@ impl Default for AppSettings {
             recording_mode: default_recording_mode(),
             overlay_position: default_overlay_position(),
             overlay_style: default_overlay_style(),
+            overlay_glow: default_true(),
+            show_app_pill: default_true(),
             audio_device_id: None,
             stt_provider: default_stt_provider(),
             llm_provider: default_llm_provider(),

@@ -1033,7 +1033,7 @@ export function HistoryPage() {
         <p className="page-subtitle">Browse and search every transcription on this device</p>
       </div>
 
-      <div className="settings-section" style={{ overflow: 'hidden' }}>
+      <div className="settings-section">
         <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2>Recent Transcriptions</h2>
           <Button variant="danger" size="xs" id="clear-history-btn" onClick={() => setConfirmClear(true)}>Clear All</Button>

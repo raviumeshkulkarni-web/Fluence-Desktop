@@ -1491,7 +1491,8 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .dict-table .actions .suggestion-dismiss-btn:hover,
-.dict-table .actions .dict-delete-btn:hover {
+.dict-table .actions .dict-delete-btn:hover,
+.dict-table .actions .snippet-delete-btn:hover {
   color: #F87171;
   border-color: rgba(248, 113, 113, 0.25);
   background: rgba(248, 113, 113, 0.08);
@@ -1850,6 +1851,7 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 [data-theme="light"] .dict-table .actions .suggestion-dismiss-btn:hover,
 [data-theme="light"] .dict-table .actions .dict-delete-btn:hover,
+[data-theme="light"] .dict-table .actions .snippet-delete-btn:hover,
 [data-theme="light"] #dismiss-selected-btn:not(:disabled):hover,
 [data-theme="light"] .history-context-menu button[data-action="delete"] {
   color: #DC2626;

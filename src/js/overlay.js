@@ -97,7 +97,7 @@ async function reconcileWithNativeState() {
       try {
         const prefs = await getRecordingPreferences();
         setOverlayCorner(prefs.overlayPosition);
-        await applyOverlayStyle(prefs.overlayStyle);
+        await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
         await invoke('show_overlay', { position: prefs.overlayPosition });
         updateRecHint();
         if (overlayRoot) overlayRoot.classList.add('active');
@@ -126,7 +126,7 @@ window.addEventListener('DOMContentLoaded', async () => {
   setState('idle');
   try {
     const prefs = await getRecordingPreferences();
-    applyOverlayStyle(prefs.overlayStyle);
+    applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
   } catch {}
   await reconcileWithNativeState();
 });
@@ -163,7 +163,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
-      await applyOverlayStyle(prefs.overlayStyle);
+      await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -248,7 +248,7 @@ async function setupEventListeners() {
         return;
       }
       setOverlayCorner(prefs.overlayPosition);
-      await applyOverlayStyle(prefs.overlayStyle);
+      await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -358,6 +358,9 @@ function setMode(mode) {
 let appPollTimer = null;
 let appPollRequestId = 0;
 
+// Floating Bubble app-pill toggle: absence means ON, so pre-toggle settings
+// files keep today's behavior. Read fresh in loadAppIcon (summon path) so a
+// just-flipped toggle applies on the very next summon, not one later.
 async function loadAppIcon(sessionId) {
   const pill = document.getElementById('app-pill');
   const pillIcon = document.getElementById('app-pill-icon');
@@ -365,6 +368,8 @@ async function loadAppIcon(sessionId) {
   if (!pill || !pillIcon || !pillName) return;
   pill.hidden = true;
   try {
+    const prefs = await getRecordingPreferences();
+    if (prefs && prefs.showAppPill === false) return;
     const info = await invoke('get_foreground_app_icon');
     if (isSessionActive(sessionId) && info && info.name && info.icon_data_url) {
       applyAppInfo(info);
@@ -379,6 +384,9 @@ function applyAppInfo(info) {
   const pillIcon = document.getElementById('app-pill-icon');
   const pillName = document.getElementById('app-pill-name');
   if (!pill || !pillIcon || !pillName || !info || !info.name) return;
+  // Backstop for the poll path and any in-flight fetch that resolves after
+  // the toggle flipped: the cache is fresh here on every path.
+  if ((cachedSettings || {}).show_app_pill === false) return;
   if (currentState !== 'recording' && currentState !== 'agent') return;
   if (pillName.textContent !== info.name) {
     pillIcon.src = info.icon_data_url || pillIcon.src;
@@ -392,8 +400,11 @@ function applyAppInfo(info) {
 }
 
 // Poll the foreground app while recording so the pill tracks app switches.
+// Skipped entirely when the pill is toggled off (display is gated too, so a
+// stale cache here can only cost one session of harmless polling, never UI).
 function startAppPolling() {
   stopAppPolling();
+  if ((cachedSettings || {}).show_app_pill === false) return;
   const sessionId = activeSessionId;
   appPollTimer = setInterval(async () => {
     if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) {
@@ -438,27 +449,37 @@ function hideAppPill() {
 
 function setOverlayCorner(position) {
   if (!overlayRoot) return;
-  overlayRoot.classList.remove('corner-bottom-left', 'corner-bottom-right', 'corner-bottom-center');
+  overlayRoot.classList.remove('corner-bottom-left', 'corner-bottom-right', 'corner-bottom-center', 'corner-top-left', 'corner-top-right', 'corner-top-center');
   if (position === 'bottom_left') {
     overlayRoot.classList.add('corner-bottom-left');
   } else if (position === 'bottom_right') {
     overlayRoot.classList.add('corner-bottom-right');
+  } else if (position === 'top_left') {
+    overlayRoot.classList.add('corner-top-left');
+  } else if (position === 'top_right') {
+    overlayRoot.classList.add('corner-top-right');
+  } else if (position === 'top_center') {
+    overlayRoot.classList.add('corner-top-center');
   } else {
     overlayRoot.classList.add('corner-bottom-center');
   }
 }
 
-async function applyOverlayStyle(style) {
+async function applyOverlayStyle(style, glowOn = true) {
   if (!overlayRoot) return;
   overlayRoot.classList.remove('style-full', 'style-compact', 'style-bubble');
   const normalized = (style === 'compact' || style === 'bubble') ? style : 'full';
   overlayRoot.classList.add(`style-${normalized}`);
+  // Floating Bubble halo toggle (Android pill-glow parity): absence of
+  // `.no-glow` means glow ON, so pre-toggle settings files keep the halo.
+  overlayRoot.classList.toggle('no-glow', glowOn === false);
   // Keep body layout in sync so the bubble/compact windows center their content
   // (see overlay.css body.style-bubble / body.style-compact).
   document.body.classList.remove('style-full', 'style-compact', 'style-bubble');
   document.body.classList.add(`style-${normalized}`);
-  // BUG-02: keep OS window hitbox in sync with visuals (bubble 76x76, compact 176x68, full 260x146).
-  // Await the resize so show_overlay positions using the actual window size.
+  // BUG-02: keep OS window hitbox in sync with visuals (bubble 130x140,
+  // compact 180x130, full 400x190 logical). Await the resize so show_overlay
+  // positions using the actual window size.
   await invoke('set_overlay_style', { style: normalized }).catch(()=>{});
 }
 
@@ -717,6 +738,8 @@ async function getRecordingPreferences() {
   return {
     overlayPosition: cachedSettings.overlay_position || 'bottom_right',
     overlayStyle: cachedSettings.overlay_style || 'full',
+    overlayGlow: cachedSettings.overlay_glow !== false,
+    showAppPill: cachedSettings.show_app_pill !== false,
     audioDeviceId: cachedSettings.audio_device_id || null,
   };
 }

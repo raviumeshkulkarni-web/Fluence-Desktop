@@ -1,6 +1,7 @@
 import * as React from 'react';
 import {
   BookOpen,
+  CircleDot,
   Command as CommandIcon,
   History,
   Info,
@@ -63,6 +64,7 @@ const PAGE_META: Record<Route, { label: string; icon: React.ReactNode }> = {
   dashboard: { label: 'Dashboard', icon: <LayoutDashboard className="command-item-icon" /> },
   history: { label: 'History', icon: <History className="command-item-icon" /> },
   general: { label: 'General', icon: <Settings2 className="command-item-icon" /> },
+  bubble: { label: 'Floating Bubble', icon: <CircleDot className="command-item-icon" /> },
   providers: { label: 'Providers', icon: <Server className="command-item-icon" /> },
   dictionary: { label: 'Dictionary', icon: <BookOpen className="command-item-icon" /> },
   snippets: { label: 'Snippets', icon: <Braces className="command-item-icon" /> },

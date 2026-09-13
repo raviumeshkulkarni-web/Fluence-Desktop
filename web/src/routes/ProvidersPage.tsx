@@ -321,7 +321,7 @@ export function ProvidersPage() {
           const res = await fetchSttModels(baseUrl, apiKey, current || null);
           const models = res.models || [];
           if (!models.length) {
-            if (!silent) toast('No models found on this endpoint - keeping current list', 'error');
+            if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
             return;
           }
           setModelList(kind, models, current);
@@ -336,7 +336,7 @@ export function ProvidersPage() {
         } else {
           const models = await fetchModels(baseUrl, apiKey);
           if (!models.length) {
-            if (!silent) toast('No models found on this endpoint - keeping current list', 'error');
+            if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
             return;
           }
           setModelList(kind, models, current);
@@ -593,7 +593,7 @@ export function ProvidersPage() {
   return (
     <section className="page active" id="page-providers">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>AI Providers</h1>
+        <h1 className="page-title" tabIndex={-1}>Providers</h1>
         <p className="page-subtitle">Configure speech-to-text and language model providers</p>
       </div>
 
@@ -681,12 +681,12 @@ export function ProvidersPage() {
             </div>
           </div>
 
-          <div id="stt-offline-downloader" className={isOffline ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', marginTop: 4, paddingTop: 8 }}>
-            <div style={{ fontWeight: 600, fontSize: 14, color: 'var(--color-on-surface)', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div id="stt-offline-downloader" className={isOffline ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-xs)', paddingTop: 'var(--spacing-sm)' }}>
+            <div style={{ fontWeight: 600, fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-6)' }}>
               <DownloadIcon />
               Offline Model Manager
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
               <span className="text-body-md" style={{ fontWeight: 600 }}>Choose a model</span>
               <span className="text-muted" style={{ fontSize: 'var(--text-label-sm)' }}>Pick the option that fits how you dictate. You can change this any time.</span>
             </div>
@@ -773,8 +773,8 @@ export function ProvidersPage() {
                 );
               })}
             </RadioGroupPrimitive.Root>
-            <div id="offline-progress-wrapper" className={progressVisible ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', background: 'var(--color-surface-secondary)', padding: 14, borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 12 }}>
+            <div id="offline-progress-wrapper" className={progressVisible ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', background: 'var(--color-surface-secondary)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-label-sm)' }}>
                 <span id="offline-progress-status" style={{ fontWeight: 500 }}>{progressStatus}</span>
                 <span id="offline-progress-percentage" style={{ fontWeight: 600, color: 'var(--color-on-surface)' }}>{progressPct.toFixed(0)}%</span>
               </div>
@@ -787,7 +787,7 @@ export function ProvidersPage() {
                 id="offline-progress-track"
                 className="progress-meter"
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--color-on-surface-variant)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-label-xs)', color: 'var(--color-on-surface-variant)' }}>
                 <span id="offline-progress-bytes">{progressBytes}</span>
                 <Button variant="ghost" size="xs" id="offline-cancel-btn" onClick={() => void onCancelDownload()}>Cancel</Button>
               </div>

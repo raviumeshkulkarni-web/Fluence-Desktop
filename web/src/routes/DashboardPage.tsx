@@ -459,19 +459,19 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
         id: 'stat-total-words',
         title: 'Words Transcribed',
         value: formatTotalWords(totals.words),
-        foot: `${totals.sessions.toLocaleString()} sessions · ${totals.scope}`,
+        foot: `${totals.sessions.toLocaleString()} sessions, ${totals.scope}`,
       },
       {
         id: 'stat-time-saved',
         title: 'Typing Time Saved',
         value: formatDurationMs((totals.words / 40) * 60000),
-        foot: `at ~40 WPM · ${totals.scope}`,
+        foot: `at 40 WPM, ${totals.scope}`,
       },
       {
         id: 'stat-dictation-time',
         title: 'Dictation Time',
         value: formatDurationMs(totals.durationMs),
-        foot: `${spokenLabel(totals.durationMs)} · ${totals.scope}`,
+        foot: `${spokenLabel(totals.durationMs)}, ${totals.scope}`,
       },
       {
         id: 'stat-sessions',
@@ -656,7 +656,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
           <CardContent>
             {loaded && rangeTotal === 0 ? (
               <div className="chart-empty" id="chart-empty">
-                No activity in this range yet — press your hotkey to dictate.
+                No activity in this range yet. Press your hotkey to dictate.
               </div>
             ) : (
               <div
@@ -767,8 +767,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                       {activeValue(hovered).toLocaleString()}{' '}
                       {metric === 'sessions'
                         ? `session${activeValue(hovered) === 1 ? '' : 's'}`
-                        : `word${activeValue(hovered) === 1 ? '' : 's'}`}{' '}
-                      ·
+                        : `word${activeValue(hovered) === 1 ? '' : 's'}`}{', '}
                     </span>
                     <span className="chart-tooltip-label">{hovered.label}</span>
                   </div>

@@ -187,7 +187,7 @@ export function SyncPage() {
             <div className="setting-label" id="sync-account-label">{accountBlock.label}</div>
             <div className="setting-desc" id="sync-account-desc">{accountBlock.desc}</div>
             {showSignInError && (
-              <div id="sync-signin-error" role="alert" style={{ color: 'var(--color-error)', fontSize: 12, lineHeight: 1.4, marginTop: 6 }}>
+              <div id="sync-signin-error" role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--text-label-sm)', lineHeight: 1.45, marginTop: 'var(--spacing-6)' }}>
                 {syncErr(s.last_error)}
               </div>
             )}

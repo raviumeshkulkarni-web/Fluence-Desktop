@@ -101,34 +101,34 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Light Theme, Activity Analytics & Desktop Polish
+            ## Fluence v__VERSION__ — Floating Bubble Studio, Overlay Fixes & Consistency
 
-            This release brings major UI and UX improvements designed for daily desktop voice typing, including full Light Theme support, new Dashboard activity metrics, and recording overlay refinements.
+            This release gives the recording overlay its own home, fixes clicks being swallowed around the bubble and pill, and cleans up copy and spacing across every settings screen.
 
-            ### ✨ What's New
+            ### What's New
 
-            - **Light Theme Mode**:
-              - Seamless one-click theme switcher in the sidebar and Command Palette (`Ctrl+Shift+L`).
-              - Hand-calibrated light theme palette with crisp zinc surfaces, matte charcoal hardware buttons, and high-contrast WCAG AAA typography.
-              - Persists your choice across sessions while keeping recording overlays and wizards distraction-free.
+            - **Floating Bubble Studio**:
+              - New dedicated page (sidebar + Command Palette) with live previews that run the exact production overlay code, so what you see is what the hotkey summons.
+              - Preview each style at real size, including the foreground app pill and halo state.
+              - Overlay controls moved out of General into their new home.
 
-            - **Dashboard Words & Sessions Analytics**:
-              - Switch between **Sessions** (continuous trend area chart) and **Words** (discrete bar chart) right from the Activity card header.
-              - Synchronized with your local and cross-device synced ledger buckets.
-              - Precision hover inspector with vertical crosshairs and anchored data chips.
+            - **Overlay Customization**:
+              - Halo Glow toggle: soft Amethyst halo while transcribing, teal in Agent Mode.
+              - App Pill toggle: show or hide the foreground app name and icon above the overlay.
+              - New placements: Top Left, Top Center, and Top Right, with matching docked-corner treatment.
 
-            - **Recording Overlay Polish**:
-              - Compact pill style sized down to eliminate dead space, tightly hugging the live audio waveform.
-              - Reliable bubble close discard chip with hardened click hitboxes and non-drag window region.
-              - Streamlined controls: dictation starts and stops seamlessly with your global hotkey.
+            - **Overlay Fixes & Polish**:
+              - The window now shrinks to each tier, so clicks near the bubble and compact pill reach the app underneath again.
+              - Slimmer full island (320px) and a repositioned bubble close chip that no longer overlaps the orb.
+              - Tier-timed open/close motion with a settled exit, entrance cascade, and hardened reduced-motion support.
 
-            - **Visual Consistency & Typography**:
-              - Preserved iconic Fluence wordmark identity.
-              - Replaced glow drop-shadows and heavy gradient fills with flat, calm brand cyan progress indicators.
-              - Direct, functional copy across the application.
+            - **Consistency Sweep**:
+              - Page titles match sidebar and palette labels everywhere.
+              - Design-token spacing and type scale across Providers, Dictionary, Snippets, Sync, About, and Dashboard.
+              - Plain, direct copy throughout.
 
             ---
-            ### 📥 Download & Install
+            ### Download & Install
 
             Download the installer (`.exe` or `.msi`) below to install or update Fluence on Windows.
           releaseDraft: false

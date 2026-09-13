@@ -99,7 +99,7 @@ export function SnippetsPage() {
   return (
     <section className="page active" id="page-snippets">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Text Expansion</h1>
+        <h1 className="page-title" tabIndex={-1}>Snippets</h1>
         <p className="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
       </div>
 
@@ -123,7 +123,7 @@ export function SnippetsPage() {
 
         <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-lg)' }}>
           <h2>My Snippets</h2>
-          <Button variant="primary" size="sm" id="add-snippet-btn" onClick={openAdd}>+ Add Snippet</Button>
+          <Button variant="primary" size="sm" id="add-snippet-btn" onClick={openAdd}>Add Snippet</Button>
         </div>
         {showAdd && (
           <div id="snippet-add-row" style={{ padding: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-md)', alignItems: 'flex-end' }}>
@@ -195,7 +195,7 @@ export function SnippetsPage() {
                     size="sm"
                     className="snippet-delete-btn"
                     data-snippet-id={entry.id}
-                    style={{ padding: '4px 8px', fontSize: 12, color: 'var(--color-error)' }}
+                    style={{ padding: 'var(--spacing-xs) var(--spacing-sm)', fontSize: 'var(--text-label-sm)' }}
                     onClick={() => void onDelete(entry.id)}
                   >
                     Delete

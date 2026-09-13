@@ -286,3 +286,141 @@ button.history-group-header {
   padding: 0;
   margin: 0 auto var(--spacing-sm);
 }
+
+/* Floating Bubble studio (React-layer only; frozen settings.css untouched).
+ * Android BubbleSettingsScreen parity: full-width radio rows, each with a
+ * LIVE preview running the exact production code (real overlay markup +
+ * real overlay stylesheet, Shadow-DOM isolated — see OverlayPreview.tsx).
+ * Selected state mirrors provider/offline-model cards: elevated surface +
+ * filled radio dot. */
+.bubble-option {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 14px 18px;
+  flex-wrap: wrap;
+  cursor: pointer;
+  color: var(--color-on-surface);
+  transition: background 150ms ease;
+}
+
+.bubble-option + .bubble-option {
+  border-top: 1px solid var(--color-border-muted);
+}
+
+.bubble-option:hover {
+  background: var(--color-hover);
+}
+
+.bubble-option:active {
+  background: var(--color-active);
+}
+
+.bubble-option:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: -1.5px;
+}
+
+.bubble-option[aria-checked="true"] {
+  background: var(--color-surface-elevated);
+}
+
+.bubble-option-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  flex: 1 1 180px;
+  min-width: 0;
+}
+
+/* Live stage: transparent so the overlay's real glass (backdrop blur over
+ * the page behind it) reads truthfully. Real-size tiers, never scaled. */
+.bubble-live-stage {
+  margin-left: auto;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 100px;
+  padding: 10px 8px;
+}
+
+/* Live previews render the real overlay markup + stylesheet (see
+ * components/fluence/OverlayPreview.tsx) — no miniature styles here. */
+
+.bubble-radio {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1.5px solid var(--color-on-surface-variant);
+  transition: border-color 0.15s ease;
+}
+
+.bubble-option[aria-checked="true"] .bubble-radio {
+  border-color: #FFFFFF;
+}
+
+.bubble-option[aria-checked="true"] .bubble-radio::after {
+  content: "";
+  position: absolute;
+  inset: 3px;
+  border-radius: 50%;
+  background: #FFFFFF;
+}
+
+.bubble-preview-label {
+  font-size: var(--text-body-md);
+  font-weight: 500;
+  color: var(--color-on-surface);
+}
+
+.bubble-preview-desc {
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+  margin-top: 3px;
+  line-height: 1.45;
+}
+
+.bubble-legend {
+  display: flex;
+  gap: 16px;
+  padding: 8px 18px 12px;
+}
+
+.bubble-legend-item {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.bubble-legend-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid var(--color-border);
+  flex: none;
+}
+
+.bubble-legend-dot-t {
+  background: #8B45D8;
+}
+
+.bubble-legend-dot-a {
+  background: var(--color-brand-cyan);
+}
+
+[data-theme="light"] .bubble-option[aria-checked="true"] {
+  border-color: rgba(0, 0, 0, 0.4);
+}
+
+[data-theme="light"] .bubble-option[aria-checked="true"] .bubble-radio {
+  border-color: #18181B;
+}
+
+[data-theme="light"] .bubble-option[aria-checked="true"] .bubble-radio::after {
+  background: #18181B;
+}

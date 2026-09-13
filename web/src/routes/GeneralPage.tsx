@@ -48,8 +48,6 @@ export function GeneralPage() {
   const [agentHotkey, setAgentHotkey] = useState(DEFAULT_AGENT_HOTKEY);
   const [recordingMode, setRecordingMode] = useState('push_to_toggle');
   const [agentRecordingMode, setAgentRecordingMode] = useState('push_to_toggle');
-  const [overlayStyle, setOverlayStyle] = useState('full');
-  const [overlayPosition, setOverlayPosition] = useState('bottom_right');
   const [language, setLanguage] = useState('en');
   const [aiPolish, setAiPolish] = useState('none');
   const [audioDevice, setAudioDevice] = useState('');
@@ -123,8 +121,6 @@ export function GeneralPage() {
         setRecordingMode(str(s.recording_mode, 'push_to_toggle'));
         setAgentHotkey(str(s.agent_hotkey, DEFAULT_AGENT_HOTKEY));
         setAgentRecordingMode(str(s.agent_recording_mode, 'push_to_toggle'));
-        setOverlayPosition(str(s.overlay_position, 'bottom_right'));
-        setOverlayStyle(str(s.overlay_style, 'full'));
         setLanguage(str(s.language, 'en'));
         setAutostart(s.auto_start === true);
         setDuck(s.duck_enabled === true);
@@ -259,7 +255,7 @@ export function GeneralPage() {
     <section className="page active" id="page-general">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>General</h1>
-        <p className="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
+        <p className="page-subtitle">Hotkey, recording mode, audio, and system preferences</p>
       </div>
 
       <div className="settings-section">
@@ -407,64 +403,6 @@ export function GeneralPage() {
                 <SelectContent>
                   <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
                   <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
-      </div>
-
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Recording Overlay</h2></div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Overlay Style</div>
-            <div className="setting-desc">Choose between the full telemetry card, compact pill, or minimal circular bubble</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={overlayStyle}
-                onValueChange={bindSelect(setOverlayStyle, 'overlay_style')}
-              >
-                <SelectTrigger
-                  id="overlay-style-select"
-                  className="select-md"
-                  aria-label="Overlay style"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="full">Full Status Island</SelectItem>
-                  <SelectItem value="compact">Compact Pill</SelectItem>
-                  <SelectItem value="bubble">Minimal Bubble</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Overlay Position</div>
-            <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={overlayPosition}
-                onValueChange={bindSelect(setOverlayPosition, 'overlay_position')}
-              >
-                <SelectTrigger
-                  id="overlay-position-select"
-                  className="select-md"
-                  aria-label="Overlay position"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bottom_right">Bottom Right</SelectItem>
-                  <SelectItem value="bottom_left">Bottom Left</SelectItem>
-                  <SelectItem value="center">Center Bottom</SelectItem>
                 </SelectContent>
               </Select>
             </Field>

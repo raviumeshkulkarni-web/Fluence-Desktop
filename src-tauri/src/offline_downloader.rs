@@ -311,6 +311,64 @@ fn verify_sha256_and_remove(path: &Path, expected_hex: &str) -> Result<()> {
     }
 }
 
+/// Pre-extraction tar-slip gate (additive, fails closed).
+/// Lists archive members with `tar -t` and rejects absolute paths
+/// (`/…`, `\…`, `C:…`, UNC) and any `..` segment before `tar -x` runs,
+/// so a compromised (hash-mismatched → already removed) or malicious
+/// archive cannot write outside the temp extract dir. GNU tar and bsdtar
+/// (Windows) both support `-t`; listing failure refuses extraction.
+/// Residual: symlink members are OS-gated (Windows symlink privilege) and
+/// the archive itself is SHA256-pinned, so this is defense in depth.
+async fn validate_archive_members(archive_path: &Path) -> Result<()> {
+    fn member_is_unsafe(name: &str) -> bool {
+        let name = name.trim().trim_end_matches('/');
+        if name.is_empty() {
+            return true;
+        }
+        if name.starts_with('/') || name.starts_with('\\') {
+            return true;
+        }
+        let bytes = name.as_bytes();
+        if bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' {
+            return true;
+        }
+        name.split(['/', '\\']).any(|seg| seg == "..")
+    }
+
+    let output = tokio::process::Command::new("tar")
+        .arg("-tjf")
+        .arg(archive_path)
+        .output()
+        .await
+        .map_err(|e| anyhow!("Failed to list archive members: {}", e))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(anyhow!("Refusing to extract: cannot list archive: {}", stderr));
+    }
+    let listing = String::from_utf8_lossy(&output.stdout);
+    let mut count = 0usize;
+    for line in listing.lines() {
+        let entry = line.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        count += 1;
+        if member_is_unsafe(entry) {
+            return Err(anyhow!(
+                "Refusing to extract: unsafe archive member '{}'",
+                entry.chars().take(120).collect::<String>()
+            ));
+        }
+        if count > 10_000 {
+            return Err(anyhow!("Refusing to extract: too many archive members"));
+        }
+    }
+    if count == 0 {
+        return Err(anyhow!("Refusing to extract: archive is empty"));
+    }
+    Ok(())
+}
+
 async fn ensure_server_runtime(
     client: &reqwest::Client,
     dest_dir: &Path,
@@ -338,6 +396,7 @@ async fn ensure_server_runtime(
     )
     .await?;
     verify_sha256_and_remove(&archive_path, &archive_info.sha256)?;
+    validate_archive_members(&archive_path).await?;
 
     let temp_extract_dir = dest_dir.join("temp_extract");
     fs::create_dir_all(&temp_extract_dir)?;

@@ -188,7 +188,8 @@ fn handle_hotkey_event(
                             session_id,
                             stop_event
                         );
-                        let _ = app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
+                        let _ =
+                            app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
                         tauri::async_runtime::spawn(async {
                             let _ = crate::audio::stop_recording().await;
                             clear_active_recording_owner();
@@ -216,8 +217,15 @@ fn handle_hotkey_event(
                     }
                     is_recording.store(true, Ordering::SeqCst);
                     let session_id = RECORDING_SESSION_ID.fetch_add(1, Ordering::SeqCst) + 1;
-                    log::info!("Starting hold_to_record session {} for owner {}", session_id, owner);
-                    if app.emit(start_event, serde_json::json!({ "session_id": session_id })).is_err() {
+                    log::info!(
+                        "Starting hold_to_record session {} for owner {}",
+                        session_id,
+                        owner
+                    );
+                    if app
+                        .emit(start_event, serde_json::json!({ "session_id": session_id }))
+                        .is_err()
+                    {
                         is_recording.store(false, Ordering::SeqCst);
                         let _ = ACTIVE_RECORDING_OWNER.compare_exchange(
                             owner,
@@ -240,8 +248,14 @@ fn handle_hotkey_event(
                             .as_millis() as u64;
                         LAST_STOP_REQUEST_MS.store(now_ms, Ordering::SeqCst);
                         let session_id = RECORDING_SESSION_ID.load(Ordering::SeqCst);
-                        log::info!("Emitting {} for session {} (owner={})", stop_event, session_id, owner);
-                        let _ = app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
+                        log::info!(
+                            "Emitting {} for session {} (owner={})",
+                            stop_event,
+                            session_id,
+                            owner
+                        );
+                        let _ =
+                            app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
                     }
                 } else {
                     let active_owner = ACTIVE_RECORDING_OWNER.load(Ordering::SeqCst);
@@ -280,7 +294,8 @@ fn handle_hotkey_event(
                             session_id,
                             stop_event
                         );
-                        let _ = app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
+                        let _ =
+                            app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
                         tauri::async_runtime::spawn(async {
                             let _ = crate::audio::stop_recording().await;
                             clear_active_recording_owner();
@@ -318,8 +333,15 @@ fn handle_hotkey_event(
                         return;
                     }
                     let session_id = RECORDING_SESSION_ID.fetch_add(1, Ordering::SeqCst) + 1;
-                    log::info!("Starting recording session {} for owner {}", session_id, owner);
-                    if app.emit(start_event, serde_json::json!({ "session_id": session_id })).is_err() {
+                    log::info!(
+                        "Starting recording session {} for owner {}",
+                        session_id,
+                        owner
+                    );
+                    if app
+                        .emit(start_event, serde_json::json!({ "session_id": session_id }))
+                        .is_err()
+                    {
                         is_recording.store(false, Ordering::SeqCst);
                         let _ = ACTIVE_RECORDING_OWNER.compare_exchange(
                             owner,
@@ -343,7 +365,12 @@ fn handle_hotkey_event(
                     .as_millis() as u64;
                 LAST_STOP_REQUEST_MS.store(now_ms, Ordering::SeqCst);
                 let session_id = RECORDING_SESSION_ID.load(Ordering::SeqCst);
-                log::info!("Emitting {} on release for session {} (owner={})", stop_event, session_id, owner);
+                log::info!(
+                    "Emitting {} on release for session {} (owner={})",
+                    stop_event,
+                    session_id,
+                    owner
+                );
                 let _ = app.emit(stop_event, serde_json::json!({ "session_id": session_id }));
             }
         }

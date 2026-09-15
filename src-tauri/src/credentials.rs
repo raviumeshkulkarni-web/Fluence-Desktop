@@ -169,7 +169,13 @@ fn sanitize_preset(preset: &str) -> String {
     let lowered = preset.to_lowercase().replace(' ', "_");
     lowered
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 

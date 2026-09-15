@@ -813,11 +813,25 @@ mod tests {
             .iter()
             .any(|v| v.as_str() == Some("dialog:allow-open"));
         // Hardened: fs:default removed, replaced with scoped fs:allow-* + fs:scope for $APPDATA/$APPLOCALDATA/$APPCONFIG
-        let has_fs_allow_read = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read") || v.as_str() == Some("fs:allow-read"));
-        let has_fs_allow_write = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write") || v.as_str() == Some("fs:allow-write"));
-        let has_fs_scope = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
-        assert!(!has_fs_default, "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening");
-        assert!(has_fs_allow_read, "fs:allow-read with scoped allow required");
+        let has_fs_allow_read = perms.iter().any(|v| {
+            v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read")
+                || v.as_str() == Some("fs:allow-read")
+        });
+        let has_fs_allow_write = perms.iter().any(|v| {
+            v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write")
+                || v.as_str() == Some("fs:allow-write")
+        });
+        let has_fs_scope = perms
+            .iter()
+            .any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
+        assert!(
+            !has_fs_default,
+            "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening"
+        );
+        assert!(
+            has_fs_allow_read,
+            "fs:allow-read with scoped allow required"
+        );
         assert!(!has_fs_allow_write, "fs:allow-write must be removed - the renderer never writes files directly (imports read server-side)");
         let scope_paths: Vec<String> = perms
             .iter()

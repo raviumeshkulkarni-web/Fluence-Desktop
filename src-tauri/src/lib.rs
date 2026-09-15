@@ -21,11 +21,11 @@ pub mod offline_downloader;
 pub mod offline_transcribe;
 pub mod overlay;
 pub mod settings;
+pub mod silence_gate;
 pub mod snippets;
 pub mod suggestion;
 pub mod sync;
 pub mod transcribe;
-pub mod silence_gate;
 pub mod tray;
 pub mod workflow;
 

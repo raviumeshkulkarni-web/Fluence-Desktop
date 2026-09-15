@@ -410,7 +410,10 @@ fn query_history(
     );
     let mut params: Vec<Value> = Vec::new();
     if !query.is_empty() {
-        let escaped_query = query.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let escaped_query = query
+            .replace('\\', "\\\\")
+            .replace('%', "\\%")
+            .replace('_', "\\_");
         let pattern = format!("%{}%", escaped_query);
         sql.push_str(" AND text LIKE ? ESCAPE '\\'");
         params.push(Value::Text(pattern));

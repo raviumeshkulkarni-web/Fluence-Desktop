@@ -516,9 +516,12 @@ pub fn accept_suggestion(
     let spoken = suggestion.spoken.clone();
     let corrected = suggestion.corrected.clone();
 
-    // Add to dictionary (auto-learned suggestions are always corrections)
-    crate::dictionary::add_dictionary_entry(spoken, corrected, None, scheduler)
+    // Add to dictionary (auto-learned suggestions are always corrections).
+    // Server-side path: same validation/persistence as the IPC command
+    // (which is now caller-gated) plus the identical sync wake-up.
+    crate::dictionary::add_dictionary_entry_internal(spoken, corrected, None)
         .map_err(|e| format!("Failed to add to dictionary: {}", e))?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
 
     // Mark as accepted (don't delete - keep for future analytics/undo)
     if let Some(suggestion) = database.suggestions.iter_mut().find(|s| s.id == id) {

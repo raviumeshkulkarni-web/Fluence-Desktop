@@ -433,7 +433,15 @@ pub async fn transcribe_mp3_bytes_with_raw(
 /// Unfiltered: used by the LLM/agent picker, which legitimately lists
 /// every model on the account.
 #[tauri::command]
-pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
+pub async fn fetch_models(
+    window: tauri::Window,
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     fetch_model_ids(&base_url, &api_key).await
 }
 
@@ -539,17 +547,30 @@ pub struct SttModelList {
 /// speech-to-text capable ids for the transcription picker.
 #[tauri::command]
 pub async fn fetch_stt_models(
+    window: tauri::Window,
     base_url: String,
     api_key: String,
     keep: Option<String>,
 ) -> Result<SttModelList, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     let ids = fetch_model_ids(&base_url, &api_key).await?;
     Ok(apply_stt_model_filter(ids, keep.as_deref()))
 }
 
 /// Test connectivity to an STT provider.
 #[tauri::command]
-pub async fn test_stt_connection(base_url: String, api_key: String) -> Result<String, String> {
+pub async fn test_stt_connection(
+    window: tauri::Window,
+    base_url: String,
+    api_key: String,
+) -> Result<String, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     crate::http_client::validate_api_url(&base_url)?;
     let url = crate::http_client::build_api_url(&base_url, "models");
 

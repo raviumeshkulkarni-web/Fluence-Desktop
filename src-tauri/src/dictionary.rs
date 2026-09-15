@@ -384,11 +384,13 @@ pub(crate) fn add_dictionary_entry_internal(
 
 #[tauri::command]
 pub fn add_dictionary_entry(
+    window: tauri::Window,
     spoken: String,
     corrected: String,
     kind: Option<String>,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<DictionaryEntry, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let entry = add_dictionary_entry_internal(spoken, corrected, kind)?;
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(entry)
@@ -396,12 +398,14 @@ pub fn add_dictionary_entry(
 
 #[tauri::command]
 pub fn update_dictionary_entry(
+    window: tauri::Window,
     id: String,
     spoken: String,
     corrected: String,
     kind: Option<String>,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
@@ -540,9 +544,11 @@ pub(crate) fn delete_dictionary_entry_internal(id: String) -> Result<(), String>
 
 #[tauri::command]
 pub fn delete_dictionary_entry(
+    window: tauri::Window,
     id: String,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_dictionary_entry_internal(id)?;
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())
@@ -550,9 +556,11 @@ pub fn delete_dictionary_entry(
 
 #[tauri::command]
 pub fn import_dictionary(
+    window: tauri::Window,
     json_data: String,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<usize, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let _io = crate::sync::io_lock::io_lock_guard();
     if json_data.len() > MAX_IMPORT_JSON_LEN {
         return Err(format!(

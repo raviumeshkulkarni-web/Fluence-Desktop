@@ -508,9 +508,13 @@ fn clean_temp_files(dir: &Path) -> Result<()> {
     Ok(())
 }
 
-// Tauri Command wrappers
+// Tauri Command wrappers (mutating commands are main-window only)
 #[tauri::command]
-pub async fn download_offline_model(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn download_offline_model(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     start_download_task(app).await.map_err(|e| e.to_string())
 }
 
@@ -520,12 +524,16 @@ pub fn get_offline_model_status() -> bool {
 }
 
 #[tauri::command]
-pub fn cancel_offline_download() {
+pub fn cancel_offline_download(window: tauri::Window) {
+    if crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW]).is_err() {
+        return;
+    }
     cancel_download()
 }
 
 #[tauri::command]
-pub fn delete_offline_model() -> Result<u64, String> {
+pub fn delete_offline_model(window: tauri::Window) -> Result<u64, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_model_files().map_err(|e| e.to_string())
 }
 
@@ -748,7 +756,11 @@ async fn start_moonshine_v2_download_task_for(
 }
 
 #[tauri::command]
-pub async fn download_moonshine_v2_small_model(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn download_moonshine_v2_small_model(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     start_moonshine_v2_small_download_task(app)
         .await
         .map_err(|e| e.to_string())
@@ -760,12 +772,17 @@ pub fn get_moonshine_v2_small_model_status() -> bool {
 }
 
 #[tauri::command]
-pub fn delete_moonshine_v2_small_model() -> Result<u64, String> {
+pub fn delete_moonshine_v2_small_model(window: tauri::Window) -> Result<u64, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_moonshine_v2_small_files().map_err(|e| e.to_string())
 }
 
 #[tauri::command]
-pub async fn download_moonshine_v2_medium_model(app: tauri::AppHandle) -> Result<(), String> {
+pub async fn download_moonshine_v2_medium_model(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     start_moonshine_v2_medium_download_task(app)
         .await
         .map_err(|e| e.to_string())
@@ -777,7 +794,8 @@ pub fn get_moonshine_v2_medium_model_status() -> bool {
 }
 
 #[tauri::command]
-pub fn delete_moonshine_v2_medium_model() -> Result<u64, String> {
+pub fn delete_moonshine_v2_medium_model(window: tauri::Window) -> Result<u64, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_moonshine_v2_medium_files().map_err(|e| e.to_string())
 }
 

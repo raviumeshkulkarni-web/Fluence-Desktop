@@ -332,10 +332,15 @@ pub async fn execute_agent_command(req: AgentRequest) -> Result<AgentAction, Str
 
 #[tauri::command]
 pub async fn test_llm_connection(
+    window: tauri::Window,
     base_url: String,
     api_key: String,
     model: String,
 ) -> Result<String, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     crate::http_client::validate_api_url(&base_url)?;
     let url = crate::http_client::build_api_url(&base_url, "chat/completions");
 

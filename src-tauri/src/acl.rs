@@ -46,15 +46,14 @@ pub const WIZARD_WINDOW: &str = "wizard";
 /// is managed server-side only (`store/read/delete_sync_refresh_token`);
 /// it must never cross the renderer IPC boundary in either direction.
 pub fn is_sync_credential_target(target: &str) -> bool {
-    target == crate::credentials::SYNC_REFRESH_TOKEN_TARGET
-        || target.starts_with("Fluence/Sync/")
+    target == crate::credentials::SYNC_REFRESH_TOKEN_TARGET || target.starts_with("Fluence/Sync/")
 }
 
 /// Deny unless the calling window is in `allowed`. Logs the denial
 /// (label only — never secrets or payloads).
 pub fn require_caller(window: &tauri::Window, allowed: &[&str]) -> Result<(), String> {
     let label = window.label();
-    if allowed.iter().any(|a| *a == label) {
+    if allowed.contains(&label) {
         return Ok(());
     }
     log::warn!(

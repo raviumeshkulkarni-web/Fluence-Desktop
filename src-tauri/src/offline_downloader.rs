@@ -343,7 +343,10 @@ async fn validate_archive_members(archive_path: &Path) -> Result<()> {
         .map_err(|e| anyhow!("Failed to list archive members: {}", e))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(anyhow!("Refusing to extract: cannot list archive: {}", stderr));
+        return Err(anyhow!(
+            "Refusing to extract: cannot list archive: {}",
+            stderr
+        ));
     }
     let listing = String::from_utf8_lossy(&output.stdout);
     let mut count = 0usize;

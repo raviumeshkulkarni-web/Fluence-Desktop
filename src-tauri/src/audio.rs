@@ -1267,10 +1267,8 @@ pub fn cleanup_debug_recordings(
             .metadata()
             .and_then(|m| m.modified())
             .unwrap_or(std::time::UNIX_EPOCH);
-        if modified < cutoff {
-            if std::fs::remove_file(&path).is_ok() {
-                removed += 1;
-            }
+        if modified < cutoff && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
         }
     }
     log::info!("cleanup_debug_recordings: removed {} file(s)", removed);

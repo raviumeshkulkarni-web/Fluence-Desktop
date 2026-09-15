@@ -825,7 +825,10 @@ mod tests {
             .flat_map(|v| v["allow"].as_array().cloned().unwrap_or_default())
             .filter_map(|a| a["path"].as_str().map(str::to_string))
             .collect();
-        assert!(!scope_paths.is_empty(), "fs:scope with explicit allow required");
+        assert!(
+            !scope_paths.is_empty(),
+            "fs:scope with explicit allow required"
+        );
         assert!(
             !scope_paths.iter().any(|p| {
                 *p == "$APPDATA/**"
@@ -836,7 +839,9 @@ mod tests {
             "fs:scope must list explicit app-owned files, not tree wildcards"
         );
         assert!(
-            scope_paths.iter().any(|p| p.ends_with("Fluence/settings.json")),
+            scope_paths
+                .iter()
+                .any(|p| p.ends_with("Fluence/settings.json")),
             "fs:scope must include the explicit settings.json path"
         );
         assert!(

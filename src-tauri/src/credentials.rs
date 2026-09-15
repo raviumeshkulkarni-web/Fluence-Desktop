@@ -34,7 +34,9 @@ fn validate_credential_target(target: &str) -> Result<()> {
     for base in [STT_API_KEY_TARGET, LLM_API_KEY_TARGET] {
         if let Some(suffix) = target.strip_prefix(&format!("{base}/")) {
             if !suffix.is_empty()
-                && suffix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+                && suffix
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
             {
                 return Ok(());
             }
@@ -183,11 +185,7 @@ pub fn get_llm_target(preset: &str) -> String {
 
 // Tauri commands (caller-gated per src-tauri/src/acl.rs inventory)
 #[tauri::command]
-pub fn save_api_key(
-    window: tauri::Window,
-    target: String,
-    key: String,
-) -> Result<(), String> {
+pub fn save_api_key(window: tauri::Window, target: String, key: String) -> Result<(), String> {
     crate::acl::require_caller(
         &window,
         &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],

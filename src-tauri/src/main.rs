@@ -179,6 +179,7 @@ pub fn run() {
             dictionary::update_dictionary_entry,
             dictionary::delete_dictionary_entry,
             dictionary::import_dictionary,
+            dictionary::read_import_file,
             dictionary::export_dictionary,
             // Text expansion (snippets)
             snippets::get_snippets,

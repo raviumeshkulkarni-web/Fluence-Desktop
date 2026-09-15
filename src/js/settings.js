@@ -1968,14 +1968,16 @@ window.deleteDictEntry = async (id) => {
 async function importDictionary() {
   try {
     const dialog = window.__TAURI_PLUGIN_DIALOG__;
-    const fs = window.__TAURI_PLUGIN_FS__;
-    if (!dialog || !fs) {
+    if (!dialog) {
       showToast('File dialog plugin not available', 'error');
       return;
     }
-    const path = await dialog.open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
-    if (!path) return;
-    const json = await fs.readTextFile(path);
+    const picked = await dialog.open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (!picked) return;
+    const path = Array.isArray(picked) ? picked[0] : picked;
+    // File bytes are read server-side (size-bounded); the renderer no
+    // longer needs direct filesystem access for imports.
+    const json = await invoke('read_import_file', { path });
     const count = await invoke('import_dictionary', { jsonData: json });
     showToast(`Imported ${count} entries ✓`, 'success');
     loadDictionary();

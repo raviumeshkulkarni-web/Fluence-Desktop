@@ -817,8 +817,27 @@ mod tests {
         let has_fs_scope = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
         assert!(!has_fs_default, "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening");
         assert!(has_fs_allow_read, "fs:allow-read with scoped allow required");
-        assert!(has_fs_allow_write, "fs:allow-write with scoped allow required");
-        assert!(has_fs_scope, "fs:scope with explicit $APPDATA/$APPLOCALDATA/$APPCONFIG allow required");
+        assert!(!has_fs_allow_write, "fs:allow-write must be removed - the renderer never writes files directly (imports read server-side)");
+        let scope_paths: Vec<String> = perms
+            .iter()
+            .filter(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"))
+            .flat_map(|v| v["allow"].as_array().cloned().unwrap_or_default())
+            .filter_map(|a| a["path"].as_str().map(str::to_string))
+            .collect();
+        assert!(!scope_paths.is_empty(), "fs:scope with explicit allow required");
+        assert!(
+            !scope_paths.iter().any(|p| {
+                *p == "$APPDATA/**"
+                    || *p == "$APPLOCALDATA/**"
+                    || *p == "$APPCONFIG/**"
+                    || *p == "$TEMP/**"
+            }),
+            "fs:scope must list explicit app-owned files, not tree wildcards"
+        );
+        assert!(
+            scope_paths.iter().any(|p| p.ends_with("Fluence/settings.json")),
+            "fs:scope must include the explicit settings.json path"
+        );
         assert!(
             !has_dialog_default,
             "dialog:default remains granted - should be narrowed"

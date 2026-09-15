@@ -10,19 +10,21 @@
     "process:allow-restart",
     "dialog:allow-open",
     "fs:allow-read",
-    "fs:allow-write",
     "fs:allow-exists",
-    "fs:allow-mkdir",
     {
       "identifier": "fs:scope",
       "allow": [
-        { "path": "$APPDATA/**" },
-        { "path": "$APPDATA" },
-        { "path": "$APPLOCALDATA/**" },
-        { "path": "$APPLOCALDATA" },
-        { "path": "$APPCONFIG/**" },
-        { "path": "$APPCONFIG" },
-        { "path": "$TEMP/**" }
+        { "path": "$APPLOCALDATA/Fluence/settings.json" },
+        { "path": "$APPLOCALDATA/Fluence/history.db" },
+        { "path": "$APPLOCALDATA/Fluence/dictionary.json" },
+        { "path": "$APPLOCALDATA/Fluence/snippets.json" },
+        { "path": "$APPLOCALDATA/Fluence/suggestions.json" },
+        { "path": "$APPLOCALDATA/Fluence/stats_events.json" },
+        { "path": "$APPLOCALDATA/Fluence/sync_metadata.json" },
+        { "path": "$APPLOCALDATA/Fluence/sync-oauth.json" },
+        { "path": "$APPLOCALDATA/Fluence/duck-restore.json" },
+        { "path": "$APPLOCALDATA/Fluence/bin/**" },
+        { "path": "$APPLOCALDATA/Fluence/debug_recordings/**" }
       ]
     }
   ]

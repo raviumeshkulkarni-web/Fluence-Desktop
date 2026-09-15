@@ -597,6 +597,27 @@ pub fn import_dictionary(
     Ok(added)
 }
 
+/// Read a user-picked dictionary import file server-side (main window only).
+/// The open-file dialog is the authorization; this only bounds size (same
+/// 1 MB cap as `import_dictionary`) and requires a regular UTF-8 file.
+/// Lets the renderer drop direct `fs` plugin access entirely.
+#[tauri::command]
+pub fn read_import_file(window: tauri::Window, path: String) -> Result<String, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Cannot read file: {e}"))?;
+    if !meta.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+    if meta.len() > MAX_IMPORT_JSON_LEN as u64 {
+        return Err(format!(
+            "File too large ({} bytes). Maximum is {} bytes (~1 MB).",
+            meta.len(),
+            MAX_IMPORT_JSON_LEN
+        ));
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("Cannot read file: {e}"))
+}
+
 #[tauri::command]
 pub fn export_dictionary() -> Result<String, String> {
     let active = crate::sync::metadata::current_account_hash();

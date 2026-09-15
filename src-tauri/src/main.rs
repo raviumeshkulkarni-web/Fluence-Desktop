@@ -9,6 +9,7 @@
     clippy::too_many_arguments
 )]
 
+mod acl;
 mod agent;
 mod app_icon;
 mod audio;

@@ -1,12 +1,8 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
-  "identifier": "default-capability",
-  "description": "Default permissions for Fluence windows",
-  "windows": [
-    "main",
-    "overlay",
-    "wizard"
-  ],
+  "identifier": "main-capability",
+  "description": "Full permissions for the main Settings window (sole admin surface)",
+  "windows": ["main"],
   "permissions": [
     "core:default",
     "updater:default",

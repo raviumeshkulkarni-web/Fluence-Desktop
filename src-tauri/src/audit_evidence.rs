@@ -787,10 +787,25 @@ mod tests {
     // ------------------------------------------------------------
     #[test]
     fn hardening_capabilities_overpermission() {
-        let caps: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
-        let perms = caps["permissions"].as_array().unwrap();
-        println!("[HARDENING] default.json permissions: {:?}", perms);
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
+        let overlay: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/overlay.json")).unwrap();
+        let wizard: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/wizard.json")).unwrap();
+        assert_eq!(main["windows"], serde_json::json!(["main"]));
+        assert_eq!(overlay["windows"], serde_json::json!(["overlay"]));
+        assert_eq!(wizard["windows"], serde_json::json!(["wizard"]));
+        for (name, caps) in [("overlay", &overlay), ("wizard", &wizard)] {
+            let perms = caps["permissions"].as_array().unwrap();
+            assert!(
+                perms.iter().all(|v| v.as_str() == Some("core:default")
+                    || v.get("identifier").and_then(|x| x.as_str()) == Some("core:default")),
+                "{name}.json must grant core:default only"
+            );
+        }
+        let perms = main["permissions"].as_array().unwrap();
+        println!("[HARDENING] main.json permissions: {:?}", perms);
         let has_fs_default = perms.iter().any(|v| v.as_str() == Some("fs:default"));
         let has_dialog_default = perms.iter().any(|v| v.as_str() == Some("dialog:default"));
         let has_dialog_open = perms

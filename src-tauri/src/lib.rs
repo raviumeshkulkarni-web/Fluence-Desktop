@@ -5,6 +5,7 @@
     clippy::too_many_arguments
 )]
 
+pub mod acl;
 pub mod agent;
 pub mod audio;
 pub mod auto_learn;

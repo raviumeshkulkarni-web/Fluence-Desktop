@@ -18,9 +18,21 @@ function Test-Check {
 }
 
 Write-Host "`n=== Change 7: shell:default removed from capabilities ===" -ForegroundColor Cyan
-$cap = Get-Content "src-tauri/capabilities/default.json" -Raw
-$hasShell = $cap -match '"shell:default"'
-Test-Check "shell:default NOT in capabilities" (-not $hasShell)
+$capFiles = @("src-tauri/capabilities/main.json", "src-tauri/capabilities/overlay.json", "src-tauri/capabilities/wizard.json")
+Test-Check "default.json removed (per-window capabilities)" (-not (Test-Path "src-tauri/capabilities/default.json"))
+foreach ($f in $capFiles) {
+    $cap = Get-Content $f -Raw
+    $hasShell = $cap -match '"shell:default"'
+    Test-Check "$f : shell:default NOT in capabilities" (-not $hasShell)
+}
+$overlay = Get-Content "src-tauri/capabilities/overlay.json" -Raw
+Test-Check "overlay.json: no fs access" (-not ($overlay -match '"fs:'))
+Test-Check "overlay.json: no updater access" (-not ($overlay -match '"updater:'))
+Test-Check "overlay.json: no process restart" (-not ($overlay -match '"process:'))
+$wizard = Get-Content "src-tauri/capabilities/wizard.json" -Raw
+Test-Check "wizard.json: no fs access" (-not ($wizard -match '"fs:'))
+Test-Check "wizard.json: no updater access" (-not ($wizard -match '"updater:'))
+Test-Check "wizard.json: no process restart" (-not ($wizard -match '"process:'))
 
 Write-Host "`n=== Change 3: CSP hardening in HTML files ===" -ForegroundColor Cyan
 foreach ($file in @("src/index.html", "src/overlay.html", "src/wizard.html")) {

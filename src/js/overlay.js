@@ -906,11 +906,9 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
   // function-scoped, so only this one needs hoisting.
   let clipboardCtx = '';
   try {
-    const llmPreset = settings.llm_provider.preset || 'groq';
-    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
-    const llmKey = await invoke('get_api_key', {
-      target: llmTarget
-    }).catch(() => '');
+    // Credentials stay server-side: the secure command resolves the saved
+    // LLM provider/key from settings + Credential Manager. No api_key in
+    // IPC args (Task 4 hardening).
     if (!isSessionActive(sessionId)) return;
 
     let grabbed = false;
@@ -931,11 +929,8 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     }
 
     const agentRequestId = `agent-${++agentRequestSeq}-${Date.now()}`;
-    const agentInvoke = invoke('execute_agent_command', {
+    const agentInvoke = invoke('execute_agent_command_secure', {
       req: {
-        base_url: settings.llm_provider.base_url,
-        api_key: llmKey || '',
-        model: settings.llm_provider.model,
         voice_command: voiceCommand,
         clipboard_context: clipboardCtx,
         request_id: agentRequestId,

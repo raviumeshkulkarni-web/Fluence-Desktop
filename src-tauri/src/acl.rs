@@ -16,7 +16,7 @@
 // | update_hotkeys                       | main,wizard          | deny overlay             |
 // | set_autostart                        | main                 | main only                |
 // | save_api_key                         | main,wizard          | deny overlay; deny Sync* |
-// | get_api_key                          | main,wizard,overlay* | *overlay: LLM/preset only|
+// | get_api_key                          | main,wizard          | overlay denied (Task 4)    |
 // | delete_api_key                       | (no callers)         | main only; deny Sync*    |
 // | sync_get_status/toggle/sign_in/out   | main                 | main only                |
 // | get_account_stats/activity/weekly    | main                 | open (read-only stats)   |
@@ -34,9 +34,9 @@
 // | overlay/window/hotkey-state/icon     | caller window        | open                     |
 // | cleanup_debug_recordings             | (new, uncalled)      | main only                |
 //
-// *Overlay `get_api_key` is narrowed to per-preset `Fluence/LLM_ApiKey/*`
-// reads (agent mode, until Task 4 moves it server-side). STT, Sync, and
-// legacy global slots are denied for overlay.
+// Overlay credential reads were narrowed to per-preset `Fluence/LLM_ApiKey/*`
+// during Tasks 1-3, then denied entirely by Task 4 (agent mode resolves its
+// key server-side via `execute_agent_command_secure`).
 
 pub const MAIN_WINDOW: &str = "main";
 pub const OVERLAY_WINDOW: &str = "overlay";
@@ -62,12 +62,4 @@ pub fn require_caller(window: &tauri::Window, allowed: &[&str]) -> Result<(), St
         label
     );
     Err("Not allowed from this window".to_string())
-}
-
-/// Overlay's temporary credential rule (see table): per-preset LLM reads
-/// only. Everything else — STT, Sync, legacy global slots — is denied.
-pub fn overlay_may_read_credential(target: &str) -> bool {
-    target.starts_with(crate::credentials::LLM_API_KEY_TARGET)
-        && *target != *crate::credentials::LLM_API_KEY_TARGET
-        && !is_sync_credential_target(target)
 }

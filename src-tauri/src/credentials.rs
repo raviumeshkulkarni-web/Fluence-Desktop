@@ -293,17 +293,8 @@ pub fn get_api_key(window: tauri::Window, target: String) -> Result<String, Stri
     if crate::acl::is_sync_credential_target(&target) {
         return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
     }
-    let label = window.label().to_string();
-    if label == crate::acl::OVERLAY_WINDOW {
-        // Narrowed until Task 4 moves agent mode server-side (see acl.rs):
-        // per-preset LLM slot, exact read — no global/sibling fallbacks,
-        // so the overlay can never resolve keys outside its slot.
-        if !crate::acl::overlay_may_read_credential(&target) {
-            log::warn!("IPC denied: overlay blocked from reading credential target");
-            return Err("Not allowed from this window".to_string());
-        }
-        return read_api_key_target_exact(&target);
-    }
+    // Task 4 moved overlay agent mode server-side: no renderer window
+    // besides main/wizard may read credentials anymore.
     crate::acl::require_caller(
         &window,
         &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
@@ -316,14 +307,6 @@ fn read_exact_slot(target: &str) -> Option<String> {
     read_credential(target)
         .ok()
         .filter(|key| !key.trim().is_empty())
-}
-
-/// Server-side credential read, exact slot only (backend use only —
-/// bypasses window gates). Used for narrowed callers (e.g. overlay) that
-/// must never resolve sibling/global slots through fallbacks.
-pub(crate) fn read_api_key_target_exact(target: &str) -> Result<String, String> {
-    validate_credential_target(target).map_err(|e| e.to_string())?;
-    read_exact_slot(target).ok_or_else(|| "Credential not found".to_string())
 }
 
 /// Server-side credential read (backend use only — bypasses window gates).

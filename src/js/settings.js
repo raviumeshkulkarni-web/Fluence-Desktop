@@ -419,28 +419,67 @@ function restoreKeyDraft(type, preset) {
   updateProviderGates(type);
 }
 
+// Transport policy: https everywhere; plaintext http only for loopback.
+// Mirrors backend validate_api_url (http_client.rs) so the UI rejects
+// non-loopback http before any key material is sent.
+function isAllowedEndpointUrl(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || '').trim());
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:') {
+      const host = String(u.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    }
+    return false;
+  } catch { return false; }
+}
+
+function isCustomHttpsEndpoint(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || '').trim());
+    if (u.protocol !== 'https:') return false;
+    const host = String(u.hostname || '').toLowerCase();
+    return !host.endsWith('groq.com') && !host.endsWith('openai.com') && !host.endsWith('mistral.ai');
+  } catch { return false; }
+}
+
+function updateCustomEndpointWarning(type, baseUrl) {
+  const input = document.getElementById(`${type}-base-url`);
+  if (!input || !input.parentElement) return;
+  let warn = document.getElementById(`${type}-custom-endpoint-warning`);
+  if (isCustomHttpsEndpoint(baseUrl)) {
+    if (!warn) {
+      warn = document.createElement('p');
+      warn.id = `${type}-custom-endpoint-warning`;
+      warn.className = 'field-warning';
+      input.parentElement.appendChild(warn);
+    }
+    warn.textContent = 'Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.';
+    warn.hidden = false;
+  } else if (warn) {
+    warn.hidden = true;
+  }
+}
+
 // Test/Fetch require a parseable URL + a key-like value. Buttons stay
 // enabled but validate inline so the failure explains itself in-status.
 function providerReady(type) {
   const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim() || '';
   const keyVal = document.getElementById(`${type}-api-key`)?.value?.trim() || '';
-  let urlOk = false;
-  try {
-    const u = new URL(baseUrl);
-    urlOk = u.protocol === 'http:' || u.protocol === 'https:';
-  } catch { urlOk = false; }
+  const urlOk = isAllowedEndpointUrl(baseUrl);
   return { urlOk, keyOk: keyVal.length >= 8, baseUrl, keyVal };
 }
 
 function updateProviderGates(type) {
-  const { urlOk, keyOk } = providerReady(type);
+  const { urlOk, keyOk, baseUrl } = providerReady(type);
   const ready = urlOk && keyOk;
   for (const id of [`${type}-test-btn`, `${type}-fetch-models-btn`]) {
     const btn = document.getElementById(id);
     if (!btn) continue;
     btn.disabled = !ready;
-    btn.title = ready ? '' : 'Enter a valid http(s) URL and an API key (8+ chars) first';
+    btn.title = ready ? '' : 'Enter a valid https URL (http only for localhost) and an API key (8+ chars) first';
   }
+  updateCustomEndpointWarning(type, baseUrl);
   return ready;
 }
 

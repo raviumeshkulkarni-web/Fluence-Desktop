@@ -31,19 +31,8 @@ pub fn save_corrections(candidates: Vec<Candidate>) -> Result<usize, String> {
     Ok(count)
 }
 
-/// Get canonical keys for the current dictionary entries.
-/// Used by the suggestion system to avoid re-learning correction
-/// pairs that are already in the dictionary (the source of truth).
-pub fn get_current_dictionary() -> Vec<String> {
-    crate::dictionary::get_dictionary()
-        .map(|entries| {
-            entries
-                .into_iter()
-                .map(|e| crate::dictionary::canonical_entry_key(&e.spoken, &e.corrected))
-                .collect()
-        })
-        .unwrap_or_default()
-}
+/// Dictionary-key helper now lives in the parent module so non-Windows
+/// builds (suggestion.rs) can use it too; see auto_learn::get_current_dictionary.
 
 #[cfg(test)]
 mod tests {
@@ -58,6 +47,6 @@ mod tests {
     #[test]
     fn test_get_current_dictionary_does_not_panic() {
         // Verify it doesn't panic regardless of filesystem state
-        let _dict = get_current_dictionary();
+        let _dict = crate::auto_learn::get_current_dictionary();
     }
 }

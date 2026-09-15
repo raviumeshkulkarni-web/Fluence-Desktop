@@ -7,6 +7,8 @@
   "scripts": {
     "tauri": "tauri",
     "dev": "pwsh -File dev.ps1",
+    "dev:linux": "sh dev.sh",
+    "build:linux": "tauri build --bundles deb,appimage --config '{\"bundle\":{\"resources\":[],\"linux\":{\"deb\":{\"files\":{\"/usr/bin/libonnxruntime.so.1\":\"binaries/libonnxruntime.so.1\",\"/usr/bin/libmoonshine.so\":\"binaries/libmoonshine.so\"}},\"rpm\":{\"files\":{\"/usr/bin/libonnxruntime.so.1\":\"binaries/libonnxruntime.so.1\",\"/usr/bin/libmoonshine.so\":\"binaries/libmoonshine.so\"}},\"appimage\":{\"files\":{\"usr/bin/libonnxruntime.so.1\":\"binaries/libonnxruntime.so.1\",\"usr/bin/libmoonshine.so\":\"binaries/libmoonshine.so\"}}}}'",
     "web:build": "npm run build --prefix web",
     "web:dev": "npm run dev --prefix web",
     "web:watch": "npm run watch --prefix web",

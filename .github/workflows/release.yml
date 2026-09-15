@@ -133,3 +133,119 @@ jobs:
             Download the installer (`.exe` or `.msi`) below to install or update Fluence on Windows.
           releaseDraft: false
           prerelease: false
+
+  # Linux release (Ubuntu/Fedora/Debian via deb + AppImage; rpm uses the
+  # same tree, see CONTRIBUTING.md). The Windows `resources` entry
+  # (onnxruntime.dll) does not exist on Linux - see the --config override
+  # on the build step below.
+  release-linux:
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            build-essential \
+            curl wget file \
+            libssl-dev \
+            libgtk-3-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf \
+            libasound2-dev \
+            libdbus-1-dev
+
+      # Moonshine v2 sidecar, Linux asset. Mirrors the Windows pwsh step
+      # above but reads src-tauri/moonshine-v2-server/VENDOR.linux.json.
+      - name: fetch moonshine v2 vendor bundle (linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL=$(jq -r .url src-tauri/moonshine-v2-server/VENDOR.linux.json)
+          SHA=$(jq -r .sha256 src-tauri/moonshine-v2-server/VENDOR.linux.json)
+          SIZE=$(jq -r .size_bytes src-tauri/moonshine-v2-server/VENDOR.linux.json)
+          SUBDIR=$(jq -r .extract_subdir src-tauri/moonshine-v2-server/VENDOR.linux.json)
+          mkdir -p .vendor/moonshine
+          DEST=".vendor/moonshine/moonshine-voice-linux-x86_64.tar.gz"
+          curl -L "$URL" -o "$DEST"
+          ACTUAL=$(sha256sum "$DEST" | cut -d' ' -f1)
+          if [ "$ACTUAL" != "$SHA" ]; then
+            echo "Vendor digest mismatch: expected $SHA, got $ACTUAL"
+            exit 1
+          fi
+          ACTUAL_SIZE=$(stat -c%s "$DEST")
+          if [ "$ACTUAL_SIZE" != "$SIZE" ]; then
+            echo "Vendor size mismatch: expected $SIZE, got $ACTUAL_SIZE"
+            exit 1
+          fi
+          tar -xzf "$DEST" -C .vendor/moonshine
+          if [ ! -f ".vendor/moonshine/$SUBDIR/lib/libonnxruntime.so.1" ]; then
+            echo "Vendor extract missing libonnxruntime.so.1"
+            exit 1
+          fi
+          if [ ! -f ".vendor/moonshine/$SUBDIR/lib/libmoonshine.so" ]; then
+            echo "Vendor extract missing libmoonshine.so"
+            exit 1
+          fi
+
+      # Builds the workspace-member sidecar, then stages the Tauri
+      # externalBin + resource files the bundler requires to exist BEFORE
+      # `tauri build` runs. The sidecar build.rs already stages the shared
+      # objects next to the built binary; this step mirrors them into the
+      # Tauri binaries/ staging dir.
+      - name: build and stage moonshine v2 sidecar (linux)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo build --release --manifest-path src-tauri/Cargo.toml -p moonshine-v2-server
+          TRIPLE=$(rustc --print host-tuple)
+          mkdir -p src-tauri/binaries
+          cp src-tauri/target/release/moonshine-v2-server \
+            "src-tauri/binaries/moonshine-v2-server-$TRIPLE"
+          cp src-tauri/target/release/libonnxruntime.so.1 \
+            src-tauri/binaries/libonnxruntime.so.1
+          cp src-tauri/target/release/libmoonshine.so \
+            src-tauri/binaries/libmoonshine.so
+          test -f "src-tauri/binaries/moonshine-v2-server-$TRIPLE"
+
+      - name: run backend test suite
+        working-directory: src-tauri
+        run: cargo test --lib
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      - name: install web frontend dependencies
+        run: npm ci --prefix web
+
+      - name: build and release (linux)
+        # Uploads deb/AppImage assets to the SAME tag release as the Windows
+        # job (same tagName). Intentionally no releaseName/releaseBody here:
+        # exactly one job must own the release notes, otherwise the two jobs
+        # overwrite each other's body depending on finish order. Linux
+        # install notes live in README.md instead.
+        uses: tauri-apps/tauri-action@v0.6.2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+        with:
+          projectPath: src-tauri
+          tagName: v__VERSION__
+          # The Windows `resources` entry (onnxruntime.dll) does not exist on
+          # Linux, and the Linux shared objects must sit BESIDE the sidecar
+          # binary (/usr/bin) so the loader finds them via rpath $ORIGIN -
+          # not in the resources dir (/usr/lib/Fluence). Hence: empty
+          # resources + per-format `files` mapping (deb, rpm, AppImage).
+          args: --bundles deb,appimage --config {"bundle":{"resources":[],"linux":{"deb":{"files":{"/usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","/usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}},"rpm":{"files":{"/usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","/usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}},"appimage":{"files":{"usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}}}}}

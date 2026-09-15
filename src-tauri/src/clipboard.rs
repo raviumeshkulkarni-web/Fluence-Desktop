@@ -306,6 +306,77 @@ pub fn send_select_all() {
     }
 }
 
+// ── Linux clipboard + text injection (arboard + enigo) ─────────────────
+// Works fully on X11. On Wayland, synthetic key events require compositor
+// cooperation and clipboard access is brokered by the compositor, so either
+// step can fail; failures surface as actionable errors instead of silent
+// no-ops (the transcribed text stays in the clipboard as a fallback).
+#[cfg(target_os = "linux")]
+fn linux_clipboard() -> Result<arboard::Clipboard> {
+    arboard::Clipboard::new().map_err(|e| anyhow!("Failed to open clipboard: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+fn get_clipboard_text_linux() -> Option<String> {
+    linux_clipboard().ok()?.get_text().ok()
+}
+
+#[cfg(target_os = "linux")]
+fn set_clipboard_text_linux(text: &str) -> Result<()> {
+    linux_clipboard()?
+        .set_text(text)
+        .map_err(|e| anyhow!("Failed to set clipboard: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+fn linux_key_sender() -> Result<enigo::Enigo> {
+    use enigo::Settings;
+    enigo::Enigo::new(&Settings::default()).map_err(|e| {
+        anyhow!(
+            "Keyboard simulation is unavailable in this session ({e}). \
+             Wayland compositors restrict synthetic input: the text has been \
+             copied to the clipboard, paste it with Ctrl+V."
+        )
+    })
+}
+
+/// Send a Control+<key> chord (paste, copy, select-all) via enigo.
+#[cfg(target_os = "linux")]
+fn send_ctrl_chord_linux(key: char) -> Result<()> {
+    use enigo::{Direction, Key, Keyboard};
+    let mut enigo = linux_key_sender()?;
+    enigo
+        .key(Key::Control, Direction::Press)
+        .map_err(|e| anyhow!("Failed to press Control: {e}"))?;
+    let chord = enigo.key(Key::Unicode(key), Direction::Click);
+    let _ = enigo.key(Key::Control, Direction::Release);
+    chord.map_err(|e| {
+        anyhow!(
+            "Failed to send Ctrl+{key} ({e}). The text is in the clipboard; paste it with Ctrl+V."
+        )
+    })
+}
+
+/// Send a single non-text key (Backspace, Return) via enigo.
+#[cfg(target_os = "linux")]
+fn send_single_key_linux(key: enigo::Key) -> Result<()> {
+    send_key_clicks_linux(key, 1)
+}
+
+/// Send `count` clicks of a non-text key through a single enigo session
+/// (one connection setup, not one per keystroke).
+#[cfg(target_os = "linux")]
+fn send_key_clicks_linux(key: enigo::Key, count: usize) -> Result<()> {
+    use enigo::{Direction, Keyboard};
+    let mut enigo = linux_key_sender()?;
+    for _ in 0..count {
+        enigo
+            .key(key, Direction::Click)
+            .map_err(|e| anyhow!("Failed to send key: {e}"))?;
+    }
+    Ok(())
+}
+
 /// Main Tauri command: inject text into the focused application
 /// Saves clipboard → sets text → Ctrl+V → restores clipboard after delay
 #[tauri::command]
@@ -368,7 +439,43 @@ pub async fn inject_text(text: String, monitor_auto_learn: Option<bool>) -> Resu
 
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+        // Save current clipboard (best effort: failure just means there is
+        // nothing to restore afterwards).
+        let saved = get_clipboard_text_linux();
+
+        // Set clipboard to our transcribed text.
+        set_clipboard_text_linux(&text).map_err(|e| e.to_string())?;
+
+        // Paste via synthetic Ctrl+V. On failure the text is already in the
+        // clipboard, so the error tells the user to paste manually.
+        send_ctrl_chord_linux('v').map_err(|e| e.to_string())?;
+        log::info!("inject_text via clipboard + Ctrl+V ({} chars)", text.len());
+
+        // Auto-learn monitoring is a no-op on Linux (see auto_learn/mod.rs),
+        // but keep the call site identical so a future Linux monitor lights
+        // up without touching this flow.
+        let should_monitor = monitor_auto_learn.unwrap_or(false)
+            && crate::settings::load_settings()
+                .map(|settings| settings.auto_learn_enabled)
+                .unwrap_or(false);
+        if should_monitor {
+            crate::auto_learn::start_post_injection_monitor(text.clone());
+        }
+
+        // Restore the original clipboard only if Fluence still owns it.
+        sleep(Duration::from_millis(200)).await;
+        if get_clipboard_text_linux().as_deref() == Some(text.as_str()) {
+            if let Some(original) = saved {
+                let _ = set_clipboard_text_linux(&original);
+            }
+        }
+
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Err("Text injection not supported on this platform".to_string())
 }
 
@@ -386,7 +493,12 @@ pub async fn copy_text(text: String) -> Result<(), String> {
         let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
         set_clipboard_text(&text).map_err(|e| e.to_string())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+        set_clipboard_text_linux(&text).map_err(|e| e.to_string())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Err("Clipboard operations are not supported on this platform".to_string())
 }
 
@@ -414,7 +526,26 @@ pub async fn execute_keyboard_action(
         }
         Ok(())
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        use enigo::Key;
+        sleep(Duration::from_millis(80)).await;
+        match action.as_str() {
+            "delete_chars" => {
+                if let Some(n) = char_count {
+                    if n > 10_000 {
+                        return Err("Delete action exceeds maximum length".to_string());
+                    }
+                    send_key_clicks_linux(Key::Backspace, n).map_err(|e| e.to_string())?;
+                }
+            }
+            "select_all" => send_ctrl_chord_linux('a').map_err(|e| e.to_string())?,
+            "submit" => send_single_key_linux(Key::Return).map_err(|e| e.to_string())?,
+            _ => {}
+        }
+        Ok(())
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Err("Keyboard actions not supported on this platform".to_string())
 }
 
@@ -537,6 +668,40 @@ pub async fn grab_active_selection() -> Result<Option<String>, String> {
 
         Ok(final_selection)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(target_os = "linux")]
+    {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+
+        // 1. Save original clipboard (best effort).
+        let saved_text = get_clipboard_text_linux();
+
+        // 2. Clear clipboard so a subsequent change proves Ctrl+C landed.
+        let _ = set_clipboard_text_linux("");
+
+        // 3. Send Ctrl+C.
+        send_ctrl_chord_linux('c').map_err(|e| e.to_string())?;
+
+        // 4. Bounded polling: wait for the target app to write to clipboard
+        // (up to ~300ms for slow Electron/WebView apps).
+        let mut selection: Option<String> = None;
+        for _ in 0..10 {
+            sleep(Duration::from_millis(30)).await;
+            let current = get_clipboard_text_linux();
+            if current.as_ref().map(|s| !s.is_empty()).unwrap_or(false) {
+                selection = current;
+                break;
+            }
+        }
+
+        // 5. Restore the original clipboard if we still own it.
+        if get_clipboard_text_linux() == selection {
+            if let Some(original) = saved_text {
+                let _ = set_clipboard_text_linux(&original);
+            }
+        }
+
+        Ok(selection)
+    }
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Err("Active selection grabbing not supported on this platform".to_string())
 }

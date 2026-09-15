@@ -511,6 +511,16 @@ fn clean_temp_files(dir: &Path) -> Result<()> {
 // Tauri Command wrappers
 #[tauri::command]
 pub async fn download_offline_model(app: tauri::AppHandle) -> Result<(), String> {
+    // The SenseVoice (sherpa-onnx) engine ships Windows-only binaries
+    // (see sherpa-manifest.json: win-x64 archive, .exe + .dll). Downloading
+    // them on Linux would install binaries that can never execute, so fail
+    // closed here. Linux users get offline transcription via Moonshine v2
+    // Small/Medium, whose prebuilt core ships for linux-x86_64 as well.
+    if cfg!(not(target_os = "windows")) {
+        return Err("The SenseVoice offline engine is Windows-only in this build. \
+            On Linux, use Moonshine v2 Small/Medium (Settings → Offline) or online STT."
+            .to_string());
+    }
     start_download_task(app).await.map_err(|e| e.to_string())
 }
 
@@ -531,17 +541,26 @@ pub fn delete_offline_model() -> Result<u64, String> {
 
 // ── Moonshine v2 streaming (small/medium) ────────────────────────
 // Clone of the Moonshine v1 flow, but per-file downloads (no archive).
-// The sidecar runtime (moonshine-v2-server.exe + onnxruntime.dll) SHIPS
+// The sidecar runtime (moonshine-v2-server + onnxruntime) SHIPS
 // WITH THE APP INSTALLER (Tauri externalBin) or a dev build tree - it is
 // deliberately NOT part of the model download and NOT expected in the
 // model dir. Model readiness therefore covers the 8 model files only;
 // runtime resolution + hash gating happen at spawn time in
 // offline_transcribe::resolve_v2_sidecar.
+//
+// Binary/library file names are platform-specific: `.exe` / `.dll` on
+// Windows, extensionless / `.so` on Linux.
 
 /// Sidecar runtime binary served by our own Moonshine v2 server (built
 /// from the official moonshine-ai/moonshine C++ core).
+#[cfg(target_os = "windows")]
 pub const MOONSHINE_V2_SERVER_EXE: &str = "moonshine-v2-server.exe";
+#[cfg(not(target_os = "windows"))]
+pub const MOONSHINE_V2_SERVER_EXE: &str = "moonshine-v2-server";
+#[cfg(target_os = "windows")]
 pub const MOONSHINE_V2_ORT_DLL: &str = "onnxruntime.dll";
+#[cfg(not(target_os = "windows"))]
+pub const MOONSHINE_V2_ORT_DLL: &str = "libonnxruntime.so";
 
 pub fn get_moonshine_v2_small_dir() -> PathBuf {
     let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));

@@ -70,6 +70,12 @@ strsim = "0.11"
 sha2 = "0.10"
 hex = "0.4"
 unicode-normalization = "0.1"
+# Audio capture is cross-platform via cpal (Windows: WASAPI, Linux: ALSA
+# through PipeWire's ALSA compat layer or bare ALSA). The thread-priority
+# helper also supports Linux, so both live in the shared dependencies and
+# audio.rs enables its capture path on Windows + Linux.
+cpal = "0.15"
+audio_thread_priority = "0.28"
 
 
 
@@ -90,8 +96,21 @@ windows = { version = "0.58", features = [
   "Win32_System_Threading",
   "Win32_Storage_FileSystem",
 ] }
-cpal = "0.15"
-audio_thread_priority = "0.28"
+
+# Linux-only platform integrations:
+# - keyring: Secret Service (GNOME Keyring / KWallet) via D-Bus = the
+#   Credential Manager equivalent for API keys.
+# - arboard: clipboard get/set (X11; Wayland depends on compositor support).
+# - enigo: synthetic key events for paste/select/copy (X11; on Wayland it
+#   needs compositor cooperation and may fail - callers report this).
+[target.'cfg(target_os = "linux")'.dependencies]
+# sync-secret-service (not the default mock store!): real Secret Service
+# access (GNOME Keyring / KWallet) over D-Bus via the blocking API, which
+# matches our sync store/read/delete functions. Needs libdbus-1-dev at
+# build time (see CONTRIBUTING.md); no daemon is needed to compile.
+keyring = { version = "3", features = ["sync-secret-service"] }
+arboard = "3"
+enigo = "0.5"
 
 
 [features]

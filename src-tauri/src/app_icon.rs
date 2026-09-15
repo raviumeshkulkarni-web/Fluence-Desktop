@@ -7,25 +7,35 @@
 // state, never touches the audio/clipboard/hotkey hot paths, and fails closed
 // (returns None) on every error path - the overlay simply hides the icon chip.
 
+#[cfg(target_os = "windows")]
 use std::mem::size_of;
+#[cfg(target_os = "windows")]
 use std::path::Path;
 
+#[cfg(target_os = "windows")]
 use base64::Engine;
 use serde::Serialize;
+#[cfg(target_os = "windows")]
 use windows::core::{PCWSTR, PWSTR};
+#[cfg(target_os = "windows")]
 use windows::Win32::Foundation::CloseHandle;
+#[cfg(target_os = "windows")]
 use windows::Win32::Graphics::Gdi::{
     CreateCompatibleDC, CreateDIBSection, DeleteDC, DeleteObject, GetDC, ReleaseDC, SelectObject,
     BITMAPINFO, BITMAPINFOHEADER, DIB_RGB_COLORS, HBRUSH, HGDIOBJ,
 };
+#[cfg(target_os = "windows")]
 use windows::Win32::Storage::FileSystem::{FILE_ATTRIBUTE_NORMAL, FILE_FLAGS_AND_ATTRIBUTES};
+#[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, OpenProcess, QueryFullProcessImageNameW, PROCESS_NAME_FORMAT,
     PROCESS_QUERY_LIMITED_INFORMATION,
 };
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::Shell::{
     SHGetFileInfoW, SHFILEINFOW, SHGFI_ICON, SHGFI_LARGEICON, SHGFI_USEFILEATTRIBUTES,
 };
+#[cfg(target_os = "windows")]
 use windows::Win32::UI::WindowsAndMessaging::{
     DestroyIcon, DrawIconEx, GetForegroundWindow, GetSystemMetrics, GetWindowThreadProcessId,
     DI_NORMAL, HICON, SM_CXICON, SM_CYICON,
@@ -43,17 +53,31 @@ pub struct ForegroundAppInfo {
 ///
 /// Returns `None` whenever the foreground app cannot be identified (including
 /// when it is Fluence itself, or an elevated / protected process).
+///
+/// The command name is part of the stable frontend contract: on non-Windows
+/// platforms it compiles to a stub that always returns `None`, so the overlay
+/// simply hides the icon chip instead of breaking.
 #[tauri::command]
 pub fn get_foreground_app_icon() -> Option<ForegroundAppInfo> {
-    match resolve_foreground_app() {
-        Ok(info) => Some(info),
-        Err(reason) => {
-            log::debug!("get_foreground_app_icon: {reason}");
-            None
+    #[cfg(target_os = "windows")]
+    {
+        match resolve_foreground_app() {
+            Ok(info) => Some(info),
+            Err(reason) => {
+                log::debug!("get_foreground_app_icon: {reason}");
+                None
+            }
         }
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // Linux foreground-app icon extraction is not implemented yet
+        // (needs per-compositor handling for X11/Wayland). Fail closed.
+        None
     }
 }
 
+#[cfg(target_os = "windows")]
 fn resolve_foreground_app() -> Result<ForegroundAppInfo, String> {
     let hwnd = unsafe { GetForegroundWindow() };
     if hwnd.is_invalid() {
@@ -86,6 +110,7 @@ fn resolve_foreground_app() -> Result<ForegroundAppInfo, String> {
     })
 }
 
+#[cfg(target_os = "windows")]
 fn query_process_path(pid: u32) -> Result<String, String> {
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid)
@@ -107,6 +132,7 @@ fn query_process_path(pid: u32) -> Result<String, String> {
     }
 }
 
+#[cfg(target_os = "windows")]
 fn load_exe_icon(exe_path: &str) -> Result<HICON, String> {
     unsafe {
         let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
@@ -143,6 +169,7 @@ fn load_exe_icon(exe_path: &str) -> Result<HICON, String> {
 }
 
 /// Rasterise an HICON into a 32bpp DIB and return it as a base64 PNG data URL.
+#[cfg(target_os = "windows")]
 fn icon_to_data_url(icon: HICON) -> Result<String, String> {
     unsafe {
         let width = GetSystemMetrics(SM_CXICON) as i32;

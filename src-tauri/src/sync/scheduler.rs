@@ -769,7 +769,11 @@ fn open_browser(url: &str) -> std::io::Result<()> {
 // ---------------------------------------------------------------------------
 
 #[tauri::command]
-pub fn sync_get_status(scheduler: State<'_, Scheduler>) -> Result<SyncStatus, String> {
+pub fn sync_get_status(
+    window: tauri::Window,
+    scheduler: State<'_, Scheduler>,
+) -> Result<SyncStatus, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     Ok(scheduler.status())
 }
 
@@ -777,10 +781,12 @@ pub fn sync_get_status(scheduler: State<'_, Scheduler>) -> Result<SyncStatus, St
 /// is idempotent and forces an immediate pass ("sync now").
 #[tauri::command]
 pub fn sync_toggle(
+    window: tauri::Window,
     app: AppHandle,
     scheduler: State<'_, Scheduler>,
     enabled: bool,
 ) -> Result<SyncStatus, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let mut settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     settings.sync_enabled = enabled;
     crate::settings::save_settings(&settings).map_err(|e| e.to_string())?;
@@ -798,9 +804,11 @@ pub fn sync_toggle(
 /// must be able to sign in without one.
 #[tauri::command]
 pub async fn sync_sign_in(
+    window: tauri::Window,
     app: AppHandle,
     scheduler: State<'_, Scheduler>,
 ) -> Result<SyncStatus, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let config = sync_config();
     let state = uuid::Uuid::new_v4().to_string();
     let verifier = auth::pkce_verifier();
@@ -856,9 +864,11 @@ pub async fn sync_sign_in(
 /// left it; scheduling stops until the next sign-in.
 #[tauri::command]
 pub fn sync_sign_out(
+    window: tauri::Window,
     app: AppHandle,
     scheduler: State<'_, Scheduler>,
 ) -> Result<SyncStatus, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let mut session = AuthSession::new(sync_config());
     let _ = session.load_refresh_token();
     session.forget_refresh_token().map_err(|e| e.to_string())?;
@@ -910,7 +920,8 @@ async fn fetch_account_email(access_token: &str) -> Result<String, String> {
 /// leaves the device; clearing history cannot reduce these totals because
 /// they come from the append-only stats ledger.
 #[tauri::command]
-pub fn get_account_stats() -> Result<serde_json::Value, String> {
+pub fn get_account_stats(window: tauri::Window) -> Result<serde_json::Value, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let now_ms = chrono::Utc::now().timestamp_millis();
     let week_start = crate::history::utc_week_start_ms(now_ms);
     let month_start = crate::history::utc_month_start_ms(now_ms);

@@ -354,12 +354,17 @@ fn handle_hotkey_event(
 
 #[tauri::command]
 pub fn update_hotkeys(
+    window: tauri::Window,
     app: AppHandle,
     transcription_shortcut: String,
     transcription_mode: String,
     agent_shortcut: String,
     agent_mode: String,
 ) -> Result<(), String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     register_hotkeys(
         &app,
         &transcription_shortcut,

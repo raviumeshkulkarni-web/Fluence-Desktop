@@ -1237,7 +1237,11 @@ pub fn is_recording() -> bool {
 /// The app never writes this directory unless `debug_recordings_enabled` is
 /// set — this command only cleans leftovers on explicit user action.
 #[tauri::command]
-pub fn cleanup_debug_recordings(older_than_days: Option<u64>) -> Result<usize, String> {
+pub fn cleanup_debug_recordings(
+    window: tauri::Window,
+    older_than_days: Option<u64>,
+) -> Result<usize, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let days = older_than_days.unwrap_or(30).min(365);
     let mut dir = dirs::data_local_dir().ok_or("No local app data dir")?;
     dir.push("Fluence");

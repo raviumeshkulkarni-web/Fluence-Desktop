@@ -475,7 +475,12 @@ pub fn save_history_entry(
 }
 
 #[tauri::command]
-pub fn delete_history_entry(app: tauri::AppHandle, id: String) -> Result<(), String> {
+pub fn delete_history_entry(
+    window: tauri::Window,
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_history_by_id(&id).map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
     Ok(())
@@ -493,7 +498,8 @@ pub(crate) fn delete_history_by_id(id: &str) -> Result<()> {
 }
 
 #[tauri::command]
-pub fn clear_history(app: tauri::AppHandle) -> Result<(), String> {
+pub fn clear_history(window: tauri::Window, app: tauri::AppHandle) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     clear_all_history().map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
     Ok(())

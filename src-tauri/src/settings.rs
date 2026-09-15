@@ -325,9 +325,14 @@ pub fn get_settings() -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn update_settings(
+    window: tauri::Window,
     settings: AppSettings,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     let old_account = load_settings().ok().and_then(|s| s.sync_account_key);
     save_settings(&settings).map_err(|e| e.to_string())?;
     // Account switch via any path (frontend, file, scheduler) must drop

@@ -118,7 +118,8 @@ pub fn disable_autostart() -> Result<()> {
 // Tauri commands
 
 #[tauri::command]
-pub fn set_autostart(enabled: bool) -> Result<(), String> {
+pub fn set_autostart(window: tauri::Window, enabled: bool) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     if enabled {
         enable_autostart().map_err(|e| e.to_string())
     } else {

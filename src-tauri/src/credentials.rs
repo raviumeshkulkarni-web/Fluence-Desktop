@@ -165,9 +165,20 @@ pub fn get_llm_target(preset: &str) -> String {
     format!("{}/{}", LLM_API_KEY_TARGET, sanitize_preset(preset))
 }
 
-// Tauri commands
+// Tauri commands (caller-gated per src-tauri/src/acl.rs inventory)
 #[tauri::command]
-pub fn save_api_key(target: String, key: String) -> Result<(), String> {
+pub fn save_api_key(
+    window: tauri::Window,
+    target: String,
+    key: String,
+) -> Result<(), String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
     validate_credential_target(&target).map_err(|e| e.to_string())?;
     store_credential(&target, "fluence", &key).map_err(|e| e.to_string())
 }
@@ -248,8 +259,30 @@ mod tests {
 }
 
 #[tauri::command]
-pub fn get_api_key(target: String) -> Result<String, String> {
-    validate_credential_target(&target).map_err(|e| e.to_string())?;
+pub fn get_api_key(window: tauri::Window, target: String) -> Result<String, String> {
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
+    let label = window.label().to_string();
+    if label == crate::acl::OVERLAY_WINDOW {
+        // Narrowed until Task 4 moves agent mode server-side (see acl.rs).
+        if !crate::acl::overlay_may_read_credential(&target) {
+            log::warn!("IPC denied: overlay blocked from reading credential target");
+            return Err("Not allowed from this window".to_string());
+        }
+    } else {
+        crate::acl::require_caller(
+            &window,
+            &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+        )?;
+    }
+    read_api_key_target(&target)
+}
+
+/// Server-side credential read (backend use only — bypasses window gates).
+/// Used by `get_llm/stt_api_key_or_err` so workflows never depend on IPC.
+pub(crate) fn read_api_key_target(target: &str) -> Result<String, String> {
+    validate_credential_target(target).map_err(|e| e.to_string())?;
 
     // 1. Try the specific target requested
     if let Ok(key) = read_credential(&target) {
@@ -316,7 +349,7 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 /// Helper for Agent/LLM paths: returns a user-facing error for missing credentials
 pub fn get_llm_api_key_or_err(preset: &str) -> Result<String, String> {
     let target = get_llm_target(preset);
-    match get_api_key(target.clone()) {
+    match read_api_key_target(&target) {
         Ok(k) if !k.trim().is_empty() => Ok(k),
         _ => Err(format!(
             "Missing API key for LLM provider '{}'. Open Settings → Providers → LLM → Save key.",
@@ -327,7 +360,7 @@ pub fn get_llm_api_key_or_err(preset: &str) -> Result<String, String> {
 
 pub fn get_stt_api_key_or_err(preset: &str) -> Result<String, String> {
     let target = get_stt_target(preset);
-    match get_api_key(target.clone()) {
+    match read_api_key_target(&target) {
         Ok(k) if !k.trim().is_empty() => Ok(k),
         _ => Err(format!(
             "Missing API key for STT provider '{}'. Open Settings → Providers → STT → Save key.",
@@ -337,7 +370,11 @@ pub fn get_stt_api_key_or_err(preset: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn delete_api_key(target: String) -> Result<(), String> {
+pub fn delete_api_key(window: tauri::Window, target: String) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
     validate_credential_target(&target).map_err(|e| e.to_string())?;
     delete_credential(&target).map_err(|e| e.to_string())
 }

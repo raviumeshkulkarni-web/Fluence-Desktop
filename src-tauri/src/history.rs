@@ -40,6 +40,10 @@ pub(crate) static MIGRATION_OK: AtomicBool = AtomicBool::new(true);
 // seam; no sync code touches it yet).
 static LOCAL_MUTATION_MUTEX: Mutex<()> = Mutex::new(());
 
+/// Bounded validation limits (security hardening, additive only).
+pub const MAX_HISTORY_TEXT_CHARS: usize = 20_000;
+const MAX_HISTORY_PAGE: u32 = 10_000;
+
 fn db_path() -> PathBuf {
     let mut path = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("Fluence");
@@ -300,6 +304,13 @@ pub fn add_history_entry(
     provider: &str,
 ) -> Result<HistoryEntry> {
     let _io = crate::sync::io_lock::io_lock_guard();
+    if text.chars().count() > MAX_HISTORY_TEXT_CHARS {
+        anyhow::bail!(
+            "History text too long ({} chars). Maximum is {} characters.",
+            text.chars().count(),
+            MAX_HISTORY_TEXT_CHARS
+        );
+    }
     // Canonical mode values only; the write seam must never emit a record the
     // sync parser rejects (BadMode → corrupt_file quarantine).
     let mode = if mode == "transcription" || mode == "agent" {
@@ -382,6 +393,9 @@ fn query_history(
     until_ms: Option<i64>,
 ) -> Result<Vec<HistoryEntry>> {
     let page_size = 50i64;
+    if page > MAX_HISTORY_PAGE {
+        anyhow::bail!("History page out of range");
+    }
     let offset = (page as i64) * page_size;
 
     let query = search_query.as_deref().unwrap_or("").trim().to_string();

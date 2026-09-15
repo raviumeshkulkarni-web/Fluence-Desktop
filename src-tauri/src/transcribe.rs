@@ -45,6 +45,18 @@ pub const MAX_OFFLINE_SAMPLES: usize = 10 * 60 * 16_000;
 
 // Shared size guard: every online entry point calls this so no path can
 // bypass the provider limit. No behavior change.
+pub(crate) const MAX_PROVIDER_ERROR_BODY_CHARS: usize = 500;
+
+/// Bound provider error bodies embedded in IPC error strings so a verbose
+/// or malicious provider cannot force a multi-MB IPC payload.
+pub(crate) fn truncate_provider_error_body(body: &str) -> String {
+    if body.chars().count() <= MAX_PROVIDER_ERROR_BODY_CHARS {
+        return body.to_string();
+    }
+    let kept: String = body.chars().take(MAX_PROVIDER_ERROR_BODY_CHARS).collect();
+    format!("{kept}…[truncated]")
+}
+
 pub(crate) fn check_audio_bytes_len(len: usize) -> Result<(), String> {
     if len > MAX_AUDIO_BYTES {
         return Err(format!(
@@ -153,7 +165,11 @@ pub async fn transcribe_audio_bytes(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();
@@ -281,7 +297,11 @@ pub async fn transcribe_mp3_bytes(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();
@@ -376,7 +396,11 @@ pub async fn transcribe_mp3_bytes_with_raw(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();

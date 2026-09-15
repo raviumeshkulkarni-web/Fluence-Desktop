@@ -263,7 +263,11 @@ async fn polish_transcribed_text(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("LLM API error {}: {}", status, text));
+        return Err(format!(
+            "LLM API error {}: {}",
+            status,
+            crate::transcribe::truncate_provider_error_body(&text)
+        ));
     }
 
     #[derive(serde::Deserialize)]

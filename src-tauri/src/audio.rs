@@ -47,7 +47,7 @@ fn clear_cancelled_startup_owner() {
 /// List available audio input devices
 #[tauri::command]
 pub fn list_audio_devices() -> Result<Vec<String>, String> {
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         use cpal::traits::HostTrait;
         let host = cpal::default_host();
@@ -55,7 +55,7 @@ pub fn list_audio_devices() -> Result<Vec<String>, String> {
         let names: Vec<String> = devices.filter_map(|d| d.name().ok()).collect();
         Ok(names)
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     Err("Audio not supported on this platform".to_string())
 }
 
@@ -99,7 +99,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
     *STREAM_READY_TX.lock().map_err(|e| e.to_string())? = Some(ready_tx);
     *STREAM_DONE_RX.lock().map_err(|e| e.to_string())? = Some(done_rx);
 
-    #[cfg(target_os = "windows")]
+    #[cfg(any(target_os = "windows", target_os = "linux"))]
     {
         let is_recording = Arc::new(AtomicBool::new(true));
         let is_recording_clone = is_recording.clone();
@@ -171,14 +171,13 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 let app_clone = app_clone.clone();
                 let last_emit = last_emit.clone();
                 move |data: &[f32]| {
-                    // Per-thread MMCSS real-time priority promotion (first thing)
                     if !THREAD_PROMOTED.with(|p| p.replace(true)) {
                         let sr = NATIVE_SAMPLE_RATE.load(Ordering::Relaxed);
                         if sr > 0 {
                             match audio_thread_priority::promote_current_thread_to_real_time(0, sr)
                             {
                                 Ok(_) => {
-                                    log::info!("Audio thread promoted to MMCSS real-time priority")
+                                    log::info!("Audio thread promoted to real-time priority")
                                 }
                                 Err(e) => log::warn!("Failed to promote audio thread: {e}"),
                             }
@@ -394,7 +393,7 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
             }
         }
     }
-    #[cfg(not(target_os = "windows"))]
+    #[cfg(not(any(target_os = "windows", target_os = "linux")))]
     {
         Err("Audio not supported on this platform".to_string())
     }

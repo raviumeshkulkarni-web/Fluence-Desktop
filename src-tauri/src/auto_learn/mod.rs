@@ -21,6 +21,17 @@ pub mod ui_automation;
 // Re-export extraction types for use by other modules (workflow.rs, etc.)
 pub use extraction::{extract_candidates, Candidate, ExtractionContext, TransformationType};
 
+pub fn get_current_dictionary() -> Vec<String> {
+    crate::dictionary::get_dictionary()
+        .map(|entries| {
+            entries
+                .into_iter()
+                .map(|e| crate::dictionary::canonical_entry_key(&e.spoken, &e.corrected))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 #[cfg(target_os = "windows")]
 use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(target_os = "windows")]

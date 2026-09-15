@@ -70,6 +70,8 @@ strsim = "0.11"
 sha2 = "0.10"
 hex = "0.4"
 unicode-normalization = "0.1"
+cpal = "0.15"
+audio_thread_priority = "0.28"
 
 
 
@@ -90,8 +92,11 @@ windows = { version = "0.58", features = [
   "Win32_System_Threading",
   "Win32_Storage_FileSystem",
 ] }
-cpal = "0.15"
-audio_thread_priority = "0.28"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+keyring = { version = "3", features = ["sync-secret-service"] }
+arboard = "3"
+enigo = "0.5"
 
 
 [features]

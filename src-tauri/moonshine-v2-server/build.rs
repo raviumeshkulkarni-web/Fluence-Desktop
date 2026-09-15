@@ -1,10 +1,9 @@
 // Links the official prebuilt Moonshine v2 C++ core + ONNX Runtime.
-// The vendor tree lives in <repo>/.vendor/moonshine (gitignored, provisioned
-// per-machine from the official moonshine-ai/moonshine release, one asset per
-// OS - see VENDOR.json for Windows, VENDOR.linux.json for Linux).
-// MOONSHINE_V2_LIB_DIR overrides the search path when set.
+// The vendor tree (headers + .lib + onnxruntime.dll) lives in
+// <repo>/.vendor/moonshine (gitignored, provisioned per-machine from the
+// official moonshine-ai/moonshine release). MOONSHINE_V2_LIB_DIR overrides
+// the search path when set.
 
-/// Vendor extract subdirectory for the current OS.
 #[cfg(target_os = "windows")]
 fn vendor_subdir() -> &'static str {
     "moonshine-voice-windows-x86_64"
@@ -27,24 +26,12 @@ fn main() {
     link_vendor_libs(&vendor_lib);
     println!("cargo:rerun-if-env-changed=MOONSHINE_V2_LIB_DIR");
 
-    // Linux: resolve sibling shared objects from the sidecar's own directory
-    // (the Tauri bundle / dev tree keeps them side by side). Without this,
-    // the loader only searches system paths and the bundled .so files would
-    // never be found on user machines.
     #[cfg(not(target_os = "windows"))]
     println!("cargo:rustc-link-arg=-Wl,-rpath,$ORIGIN");
 
-    // Stage runtime libraries next to the built sidecar binary so the loader
-    // finds them in every layout (cargo target dir, Tauri binaries/ staging,
-    // installed bundle). Idempotent: skipped when already identical.
-    // Windows: onnxruntime.dll. Linux: libonnxruntime.so.1 + libmoonshine.so
-    // (both shared; the sidecar links them dynamically).
     stage_runtime_libs(&vendor_lib);
 }
 
-/// Link the vendor libraries. Windows ships static .lib archives (+ the
-/// onnxruntime DLL); Linux ships shared objects, so link dynamically.
-/// Untouched platform behavior on Windows.
 #[cfg(target_os = "windows")]
 fn link_vendor_libs(_vendor_lib: &str) {
     // Dependents first for MSVC static linking.
@@ -57,9 +44,6 @@ fn link_vendor_libs(_vendor_lib: &str) {
 
 #[cfg(not(target_os = "windows"))]
 fn link_vendor_libs(vendor_lib: &str) {
-    // Fail fast with actionable instructions instead of a cryptic
-    // "cannot find -lmoonshine" linker error when the per-machine vendor
-    // tree was never provisioned (see VENDOR.linux.json + CONTRIBUTING.md).
     let dir = std::path::Path::new(vendor_lib);
     let moonshine = dir.join("libmoonshine.so");
     let ort = dir.join("libonnxruntime.so.1");
@@ -74,14 +58,9 @@ fn link_vendor_libs(vendor_lib: &str) {
         }
     }
     println!("cargo:rustc-link-lib=moonshine");
-    // Exact-filename link: the Linux asset only ships the versioned
-    // libonnxruntime.so.1 (no unversioned .so symlink), so -lonnxruntime
-    // would not resolve. -l: passes the file name to the linker verbatim.
     println!("cargo:rustc-link-arg=-l:libonnxruntime.so.1");
 }
 
-/// Copies a vendor runtime file beside the final binary output dir.
-/// The sidecar and its runtime files must stay siblings in every layout.
 fn stage_one_file(vendor_lib: &str, file: &str, warn_label: &str) {
     let src = std::path::PathBuf::from(vendor_lib).join(file);
     let out_dir = match std::env::var("OUT_DIR") {
@@ -106,15 +85,11 @@ fn stage_one_file(vendor_lib: &str, file: &str, warn_label: &str) {
     }
 }
 
-/// Windows: stage onnxruntime.dll (implicit DLL search starts at the loading
-/// executable's own directory).
 #[cfg(target_os = "windows")]
 fn stage_runtime_libs(vendor_lib: &str) {
     stage_one_file(vendor_lib, "onnxruntime.dll", "onnxruntime.dll");
 }
 
-/// Linux counterpart: stage both shared objects beside the sidecar binary.
-/// Paired with the `-rpath,$ORIGIN` link arg so the loader finds them.
 #[cfg(not(target_os = "windows"))]
 fn stage_runtime_libs(vendor_lib: &str) {
     stage_one_file(vendor_lib, "libonnxruntime.so.1", "libonnxruntime.so.1");

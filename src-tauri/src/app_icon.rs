@@ -53,10 +53,6 @@ pub struct ForegroundAppInfo {
 ///
 /// Returns `None` whenever the foreground app cannot be identified (including
 /// when it is Fluence itself, or an elevated / protected process).
-///
-/// The command name is part of the stable frontend contract: on non-Windows
-/// platforms it compiles to a stub that always returns `None`, so the overlay
-/// simply hides the icon chip instead of breaking.
 #[tauri::command]
 pub fn get_foreground_app_icon() -> Option<ForegroundAppInfo> {
     #[cfg(target_os = "windows")]
@@ -71,8 +67,6 @@ pub fn get_foreground_app_icon() -> Option<ForegroundAppInfo> {
     }
     #[cfg(not(target_os = "windows"))]
     {
-        // Linux foreground-app icon extraction is not implemented yet
-        // (needs per-compositor handling for X11/Wayland). Fail closed.
         None
     }
 }

@@ -511,11 +511,6 @@ fn clean_temp_files(dir: &Path) -> Result<()> {
 // Tauri Command wrappers
 #[tauri::command]
 pub async fn download_offline_model(app: tauri::AppHandle) -> Result<(), String> {
-    // The SenseVoice (sherpa-onnx) engine ships Windows-only binaries
-    // (see sherpa-manifest.json: win-x64 archive, .exe + .dll). Downloading
-    // them on Linux would install binaries that can never execute, so fail
-    // closed here. Linux users get offline transcription via Moonshine v2
-    // Small/Medium, whose prebuilt core ships for linux-x86_64 as well.
     if cfg!(not(target_os = "windows")) {
         return Err("The SenseVoice offline engine is Windows-only in this build. \
             On Linux, use Moonshine v2 Small/Medium (Settings → Offline) or online STT."
@@ -548,9 +543,6 @@ pub fn delete_offline_model() -> Result<u64, String> {
 // runtime resolution + hash gating happen at spawn time in
 // offline_transcribe::resolve_v2_sidecar.
 //
-// Binary/library file names are platform-specific: `.exe` / `.dll` on
-// Windows, extensionless / `.so` on Linux.
-
 /// Sidecar runtime binary served by our own Moonshine v2 server (built
 /// from the official moonshine-ai/moonshine C++ core).
 #[cfg(target_os = "windows")]

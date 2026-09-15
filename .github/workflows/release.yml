@@ -134,10 +134,6 @@ jobs:
           releaseDraft: false
           prerelease: false
 
-  # Linux release (Ubuntu/Fedora/Debian via deb + AppImage; rpm uses the
-  # same tree, see CONTRIBUTING.md). The Windows `resources` entry
-  # (onnxruntime.dll) does not exist on Linux - see the --config override
-  # on the build step below.
   release-linux:
     runs-on: ubuntu-22.04
     steps:
@@ -166,8 +162,6 @@ jobs:
             libasound2-dev \
             libdbus-1-dev
 
-      # Moonshine v2 sidecar, Linux asset. Mirrors the Windows pwsh step
-      # above but reads src-tauri/moonshine-v2-server/VENDOR.linux.json.
       - name: fetch moonshine v2 vendor bundle (linux)
         shell: bash
         run: |
@@ -199,11 +193,6 @@ jobs:
             exit 1
           fi
 
-      # Builds the workspace-member sidecar, then stages the Tauri
-      # externalBin + resource files the bundler requires to exist BEFORE
-      # `tauri build` runs. The sidecar build.rs already stages the shared
-      # objects next to the built binary; this step mirrors them into the
-      # Tauri binaries/ staging dir.
       - name: build and stage moonshine v2 sidecar (linux)
         shell: bash
         run: |
@@ -230,11 +219,6 @@ jobs:
         run: npm ci --prefix web
 
       - name: build and release (linux)
-        # Uploads deb/AppImage assets to the SAME tag release as the Windows
-        # job (same tagName). Intentionally no releaseName/releaseBody here:
-        # exactly one job must own the release notes, otherwise the two jobs
-        # overwrite each other's body depending on finish order. Linux
-        # install notes live in README.md instead.
         uses: tauri-apps/tauri-action@v0.6.2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -243,9 +227,4 @@ jobs:
         with:
           projectPath: src-tauri
           tagName: v__VERSION__
-          # The Windows `resources` entry (onnxruntime.dll) does not exist on
-          # Linux, and the Linux shared objects must sit BESIDE the sidecar
-          # binary (/usr/bin) so the loader finds them via rpath $ORIGIN -
-          # not in the resources dir (/usr/lib/Fluence). Hence: empty
-          # resources + per-format `files` mapping (deb, rpm, AppImage).
           args: --bundles deb,appimage --config {"bundle":{"resources":[],"linux":{"deb":{"files":{"/usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","/usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}},"rpm":{"files":{"/usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","/usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}},"appimage":{"files":{"usr/bin/libonnxruntime.so.1":"binaries/libonnxruntime.so.1","usr/bin/libmoonshine.so":"binaries/libmoonshine.so"}}}}}

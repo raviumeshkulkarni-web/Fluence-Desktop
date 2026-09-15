@@ -171,9 +171,6 @@ pub async fn start_recording(app: AppHandle, device_id: Option<String>) -> Resul
                 let app_clone = app_clone.clone();
                 let last_emit = last_emit.clone();
                 move |data: &[f32]| {
-                    // Real-time priority promotion for the audio callback
-                    // thread (MMCSS on Windows, RT scheduling on Linux).
-                    // Best effort: a failure only costs latency, not audio.
                     if !THREAD_PROMOTED.with(|p| p.replace(true)) {
                         let sr = NATIVE_SAMPLE_RATE.load(Ordering::Relaxed);
                         if sr > 0 {

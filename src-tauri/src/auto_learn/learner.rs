@@ -31,9 +31,6 @@ pub fn save_corrections(candidates: Vec<Candidate>) -> Result<usize, String> {
     Ok(count)
 }
 
-/// Dictionary-key helper now lives in the parent module so non-Windows
-/// builds (suggestion.rs) can use it too; see auto_learn::get_current_dictionary.
-
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -122,10 +122,6 @@ fn start_idle_monitor() {
     });
 }
 
-/// Target triple suffix used for the Tauri externalBin staging name
-/// (`binaries/moonshine-v2-server-<triple>[.exe]`). Shipped platforms resolve
-/// to their Rust target triple; anything else resolves to a sentinel that
-/// matches nothing (fail closed instead of executing an unknown binary).
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 const V2_SIDECAR_TRIPLE: &str = "x86_64-pc-windows-msvc";
 #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
@@ -136,7 +132,6 @@ const V2_SIDECAR_TRIPLE: &str = "x86_64-unknown-linux-gnu";
 )))]
 const V2_SIDECAR_TRIPLE: &str = "unknown-target";
 
-/// Suffix of the staged sidecar binary: `.exe` on Windows, none on Linux.
 #[cfg(target_os = "windows")]
 const V2_SIDECAR_BIN_SUFFIX: &str = ".exe";
 #[cfg(not(target_os = "windows"))]
@@ -175,12 +170,6 @@ fn v2_sidecar_candidates(
     out
 }
 
-/// Resolves the shipped Moonshine v2 sidecar exe plus its sibling
-/// onnxruntime library (Windows implicit DLL search starts at the loading
-/// executable's own directory, and the Linux loader finds the .so beside
-/// the sidecar via rpath/working dir in the same layouts - so the library
-/// must sit beside the sidecar in every layout: resource-bundled in prod,
-/// build-staged in dev).
 fn resolve_v2_sidecar() -> Result<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let exe_dir = std::env::current_exe()

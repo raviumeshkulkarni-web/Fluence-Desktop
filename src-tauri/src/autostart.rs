@@ -118,30 +118,20 @@ fn autostart_desktop_path() -> Result<std::path::PathBuf> {
     Ok(dir)
 }
 
-/// Render the XDG desktop entry body for the given executable path.
-/// Pure function so the format is unit-testable without touching the fs.
 #[cfg(target_os = "linux")]
 fn desktop_entry_contents(exe_path: &str) -> String {
     format!(
         "[Desktop Entry]\nType=Application\nName=Fluence\nComment=AI voice typing\nExec={exe_path}\nTerminal=false\nCategories=Utility;\nX-GNOME-Autostart-enabled=true\n"
     )
 }
-/// Enable auto-start on Linux: write an XDG autostart desktop entry
-/// (`~/.config/autostart/fluence.desktop`) so desktop environments that
-/// follow the freedesktop autostart spec (GNOME, KDE, Xfce, ...) launch
-/// Fluence on login.
 #[cfg(target_os = "linux")]
 pub fn enable_autostart() -> Result<()> {
     let exe_path = std::env::current_exe()?;
-    // No extra flags: the app starts into the tray on its own whenever it
-    // is not a first run (see main.rs setup), so a plain Exec line is enough.
     let entry = desktop_entry_contents(&exe_path.to_string_lossy());
     std::fs::write(autostart_desktop_path()?, entry)?;
     Ok(())
 }
 
-/// Disable auto-start on Linux: remove the XDG autostart desktop entry.
-/// Missing file is not an error (nothing to do).
 #[cfg(target_os = "linux")]
 pub fn disable_autostart() -> Result<()> {
     match std::fs::remove_file(autostart_desktop_path()?) {
@@ -227,10 +217,6 @@ mod tests {
         assert!(entry.contains("X-GNOME-Autostart-enabled=true"));
     }
 
-    /// Full enable → disable roundtrip against an isolated XDG_CONFIG_HOME.
-    /// Safe to commit: autostart is the only module using `config_dir`
-    /// (everything else uses `data_local_dir`), so overriding
-    /// XDG_CONFIG_HOME cannot disturb parallel tests. Restores the env.
     #[cfg(target_os = "linux")]
     #[test]
     fn autostart_enable_disable_roundtrip() {
@@ -250,7 +236,6 @@ mod tests {
             assert!(body.contains("\nType=Application\n"));
             super::disable_autostart()?;
             assert!(!entry_path.exists());
-            // Disabling twice is not an error (idempotent).
             super::disable_autostart()?;
             Ok(())
         })();

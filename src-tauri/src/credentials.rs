@@ -107,11 +107,6 @@ pub fn delete_credential(target: &str) -> Result<()> {
     Ok(())
 }
 
-// Linux: Secret Service (GNOME Keyring / KWallet) via D-Bus, through the
-// `keyring` crate. Service name is fixed ("Fluence"), the credential target
-// (e.g. "Fluence/STT_ApiKey/groq") is the username so the full namespace
-// validation above still applies. Like the Windows path, secrets never touch
-// the filesystem.
 #[cfg(target_os = "linux")]
 pub fn store_credential(target: &str, _username: &str, secret: &str) -> Result<()> {
     let entry =
@@ -136,8 +131,6 @@ pub fn delete_credential(target: &str) -> Result<()> {
         keyring::Entry::new("Fluence", target).map_err(|e| anyhow!("keyring open failed: {e}"))?;
     match entry.delete_credential() {
         Ok(()) => Ok(()),
-        // Deleting a key that was never stored is not an error for callers
-        // (sign-out on a fresh profile, re-installs, etc.).
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(anyhow!("Secret Service delete failed for {target}: {e}")),
     }
@@ -283,11 +276,6 @@ mod tests {
         assert_eq!(t, "Fluence/STT_ApiKey/my_provider");
     }
 
-    /// Live Secret Service roundtrip (Linux only). Skips gracefully when no
-    /// Secret Service daemon is reachable (e.g. headless CI): the test then
-    /// passes vacuously, while real desktops exercise store → read →
-    /// delete. Uses a unique target so parallel runs never collide, and
-    /// always cleans up afterwards.
     #[cfg(target_os = "linux")]
     #[test]
     fn secret_service_store_read_delete_roundtrip() {
@@ -308,9 +296,6 @@ mod tests {
         }
 
         let secret = "fluence-linux-test-secret-äöü";
-        // Cleanup guard: removes the test entry even if an assert below
-        // panics (delete is idempotent, so the explicit delete later is
-        // harmless - the guard just becomes a no-op).
         struct Cleanup<'a> {
             target: &'a str,
         }

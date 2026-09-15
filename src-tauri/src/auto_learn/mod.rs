@@ -21,11 +21,6 @@ pub mod ui_automation;
 // Re-export extraction types for use by other modules (workflow.rs, etc.)
 pub use extraction::{extract_candidates, Candidate, ExtractionContext, TransformationType};
 
-/// Get canonical keys for the current dictionary entries.
-/// Used by the suggestion system to avoid re-learning correction
-/// pairs that are already in the dictionary (the source of truth).
-/// Platform-independent (reads the dictionary store), so it lives here
-/// rather than in the Windows-only `learner` module.
 pub fn get_current_dictionary() -> Vec<String> {
     crate::dictionary::get_dictionary()
         .map(|entries| {

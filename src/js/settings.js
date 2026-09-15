@@ -988,7 +988,11 @@ function renderWeeklyAreaChart(dayCounts, weekStartMs) {
     if (!tooltip || !canvasCol) return;
     const pct = (cx / width) * 100;
     tooltip.hidden = false;
-    tooltip.innerHTML = '<strong>' + lastDayCounts[idx] + '</strong> · ' + dayNames[idx];
+    tooltip.textContent = '';
+    const tipStrong = document.createElement('strong');
+    tipStrong.textContent = String(lastDayCounts[idx]);
+    tooltip.appendChild(tipStrong);
+    tooltip.appendChild(document.createTextNode(' · ' + dayNames[idx]));
     tooltip.style.left = pct + '%';
     tooltip.style.top = (cy - 6) + 'px';
   };
@@ -1515,6 +1519,13 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Central helper for untrusted values interpolated into HTML attributes.
+// Same escaping as escapeHtml; kept separate so call sites read as
+// "attribute context" and future hardening can diverge if needed.
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 const statAnimFrames = new Map();
 
 function animateStatValue(id, finalText) {
@@ -1874,7 +1885,7 @@ function renderDictTable() {
         <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
         <td class="col-meta added-col">${autoAddedKeys.has(autoKey) ? '<span class="source-badge">auto</span>' : ''}</td>
         <td class="actions">
-          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${entry.id}">Delete</button>
+          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${escapeAttr(entry.id)}">Delete</button>
         </td>
       `;
       tr.querySelector('.dict-delete-btn')?.addEventListener('click', () => deleteDictEntry(entry.id));
@@ -2009,7 +2020,7 @@ function renderSnippetsTable() {
         <td class="spoken-word">${escapeHtml(entry.trigger)}</td>
         <td class="corrected-word">${escapeHtml(entry.expansion)}</td>
         <td class="actions">
-          <button class="btn-ghost snippet-delete-btn" data-snippet-id="${entry.id}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+          <button class="btn-ghost snippet-delete-btn" data-snippet-id="${escapeAttr(entry.id)}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
         </td>
       `;
       tr.querySelector('.snippet-delete-btn')?.addEventListener('click', () => deleteSnippetEntry(entry.id));
@@ -2292,7 +2303,7 @@ const SUGGESTIONS_HINT_AUTO =
 
 function suggestionRowHtml(s, actionsHtml, seenLabel) {
   return `
-    <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${s.id}" aria-label="Select suggestion"></td>
+    <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${escapeAttr(s.id)}" aria-label="Select suggestion"></td>
     <td class="spoken-word">${escapeHtml(s.spoken)}</td>
     <td class="corrected-word">${escapeHtml(s.corrected)}</td>
     <td class="col-meta seen-col frequency">${seenLabel}</td>
@@ -2305,8 +2316,8 @@ function appendSuggestionRow(tbody, s, preserved) {
   tr.dataset.srow = '1';
   tr.dataset.suggestionId = s.id;
   tr.innerHTML = suggestionRowHtml(s, `
-    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${s.id}">Accept</button>
-    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${s.id}">Dismiss</button>
+    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${escapeAttr(s.id)}">Accept</button>
+    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${escapeAttr(s.id)}">Dismiss</button>
   `, `${s.frequency}x`);
   tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
   tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
@@ -2697,7 +2708,7 @@ function renderHistoryItem(entry, container) {
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         ${foreign ? '<span class="badge badge-primary" title="Synced from another account">cloud</span>' : ''}
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        ${foreign ? '' : `<button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>`}
+        ${foreign ? '' : `<button class="btn-ghost history-delete-btn" data-history-id="${escapeAttr(entry.id)}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>`}
       </div>
     </div>
     <div class="history-item-text">${renderTranscriptText(entry.text, historySearchQuery)}</div>
@@ -2862,7 +2873,7 @@ function renderTranscriptText(text, query) {
     const info = terms.get(match.toLowerCase());
     if (info.isCandidate) {
       const title = `Suggestion: replace with '${info.corrected}' (click to accept)`;
-      return `<mark class="candidate-word" data-suggestion-id="${info.id}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
+      return `<mark class="candidate-word" data-suggestion-id="${escapeAttr(info.id)}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
     }
     return `<mark>${match}</mark>`;
   });

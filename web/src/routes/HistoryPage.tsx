@@ -48,6 +48,10 @@ function escapeHtml(str: string): string {
     .replace(/'/g, '&#39;');
 }
 
+function escapeAttr(value: unknown): string {
+  return escapeHtml(String(value ?? ''));
+}
+
 function escapeRegExp(str: string): string {
   return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
@@ -170,7 +174,7 @@ function renderTranscriptTextWithSpec(text: string, spec: HighlightSpec): string
     const info = spec.terms.get(match.toLowerCase());
     if (info?.isCandidate) {
       const title = `Suggestion: replace with '${info.corrected}' (click to accept)`;
-      return `<mark class="candidate-word" data-suggestion-id="${info.id}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
+      return `<mark class="candidate-word" data-suggestion-id="${escapeAttr(info.id)}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
     }
     return `<mark>${match}</mark>`;
   });

@@ -725,7 +725,8 @@ mod tests {
         println!("[M4] Evidence: credentials.rs:235-251");
         println!("[M4] Logical reproduction: VERIFIED");
 
-        // Check that validate_credential_target does NOT catch this (it allows any subpath)
+        // Historical note: at the time this was written, validate_credential_target
+        // allowed any Fluence/* subpath (namespace since closed to known slots).
         // The preset name itself could be malicious if settings.json corrupted:
         let malicious_preset = "../../Windows/Credentials";
         let malicious_target = format!(

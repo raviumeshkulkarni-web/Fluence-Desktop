@@ -14,7 +14,11 @@ use windows::{
 
 const CREDENTIAL_NAMESPACE: &str = "Fluence/";
 
-/// Validate that a credential target belongs to the Fluence namespace.
+/// Validate that a credential target is one the renderer may name:
+/// the two legacy global slots or a per-preset subpath with a strict
+/// `[a-z0-9_]+` suffix. Anything else — including `Fluence/Sync/*` and
+/// arbitrary subpaths — is rejected, so one window cannot probe or
+/// squat unrelated credential slots through the generic IPC namespace.
 fn validate_credential_target(target: &str) -> Result<()> {
     if !target.starts_with(CREDENTIAL_NAMESPACE) {
         return Err(anyhow!(
@@ -24,7 +28,19 @@ fn validate_credential_target(target: &str) -> Result<()> {
     if target.contains("..") {
         return Err(anyhow!("Invalid credential target"));
     }
-    Ok(())
+    if target == STT_API_KEY_TARGET || target == LLM_API_KEY_TARGET {
+        return Ok(());
+    }
+    for base in [STT_API_KEY_TARGET, LLM_API_KEY_TARGET] {
+        if let Some(suffix) = target.strip_prefix(&format!("{base}/")) {
+            if !suffix.is_empty()
+                && suffix.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(anyhow!("Access denied: unknown credential target"))
 }
 
 fn to_wide(s: &str) -> Vec<u16> {
@@ -235,8 +251,22 @@ mod tests {
     }
 
     #[test]
-    fn valid_target_with_subpath() {
-        assert!(validate_credential_target("Fluence/any/sub/path").is_ok());
+    fn reject_arbitrary_subpath() {
+        // The generic Fluence/* namespace is closed: only the known
+        // STT/LLM slots (plus strict per-preset suffixes) are nameable.
+        assert!(validate_credential_target("Fluence/any/sub/path").is_err());
+        assert!(validate_credential_target("Fluence/Sync/RefreshToken").is_err());
+        assert!(validate_credential_target("Fluence/STT_ApiKey/groq/extra").is_err());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/GROQ").is_err());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/groq-key").is_err());
+        assert!(validate_credential_target("Fluence/STT_ApiKey/").is_err());
+    }
+
+    #[test]
+    fn valid_per_preset_targets() {
+        assert!(validate_credential_target("Fluence/STT_ApiKey/groq").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/local_offline").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/custom").is_ok());
     }
 
     #[test]
@@ -265,30 +295,47 @@ pub fn get_api_key(window: tauri::Window, target: String) -> Result<String, Stri
     }
     let label = window.label().to_string();
     if label == crate::acl::OVERLAY_WINDOW {
-        // Narrowed until Task 4 moves agent mode server-side (see acl.rs).
+        // Narrowed until Task 4 moves agent mode server-side (see acl.rs):
+        // per-preset LLM slot, exact read — no global/sibling fallbacks,
+        // so the overlay can never resolve keys outside its slot.
         if !crate::acl::overlay_may_read_credential(&target) {
             log::warn!("IPC denied: overlay blocked from reading credential target");
             return Err("Not allowed from this window".to_string());
         }
-    } else {
-        crate::acl::require_caller(
-            &window,
-            &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
-        )?;
+        return read_api_key_target_exact(&target);
     }
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     read_api_key_target(&target)
+}
+
+/// Direct credential read without migration fallbacks (exact slot only).
+fn read_exact_slot(target: &str) -> Option<String> {
+    read_credential(target)
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+}
+
+/// Server-side credential read, exact slot only (backend use only —
+/// bypasses window gates). Used for narrowed callers (e.g. overlay) that
+/// must never resolve sibling/global slots through fallbacks.
+pub(crate) fn read_api_key_target_exact(target: &str) -> Result<String, String> {
+    validate_credential_target(target).map_err(|e| e.to_string())?;
+    read_exact_slot(target).ok_or_else(|| "Credential not found".to_string())
 }
 
 /// Server-side credential read (backend use only — bypasses window gates).
 /// Used by `get_llm/stt_api_key_or_err` so workflows never depend on IPC.
+/// Includes the legacy migration fallbacks (global slot, groq cross-slot)
+/// so existing installs keep working after the per-preset migration.
 pub(crate) fn read_api_key_target(target: &str) -> Result<String, String> {
     validate_credential_target(target).map_err(|e| e.to_string())?;
 
     // 1. Try the specific target requested
-    if let Ok(key) = read_credential(&target) {
-        if !key.trim().is_empty() {
-            return Ok(key);
-        }
+    if let Some(key) = read_exact_slot(target) {
+        return Ok(key);
     }
 
     // 2. Fallback: If it's a provider-specific target, check the legacy global slot

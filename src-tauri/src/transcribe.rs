@@ -69,8 +69,23 @@ pub(crate) fn check_audio_bytes_len(len: usize) -> Result<(), String> {
 }
 
 /// Transcribe audio via an OpenAI-compatible API.
+/// Narrow wizard/setup path (raw caller-supplied credentials for testing a
+/// not-yet-saved key). Production transcription uses the `workflow` path,
+/// which resolves saved credentials server-side.
 #[tauri::command]
-pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
+pub async fn transcribe_audio(
+    window: tauri::Window,
+    req: TranscribeRequest,
+) -> Result<String, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
+    transcribe_audio_request(req).await
+}
+
+/// Server-side body shared by the command and unit tests.
+async fn transcribe_audio_request(req: TranscribeRequest) -> Result<String, String> {
     if req.wav_b64.len() > MAX_AUDIO_B64_LEN {
         return Err(format!(
             "Audio payload too large ({} bytes). Maximum supported size is ~25MB decoded.",
@@ -664,7 +679,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too large"));
     }
@@ -682,7 +697,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too large"));
     }
@@ -700,7 +715,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -723,7 +738,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid URL"));
     }
@@ -741,7 +756,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("HTTPS"));
     }
@@ -759,7 +774,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(!result.unwrap_err().contains("HTTPS"));
     }

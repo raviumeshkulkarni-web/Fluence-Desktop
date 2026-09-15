@@ -200,6 +200,7 @@ pub fn run() {
             transcribe::test_stt_connection,
             // Agent
             agent::execute_agent_command,
+            agent::execute_agent_command_secure,
             agent::test_llm_connection,
             // Clipboard
             clipboard::inject_text,

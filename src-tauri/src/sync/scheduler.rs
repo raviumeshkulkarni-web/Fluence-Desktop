@@ -711,9 +711,17 @@ pub fn resolve_client_secret_from(
 
 /// Read the secret from the environment, falling back to
 /// `Fluence/sync-oauth.json` in the app data directory.
+/// The file is never auto-deleted: existing sign-ins keep working. Prefer the
+/// env var for new setups; the file path stays for backwards compatibility.
+/// No secret material is ever logged here (lengths only, if at all).
 pub fn resolve_client_secret() -> Result<String, String> {
     let env = std::env::var(SYNC_CLIENT_SECRET_ENV).ok();
     let file = oauth_config_path().and_then(|p| std::fs::read_to_string(p).ok());
+    if env.is_none() && file.is_some() {
+        log::warn!(
+            "Using OAuth client secret from sync-oauth.json; prefer FLUENCE_SYNC_CLIENT_SECRET env var for new setups"
+        );
+    }
     resolve_client_secret_from(env.as_deref(), file.as_deref())
 }
 

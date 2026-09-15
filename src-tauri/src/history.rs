@@ -44,6 +44,11 @@ static LOCAL_MUTATION_MUTEX: Mutex<()> = Mutex::new(());
 pub const MAX_HISTORY_TEXT_CHARS: usize = 20_000;
 const MAX_HISTORY_PAGE: u32 = 10_000;
 
+/// NOTE (privacy): `history.db` stores transcripts in plaintext SQLite at
+/// rest (local-only, never synced). Encrypting it (e.g. SQLCipher) is a
+/// deliberate follow-up with a migration + dependency cost — not done here
+/// to avoid regression risk. OS-level disk encryption (BitLocker) is the
+/// current at-rest mitigation.
 fn db_path() -> PathBuf {
     let mut path = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
     path.push("Fluence");

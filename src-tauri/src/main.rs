@@ -190,6 +190,7 @@ pub fn run() {
             audio::start_recording,
             audio::stop_recording,
             audio::is_recording,
+            audio::cleanup_debug_recordings,
             // Transcription
             transcribe::transcribe_audio,
             transcribe::fetch_models,

@@ -888,6 +888,13 @@ function mapAgentErrorToStatus(err) {
   const msg = String(err || '');
   if (msg.includes('Agent timed out')) return { label: 'LLM timed out', retryable: true };
   if (msg.includes('Missing API key')) return { label: 'Missing LLM key', retryable: false };
+  // FIX-03: local configuration/validation/authorization failures are never
+  // retryable. Only the label is shown (never the raw message), so no OS or
+  // credential-store detail reaches the user.
+  if (msg.includes('Not allowed from this window')) return { label: 'Not permitted here', retryable: false };
+  if (msg.includes('Access denied') || msg.includes('Invalid credential target') || msg.includes('unknown credential target')) return { label: 'Key config error', retryable: false };
+  if (msg.includes('CredReadW') || msg.includes('CredWriteW') || msg.includes('CredDeleteW') || msg.includes('Credential Manager')) return { label: 'Key storage error', retryable: false };
+  if (msg.includes('exceeds maximum length') || msg.includes('too long') || msg.includes('too large') || msg.includes('Maximum is')) return { label: 'Input too long', retryable: false };
   if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) return { label: 'LLM auth failed', retryable: false };
   if (msg.includes('Invalid URL') || msg.includes('HTTPS')) return { label: 'Check LLM URL', retryable: false };
   if (msg.includes('404') || msg.includes('400') || msg.includes('model')) return { label: 'Check LLM model', retryable: false };

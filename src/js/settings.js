@@ -43,6 +43,22 @@ const LLM_PRESETS = {
   custom:  { base_url: '',                              model: '' },
 };
 
+// Canonical preset slug — exact parity with backend `sanitize_preset`
+// (src-tauri/src/credentials.rs, FIX-02 contract): lowercase, every ASCII
+// space → `_`, then any char outside `[a-z0-9_]` → `_`. All credential
+// targets below MUST go through `credentialTarget` so save, read, delete,
+// and the backend secure lookup name one slot. Collision policy (see
+// backend): e.g. `my-provider` ≡ `my_provider` (last write wins); built-in
+// presets are collision-free and resolve exactly as before.
+function canonicalPresetSlug(preset) {
+  return String(preset || '').toLowerCase().replace(/ /g, '_').replace(/[^a-z0-9_]/g, '_');
+}
+
+function credentialTarget(type, preset) {
+  const base = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+  return `${base}/${canonicalPresetSlug(preset)}`;
+}
+
 // ── Boot ─────────────────────────────────────────────────────────
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -174,11 +190,11 @@ function populateUI(s) {
 
   setTimeout(async () => {
     // Populate keys for currently selected presets specifically
-    const sttTarget = `Fluence/STT_ApiKey/${sttPreset.toLowerCase().replace(/ /g, '_')}`;
+    const sttTarget = credentialTarget('stt', sttPreset);
     const sttKey = await invoke('get_api_key', { target: sttTarget }).catch(() => null);
     if (sttKey) fetchModels('stt', true);
     
-    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
+    const llmTarget = credentialTarget('llm', llmPreset);
     const llmKey = await invoke('get_api_key', { target: llmTarget }).catch(() => null);
     if (llmKey) fetchModels('llm', true);
   }, 500);
@@ -499,7 +515,7 @@ function setupProviderCards() {
       // Restore any unsaved draft for this preset instead of wiping it.
       restoreKeyDraft('stt', preset);
 
-      const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const target = credentialTarget('stt', preset);
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
       if (hasKey) {
         fetchModels('stt', true);
@@ -522,7 +538,7 @@ function setupProviderCards() {
 
       restoreKeyDraft('llm', preset);
 
-      const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const target = credentialTarget('llm', preset);
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
       if (hasKey) {
         fetchModels('llm', true);
@@ -538,7 +554,7 @@ function setupProviderCards() {
     if (!key) return showToast('Please enter an API key', 'error');
     
     const preset = document.querySelector('#stt-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
-    const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget('stt', preset);
     
     try {
       await invoke('save_api_key', { target, key });
@@ -554,7 +570,7 @@ function setupProviderCards() {
     if (!key) return showToast('Please enter an API key', 'error');
 
     const preset = document.querySelector('#llm-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
-    const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget('llm', preset);
 
     try {
       await invoke('save_api_key', { target, key });
@@ -615,8 +631,7 @@ async function fetchModels(type, silent = false) {
   let apiKey = keyInput;
   if (!apiKey) {
     const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
-    const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
-    const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget(type, preset);
     apiKey = await invoke('get_api_key', { target }).catch(() => '');
   }
 
@@ -689,8 +704,7 @@ async function testConnection(type) {
     return;
   }
   const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
-  const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
-  const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
+  const target = credentialTarget(type, preset);
   const apiKey = await invoke('get_api_key', { target }).catch(() => '');
   const model = document.getElementById(`${type}-model-select`)?.value || '';
 

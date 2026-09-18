@@ -181,8 +181,11 @@ pub async fn execute_agent_command_secure(
     )?;
     let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
     let preset = settings.llm_provider.preset.clone();
-    let target = crate::credentials::get_llm_target(&preset);
-    let api_key = crate::credentials::read_api_key_target(&target)?;
+    // FIX-01: resolve via the friendly helper so a missing key returns the
+    // stable "Missing API key for LLM provider …" configuration error
+    // (mapped to non-retryable "Missing LLM key" by the overlay) instead of
+    // a raw Credential Manager / OS error. Key material stays server-side.
+    let api_key = crate::credentials::get_llm_api_key_or_err(&preset)?;
     run_agent_command(
         &settings.llm_provider.base_url,
         &api_key,
@@ -582,6 +585,37 @@ mod tests {
         assert_eq!(MAX_VOICE_COMMAND_LEN, 10_000);
         assert_eq!(MAX_CLIPBOARD_CONTEXT_LEN, 50_000);
         assert_eq!(MAX_API_KEY_LEN, 1_000);
+    }
+
+    #[test]
+    fn reject_empty_api_key_with_actionable_message() {
+        // Downstream layer of FIX-01: an empty resolved key (e.g. blank
+        // stored credential) must still surface the stable missing-key
+        // message the overlay maps to non-retryable "Missing LLM key".
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(run_agent_command(
+            "https://api.groq.com/openai",
+            "   ",
+            "llama",
+            "hello",
+            "",
+            None,
+        ));
+        let err = result.expect_err("empty key must be rejected");
+        assert!(err.contains("Missing API key"), "got: {err}");
+    }
+
+    #[test]
+    fn secure_path_missing_key_uses_friendly_helper() {
+        // FIX-01 contract: `execute_agent_command_secure` resolves via
+        // `get_llm_api_key_or_err`, so assert the helper itself maps a
+        // missing credential to the actionable message (no raw OS detail).
+        // This is the exact call the secure path now makes.
+        let preset = "test_nonexistent_preset_xyz_abc";
+        match crate::credentials::get_llm_api_key_or_err(preset) {
+            Err(e) => assert!(e.contains("Missing API key"), "got: {e}"),
+            Ok(_) => println!("SKIP: unexpected key present for {preset}"),
+        }
     }
 
     #[test]

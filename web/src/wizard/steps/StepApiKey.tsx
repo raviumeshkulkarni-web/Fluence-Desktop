@@ -61,6 +61,13 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
 
   const doFetchModels = useCallback(async (baseUrl: string, apiKey: string) => {
     if (!baseUrl || !apiKey || apiKey.length < 8) return;
+    try {
+      const u = new URL(baseUrl.trim());
+      const loopback =
+        u.protocol === 'http:' &&
+        ['localhost', '127.0.0.1', '::1'].includes(u.hostname.toLowerCase().replace(/^\[|\]$/g, ''));
+      if (u.protocol !== 'https:' && !loopback) return;
+    } catch { return; }
     setFetching(true);
     try {
       const keep = dataRef.current.model || null;
@@ -123,6 +130,19 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
   const onTest = async () => {
     const baseUrl = dataRef.current.baseUrl.trim();
     const apiKey = dataRef.current.apiKey.trim();
+    try {
+      const u = new URL(baseUrl);
+      const loopback =
+        u.protocol === 'http:' &&
+        ['localhost', '127.0.0.1', '::1'].includes(u.hostname.toLowerCase().replace(/^\[|\]$/g, ''));
+      if (u.protocol !== 'https:' && !loopback) {
+        setTest({ kind: 'err', text: 'Use https:// (http only for localhost).' });
+        return;
+      }
+    } catch {
+      setTest({ kind: 'err', text: 'Use https:// (http only for localhost).' });
+      return;
+    }
     setTest({ kind: 'testing', text: 'Testing…' });
     try {
       const msg = await testSttConnection(baseUrl, apiKey);

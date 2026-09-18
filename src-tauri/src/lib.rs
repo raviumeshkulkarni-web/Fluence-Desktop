@@ -5,6 +5,7 @@
     clippy::too_many_arguments
 )]
 
+pub mod acl;
 pub mod agent;
 pub mod audio;
 pub mod auto_learn;
@@ -20,11 +21,11 @@ pub mod offline_downloader;
 pub mod offline_transcribe;
 pub mod overlay;
 pub mod settings;
+pub mod silence_gate;
 pub mod snippets;
 pub mod suggestion;
 pub mod sync;
 pub mod transcribe;
-pub mod silence_gate;
 pub mod tray;
 pub mod workflow;
 

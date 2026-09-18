@@ -110,8 +110,18 @@ pub struct AppSettings {
     pub stt_streaming_enabled: bool,
     #[serde(default = "default_false")]
     pub sync_enabled: bool,
+    // NOTE: kept as the raw account email on purpose. It is hashed into the
+    // per-account id for sync partitioning AND shown in Settings → Sync.
+    // Hashing it at rest would destroy the display value and the hash input,
+    // so we store it plaintext (local-only) instead. No key material here.
     #[serde(default)]
     pub sync_account_key: Option<String>,
+    /// Diagnostic voice-capture retention. Default OFF: the app never writes
+    /// `debug_recordings/*.flac` unless this is explicitly enabled. Cleanup
+    /// only runs via the explicit `cleanup_debug_recordings` command — never
+    /// automatically — so no user data is deleted without user control.
+    #[serde(default = "default_false")]
+    pub debug_recordings_enabled: bool,
 }
 
 fn default_hotkey() -> String {
@@ -204,6 +214,7 @@ impl Default for AppSettings {
             stt_streaming_enabled: default_false(),
             sync_enabled: default_false(),
             sync_account_key: None,
+            debug_recordings_enabled: default_false(),
         }
     }
 }
@@ -314,9 +325,14 @@ pub fn get_settings() -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn update_settings(
+    window: tauri::Window,
     settings: AppSettings,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     let old_account = load_settings().ok().and_then(|s| s.sync_account_key);
     save_settings(&settings).map_err(|e| e.to_string())?;
     // Account switch via any path (frontend, file, scheduler) must drop

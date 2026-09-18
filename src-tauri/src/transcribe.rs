@@ -45,6 +45,18 @@ pub const MAX_OFFLINE_SAMPLES: usize = 10 * 60 * 16_000;
 
 // Shared size guard: every online entry point calls this so no path can
 // bypass the provider limit. No behavior change.
+pub(crate) const MAX_PROVIDER_ERROR_BODY_CHARS: usize = 500;
+
+/// Bound provider error bodies embedded in IPC error strings so a verbose
+/// or malicious provider cannot force a multi-MB IPC payload.
+pub(crate) fn truncate_provider_error_body(body: &str) -> String {
+    if body.chars().count() <= MAX_PROVIDER_ERROR_BODY_CHARS {
+        return body.to_string();
+    }
+    let kept: String = body.chars().take(MAX_PROVIDER_ERROR_BODY_CHARS).collect();
+    format!("{kept}…[truncated]")
+}
+
 pub(crate) fn check_audio_bytes_len(len: usize) -> Result<(), String> {
     if len > MAX_AUDIO_BYTES {
         return Err(format!(
@@ -57,8 +69,23 @@ pub(crate) fn check_audio_bytes_len(len: usize) -> Result<(), String> {
 }
 
 /// Transcribe audio via an OpenAI-compatible API.
+/// Narrow wizard/setup path (raw caller-supplied credentials for testing a
+/// not-yet-saved key). Production transcription uses the `workflow` path,
+/// which resolves saved credentials server-side.
 #[tauri::command]
-pub async fn transcribe_audio(req: TranscribeRequest) -> Result<String, String> {
+pub async fn transcribe_audio(
+    window: tauri::Window,
+    req: TranscribeRequest,
+) -> Result<String, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
+    transcribe_audio_request(req).await
+}
+
+/// Server-side body shared by the command and unit tests.
+async fn transcribe_audio_request(req: TranscribeRequest) -> Result<String, String> {
     if req.wav_b64.len() > MAX_AUDIO_B64_LEN {
         return Err(format!(
             "Audio payload too large ({} bytes). Maximum supported size is ~25MB decoded.",
@@ -153,7 +180,11 @@ pub async fn transcribe_audio_bytes(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();
@@ -281,7 +312,11 @@ pub async fn transcribe_mp3_bytes(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();
@@ -376,7 +411,11 @@ pub async fn transcribe_mp3_bytes_with_raw(
     if !resp.status().is_success() {
         let status = resp.status();
         let body = resp.text().await.unwrap_or_default();
-        return Err(format!("API error {}: {}", status, body));
+        return Err(format!(
+            "API error {}: {}",
+            status,
+            truncate_provider_error_body(&body)
+        ));
     }
 
     let parse_start = std::time::Instant::now();
@@ -409,7 +448,15 @@ pub async fn transcribe_mp3_bytes_with_raw(
 /// Unfiltered: used by the LLM/agent picker, which legitimately lists
 /// every model on the account.
 #[tauri::command]
-pub async fn fetch_models(base_url: String, api_key: String) -> Result<Vec<String>, String> {
+pub async fn fetch_models(
+    window: tauri::Window,
+    base_url: String,
+    api_key: String,
+) -> Result<Vec<String>, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     fetch_model_ids(&base_url, &api_key).await
 }
 
@@ -515,17 +562,30 @@ pub struct SttModelList {
 /// speech-to-text capable ids for the transcription picker.
 #[tauri::command]
 pub async fn fetch_stt_models(
+    window: tauri::Window,
     base_url: String,
     api_key: String,
     keep: Option<String>,
 ) -> Result<SttModelList, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     let ids = fetch_model_ids(&base_url, &api_key).await?;
     Ok(apply_stt_model_filter(ids, keep.as_deref()))
 }
 
 /// Test connectivity to an STT provider.
 #[tauri::command]
-pub async fn test_stt_connection(base_url: String, api_key: String) -> Result<String, String> {
+pub async fn test_stt_connection(
+    window: tauri::Window,
+    base_url: String,
+    api_key: String,
+) -> Result<String, String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     crate::http_client::validate_api_url(&base_url)?;
     let url = crate::http_client::build_api_url(&base_url, "models");
 
@@ -619,7 +679,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too large"));
     }
@@ -637,7 +697,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("too large"));
     }
@@ -655,7 +715,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         let err = result.unwrap_err();
         assert!(
@@ -678,7 +738,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Invalid URL"));
     }
@@ -696,7 +756,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("HTTPS"));
     }
@@ -714,7 +774,7 @@ mod tests {
             filename: "audio.wav".into(),
         };
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let result = rt.block_on(transcribe_audio(req));
+        let result = rt.block_on(transcribe_audio_request(req));
         assert!(result.is_err());
         assert!(!result.unwrap_err().contains("HTTPS"));
     }

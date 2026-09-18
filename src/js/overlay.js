@@ -888,6 +888,13 @@ function mapAgentErrorToStatus(err) {
   const msg = String(err || '');
   if (msg.includes('Agent timed out')) return { label: 'LLM timed out', retryable: true };
   if (msg.includes('Missing API key')) return { label: 'Missing LLM key', retryable: false };
+  // FIX-03: local configuration/validation/authorization failures are never
+  // retryable. Only the label is shown (never the raw message), so no OS or
+  // credential-store detail reaches the user.
+  if (msg.includes('Not allowed from this window')) return { label: 'Not permitted here', retryable: false };
+  if (msg.includes('Access denied') || msg.includes('Invalid credential target') || msg.includes('unknown credential target')) return { label: 'Key config error', retryable: false };
+  if (msg.includes('CredReadW') || msg.includes('CredWriteW') || msg.includes('CredDeleteW') || msg.includes('Credential Manager')) return { label: 'Key storage error', retryable: false };
+  if (msg.includes('exceeds maximum length') || msg.includes('too long') || msg.includes('too large') || msg.includes('Maximum is')) return { label: 'Input too long', retryable: false };
   if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) return { label: 'LLM auth failed', retryable: false };
   if (msg.includes('Invalid URL') || msg.includes('HTTPS')) return { label: 'Check LLM URL', retryable: false };
   if (msg.includes('404') || msg.includes('400') || msg.includes('model')) return { label: 'Check LLM model', retryable: false };
@@ -906,11 +913,9 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
   // function-scoped, so only this one needs hoisting.
   let clipboardCtx = '';
   try {
-    const llmPreset = settings.llm_provider.preset || 'groq';
-    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
-    const llmKey = await invoke('get_api_key', {
-      target: llmTarget
-    }).catch(() => '');
+    // Credentials stay server-side: the secure command resolves the saved
+    // LLM provider/key from settings + Credential Manager. No api_key in
+    // IPC args (Task 4 hardening).
     if (!isSessionActive(sessionId)) return;
 
     let grabbed = false;
@@ -931,11 +936,8 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     }
 
     const agentRequestId = `agent-${++agentRequestSeq}-${Date.now()}`;
-    const agentInvoke = invoke('execute_agent_command', {
+    const agentInvoke = invoke('execute_agent_command_secure', {
       req: {
-        base_url: settings.llm_provider.base_url,
-        api_key: llmKey || '',
-        model: settings.llm_provider.model,
         voice_command: voiceCommand,
         clipboard_context: clipboardCtx,
         request_id: agentRequestId,

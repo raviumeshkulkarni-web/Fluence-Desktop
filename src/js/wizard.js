@@ -362,6 +362,18 @@ function setupStep2() {
     updateStep(currentStep + 1);
   });
 
+  const isAllowedWizEndpoint = (raw) => {
+    try {
+      const u = new URL(String(raw || '').trim());
+      if (u.protocol === 'https:') return true;
+      if (u.protocol === 'http:') {
+        const host = String(u.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+        return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+      }
+      return false;
+    } catch { return false; }
+  };
+
   // Test connection
   document.getElementById('wiz-test-btn')?.addEventListener('click', async () => {
     const baseUrl = document.getElementById('wiz-base-url')?.value?.trim();
@@ -370,6 +382,11 @@ function setupStep2() {
     const txt = document.getElementById('wiz-test-text');
 
     if (dot) dot.className = 'dot dot-idle';
+    if (!isAllowedWizEndpoint(baseUrl)) {
+      if (dot) dot.className = 'dot dot-error';
+      if (txt) txt.textContent = 'Use https:// (http only for localhost).';
+      return;
+    }
     if (txt) txt.textContent = 'Testing…';
 
     try {

@@ -43,6 +43,22 @@ const LLM_PRESETS = {
   custom:  { base_url: '',                              model: '' },
 };
 
+// Canonical preset slug — exact parity with backend `sanitize_preset`
+// (src-tauri/src/credentials.rs, FIX-02 contract): lowercase, every ASCII
+// space → `_`, then any char outside `[a-z0-9_]` → `_`. All credential
+// targets below MUST go through `credentialTarget` so save, read, delete,
+// and the backend secure lookup name one slot. Collision policy (see
+// backend): e.g. `my-provider` ≡ `my_provider` (last write wins); built-in
+// presets are collision-free and resolve exactly as before.
+function canonicalPresetSlug(preset) {
+  return String(preset || '').toLowerCase().replace(/ /g, '_').replace(/[^a-z0-9_]/g, '_');
+}
+
+function credentialTarget(type, preset) {
+  const base = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
+  return `${base}/${canonicalPresetSlug(preset)}`;
+}
+
 // ── Boot ─────────────────────────────────────────────────────────
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -174,11 +190,11 @@ function populateUI(s) {
 
   setTimeout(async () => {
     // Populate keys for currently selected presets specifically
-    const sttTarget = `Fluence/STT_ApiKey/${sttPreset.toLowerCase().replace(/ /g, '_')}`;
+    const sttTarget = credentialTarget('stt', sttPreset);
     const sttKey = await invoke('get_api_key', { target: sttTarget }).catch(() => null);
     if (sttKey) fetchModels('stt', true);
     
-    const llmTarget = `Fluence/LLM_ApiKey/${llmPreset.toLowerCase().replace(/ /g, '_')}`;
+    const llmTarget = credentialTarget('llm', llmPreset);
     const llmKey = await invoke('get_api_key', { target: llmTarget }).catch(() => null);
     if (llmKey) fetchModels('llm', true);
   }, 500);
@@ -419,28 +435,67 @@ function restoreKeyDraft(type, preset) {
   updateProviderGates(type);
 }
 
+// Transport policy: https everywhere; plaintext http only for loopback.
+// Mirrors backend validate_api_url (http_client.rs) so the UI rejects
+// non-loopback http before any key material is sent.
+function isAllowedEndpointUrl(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || '').trim());
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:') {
+      const host = String(u.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    }
+    return false;
+  } catch { return false; }
+}
+
+function isCustomHttpsEndpoint(baseUrl) {
+  try {
+    const u = new URL(String(baseUrl || '').trim());
+    if (u.protocol !== 'https:') return false;
+    const host = String(u.hostname || '').toLowerCase();
+    return !host.endsWith('groq.com') && !host.endsWith('openai.com') && !host.endsWith('mistral.ai');
+  } catch { return false; }
+}
+
+function updateCustomEndpointWarning(type, baseUrl) {
+  const input = document.getElementById(`${type}-base-url`);
+  if (!input || !input.parentElement) return;
+  let warn = document.getElementById(`${type}-custom-endpoint-warning`);
+  if (isCustomHttpsEndpoint(baseUrl)) {
+    if (!warn) {
+      warn = document.createElement('p');
+      warn.id = `${type}-custom-endpoint-warning`;
+      warn.className = 'field-warning';
+      input.parentElement.appendChild(warn);
+    }
+    warn.textContent = 'Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.';
+    warn.hidden = false;
+  } else if (warn) {
+    warn.hidden = true;
+  }
+}
+
 // Test/Fetch require a parseable URL + a key-like value. Buttons stay
 // enabled but validate inline so the failure explains itself in-status.
 function providerReady(type) {
   const baseUrl = document.getElementById(`${type}-base-url`)?.value?.trim() || '';
   const keyVal = document.getElementById(`${type}-api-key`)?.value?.trim() || '';
-  let urlOk = false;
-  try {
-    const u = new URL(baseUrl);
-    urlOk = u.protocol === 'http:' || u.protocol === 'https:';
-  } catch { urlOk = false; }
+  const urlOk = isAllowedEndpointUrl(baseUrl);
   return { urlOk, keyOk: keyVal.length >= 8, baseUrl, keyVal };
 }
 
 function updateProviderGates(type) {
-  const { urlOk, keyOk } = providerReady(type);
+  const { urlOk, keyOk, baseUrl } = providerReady(type);
   const ready = urlOk && keyOk;
   for (const id of [`${type}-test-btn`, `${type}-fetch-models-btn`]) {
     const btn = document.getElementById(id);
     if (!btn) continue;
     btn.disabled = !ready;
-    btn.title = ready ? '' : 'Enter a valid http(s) URL and an API key (8+ chars) first';
+    btn.title = ready ? '' : 'Enter a valid https URL (http only for localhost) and an API key (8+ chars) first';
   }
+  updateCustomEndpointWarning(type, baseUrl);
   return ready;
 }
 
@@ -460,7 +515,7 @@ function setupProviderCards() {
       // Restore any unsaved draft for this preset instead of wiping it.
       restoreKeyDraft('stt', preset);
 
-      const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const target = credentialTarget('stt', preset);
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
       if (hasKey) {
         fetchModels('stt', true);
@@ -483,7 +538,7 @@ function setupProviderCards() {
 
       restoreKeyDraft('llm', preset);
 
-      const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+      const target = credentialTarget('llm', preset);
       const hasKey = await invoke('get_api_key', { target }).then(() => true).catch(() => false);
       if (hasKey) {
         fetchModels('llm', true);
@@ -499,7 +554,7 @@ function setupProviderCards() {
     if (!key) return showToast('Please enter an API key', 'error');
     
     const preset = document.querySelector('#stt-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
-    const target = `Fluence/STT_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget('stt', preset);
     
     try {
       await invoke('save_api_key', { target, key });
@@ -515,7 +570,7 @@ function setupProviderCards() {
     if (!key) return showToast('Please enter an API key', 'error');
 
     const preset = document.querySelector('#llm-provider-grid .provider-card.selected')?.dataset.provider || 'groq';
-    const target = `Fluence/LLM_ApiKey/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget('llm', preset);
 
     try {
       await invoke('save_api_key', { target, key });
@@ -576,8 +631,7 @@ async function fetchModels(type, silent = false) {
   let apiKey = keyInput;
   if (!apiKey) {
     const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
-    const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
-    const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
+    const target = credentialTarget(type, preset);
     apiKey = await invoke('get_api_key', { target }).catch(() => '');
   }
 
@@ -650,8 +704,7 @@ async function testConnection(type) {
     return;
   }
   const preset = document.querySelector(`#${type}-provider-grid .provider-card.selected`)?.dataset.provider || 'groq';
-  const baseTarget = type === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
-  const target = `${baseTarget}/${preset.toLowerCase().replace(/ /g, '_')}`;
+  const target = credentialTarget(type, preset);
   const apiKey = await invoke('get_api_key', { target }).catch(() => '');
   const model = document.getElementById(`${type}-model-select`)?.value || '';
 
@@ -988,7 +1041,11 @@ function renderWeeklyAreaChart(dayCounts, weekStartMs) {
     if (!tooltip || !canvasCol) return;
     const pct = (cx / width) * 100;
     tooltip.hidden = false;
-    tooltip.innerHTML = '<strong>' + lastDayCounts[idx] + '</strong> · ' + dayNames[idx];
+    tooltip.textContent = '';
+    const tipStrong = document.createElement('strong');
+    tipStrong.textContent = String(lastDayCounts[idx]);
+    tooltip.appendChild(tipStrong);
+    tooltip.appendChild(document.createTextNode(' · ' + dayNames[idx]));
     tooltip.style.left = pct + '%';
     tooltip.style.top = (cy - 6) + 'px';
   };
@@ -1515,6 +1572,13 @@ function escapeHtml(str) {
     .replace(/'/g, '&#39;');
 }
 
+// Central helper for untrusted values interpolated into HTML attributes.
+// Same escaping as escapeHtml; kept separate so call sites read as
+// "attribute context" and future hardening can diverge if needed.
+function escapeAttr(value) {
+  return escapeHtml(value);
+}
+
 const statAnimFrames = new Map();
 
 function animateStatValue(id, finalText) {
@@ -1874,7 +1938,7 @@ function renderDictTable() {
         <td class="corrected-word">${escapeHtml(entry.corrected)}</td>
         <td class="col-meta added-col">${autoAddedKeys.has(autoKey) ? '<span class="source-badge">auto</span>' : ''}</td>
         <td class="actions">
-          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${entry.id}">Delete</button>
+          <button class="btn-ghost btn-small dict-delete-btn" data-dict-id="${escapeAttr(entry.id)}">Delete</button>
         </td>
       `;
       tr.querySelector('.dict-delete-btn')?.addEventListener('click', () => deleteDictEntry(entry.id));
@@ -1918,14 +1982,16 @@ window.deleteDictEntry = async (id) => {
 async function importDictionary() {
   try {
     const dialog = window.__TAURI_PLUGIN_DIALOG__;
-    const fs = window.__TAURI_PLUGIN_FS__;
-    if (!dialog || !fs) {
+    if (!dialog) {
       showToast('File dialog plugin not available', 'error');
       return;
     }
-    const path = await dialog.open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
-    if (!path) return;
-    const json = await fs.readTextFile(path);
+    const picked = await dialog.open({ filters: [{ name: 'JSON', extensions: ['json'] }] });
+    if (!picked) return;
+    const path = Array.isArray(picked) ? picked[0] : picked;
+    // File bytes are read server-side (size-bounded); the renderer no
+    // longer needs direct filesystem access for imports.
+    const json = await invoke('read_import_file', { path });
     const count = await invoke('import_dictionary', { jsonData: json });
     showToast(`Imported ${count} entries ✓`, 'success');
     loadDictionary();
@@ -2009,7 +2075,7 @@ function renderSnippetsTable() {
         <td class="spoken-word">${escapeHtml(entry.trigger)}</td>
         <td class="corrected-word">${escapeHtml(entry.expansion)}</td>
         <td class="actions">
-          <button class="btn-ghost snippet-delete-btn" data-snippet-id="${entry.id}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
+          <button class="btn-ghost snippet-delete-btn" data-snippet-id="${escapeAttr(entry.id)}" style="padding:4px 8px;font-size:12px;color:var(--color-error)">Delete</button>
         </td>
       `;
       tr.querySelector('.snippet-delete-btn')?.addEventListener('click', () => deleteSnippetEntry(entry.id));
@@ -2292,7 +2358,7 @@ const SUGGESTIONS_HINT_AUTO =
 
 function suggestionRowHtml(s, actionsHtml, seenLabel) {
   return `
-    <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${s.id}" aria-label="Select suggestion"></td>
+    <td class="select-col"><input type="checkbox" class="suggestion-select" data-suggestion-id="${escapeAttr(s.id)}" aria-label="Select suggestion"></td>
     <td class="spoken-word">${escapeHtml(s.spoken)}</td>
     <td class="corrected-word">${escapeHtml(s.corrected)}</td>
     <td class="col-meta seen-col frequency">${seenLabel}</td>
@@ -2305,8 +2371,8 @@ function appendSuggestionRow(tbody, s, preserved) {
   tr.dataset.srow = '1';
   tr.dataset.suggestionId = s.id;
   tr.innerHTML = suggestionRowHtml(s, `
-    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${s.id}">Accept</button>
-    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${s.id}">Dismiss</button>
+    <button class="btn-ghost btn-small suggestion-accept-btn" data-suggestion-id="${escapeAttr(s.id)}">Accept</button>
+    <button class="btn-ghost btn-small suggestion-dismiss-btn" data-suggestion-id="${escapeAttr(s.id)}">Dismiss</button>
   `, `${s.frequency}x`);
   tr.querySelector('.suggestion-accept-btn')?.addEventListener('click', () => acceptSuggestion(s.id));
   tr.querySelector('.suggestion-dismiss-btn')?.addEventListener('click', () => dismissSuggestion(s.id));
@@ -2697,7 +2763,7 @@ function renderHistoryItem(entry, container) {
         <span class="badge badge-${entry.mode === 'agent' ? 'primary' : 'success'}">${escapeHtml(entry.mode)}</span>
         ${foreign ? '<span class="badge badge-primary" title="Synced from another account">cloud</span>' : ''}
         <button class="btn-ghost history-copy-btn" style="padding:2px 8px;font-size:11px;">Copy</button>
-        ${foreign ? '' : `<button class="btn-ghost history-delete-btn" data-history-id="${entry.id}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>`}
+        ${foreign ? '' : `<button class="btn-ghost history-delete-btn" data-history-id="${escapeAttr(entry.id)}" aria-label="Delete transcription" style="padding:2px 8px;font-size:11px;color:var(--color-error)">×</button>`}
       </div>
     </div>
     <div class="history-item-text">${renderTranscriptText(entry.text, historySearchQuery)}</div>
@@ -2862,7 +2928,7 @@ function renderTranscriptText(text, query) {
     const info = terms.get(match.toLowerCase());
     if (info.isCandidate) {
       const title = `Suggestion: replace with '${info.corrected}' (click to accept)`;
-      return `<mark class="candidate-word" data-suggestion-id="${info.id}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
+      return `<mark class="candidate-word" data-suggestion-id="${escapeAttr(info.id)}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
     }
     return `<mark>${match}</mark>`;
   });

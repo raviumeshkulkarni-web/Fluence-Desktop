@@ -200,6 +200,27 @@ interface ConnStatus {
 
 const IDLE: ConnStatus = { dot: 'dot dot-idle', text: 'Not Tested' };
 
+function isAllowedEndpointUrl(raw: string): boolean {
+  try {
+    const u = new URL(String(raw || '').trim());
+    if (u.protocol === 'https:') return true;
+    if (u.protocol === 'http:') {
+      const host = String(u.hostname || '').toLowerCase().replace(/^\[|\]$/g, '');
+      return host === 'localhost' || host === '127.0.0.1' || host === '::1';
+    }
+    return false;
+  } catch { return false; }
+}
+
+function isCustomHttpsEndpoint(raw: string): boolean {
+  try {
+    const u = new URL(String(raw || '').trim());
+    if (u.protocol !== 'https:') return false;
+    const host = String(u.hostname || '').toLowerCase();
+    return !host.endsWith('groq.com') && !host.endsWith('openai.com') && !host.endsWith('mistral.ai');
+  } catch { return false; }
+}
+
 function formFromSettings(
   provider: Record<string, unknown> | undefined,
   fallbackModel: string,
@@ -311,6 +332,10 @@ export function ProvidersPage() {
       const baseUrl = f.baseUrl.trim();
       if (!baseUrl || !apiKey || apiKey.length < 8) {
         if (!silent) toast('Please enter endpoint and API key first', 'error');
+        return;
+      }
+      if (!isAllowedEndpointUrl(baseUrl)) {
+        if (!silent) toast('Use https:// (http only for localhost).', 'error');
         return;
       }
       if (kind === 'stt') setSttFetching(true);
@@ -526,6 +551,10 @@ export function ProvidersPage() {
     const baseUrl = f.baseUrl.trim();
     const apiKey = await getApiKey(keyTarget(kind, f.preset)).catch(() => '');
     const setStatus = kind === 'stt' ? setSttStatus : setLlmStatus;
+    if (!isAllowedEndpointUrl(baseUrl)) {
+      setStatus({ dot: 'dot dot-error', text: 'Use https:// (http only for localhost).' });
+      return;
+    }
     setStatus({ dot: 'dot dot-idle', text: 'Testing…' });
     try {
       const msg =
@@ -627,6 +656,9 @@ export function ProvidersPage() {
                 value={stt.baseUrl}
                 onChange={(e) => setForm('stt', { ...forms.current.stt, baseUrl: e.target.value })}
               />
+              {isCustomHttpsEndpoint(stt.baseUrl) && (
+                <p className="field-warning">Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.</p>
+              )}
             </Field>
             <Field label="API Key" htmlFor="stt-api-key">
               <div className="input-with-btn">
@@ -825,6 +857,9 @@ export function ProvidersPage() {
               value={llm.baseUrl}
               onChange={(e) => setForm('llm', { ...forms.current.llm, baseUrl: e.target.value })}
             />
+            {isCustomHttpsEndpoint(llm.baseUrl) && (
+              <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
+            )}
           </Field>
           <Field label="API Key" htmlFor="llm-api-key">
             <div className="input-with-btn">

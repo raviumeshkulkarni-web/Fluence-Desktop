@@ -51,6 +51,13 @@ fn default_true() -> bool {
     true
 }
 
+/// Bounded validation limits (security hardening, additive only).
+/// Normal dictionary use is far below these; oversized input is rejected
+/// with a clean error instead of causing OOM or megabyte regex compiles.
+pub const MAX_IMPORT_JSON_LEN: usize = 1_000_000;
+pub const MAX_SPOKEN_CHARS: usize = 200;
+pub const MAX_CORRECTED_CHARS: usize = 1_000;
+
 impl Default for DictionaryEntry {
     fn default() -> Self {
         Self {
@@ -123,6 +130,15 @@ pub(crate) fn save_dictionary_internal(entries: &[DictionaryEntry]) -> Result<()
 fn cache_entries(entries: Vec<DictionaryEntry>) -> Vec<CachedEntry> {
     let mut cached = Vec::with_capacity(entries.len());
     for entry in entries {
+        // Skip oversized legacy rows so a corrupt file cannot force a
+        // megabyte regex compile; new writes are already capped above.
+        if entry.spoken.chars().count() > MAX_SPOKEN_CHARS {
+            log::warn!(
+                "Skipping dictionary entry with oversized spoken text ({} chars)",
+                entry.spoken.chars().count()
+            );
+            continue;
+        }
         // Case-insensitive whole-word replacement pattern
         let pattern = format!("(?i)\\b{}\\b", regex_escape(&entry.spoken));
         match regex::Regex::new(&pattern) {
@@ -215,6 +231,20 @@ fn normalize_entry_text(spoken: &str, corrected: &str) -> Result<(String, String
     if spoken.is_empty() || corrected.is_empty() {
         return Err("Spoken and corrected text must not be empty".to_string());
     }
+    if spoken.chars().count() > MAX_SPOKEN_CHARS {
+        return Err(format!(
+            "Spoken text too long ({} chars). Maximum is {} characters.",
+            spoken.chars().count(),
+            MAX_SPOKEN_CHARS
+        ));
+    }
+    if corrected.chars().count() > MAX_CORRECTED_CHARS {
+        return Err(format!(
+            "Corrected text too long ({} chars). Maximum is {} characters.",
+            corrected.chars().count(),
+            MAX_CORRECTED_CHARS
+        ));
+    }
     Ok((spoken, corrected))
 }
 
@@ -242,6 +272,11 @@ fn merge_dictionary_entries(
         entry.spoken = entry.spoken.trim().to_string();
         entry.corrected = entry.corrected.trim().to_string();
         if entry.spoken.is_empty() || entry.corrected.is_empty() {
+            continue;
+        }
+        if entry.spoken.chars().count() > MAX_SPOKEN_CHARS
+            || entry.corrected.chars().count() > MAX_CORRECTED_CHARS
+        {
             continue;
         }
         if entries_already_have(&entries, &entry.spoken, &entry.corrected) {
@@ -349,11 +384,13 @@ pub(crate) fn add_dictionary_entry_internal(
 
 #[tauri::command]
 pub fn add_dictionary_entry(
+    window: tauri::Window,
     spoken: String,
     corrected: String,
     kind: Option<String>,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<DictionaryEntry, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let entry = add_dictionary_entry_internal(spoken, corrected, kind)?;
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(entry)
@@ -361,12 +398,14 @@ pub fn add_dictionary_entry(
 
 #[tauri::command]
 pub fn update_dictionary_entry(
+    window: tauri::Window,
     id: String,
     spoken: String,
     corrected: String,
     kind: Option<String>,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let _io = crate::sync::io_lock::io_lock_guard();
     let (spoken, corrected) = normalize_entry_text(&spoken, &corrected)?;
     let mut all_entries = load_dictionary_internal().map_err(|e| e.to_string())?;
@@ -505,9 +544,11 @@ pub(crate) fn delete_dictionary_entry_internal(id: String) -> Result<(), String>
 
 #[tauri::command]
 pub fn delete_dictionary_entry(
+    window: tauri::Window,
     id: String,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_dictionary_entry_internal(id)?;
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     Ok(())
@@ -515,10 +556,19 @@ pub fn delete_dictionary_entry(
 
 #[tauri::command]
 pub fn import_dictionary(
+    window: tauri::Window,
     json_data: String,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
 ) -> Result<usize, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     let _io = crate::sync::io_lock::io_lock_guard();
+    if json_data.len() > MAX_IMPORT_JSON_LEN {
+        return Err(format!(
+            "Dictionary import too large ({} bytes). Maximum is {} bytes (~1 MB).",
+            json_data.len(),
+            MAX_IMPORT_JSON_LEN
+        ));
+    }
     let mut new_entries: Vec<DictionaryEntry> =
         serde_json::from_str(&json_data).map_err(|e| e.to_string())?;
     // Stamp imports to the active account so they don't become global `None` rows visible to any account.
@@ -545,6 +595,27 @@ pub fn import_dictionary(
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
     invalidate_cache();
     Ok(added)
+}
+
+/// Read a user-picked dictionary import file server-side (main window only).
+/// The open-file dialog is the authorization; this only bounds size (same
+/// 1 MB cap as `import_dictionary`) and requires a regular UTF-8 file.
+/// Lets the renderer drop direct `fs` plugin access entirely.
+#[tauri::command]
+pub fn read_import_file(window: tauri::Window, path: String) -> Result<String, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    let meta = std::fs::metadata(&path).map_err(|e| format!("Cannot read file: {e}"))?;
+    if !meta.is_file() {
+        return Err("Selected path is not a file".to_string());
+    }
+    if meta.len() > MAX_IMPORT_JSON_LEN as u64 {
+        return Err(format!(
+            "File too large ({} bytes). Maximum is {} bytes (~1 MB).",
+            meta.len(),
+            MAX_IMPORT_JSON_LEN
+        ));
+    }
+    std::fs::read_to_string(&path).map_err(|e| format!("Cannot read file: {e}"))
 }
 
 #[tauri::command]

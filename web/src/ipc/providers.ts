@@ -23,12 +23,27 @@ export interface OfflineDownloadProgress {
   errorMessage?: string;
 }
 
-// Credential-store target shape reproduced exactly from vanilla
-// (setupProviderCards): `Fluence/STT_ApiKey/<preset>` with spaces folded
-// to underscores, lowercased — e.g. "Local Offline" → "local_offline".
+// Canonical preset slug — byte-for-byte parity with backend `sanitize_preset`
+// (src-tauri/src/credentials.rs, FIX-02 contract). Rules, in order:
+// lowercase, replace every ASCII space with `_`, then map any char outside
+// `[a-z0-9_]` to `_`. Collision policy (documented backend-side): slugs that
+// differ only by mapped characters share one slot (e.g. `my-provider` and
+// `my_provider` both resolve to `my_provider`; last write wins). Built-in
+// presets (`groq`, `openai`, `mistral`, `custom`, `Local Offline`) are
+// collision-free and resolve exactly as before (`Local Offline` → `local_offline`).
+export function canonicalPresetSlug(preset: string): string {
+  return String(preset || '')
+    .toLowerCase()
+    .replace(/ /g, '_')
+    .replace(/[^a-z0-9_]/g, '_');
+}
+
+// Credential-store target shape: `Fluence/STT_ApiKey/<slug>` /
+// `Fluence/LLM_ApiKey/<slug>` using the canonical slug above, so save, read,
+// delete, and the backend's secure server-side lookup always name one slot.
 export function keyTarget(kind: ProviderKind, preset: string): string {
   const base = kind === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
-  return `${base}/${preset.toLowerCase().replace(/ /g, '_')}`;
+  return `${base}/${canonicalPresetSlug(preset)}`;
 }
 
 // Command names + argument shapes reproduced exactly from vanilla.

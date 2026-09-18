@@ -1231,6 +1231,50 @@ pub fn is_recording() -> bool {
     RECORDING.load(Ordering::SeqCst)
 }
 
+/// Explicit diagnostic cleanup (never automatic).
+/// Prunes `%LOCALAPPDATA%/Fluence/debug_recordings/recording_*.flac` older
+/// than `older_than_days` (default 30). Bounded to 50 deletions per call.
+/// The app never writes this directory unless `debug_recordings_enabled` is
+/// set — this command only cleans leftovers on explicit user action.
+#[tauri::command]
+pub fn cleanup_debug_recordings(
+    window: tauri::Window,
+    older_than_days: Option<u64>,
+) -> Result<usize, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    let days = older_than_days.unwrap_or(30).min(365);
+    let mut dir = dirs::data_local_dir().ok_or("No local app data dir")?;
+    dir.push("Fluence");
+    dir.push("debug_recordings");
+    if !dir.exists() {
+        return Ok(0);
+    }
+    let cutoff = std::time::SystemTime::now()
+        .checked_sub(std::time::Duration::from_secs(days * 86_400))
+        .unwrap_or(std::time::UNIX_EPOCH);
+    let mut removed = 0usize;
+    let entries = std::fs::read_dir(&dir).map_err(|e| e.to_string())?;
+    for entry in entries.flatten().take(200) {
+        if removed >= 50 {
+            break;
+        }
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with("recording_") || !name.ends_with(".flac") {
+            continue;
+        }
+        let modified = entry
+            .metadata()
+            .and_then(|m| m.modified())
+            .unwrap_or(std::time::UNIX_EPOCH);
+        if modified < cutoff && std::fs::remove_file(&path).is_ok() {
+            removed += 1;
+        }
+    }
+    log::info!("cleanup_debug_recordings: removed {} file(s)", removed);
+    Ok(removed)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

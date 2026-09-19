@@ -11,6 +11,22 @@ use tokio::time::sleep;
 static CLIPBOARD_INJECTION_LOCK: Lazy<tokio::sync::Mutex<()>> =
     Lazy::new(|| tokio::sync::Mutex::new(()));
 
+/// Bounded validation limit (security hardening, additive only).
+/// Normal transcriptions are far below this; oversized input is rejected
+/// with a clean error instead of a multi-MB GlobalAlloc.
+pub const MAX_INJECT_TEXT_CHARS: usize = 100_000;
+
+fn check_inject_text_len(text: &str) -> Result<(), String> {
+    if text.chars().count() > MAX_INJECT_TEXT_CHARS {
+        return Err(format!(
+            "Text too long ({} chars). Maximum is {} characters.",
+            text.chars().count(),
+            MAX_INJECT_TEXT_CHARS
+        ));
+    }
+    Ok(())
+}
+
 #[cfg(target_os = "windows")]
 use windows::Win32::{
     Foundation::HWND,
@@ -372,6 +388,7 @@ fn send_key_clicks_linux(key: enigo::Key, count: usize) -> Result<()> {
 /// Saves clipboard → sets text → Ctrl+V → restores clipboard after delay
 #[tauri::command]
 pub async fn inject_text(text: String, monitor_auto_learn: Option<bool>) -> Result<(), String> {
+    check_inject_text_len(&text)?;
     #[cfg(target_os = "windows")]
     {
         let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
@@ -470,6 +487,7 @@ fn clipboard_sequence_number() -> u32 {
 /// text injection and active-selection capture.
 #[tauri::command]
 pub async fn copy_text(text: String) -> Result<(), String> {
+    check_inject_text_len(&text)?;
     #[cfg(target_os = "windows")]
     {
         let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;

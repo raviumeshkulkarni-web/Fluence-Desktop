@@ -101,36 +101,34 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Floating Bubble Studio, Overlay Fixes & Consistency
+            ## Fluence v__VERSION__ — Security Hardening & Offline-Model Fix
 
-            This release gives the recording overlay its own home, fixes clicks being swallowed around the bubble and pill, and cleans up copy and spacing across every settings screen.
+            This release hardens credential handling, renderer permissions, and input validation across the Windows app, and fixes Moonshine offline models failing on installed builds.
 
-            ### What's New
+            ### Security hardening
 
-            - **Floating Bubble Studio**:
-              - New dedicated page (sidebar + Command Palette) with live previews that run the exact production overlay code, so what you see is what the hotkey summons.
-              - Preview each style at real size, including the foreground app pill and halo state.
-              - Overlay controls moved out of General into their new home.
+            - Per-window permissions: the recording overlay and setup wizard run with least privilege; credentials, sync, model management, and dictionary/history mutation are main-window only.
+            - API keys no longer cross into overlay IPC — agent mode resolves them server-side from Windows Credential Manager.
+            - Credential storage narrowed to known slots; sync tokens stay fully server-side.
+            - HTTPS-only custom endpoints (plaintext HTTP still allowed for localhost), with warnings for custom servers.
+            - Bounded inputs (dictionary, history, clipboard/injection, audio payloads) and truncated provider error bodies.
+            - XSS hardening across settings, history, dictionary, and suggestion rendering, plus stricter content-security policies.
 
-            - **Overlay Customization**:
-              - Halo Glow toggle: soft Amethyst halo while transcribing, teal in Agent Mode.
-              - App Pill toggle: show or hide the foreground app name and icon above the overlay.
-              - New placements: Top Left, Top Center, and Top Right, with matching docked-corner treatment.
+            ### Fixes
 
-            - **Overlay Fixes & Polish**:
-              - The window now shrinks to each tier, so clicks near the bubble and compact pill reach the app underneath again.
-              - Slimmer full island (320px) and a repositioned bubble close chip that no longer overlaps the orb.
-              - Tier-timed open/close motion with a settled exit, entrance cascade, and hardened reduced-motion support.
+            - Moonshine Fast (English) and Pro (English) offline models now start correctly on installed builds (sidecar runtime lookup).
+            - Custom provider presets with hyphens save and load keys correctly.
+            - Missing LLM key in agent mode reports a clear, non-retryable message instead of a raw system error.
 
-            - **Consistency Sweep**:
-              - Page titles match sidebar and palette labels everywhere.
-              - Design-token spacing and type scale across Providers, Dictionary, Snippets, Sync, About, and Dashboard.
-              - Plain, direct copy throughout.
+            ### Verification
+
+            - Full Rust suite green in CI (`cargo test --lib`); credential-parity and agent error-mapping suites green.
+            - Manually verified on the packaged installer: hotkey dictation, cloud transcription, SenseVoice and Moonshine offline transcription, history save/reload, and model download/install screens.
 
             ---
             ### Download & Install
 
-            Download the installer (`.exe` or `.msi`) below to install or update Fluence on Windows.
+            Download the installer (`.exe`) below to install or update Fluence on Windows.
           releaseDraft: false
           prerelease: false
 

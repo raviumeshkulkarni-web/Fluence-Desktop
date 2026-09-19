@@ -725,7 +725,8 @@ mod tests {
         println!("[M4] Evidence: credentials.rs:235-251");
         println!("[M4] Logical reproduction: VERIFIED");
 
-        // Check that validate_credential_target does NOT catch this (it allows any subpath)
+        // Historical note: at the time this was written, validate_credential_target
+        // allowed any Fluence/* subpath (namespace since closed to known slots).
         // The preset name itself could be malicious if settings.json corrupted:
         let malicious_preset = "../../Windows/Credentials";
         let malicious_target = format!(
@@ -787,23 +788,76 @@ mod tests {
     // ------------------------------------------------------------
     #[test]
     fn hardening_capabilities_overpermission() {
-        let caps: serde_json::Value =
-            serde_json::from_str(include_str!("../capabilities/default.json")).unwrap();
-        let perms = caps["permissions"].as_array().unwrap();
-        println!("[HARDENING] default.json permissions: {:?}", perms);
+        let main: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/main.json")).unwrap();
+        let overlay: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/overlay.json")).unwrap();
+        let wizard: serde_json::Value =
+            serde_json::from_str(include_str!("../capabilities/wizard.json")).unwrap();
+        assert_eq!(main["windows"], serde_json::json!(["main"]));
+        assert_eq!(overlay["windows"], serde_json::json!(["overlay"]));
+        assert_eq!(wizard["windows"], serde_json::json!(["wizard"]));
+        for (name, caps) in [("overlay", &overlay), ("wizard", &wizard)] {
+            let perms = caps["permissions"].as_array().unwrap();
+            assert!(
+                perms.iter().all(|v| v.as_str() == Some("core:default")
+                    || v.get("identifier").and_then(|x| x.as_str()) == Some("core:default")),
+                "{name}.json must grant core:default only"
+            );
+        }
+        let perms = main["permissions"].as_array().unwrap();
+        println!("[HARDENING] main.json permissions: {:?}", perms);
         let has_fs_default = perms.iter().any(|v| v.as_str() == Some("fs:default"));
         let has_dialog_default = perms.iter().any(|v| v.as_str() == Some("dialog:default"));
         let has_dialog_open = perms
             .iter()
             .any(|v| v.as_str() == Some("dialog:allow-open"));
         // Hardened: fs:default removed, replaced with scoped fs:allow-* + fs:scope for $APPDATA/$APPLOCALDATA/$APPCONFIG
-        let has_fs_allow_read = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read") || v.as_str() == Some("fs:allow-read"));
-        let has_fs_allow_write = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write") || v.as_str() == Some("fs:allow-write"));
-        let has_fs_scope = perms.iter().any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
-        assert!(!has_fs_default, "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening");
-        assert!(has_fs_allow_read, "fs:allow-read with scoped allow required");
-        assert!(has_fs_allow_write, "fs:allow-write with scoped allow required");
-        assert!(has_fs_scope, "fs:scope with explicit $APPDATA/$APPLOCALDATA/$APPCONFIG allow required");
+        let has_fs_allow_read = perms.iter().any(|v| {
+            v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-read")
+                || v.as_str() == Some("fs:allow-read")
+        });
+        let has_fs_allow_write = perms.iter().any(|v| {
+            v.get("identifier").and_then(|x| x.as_str()) == Some("fs:allow-write")
+                || v.as_str() == Some("fs:allow-write")
+        });
+        let has_fs_scope = perms
+            .iter()
+            .any(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"));
+        assert!(
+            !has_fs_default,
+            "fs:default must be removed - use scoped fs:allow-* + fs:scope for hardening"
+        );
+        assert!(
+            has_fs_allow_read,
+            "fs:allow-read with scoped allow required"
+        );
+        assert!(!has_fs_allow_write, "fs:allow-write must be removed - the renderer never writes files directly (imports read server-side)");
+        let scope_paths: Vec<String> = perms
+            .iter()
+            .filter(|v| v.get("identifier").and_then(|x| x.as_str()) == Some("fs:scope"))
+            .flat_map(|v| v["allow"].as_array().cloned().unwrap_or_default())
+            .filter_map(|a| a["path"].as_str().map(str::to_string))
+            .collect();
+        assert!(
+            !scope_paths.is_empty(),
+            "fs:scope with explicit allow required"
+        );
+        assert!(
+            !scope_paths.iter().any(|p| {
+                *p == "$APPDATA/**"
+                    || *p == "$APPLOCALDATA/**"
+                    || *p == "$APPCONFIG/**"
+                    || *p == "$TEMP/**"
+            }),
+            "fs:scope must list explicit app-owned files, not tree wildcards"
+        );
+        assert!(
+            scope_paths
+                .iter()
+                .any(|p| p.ends_with("Fluence/settings.json")),
+            "fs:scope must include the explicit settings.json path"
+        );
         assert!(
             !has_dialog_default,
             "dialog:default remains granted - should be narrowed"

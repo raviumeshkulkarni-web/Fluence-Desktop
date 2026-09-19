@@ -170,6 +170,36 @@ fn v2_sidecar_candidates(
     out
 }
 
+/// Ordered DLL lookup locations for a given sidecar exe path (pure function
+/// so the ordering is unit-testable).
+///
+/// 1. Beside the exe — dev trees (`target/release|debug`), self-contained
+///    model dirs, manual installs.
+/// 2. `<exe_dir>/binaries/` — production NSIS layout. Tauri installs the
+///    `binaries/onnxruntime.dll` resource preserving its declared relative
+///    path, while `externalBin` lands flat next to the app exe, so a stock
+///    install always splits the pair across these two spots.
+fn v2_sidecar_dll_candidates(exe_path: &std::path::Path) -> Vec<std::path::PathBuf> {
+    let mut out = Vec::with_capacity(2);
+    if let Some(dir) = exe_path.parent() {
+        out.push(dir.join(crate::offline_downloader::MOONSHINE_V2_ORT_DLL));
+        out.push(
+            dir.join("binaries")
+                .join(crate::offline_downloader::MOONSHINE_V2_ORT_DLL),
+        );
+    }
+    out
+}
+
+/// Resolves the shipped Moonshine v2 sidecar exe plus its sibling
+/// onnxruntime.dll (Windows implicit DLL search starts at the loading
+/// executable's own directory, so the dll must sit beside the exe -
+/// resource-bundled in prod, build-staged in dev). The production NSIS
+/// layout splits the pair: `externalBin` lands flat next to the app exe
+/// while the `binaries/onnxruntime.dll` resource keeps its declared
+/// relative path under `<install>/binaries/`. Both spots are accepted
+/// (see `v2_sidecar_dll_candidates`); an exe without a usable DLL never
+/// shadows a healthy candidate later in the list.
 fn resolve_v2_sidecar() -> Result<std::path::PathBuf> {
     let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let exe_dir = std::env::current_exe()
@@ -177,22 +207,31 @@ fn resolve_v2_sidecar() -> Result<std::path::PathBuf> {
         .and_then(|p| p.parent().map(|d| d.to_path_buf()));
     let target_dir = manifest_dir.join("target");
     let candidates = v2_sidecar_candidates(exe_dir.as_deref(), &manifest_dir, &target_dir);
+    // Exe copies without a usable DLL must not shadow healthy ones (e.g. a
+    // stale production copy), so a missing DLL continues the scan instead
+    // of returning early. The final error still names every partial hit.
+    let mut dll_less: Vec<String> = Vec::new();
     for exe in &candidates {
-        if exe.is_file() {
-            let dll = exe
-                .parent()
-                .map(|d| d.join(crate::offline_downloader::MOONSHINE_V2_ORT_DLL));
-            match dll {
-                Some(d) if d.is_file() => return Ok(exe.clone()),
-                _ => {
-                    return Err(anyhow!(
-                        "Moonshine v2 sidecar found at {} but its {} sibling is missing; reinstall the app or rebuild the sidecar.",
-                        exe.display(),
-                        crate::offline_downloader::MOONSHINE_V2_ORT_DLL
-                    ))
-                }
-            }
+        if !exe.is_file() {
+            continue;
         }
+        let dll_found = v2_sidecar_dll_candidates(exe).iter().any(|d| d.is_file());
+        if !dll_found {
+            dll_less.push(format!(
+                "{} (no {} beside it or in its binaries/ subdir)",
+                exe.display(),
+                crate::offline_downloader::MOONSHINE_V2_ORT_DLL
+            ));
+            continue;
+        }
+        return Ok(exe.clone());
+    }
+    if !dll_less.is_empty() {
+        return Err(anyhow!(
+            "Moonshine v2 sidecar found but its {} sibling is missing: {}. Reinstall the app or rebuild the sidecar.",
+            crate::offline_downloader::MOONSHINE_V2_ORT_DLL,
+            dll_less.join("; ")
+        ));
     }
     Err(anyhow!(
         "Moonshine v2 sidecar not found. Searched: {}. The runtime ships with the app installer; on dev builds run `cargo build -p moonshine-v2-server` first.",
@@ -611,5 +650,29 @@ mod tests {
         let got = v2_sidecar_candidates(None, &manifest_dir, &target_dir);
         // No app-exe dir (e.g. test harness): dev candidates still listed.
         assert_eq!(got.len(), 3);
+    }
+
+    #[test]
+    fn v2_sidecar_dll_candidates_cover_install_and_dev_layouts() {
+        use std::path::PathBuf;
+        let exe = PathBuf::from(format!(
+            "C:/install/{}",
+            crate::offline_downloader::MOONSHINE_V2_SERVER_EXE
+        ));
+        let names: Vec<String> = v2_sidecar_dll_candidates(&exe)
+            .iter()
+            .map(|p| p.to_string_lossy().replace('\\', "/"))
+            .collect();
+        // Production NSIS layout splits the pair (exe at root, dll under
+        // binaries/), so both spots must be accepted or every installed
+        // build fails resolution with a "sibling missing" error.
+        let dll = crate::offline_downloader::MOONSHINE_V2_ORT_DLL;
+        assert_eq!(
+            names,
+            vec![
+                format!("C:/install/{dll}"),
+                format!("C:/install/binaries/{dll}"),
+            ]
+        );
     }
 }

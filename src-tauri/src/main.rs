@@ -9,6 +9,7 @@
     clippy::too_many_arguments
 )]
 
+mod acl;
 mod agent;
 mod app_icon;
 mod audio;
@@ -178,6 +179,7 @@ pub fn run() {
             dictionary::update_dictionary_entry,
             dictionary::delete_dictionary_entry,
             dictionary::import_dictionary,
+            dictionary::read_import_file,
             dictionary::export_dictionary,
             // Text expansion (snippets)
             snippets::get_snippets,
@@ -190,6 +192,7 @@ pub fn run() {
             audio::start_recording,
             audio::stop_recording,
             audio::is_recording,
+            audio::cleanup_debug_recordings,
             // Transcription
             transcribe::transcribe_audio,
             transcribe::fetch_models,
@@ -197,6 +200,7 @@ pub fn run() {
             transcribe::test_stt_connection,
             // Agent
             agent::execute_agent_command,
+            agent::execute_agent_command_secure,
             agent::test_llm_connection,
             // Clipboard
             clipboard::inject_text,

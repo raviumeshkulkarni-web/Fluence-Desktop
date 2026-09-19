@@ -61,7 +61,7 @@ async fn transcribe_pending_audio(
         }
         PendingAudio::Online { mp3_bytes } => {
             let target = crate::credentials::get_stt_target(&settings.stt_provider.preset);
-            match crate::credentials::get_api_key(target) {
+            match crate::credentials::read_api_key_target(&target) {
                 Ok(api_key) => crate::transcribe::transcribe_mp3_bytes_with_raw(
                     &settings.stt_provider.base_url,
                     &api_key,
@@ -263,7 +263,11 @@ async fn polish_transcribed_text(
     if !resp.status().is_success() {
         let status = resp.status();
         let text = resp.text().await.unwrap_or_default();
-        return Err(format!("LLM API error {}: {}", status, text));
+        return Err(format!(
+            "LLM API error {}: {}",
+            status,
+            crate::transcribe::truncate_provider_error_body(&text)
+        ));
     }
 
     #[derive(serde::Deserialize)]
@@ -309,7 +313,7 @@ pub async fn finish_transcription_flow(
 
     if settings.ai_polish_style != "none" {
         let target = crate::credentials::get_llm_target(&settings.llm_provider.preset);
-        let llm_key = crate::credentials::get_api_key(target).unwrap_or_default();
+        let llm_key = crate::credentials::read_api_key_target(&target).unwrap_or_default();
         match polish_transcribed_text(
             &settings.llm_provider.base_url,
             &llm_key,
@@ -375,7 +379,7 @@ pub async fn retry_transcription_flow(
 
     if settings.ai_polish_style != "none" {
         let target = crate::credentials::get_llm_target(&settings.llm_provider.preset);
-        let llm_key = crate::credentials::get_api_key(target).unwrap_or_default();
+        let llm_key = crate::credentials::read_api_key_target(&target).unwrap_or_default();
         if let Ok(polished) = polish_transcribed_text(
             &settings.llm_provider.base_url,
             &llm_key,

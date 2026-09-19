@@ -1,0 +1,31 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Full permissions for the main Settings window (sole admin surface)",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:default",
+    "process:allow-restart",
+    "dialog:allow-open",
+    "fs:allow-read",
+    "fs:allow-exists",
+    {
+      "identifier": "fs:scope",
+      "allow": [
+        { "path": "$APPLOCALDATA/Fluence/settings.json" },
+        { "path": "$APPLOCALDATA/Fluence/history.db" },
+        { "path": "$APPLOCALDATA/Fluence/dictionary.json" },
+        { "path": "$APPLOCALDATA/Fluence/snippets.json" },
+        { "path": "$APPLOCALDATA/Fluence/suggestions.json" },
+        { "path": "$APPLOCALDATA/Fluence/stats_events.json" },
+        { "path": "$APPLOCALDATA/Fluence/sync_metadata.json" },
+        { "path": "$APPLOCALDATA/Fluence/sync-oauth.json" },
+        { "path": "$APPLOCALDATA/Fluence/duck-restore.json" },
+        { "path": "$APPLOCALDATA/Fluence/bin/**" },
+        { "path": "$APPLOCALDATA/Fluence/debug_recordings/**" }
+      ]
+    }
+  ]
+}

@@ -58,26 +58,24 @@ interface DialogPlugin {
   open: (opts: unknown) => Promise<string | string[] | null>;
 }
 
-interface FsPlugin {
-  readTextFile: (path: string) => Promise<string>;
-}
-
-function plugins(): { dialog: DialogPlugin; fs: FsPlugin } {
+function dialogPlugin(): DialogPlugin {
   const w = window as unknown as Record<string, unknown>;
   const dialog = w.__TAURI_PLUGIN_DIALOG__ as DialogPlugin | undefined;
-  const fs = w.__TAURI_PLUGIN_FS__ as FsPlugin | undefined;
-  if (!dialog || !fs) throw new Error('File dialog plugin not available');
-  return { dialog, fs };
+  if (!dialog) throw new Error('File dialog plugin not available');
+  return dialog;
 }
 
 /** Vanilla import flow: JSON file picker → backend import → count. */
 export async function importDictionaryFile(): Promise<number | null> {
-  const { dialog, fs } = plugins();
+  const dialog = dialogPlugin();
   const path = await dialog.open({
     filters: [{ name: 'JSON', extensions: ['json'] }],
   });
   if (!path) return null;
-  const json = await fs.readTextFile(Array.isArray(path) ? path[0] : path);
+  // File bytes are read server-side (size-bounded via read_import_file).
+  const json = await invokeCmd<string>('read_import_file', {
+    path: Array.isArray(path) ? path[0] : path,
+  });
   return importDictionaryJson(json);
 }
 

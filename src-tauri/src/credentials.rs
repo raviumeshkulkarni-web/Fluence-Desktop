@@ -14,7 +14,11 @@ use windows::{
 
 const CREDENTIAL_NAMESPACE: &str = "Fluence/";
 
-/// Validate that a credential target belongs to the Fluence namespace.
+/// Validate that a credential target is one the renderer may name:
+/// the two legacy global slots or a per-preset subpath with a strict
+/// `[a-z0-9_]+` suffix. Anything else — including `Fluence/Sync/*` and
+/// arbitrary subpaths — is rejected, so one window cannot probe or
+/// squat unrelated credential slots through the generic IPC namespace.
 fn validate_credential_target(target: &str) -> Result<()> {
     if !target.starts_with(CREDENTIAL_NAMESPACE) {
         return Err(anyhow!(
@@ -24,7 +28,21 @@ fn validate_credential_target(target: &str) -> Result<()> {
     if target.contains("..") {
         return Err(anyhow!("Invalid credential target"));
     }
-    Ok(())
+    if target == STT_API_KEY_TARGET || target == LLM_API_KEY_TARGET {
+        return Ok(());
+    }
+    for base in [STT_API_KEY_TARGET, LLM_API_KEY_TARGET] {
+        if let Some(suffix) = target.strip_prefix(&format!("{base}/")) {
+            if !suffix.is_empty()
+                && suffix
+                    .chars()
+                    .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_')
+            {
+                return Ok(());
+            }
+        }
+    }
+    Err(anyhow!("Access denied: unknown credential target"))
 }
 
 #[cfg(target_os = "windows")]
@@ -174,14 +192,34 @@ pub fn delete_sync_refresh_token() -> Result<()> {
     delete_credential(SYNC_REFRESH_TOKEN_TARGET)
 }
 
+/// Canonical preset slug for credential targets (FIX-02 contract).
+/// Rules, in order: Unicode-lowercase, replace every ASCII space with `_`,
+/// then map any char that is not `[a-z0-9_]` to `_`.
+/// The frontend (`keyTarget`/`canonicalPresetSlug` in `web/src/ipc/providers.ts`
+/// and `src/js/settings.js`) implements these exact rules, so both sides name
+/// the same slot for save, read, delete, fallback resolution, and the secure
+/// Agent Mode lookup (`get_llm/stt_target` below).
+/// Collision policy: slugs that differ only by mapped characters share one
+/// slot (e.g. `my-provider` and `my_provider` both resolve to `my_provider`;
+/// last write wins). This is accepted because preset ids are product-controlled
+/// (`groq`, `openai`, `mistral`, `custom`, `Local Offline` — all collision-free)
+/// and the alternative (rejecting on write but reading a remapped slot) would
+/// reintroduce save/read asymmetry.
+/// Security: the output alphabet keeps every generated target inside
+/// `validate_credential_target` (no `/`, `.`, or `..` can survive), and IPC
+/// callers are still validated strictly — a non-canonical target sent over IPC
+/// is rejected, never silently remapped.
 fn sanitize_preset(preset: &str) -> String {
-    // Whitelist: only a-z0-9_ after lowercasing and space→underscore.
-    // Prevents `../` or `a/b/c` style preset injecting extra path segments
-    // that would still pass validate_credential_target (which only checks `..`).
     let lowered = preset.to_lowercase().replace(' ', "_");
     lowered
         .chars()
-        .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -195,9 +233,16 @@ pub fn get_llm_target(preset: &str) -> String {
     format!("{}/{}", LLM_API_KEY_TARGET, sanitize_preset(preset))
 }
 
-// Tauri commands
+// Tauri commands (caller-gated per src-tauri/src/acl.rs inventory)
 #[tauri::command]
-pub fn save_api_key(target: String, key: String) -> Result<(), String> {
+pub fn save_api_key(window: tauri::Window, target: String, key: String) -> Result<(), String> {
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
     validate_credential_target(&target).map_err(|e| e.to_string())?;
     store_credential(&target, "fluence", &key).map_err(|e| e.to_string())
 }
@@ -254,8 +299,22 @@ mod tests {
     }
 
     #[test]
-    fn valid_target_with_subpath() {
-        assert!(validate_credential_target("Fluence/any/sub/path").is_ok());
+    fn reject_arbitrary_subpath() {
+        // The generic Fluence/* namespace is closed: only the known
+        // STT/LLM slots (plus strict per-preset suffixes) are nameable.
+        assert!(validate_credential_target("Fluence/any/sub/path").is_err());
+        assert!(validate_credential_target("Fluence/Sync/RefreshToken").is_err());
+        assert!(validate_credential_target("Fluence/STT_ApiKey/groq/extra").is_err());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/GROQ").is_err());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/groq-key").is_err());
+        assert!(validate_credential_target("Fluence/STT_ApiKey/").is_err());
+    }
+
+    #[test]
+    fn valid_per_preset_targets() {
+        assert!(validate_credential_target("Fluence/STT_ApiKey/groq").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/local_offline").is_ok());
+        assert!(validate_credential_target("Fluence/LLM_ApiKey/custom").is_ok());
     }
 
     #[test]
@@ -279,7 +338,7 @@ mod tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn secret_service_store_read_delete_roundtrip() {
-        let target = format!("Fluence/__test_roundtrip_{}", std::process::id());
+        let target = get_llm_target(&format!("test_rt_{}", std::process::id()));
         validate_credential_target(&target).unwrap();
 
         let open = || {
@@ -311,17 +370,207 @@ mod tests {
         delete_credential(&target).expect("delete must succeed");
         assert!(read_credential(&target).is_err());
     }
+    // FIX-02: canonical slug matrix. Every generated target must pass the
+    // strict validator (save/read/delete symmetry), and the frontend
+    // `canonicalPresetSlug` must produce the identical slug (see
+    // tests/credential-target-parity.test.mjs for the cross-side check).
+    #[test]
+    fn canonical_slug_builtin_presets_unchanged() {
+        for preset in ["groq", "openai", "mistral", "custom"] {
+            assert_eq!(
+                get_llm_target(preset),
+                format!("Fluence/LLM_ApiKey/{preset}")
+            );
+            assert_eq!(
+                get_stt_target(preset),
+                format!("Fluence/STT_ApiKey/{preset}")
+            );
+        }
+        // "Local Offline" keeps its historical slot.
+        assert_eq!(
+            get_stt_target("Local Offline"),
+            "Fluence/STT_ApiKey/local_offline"
+        );
+    }
+
+    #[test]
+    fn canonical_slug_hyphen_space_case_folded() {
+        assert_eq!(
+            get_llm_target("deep-infra"),
+            "Fluence/LLM_ApiKey/deep_infra"
+        );
+        assert_eq!(
+            get_llm_target("deep_infra"),
+            "Fluence/LLM_ApiKey/deep_infra"
+        );
+        assert_eq!(
+            get_llm_target("Deep Infra"),
+            "Fluence/LLM_ApiKey/deep_infra"
+        );
+        assert_eq!(get_llm_target("GROQ"), "Fluence/LLM_ApiKey/groq");
+    }
+
+    #[test]
+    fn canonical_slug_strips_traversal_characters() {
+        for preset in ["a/b", "../x", "..\\..\\secret", "C:\\keys", "/abs", "a:b"] {
+            let slug = sanitize_preset(preset);
+            assert!(
+                !slug.contains('/')
+                    && !slug.contains('\\')
+                    && !slug.contains(':')
+                    && !slug.contains('.'),
+                "slug for {preset:?} must not carry path characters, got {slug:?}"
+            );
+            assert!(
+                validate_credential_target(&get_llm_target(preset)).is_ok(),
+                "generated target for {preset:?} must validate"
+            );
+        }
+    }
+
+    #[test]
+    fn canonical_slug_collision_is_documented_last_write_wins() {
+        // `my-provider` and `my_provider` intentionally share one slot.
+        assert_eq!(get_llm_target("my-provider"), get_llm_target("my_provider"));
+        assert_eq!(
+            get_llm_target("my-provider"),
+            "Fluence/LLM_ApiKey/my_provider"
+        );
+    }
+
+    #[test]
+    fn canonical_slug_empty_preset_fails_closed() {
+        // An empty slug must never become a valid target: IPC callers sending
+        // it are rejected instead of being silently remapped.
+        assert!(validate_credential_target(&get_llm_target("")).is_err());
+        // Whitespace-only input folds to underscores — still strictly inside
+        // the namespace, and the frontend folds it identically (`___`).
+        assert_eq!(sanitize_preset("   "), "___");
+        assert!(validate_credential_target(&get_stt_target("   ")).is_ok());
+    }
+
+    // FIX-01: the secure Agent Mode path resolves through
+    // `get_llm_api_key_or_err`, so a missing key must surface the stable
+    // actionable message — never a raw Credential Manager / OS error.
+    #[test]
+    fn missing_llm_key_error_is_actionable_not_raw() {
+        let preset = "test_nonexistent_preset_xyz_abc";
+        match get_llm_api_key_or_err(preset) {
+            Err(e) => {
+                assert!(e.contains("Missing API key"), "got: {e}");
+                assert!(e.contains(preset), "preset context missing: {e}");
+                for raw in [
+                    "CredReadW",
+                    "CredWriteW",
+                    "os error",
+                    "Credential Manager",
+                    "Access denied",
+                ] {
+                    assert!(!e.contains(raw), "raw backend detail leaked: {e}");
+                }
+            }
+            Ok(_) => println!("SKIP: unexpected key present for {preset}"),
+        }
+    }
+
+    #[test]
+    fn missing_stt_key_error_is_actionable_not_raw() {
+        let preset = "test_nonexistent_preset_xyz_abc";
+        match get_stt_api_key_or_err(preset) {
+            Err(e) => {
+                assert!(e.contains("Missing API key"), "got: {e}");
+                assert!(e.contains(preset), "preset context missing: {e}");
+            }
+            Ok(_) => println!("SKIP: unexpected key present for {preset}"),
+        }
+    }
+
+    // Windows runtime proof for FIX-02 (hyphenated preset lifecycle) and the
+    // FIX-01 missing-key message, against the REAL Credential Manager.
+    // Opt-in only (`cargo test -- --ignored`): it writes and deletes a real
+    // credential, so it must never run as part of the normal suite.
+    #[test]
+    #[ignore]
+    #[cfg(target_os = "windows")]
+    fn windows_credential_manager_canonical_roundtrip() {
+        // Hyphenated preset exercises the canonical fold end to end.
+        let preset = "test-rt-deep-infra";
+        let target = get_llm_target(preset);
+        assert_eq!(target, "Fluence/LLM_ApiKey/test_rt_deep_infra");
+        // Start clean and always leave clean (best effort).
+        let _ = delete_credential(&target);
+        let secret = "fluence-test-secret-value";
+        store_credential(&target, "fluence", secret).expect("test cred must store");
+        // Read back through the same server-side path the secure Agent Mode
+        // uses (exact slot + global/groq fallbacks).
+        let read_back = read_api_key_target(&target).expect("test cred must read");
+        assert_eq!(read_back, secret);
+        // Delete is exact-slot: the per-preset slot itself must be gone…
+        delete_credential(&target).expect("test cred must delete");
+        assert!(
+            read_credential(&target).is_err(),
+            "per-preset slot must be gone after delete"
+        );
+        // …after which resolution either reports a friendly missing-key error
+        // (no global key on this machine) or serves the documented global
+        // fallback (a real global key exists) — never a raw OS error, and
+        // never the deleted per-preset value.
+        match get_llm_api_key_or_err(preset) {
+            Err(e) => {
+                assert!(e.contains("Missing API key"), "got: {e}");
+                assert!(e.contains(preset), "preset context missing: {e}");
+                for raw in ["CredReadW", "os error", "Credential Manager"] {
+                    assert!(!e.contains(raw), "raw backend detail leaked: {e}");
+                }
+            }
+            Ok(fallback_key) => {
+                let global_key = read_credential(LLM_API_KEY_TARGET)
+                    .expect("fallback key must come from the global slot");
+                assert_eq!(fallback_key, global_key);
+                assert_ne!(
+                    fallback_key, secret,
+                    "deleted per-preset value must not resurface"
+                );
+                println!(
+                    "NOTE: machine holds a real global LLM key; fallback served as documented"
+                );
+            }
+        }
+        let _ = delete_credential(&target);
+    }
 }
 
 #[tauri::command]
-pub fn get_api_key(target: String) -> Result<String, String> {
-    validate_credential_target(&target).map_err(|e| e.to_string())?;
+pub fn get_api_key(window: tauri::Window, target: String) -> Result<String, String> {
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
+    // Task 4 moved overlay agent mode server-side: no renderer window
+    // besides main/wizard may read credentials anymore.
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
+    read_api_key_target(&target)
+}
+
+/// Direct credential read without migration fallbacks (exact slot only).
+fn read_exact_slot(target: &str) -> Option<String> {
+    read_credential(target)
+        .ok()
+        .filter(|key| !key.trim().is_empty())
+}
+
+/// Server-side credential read (backend use only — bypasses window gates).
+/// Used by `get_llm/stt_api_key_or_err` so workflows never depend on IPC.
+/// Includes the legacy migration fallbacks (global slot, groq cross-slot)
+/// so existing installs keep working after the per-preset migration.
+pub(crate) fn read_api_key_target(target: &str) -> Result<String, String> {
+    validate_credential_target(target).map_err(|e| e.to_string())?;
 
     // 1. Try the specific target requested
-    if let Ok(key) = read_credential(&target) {
-        if !key.trim().is_empty() {
-            return Ok(key);
-        }
+    if let Some(key) = read_exact_slot(target) {
+        return Ok(key);
     }
 
     // 2. Fallback: If it's a provider-specific target, check the legacy global slot
@@ -382,7 +631,7 @@ pub fn get_api_key(target: String) -> Result<String, String> {
 /// Helper for Agent/LLM paths: returns a user-facing error for missing credentials
 pub fn get_llm_api_key_or_err(preset: &str) -> Result<String, String> {
     let target = get_llm_target(preset);
-    match get_api_key(target.clone()) {
+    match read_api_key_target(&target) {
         Ok(k) if !k.trim().is_empty() => Ok(k),
         _ => Err(format!(
             "Missing API key for LLM provider '{}'. Open Settings → Providers → LLM → Save key.",
@@ -393,7 +642,7 @@ pub fn get_llm_api_key_or_err(preset: &str) -> Result<String, String> {
 
 pub fn get_stt_api_key_or_err(preset: &str) -> Result<String, String> {
     let target = get_stt_target(preset);
-    match get_api_key(target.clone()) {
+    match read_api_key_target(&target) {
         Ok(k) if !k.trim().is_empty() => Ok(k),
         _ => Err(format!(
             "Missing API key for STT provider '{}'. Open Settings → Providers → STT → Save key.",
@@ -403,7 +652,11 @@ pub fn get_stt_api_key_or_err(preset: &str) -> Result<String, String> {
 }
 
 #[tauri::command]
-pub fn delete_api_key(target: String) -> Result<(), String> {
+pub fn delete_api_key(window: tauri::Window, target: String) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    if crate::acl::is_sync_credential_target(&target) {
+        return Err("Sync credentials are managed by the sync scheduler, not IPC".to_string());
+    }
     validate_credential_target(&target).map_err(|e| e.to_string())?;
     delete_credential(&target).map_err(|e| e.to_string())
 }

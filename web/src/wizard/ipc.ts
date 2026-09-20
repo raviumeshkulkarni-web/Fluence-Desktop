@@ -44,6 +44,7 @@ export interface WizardSettings {
   hotkey: string;
   recording_mode: string;
   overlay_position: string;
+  overlay_style: string;
   stt_provider: { preset: string; base_url: string; model: string; api_key_saved: boolean };
   llm_provider: { preset: string; base_url: string; model: string; api_key_saved: boolean };
   auto_start: boolean;

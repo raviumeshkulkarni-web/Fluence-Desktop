@@ -101,29 +101,27 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Security Hardening & Offline-Model Fix
+            ## Fluence v__VERSION__ — Premium Onboarding & System Theme
 
-            This release hardens credential handling, renderer permissions, and input validation across the Windows app, and fixes Moonshine offline models failing on installed builds.
+            First impressions first: the Windows setup wizard is rebuilt as a calm, Windows-OOBE-style flow, and the app now follows your system theme automatically.
 
-            ### Security hardening
+            ### New onboarding (9 steps)
 
-            - Per-window permissions: the recording overlay and setup wizard run with least privilege; credentials, sync, model management, and dictionary/history mutation are main-window only.
-            - API keys no longer cross into overlay IPC — agent mode resolves them server-side from Windows Credential Manager.
-            - Credential storage narrowed to known slots; sync tokens stay fully server-side.
-            - HTTPS-only custom endpoints (plaintext HTTP still allowed for localhost), with warnings for custom servers.
-            - Bounded inputs (dictionary, history, clipboard/injection, audio payloads) and truncated provider error bodies.
-            - XSS hardening across settings, history, dictionary, and suggestion rendering, plus stricter content-security policies.
+            - Centered welcome with the brand-master mark, then a dedicated features showcase.
+            - Theme picker right up front (Dark / Light / System) with a live preview — the rest of onboarding renders in your choice.
+            - Overlay style picker with live previews of Full Status Island, Compact Pill, and Minimal Bubble — the same previews as Settings.
+            - Steps fit the window with no clipping; scrolling remains as a fallback for small windows and large text scaling.
+            - Monochrome wayfinding (progress + dots), text-only buttons, real button radios with visible labels everywhere.
 
-            ### Fixes
+            ### System theme in the app
 
-            - Moonshine Fast (English) and Pro (English) offline models now start correctly on installed builds (sidecar runtime lookup).
-            - Custom provider presets with hyphens save and load keys correctly.
-            - Missing LLM key in agent mode reports a clear, non-retryable message instead of a raw system error.
+            - New System option follows Windows dark/light live, no restart. Sidebar cycles Dark → Light → System.
+            - Onboarding saves your real choice (`auto` tracks the OS); the backend records the resolved value.
 
             ### Verification
 
-            - Full Rust suite green in CI (`cargo test --lib`); credential-parity and agent error-mapping suites green.
-            - Manually verified on the packaged installer: hotkey dictation, cloud transcription, SenseVoice and Moonshine offline transcription, history save/reload, and model download/install screens.
+            - Full Rust suite green in CI (`cargo test --lib`); credential-parity, agent error-mapping, and security suites green.
+            - Manually verified in the dev app: all 9 wizard steps end to end, settings/keys/overlay/theme persistence, and theme follow on OS switch.
 
             ---
             ### Download & Install

@@ -1,4 +1,5 @@
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { useRef } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { WizardData } from '../Wizard';
 import { HotkeyRecorder } from '../HotkeyRecorder';
 
@@ -9,15 +10,52 @@ interface StepHotkeyProps {
   onRecordingChange: (recording: boolean) => void;
 }
 
-// Step 3: hotkey recorder plus recording-mode selector. The mode options
-// render as radio items in the vanilla .mode-option chrome (selected class
-// follows the checked value); keyboard moves with arrows, one tab stop.
+const MODES = [
+  {
+    value: 'push_to_toggle',
+    title: 'Push-to-Toggle',
+    desc: 'Press once to start, press again to stop',
+  },
+  {
+    value: 'hold_to_record',
+    title: 'Hold-to-Record',
+    desc: 'Hold key to record, release to transcribe',
+  },
+] as const;
+
+// Step 5: hotkey recorder plus recording-mode selector. The modes are real
+// buttons in a radiogroup (roving arrows, one tab stop) — the previous
+// RadioGroupItem-as-card swallowed its children, which is why the options
+// rendered as empty boxes.
 export function StepHotkey({
   data,
   onPatch,
   active,
   onRecordingChange,
 }: StepHotkeyProps) {
+  const groupRef = useRef<HTMLDivElement>(null);
+
+  const onGroupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const buttons = Array.from(
+      groupRef.current?.querySelectorAll<HTMLButtonElement>('.seg-option') ?? [],
+    );
+    if (!buttons.length) return;
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      next = (current + 1 + buttons.length) % buttons.length;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      next = (current - 1 + buttons.length) % buttons.length;
+    } else {
+      return;
+    }
+    const target = buttons[next];
+    target?.focus();
+    target?.click();
+  };
+
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
@@ -34,32 +72,35 @@ export function StepHotkey({
           onRecordingChange={onRecordingChange}
         />
         <div className="form-row">
-          <label id="wiz-mode-label">Recording Mode</label>
-          <RadioGroup
+          <span id="wiz-mode-label" className="field-label">
+            Recording Mode
+          </span>
+          <div
+            ref={groupRef}
+            role="radiogroup"
             aria-labelledby="wiz-mode-label"
-            value={data.recordingMode}
-            onValueChange={(v) => onPatch({ recordingMode: v })}
-            className="mode-selector"
+            className="seg-selector"
+            onKeyDown={onGroupKeyDown}
           >
-            <RadioGroupItem
-              value="push_to_toggle"
-              data-mode="push_to_toggle"
-              className={`mode-option${data.recordingMode === 'push_to_toggle' ? ' selected' : ''}`}
-            >
-              <div className="mode-title">Push-to-Toggle</div>
-              <div className="mode-desc">Press once to start, press again to stop</div>
-            </RadioGroupItem>
-            <RadioGroupItem
-              value="hold_to_record"
-              data-mode="hold_to_record"
-              className={`mode-option${data.recordingMode === 'hold_to_record' ? ' selected' : ''}`}
-            >
-              <div className="mode-title">Hold-to-Record</div>
-              <div className="mode-desc">Hold key to record, release to transcribe</div>
-            </RadioGroupItem>
-          </RadioGroup>
+            {MODES.map((m) => (
+              <button
+                key={m.value}
+                type="button"
+                role="radio"
+                aria-checked={data.recordingMode === m.value}
+                data-mode={m.value}
+                className={`seg-option${
+                  data.recordingMode === m.value ? ' selected' : ''
+                }`}
+                onClick={() => onPatch({ recordingMode: m.value })}
+              >
+                <span className="seg-title">{m.title}</span>
+                <span className="seg-desc">{m.desc}</span>
+              </button>
+            ))}
+          </div>
         </div>
-        <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', marginTop: 4 }}>
+        <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', margin: 0 }}>
           <strong>Tip:</strong> Long press (&gt;800ms) activates Agent Mode for AI-powered editing commands
         </p>
       </div>

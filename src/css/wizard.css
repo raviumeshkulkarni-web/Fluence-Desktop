@@ -58,9 +58,11 @@ body {
   position: relative;
 }
 
-/* Wizard Steps Container */
+/* Wizard Steps Container — each step is its own scrollport so tall content
+   (Step 2) scrolls inside the fixed window instead of clipping. */
 .wizard-steps {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
@@ -72,11 +74,15 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 32px var(--spacing-xl) var(--spacing-md);
-  gap: var(--spacing-md);
+  padding: 26px var(--spacing-xl) 20px;
+  gap: 14px;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s var(--ease-standard);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  transition: opacity 0.38s var(--ease-premium, cubic-bezier(0.16, 1, 0.3, 1)), transform 0.38s var(--ease-premium, cubic-bezier(0.16, 1, 0.3, 1));
 }
 
 .wizard-step.active {
@@ -148,38 +154,41 @@ body {
   gap: var(--spacing-md);
 }
 
-/* Feature Highlights (Step 1) */
+/* Feature Highlights (Step 1) — quiet OOBE rows, not boxed AI cards. */
 .wizard-feature-list {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
+  gap: 0;
   width: 100%;
-  max-width: 360px;
+  max-width: 380px;
   margin-top: var(--spacing-xs);
+  border-top: 1px solid var(--color-border-subtle);
+  list-style: none;
 }
 
 .wizard-feature-card {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-  padding: 12px 14px;
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-md);
+  padding: 10px 2px;
+  background: transparent;
+  border: 0;
+  border-bottom: 1px solid var(--color-border-subtle);
+  border-radius: 0;
   transition: var(--transition-fast);
 }
 
 .wizard-feature-card:hover {
-  background: var(--color-surface-elevated);
-  border-color: var(--color-border);
-  transform: translateY(-1px);
+  background: transparent;
+  border-bottom-color: var(--color-border-structural);
+  transform: none;
 }
 
 .wizard-feature-icon {
-  width: 34px;
-  height: 34px;
+  width: 30px;
+  height: 30px;
   border-radius: var(--radius-sm);
-  background: var(--color-surface);
+  background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-structural);
   display: flex;
   align-items: center;
@@ -686,4 +695,43 @@ body {
 
 .fluence-logo-svg {
   filter: none;
+}
+
+@media (max-width: 520px) {
+  .wizard-step {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
+
+  .wizard-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-provider-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .position-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .mode-selector {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-height: 560px) {
+  .wizard-step {
+    padding-top: 20px;
+    gap: 12px;
+  }
+
+  .fluence-logo-container {
+    width: 64px;
+    height: 64px;
+  }
+
+  .test-area {
+    padding: var(--spacing-md);
+  }
 }

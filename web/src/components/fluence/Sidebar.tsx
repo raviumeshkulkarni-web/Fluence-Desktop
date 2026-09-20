@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   BookOpen,
@@ -8,6 +8,7 @@ import {
   History,
   Info,
   LayoutDashboard,
+  Monitor,
   Moon,
   PanelLeftClose,
   PanelLeftOpen,
@@ -24,8 +25,22 @@ import {
 } from '@/components/ui/tooltip';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
-import type { Theme } from '@/lib/theme';
+import type { ThemeChoice } from '@/lib/theme';
 import type { Route } from '@/App';
+
+// Sidebar theme control cycles Dark → Light → System (follows the OS live).
+// The icon + label always show the active choice, never the target.
+const THEME_CYCLE: Record<ThemeChoice, ThemeChoice> = {
+  dark: 'light',
+  light: 'auto',
+  auto: 'dark',
+};
+
+const THEME_META: Record<ThemeChoice, { label: string; Icon: ReactNode }> = {
+  dark: { label: 'Dark', Icon: <Moon className="sidebar-theme-icon" aria-hidden="true" /> },
+  light: { label: 'Light', Icon: <Sun className="sidebar-theme-icon" aria-hidden="true" /> },
+  auto: { label: 'System', Icon: <Monitor className="sidebar-theme-icon" aria-hidden="true" /> },
+};
 
 const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -44,15 +59,15 @@ export function Sidebar({
   onNavigate,
   collapsed,
   onToggleCollapsed,
-  theme,
-  onToggleTheme,
+  themeChoice,
+  onCycleTheme,
 }: {
   route: Route;
   onNavigate: (page: Route) => void;
   collapsed: boolean;
   onToggleCollapsed: () => void;
-  theme: Theme;
-  onToggleTheme: () => void;
+  themeChoice: ThemeChoice;
+  onCycleTheme: () => void;
 }) {
   const [appVersion, setAppVersion] = useState('1.0.0');
   const updater = useUpdater();
@@ -145,33 +160,27 @@ export function Sidebar({
               <button
                 type="button"
                 className="sidebar-theme-btn"
-                aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
-                aria-pressed={theme === 'light'}
-                onClick={onToggleTheme}
+                aria-label={`Theme: ${THEME_META[themeChoice].label}. Activate for ${THEME_META[THEME_CYCLE[themeChoice]].label}.`}
+                onClick={onCycleTheme}
               >
-                {theme === 'dark'
-                  ? <Sun className="sidebar-theme-icon" aria-hidden="true" />
-                  : <Moon className="sidebar-theme-icon" aria-hidden="true" />}
+                {THEME_META[themeChoice].Icon}
               </button>
             </TooltipTrigger>
             <TooltipContent side="right">
-              {theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+              {`Theme: ${THEME_META[themeChoice].label}`}
             </TooltipContent>
           </Tooltip>
         ) : (
           <button
             type="button"
             className="sidebar-theme-btn"
-            aria-label={theme === 'dark' ? 'Switch to light mode (Ctrl+Shift+L)' : 'Switch to dark mode (Ctrl+Shift+L)'}
-            aria-pressed={theme === 'light'}
-            title={theme === 'dark' ? 'Switch to light mode (Ctrl+Shift+L)' : 'Switch to dark mode (Ctrl+Shift+L)'}
-            onClick={onToggleTheme}
+            aria-label={`Theme: ${THEME_META[themeChoice].label} (Ctrl+Shift+L toggles dark and light)`}
+            title={`Theme: ${THEME_META[themeChoice].label} — activate to cycle`}
+            onClick={onCycleTheme}
           >
-            {theme === 'dark'
-              ? <Sun className="sidebar-theme-icon" aria-hidden="true" />
-              : <Moon className="sidebar-theme-icon" aria-hidden="true" />}
+            {THEME_META[themeChoice].Icon}
             <span className="sidebar-theme-label">
-              {theme === 'dark' ? 'Light mode' : 'Dark mode'}
+              {THEME_META[themeChoice].label}
             </span>
           </button>
         )}

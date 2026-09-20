@@ -5,13 +5,16 @@ import { TooltipProvider } from '@/components/ui/tooltip';
 import { WizardTitlebar } from './WizardTitlebar';
 import { saveApiKey } from './ipc';
 import { StepWelcome } from './steps/StepWelcome';
+import { StepFeatures } from './steps/StepFeatures';
 import { StepApiKey } from './steps/StepApiKey';
 import { StepHotkey } from './steps/StepHotkey';
 import { StepPosition } from './steps/StepPosition';
+import { StepStyle } from './steps/StepStyle';
+import { StepTheme } from './steps/StepTheme';
 import { StepTest } from './steps/StepTest';
 import { StepDone } from './steps/StepDone';
 
-export const TOTAL_STEPS = 6;
+export const TOTAL_STEPS = 9;
 
 export interface WizardData {
   provider: string;
@@ -22,6 +25,8 @@ export interface WizardData {
   hotkey: string;
   recordingMode: string;
   overlayPosition: string;
+  overlayStyle: string;
+  themeMode: string;
   skipApiKey: boolean;
 }
 
@@ -34,15 +39,20 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
   hotkey: 'Ctrl+Shift+Space',
   recordingMode: 'push_to_toggle',
   overlayPosition: 'bottom_right',
+  overlayStyle: 'full',
+  themeMode: 'auto',
   skipApiKey: false,
 };
 
 const STEP_TITLES = [
   '',
   'Welcome to Fluence Transcribe',
+  'Choose Your Theme',
+  'What Fluence Can Do',
   'Connect Your API Key',
   'Set Your Hotkey',
   'Overlay Position',
+  'Choose Your Overlay',
   'Test Your Setup',
   "You're All Set!",
 ];
@@ -50,7 +60,7 @@ const STEP_TITLES = [
 function nextLabel(step: number): string {
   if (step === 1) return 'Get Started';
   if (step === TOTAL_STEPS - 1) return 'Finish Setup';
-  return 'Continue →';
+  return 'Continue';
 }
 
 // Faithful port of the vanilla wizard shell: same 6-step flow, same
@@ -94,10 +104,14 @@ export function Wizard() {
       setLeaving({ from: stepRef.current, dir });
       setStep(n);
       setEntered(false);
+      // Incoming step always starts at the top — a mid-scroll position must
+      // never persist across steps in the fixed-height window.
+      document.getElementById(`step-${n}`)?.scrollTo({ top: 0 });
       later(30, () => {
         setEntered(true);
         const el = document.getElementById(`step-${n}`);
-        el?.querySelector<HTMLElement>('.step-title')?.focus();
+        el?.scrollTo({ top: 0 });
+        el?.querySelector<HTMLElement>('.step-title')?.focus({ preventScroll: true });
         const announcer = document.getElementById('wiz-step-announcer');
         if (announcer) announcer.textContent = `Step ${n} of ${TOTAL_STEPS}: ${STEP_TITLES[n]}`;
       });
@@ -110,6 +124,47 @@ export function Wizard() {
     setData((d) => ({ ...d, ...patch }));
   }, []);
 
+  // The theme step previews live: the wizard document follows the pending
+  // choice (System tracks the OS while the wizard is open), so what the
+  // user picks is what they see. Restores dark on unmount; the saved
+  // choice lands in the settings shell via StepDone.
+  useEffect(() => {
+    const resolve = (): 'dark' | 'light' => {
+      if (dataRef.current.themeMode === 'light') return 'light';
+      if (dataRef.current.themeMode === 'dark') return 'dark';
+      try {
+        return window.matchMedia?.('(prefers-color-scheme: light)').matches
+          ? 'light'
+          : 'dark';
+      } catch {
+        return 'dark';
+      }
+    };
+    const apply = () => {
+      const t = resolve();
+      document.documentElement.dataset.theme = t;
+      document.documentElement.style.colorScheme = t;
+    };
+    apply();
+    let mq: MediaQueryList | null = null;
+    const onChange = () => apply();
+    try {
+      mq = window.matchMedia?.('(prefers-color-scheme: light)') ?? null;
+      mq?.addEventListener('change', onChange);
+    } catch {
+      mq = null;
+    }
+    return () => {
+      try {
+        mq?.removeEventListener('change', onChange);
+      } catch {
+        // Listener removal is best-effort on teardown.
+      }
+      document.documentElement.dataset.theme = 'dark';
+      document.documentElement.style.colorScheme = 'dark';
+    };
+  }, [data.themeMode]);
+
   const flashNext = useCallback(() => {
     setNextGlow(true);
     window.setTimeout(() => setNextGlow(false), 1000);
@@ -118,7 +173,7 @@ export function Wizard() {
   const validateAndNext = useCallback(async () => {
     const s = stepRef.current;
     const d = dataRef.current;
-    if (s === 2 && !d.skipApiKey && d.provider !== 'Local Offline') {
+    if (s === 4 && !d.skipApiKey && d.provider !== 'Local Offline') {
       const key = d.apiKey.trim();
       const baseUrl = d.baseUrl.trim();
       if (d.provider === 'custom' && !baseUrl) {
@@ -154,6 +209,20 @@ export function Wizard() {
         target?.closest?.('button, input, select, textarea, a, #wiz-hotkey-display')
       ) {
         return;
+      }
+      // Up/Down scroll first when the active step overflows; only when the
+      // step is already at its edge (or not scrollable) do they move steps.
+      // Left/Right always move steps. Keeps keyboard scroll working inside
+      // the fixed-height window without breaking the nav contract.
+      const scroller = document.getElementById(`step-${s}`);
+      const canScroll = scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false;
+      if (e.key === 'ArrowDown' && canScroll && scroller) {
+        const atBottom =
+          scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 2;
+        if (!atBottom) return;
+      }
+      if (e.key === 'ArrowUp' && canScroll && scroller) {
+        if (scroller.scrollTop > 2) return;
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
@@ -195,7 +264,7 @@ export function Wizard() {
           style={{ opacity: step === 1 ? 0 : 1 }}
         />
         <div className="wizard-steps">
-          {[1, 2, 3, 4, 5, 6].map((i) => (
+          {Array.from({ length: TOTAL_STEPS }, (_, k) => k + 1).map((i) => (
             <section
               key={i}
               id={`step-${i}`}
@@ -204,7 +273,9 @@ export function Wizard() {
               aria-current={i === step ? 'step' : undefined}
             >
               {i === 1 && <StepWelcome />}
-              {i === 2 && (
+              {i === 2 && <StepTheme data={data} onPatch={patchData} />}
+              {i === 3 && <StepFeatures />}
+              {i === 4 && (
                 <StepApiKey
                   data={data}
                   onPatch={patchData}
@@ -213,17 +284,18 @@ export function Wizard() {
                   onAdvance={() => goTo(stepRef.current + 1)}
                 />
               )}
-              {i === 3 && (
+              {i === 5 && (
                 <StepHotkey
                   data={data}
                   onPatch={patchData}
-                  active={step === 3}
+                  active={step === 5}
                   onRecordingChange={setRecordingHotkey}
                 />
               )}
-              {i === 4 && <StepPosition data={data} onPatch={patchData} />}
-              {i === 5 && <StepTest data={data} />}
-              {i === 6 && <StepDone data={data} />}
+              {i === 6 && <StepPosition data={data} onPatch={patchData} />}
+              {i === 7 && <StepStyle data={data} onPatch={patchData} />}
+              {i === 8 && <StepTest data={data} />}
+              {i === 9 && <StepDone data={data} />}
             </section>
           ))}
         </div>
@@ -234,10 +306,10 @@ export function Wizard() {
             style={{ visibility: step > 1 && step < TOTAL_STEPS ? 'visible' : 'hidden' }}
             onClick={() => goTo(step - 1)}
           >
-            ← Back
+            Back
           </Button>
           <div className="step-dots" id="step-dots" aria-hidden="true">
-            {[1, 2, 3, 4, 5, 6].map((i) => (
+            {Array.from({ length: TOTAL_STEPS }, (_, k) => k + 1).map((i) => (
               <div
                 key={i}
                 data-dot={i}

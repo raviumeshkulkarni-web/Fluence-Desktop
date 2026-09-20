@@ -1,4 +1,5 @@
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { useRef } from 'react';
+import type { KeyboardEvent } from 'react';
 import type { WizardData } from '../Wizard';
 
 interface StepPositionProps {
@@ -12,9 +13,34 @@ const POSITIONS = [
   { value: 'bottom_right', cls: 'pos-right', label: 'Bottom Right' },
 ] as const;
 
-// Step 4: overlay position as radio items in the vanilla .position-option
-// chrome (preview dot + label, selected class follows the checked value).
+// Step 6: overlay position. Real buttons in a radiogroup — the previous
+// RadioGroupItem-as-card swallowed its children, so the previews and labels
+// never rendered and the step read as three ambiguous boxes. Each option now
+// shows a screen mock with the indicator dot plus a visible label.
 export function StepPosition({ data, onPatch }: StepPositionProps) {
+  const groupRef = useRef<HTMLDivElement>(null);
+
+  const onGroupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    const buttons = Array.from(
+      groupRef.current?.querySelectorAll<HTMLButtonElement>('.position-option') ?? [],
+    );
+    if (!buttons.length) return;
+    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
+    let next: number | null = null;
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+      e.preventDefault();
+      next = (current + 1 + buttons.length) % buttons.length;
+    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+      e.preventDefault();
+      next = (current - 1 + buttons.length) % buttons.length;
+    } else {
+      return;
+    }
+    const target = buttons[next];
+    target?.focus();
+    target?.click();
+  };
+
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
@@ -24,28 +50,33 @@ export function StepPosition({ data, onPatch }: StepPositionProps) {
         Choose where the floating recording indicator appears on your screen during voice capture.
       </p>
       <div className="step-content">
-        <RadioGroup
+        <div
+          ref={groupRef}
+          role="radiogroup"
           aria-label="Overlay position"
-          value={data.overlayPosition}
-          onValueChange={(v) => onPatch({ overlayPosition: v })}
           className="position-selector"
+          onKeyDown={onGroupKeyDown}
         >
           {POSITIONS.map((p) => (
-            <RadioGroupItem
+            <button
               key={p.value}
-              value={p.value}
+              type="button"
+              role="radio"
+              aria-checked={data.overlayPosition === p.value}
+              aria-label={p.label}
               data-pos={p.value}
               className={`position-option ${p.cls}${
                 data.overlayPosition === p.value ? ' selected' : ''
               }`}
+              onClick={() => onPatch({ overlayPosition: p.value })}
             >
-              <div className="position-preview" aria-hidden="true">
-                <div className="position-dot" />
-              </div>
-              <div className="position-label">{p.label}</div>
-            </RadioGroupItem>
+              <span className="position-preview" aria-hidden="true">
+                <span className="position-dot" />
+              </span>
+              <span className="position-label">{p.label}</span>
+            </button>
           ))}
-        </RadioGroup>
+        </div>
       </div>
     </>
   );

@@ -96,6 +96,17 @@ function setupKeyboardNavigation() {
       return;
     }
 
+    // Up/Down scroll first when the active step overflows; only at the edge
+    // (or when not scrollable) do they move steps.
+    const scroller = document.getElementById(`step-${currentStep}`);
+    const canScroll = scroller ? scroller.scrollHeight > scroller.clientHeight + 1 : false;
+    if (e.key === 'ArrowDown' && canScroll && scroller) {
+      if (scroller.scrollTop + scroller.clientHeight < scroller.scrollHeight - 2) return;
+    }
+    if (e.key === 'ArrowUp' && canScroll && scroller) {
+      if (scroller.scrollTop > 2) return;
+    }
+
     if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
       e.preventDefault();
       if (currentStep < TOTAL_STEPS) updateStep(currentStep + 1);
@@ -130,8 +141,10 @@ function updateStep(step) {
 
   currentStep = step;
 
-  // Animate in new
+  // Animate in new — incoming step always starts at the top so a mid-scroll
+  // position never persists across steps in the fixed-height window.
   const nextEl = document.getElementById(`step-${step}`);
+  if (nextEl && typeof nextEl.scrollTo === 'function') nextEl.scrollTo(0, 0);
   if (nextEl) {
     nextEl.classList.remove('active', 'enter-left', 'enter-right', 'exit-left', 'exit-right');
     if (isForward) {

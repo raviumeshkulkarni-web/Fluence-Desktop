@@ -61,7 +61,7 @@ export function App() {
   const [route, setRoute] = useState<Route>('dashboard');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
-  const { theme, toggleTheme } = useTheme();
+  const { theme, choice: themeChoice, cycleTheme, toggleTheme } = useTheme();
 
   useEffect(() => {
     try {
@@ -192,8 +192,8 @@ export function App() {
             onNavigate={navigateTo}
             collapsed={sidebarCollapsed}
             onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            theme={theme}
-            onToggleTheme={toggleTheme}
+            themeChoice={themeChoice}
+            onCycleTheme={cycleTheme}
           />
           <main className="content-area" role="main">
             {route === 'about' ? (

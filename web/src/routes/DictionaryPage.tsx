@@ -2,10 +2,27 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableCaption,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/fluence/Toasts';
 import {
   acceptSuggestion,
@@ -62,6 +79,11 @@ export function DictionaryPage() {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const sigRef = useRef<string | null>(null);
+
+  // Learning holds the master switches, Words the saved corrections,
+  // Suggestions the review queue. Same order as the page always had.
+  type DictionaryTab = 'learning' | 'words' | 'suggestions';
+  const [tab, setTab] = useState<DictionaryTab>('words');
 
   const loadDict = useCallback(async () => {
     try {
@@ -241,8 +263,16 @@ export function DictionaryPage() {
         <p className="page-subtitle">Correct specific words or phrases automatically after transcription</p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as DictionaryTab)}>
+        <TabsList aria-label="Dictionary area">
+          <TabsTrigger value="learning">Learning</TabsTrigger>
+          <TabsTrigger value="words">Words</TabsTrigger>
+          <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="learning">
+      <div className="settings-section settings-section--unboxed">
+        <div className="settings-section-header settings-section-header-actions">
           <h2>Correction Learning</h2>
         </div>
         <div className="setting-row">
@@ -280,11 +310,13 @@ export function DictionaryPage() {
           </div>
         </div>
       </div>
+      </TabsContent>
 
-      <div className="settings-section">
-        <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <TabsContent value="words">
+      <div className="settings-section settings-section--unboxed">
+        <div className="settings-section-header settings-section-header-actions">
           <h2>Word Corrections</h2>
-          <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+          <div className="dict-header-actions">
             <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>Import</Button>
             <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>Export</Button>
             <Button variant="primary" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
@@ -292,7 +324,7 @@ export function DictionaryPage() {
         </div>
         {showAdd && (
           <div id="dict-add-row">
-            <Field label="Spoken Word/Phrase" htmlFor="dict-spoken-input" style={{ flex: 1 }}>
+            <Field label="Spoken Word/Phrase" htmlFor="dict-spoken-input" className="dict-add-field">
               <Input
                 ref={spokenRef}
                 type="text"
@@ -302,7 +334,7 @@ export function DictionaryPage() {
                 onChange={(e) => setSpoken(e.target.value)}
               />
             </Field>
-            <Field label="Corrected Form" htmlFor="dict-corrected-input" style={{ flex: 1 }}>
+            <Field label="Corrected Form" htmlFor="dict-corrected-input" className="dict-add-field">
               <Input
                 type="text"
                 id="dict-corrected-input"
@@ -311,68 +343,75 @@ export function DictionaryPage() {
                 onChange={(e) => setCorrected(e.target.value)}
               />
             </Field>
-            <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+            <div className="dict-add-actions">
               <Button variant="primary" size="sm" id="dict-save-btn" onClick={() => void onSave()}>Save</Button>
               <Button variant="ghost" size="sm" id="dict-cancel-btn" onClick={closeAdd}>Cancel</Button>
             </div>
           </div>
         )}
-        <table className="dict-table" id="dict-table">
-          <thead>
-            <tr>
-              <th className="col-word">Spoken</th>
-              <th className="col-word">Corrected</th>
-              <th className="col-meta added-col">Added</th>
-              <th className="actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="dict-table-body">
+        <Table className="dict-table" id="dict-table">
+          <TableCaption className="sr-only">Saved correction words</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="col-word">Spoken</TableHead>
+              <TableHead className="col-word">Corrected</TableHead>
+              <TableHead className="col-meta added-col">Added</TableHead>
+              <TableHead className="actions">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody id="dict-table-body">
             {loading && (
-              <tr>
-                <td colSpan={4}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <TableRow>
+                <TableCell colSpan={4}>
+                  <div className="dict-loading">
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && entries.length === 0 && (
-              <tr id="dict-empty-row">
-                <td colSpan={4}>
-                  <div className="empty-state">
-                    <BookOpen className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-                    <div className="empty-state-title">No dictionary entries yet</div>
-                    <div className="empty-state-hint">Add corrections for words that are often misheard during transcription</div>
-                  </div>
-                </td>
-              </tr>
+              <TableRow id="dict-empty-row">
+                <TableCell colSpan={4}>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <BookOpen strokeWidth={1.5} aria-hidden="true" />
+                      </EmptyMedia>
+                      <EmptyTitle>No dictionary entries yet</EmptyTitle>
+                      <EmptyDescription>Add corrections for words that are often misheard during transcription</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && entries.map((entry) => (
-              <tr key={entry.id} data-dict-id={entry.id}>
-                <td className="spoken-word">{entry.spoken}</td>
-                <td className="corrected-word">{entry.corrected}</td>
-                <td className="col-meta added-col">
+              <TableRow key={entry.id} data-dict-id={entry.id}>
+                <TableCell className="spoken-word">{entry.spoken}</TableCell>
+                <TableCell className="corrected-word">{entry.corrected}</TableCell>
+                <TableCell className="col-meta added-col">
                   {autoAdded.has(pairKey(entry.spoken, entry.corrected)) && (
                     <span className="source-badge">auto</span>
                   )}
-                </td>
-                <td className="actions">
-                  <Button variant="ghost" size="sm" className="dict-delete-btn" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>
+                </TableCell>
+                <TableCell className="actions">
+                  <Button variant="ghost" size="sm" className="agent-delete-btn destructive-action" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>
                     Delete
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+          </Table>
       </div>
+      </TabsContent>
 
-      <div className="settings-section">
-        <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <TabsContent value="suggestions">
+      <div className="settings-section settings-section--unboxed">
+        <div className="settings-section-header settings-section-header-actions">
           <h2>Suggested Corrections</h2>
-          <div className="suggestions-bulk-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
+          <div className="suggestions-bulk-actions dict-bulk-actions">
             <span id="suggestions-selected-count">{selected.size} selected</span>
             <Button variant="ghost" size="sm" id="dismiss-selected-btn" disabled={selected.size === 0} onClick={() => void onDismissSelected()}>
               Dismiss Selected
@@ -384,10 +423,11 @@ export function DictionaryPage() {
             )}
           </div>
         </div>
-        <table className="dict-table" id="suggestions-table">
-          <thead>
-            <tr>
-              <th className="select-col">
+        <Table className="dict-table" id="suggestions-table">
+          <TableCaption className="sr-only">Suggested corrections awaiting review</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead className="select-col">
                 <Checkbox
                   id="select-all-suggestions"
                   aria-label="Select all suggestions"
@@ -401,39 +441,48 @@ export function DictionaryPage() {
                   }
                   onCheckedChange={(v) => toggleSelectAll(v === true)}
                 />
-              </th>
-              <th className="col-word">Detected</th>
-              <th className="col-word">Should Be</th>
-              <th className="col-meta seen-col">Seen</th>
-              <th className="actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="suggestions-table-body">
+              </TableHead>
+              <TableHead className="col-word">Detected</TableHead>
+              <TableHead className="col-word">Should Be</TableHead>
+              <TableHead className="col-meta seen-col">Seen</TableHead>
+              <TableHead className="actions">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody id="suggestions-table-body">
             {loading && (
-              <tr>
-                <td colSpan={5}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <TableRow>
+                <TableCell colSpan={5}>
+                  <div className="dict-loading">
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && suggestions.length === 0 && (
-              <tr id="suggestions-empty-row">
-                <td colSpan={5}>
-                  <div className="empty-state">
-                    <Lightbulb className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-                    <div className="empty-state-title">No suggestions yet</div>
-                    <div className="empty-state-hint">Correction suggestions will appear here as you use dictation regularly</div>
-                  </div>
-                </td>
-              </tr>
+              <TableRow id="suggestions-empty-row">
+                <TableCell colSpan={5}>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Lightbulb strokeWidth={1.5} aria-hidden="true" />
+                      </EmptyMedia>
+                      <EmptyTitle>No suggestions yet</EmptyTitle>
+                      <EmptyDescription>Correction suggestions will appear here as you use dictation regularly</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && suggestions.map((s) => (
-              <tr key={s.id} data-srow="1" data-suggestion-id={s.id}>
-                <td className="select-col">
+              <TableRow
+                key={s.id}
+                data-srow="1"
+                data-suggestion-id={s.id}
+                data-state={selected.has(s.id) ? 'selected' : undefined}
+              >
+                <TableCell className="select-col">
                   <Checkbox
                     className="suggestion-select"
                     data-suggestion-id={s.id}
@@ -441,23 +490,25 @@ export function DictionaryPage() {
                     checked={selected.has(s.id)}
                     onCheckedChange={(v) => toggleSelect(s.id, v === true)}
                   />
-                </td>
-                <td className="spoken-word">{s.spoken}</td>
-                <td className="corrected-word">{s.corrected}</td>
-                <td className="col-meta seen-col frequency">{s.frequency}x</td>
-                <td className="actions">
+                </TableCell>
+                <TableCell className="spoken-word">{s.spoken}</TableCell>
+                <TableCell className="corrected-word">{s.corrected}</TableCell>
+                <TableCell className="col-meta seen-col frequency">{s.frequency}x</TableCell>
+                <TableCell className="actions">
                   <Button variant="ghost" size="sm" className="suggestion-accept-btn" data-suggestion-id={s.id} onClick={() => void onAccept(s.id)}>
                     Accept
                   </Button>
                   <Button variant="ghost" size="sm" className="suggestion-dismiss-btn" data-suggestion-id={s.id} onClick={() => void onDismiss(s.id)}>
                     Dismiss
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+          </Table>
       </div>
+      </TabsContent>
+      </Tabs>
     </section>
   );
 }

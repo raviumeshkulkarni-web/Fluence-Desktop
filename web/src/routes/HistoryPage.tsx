@@ -1289,7 +1289,7 @@ export function HistoryPage() {
               {loadingMore ? 'Loading…' : `Page ${page + 1}${totalPages != null ? ` of ${totalPages}` : ''}`}
             </span>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="xs"
               className="history-pager-btn"
               aria-label="Go to first page"
@@ -1299,7 +1299,7 @@ export function HistoryPage() {
               <ChevronsLeft data-icon="inline-start" size={14} aria-hidden="true" />
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="xs"
               className="history-pager-btn"
               aria-label="Go to previous page"
@@ -1309,7 +1309,7 @@ export function HistoryPage() {
               <ChevronLeft data-icon="inline-start" size={14} aria-hidden="true" />
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="xs"
               className="history-pager-btn"
               aria-label="Go to next page"
@@ -1319,7 +1319,7 @@ export function HistoryPage() {
               <ChevronRight data-icon="inline-start" size={14} aria-hidden="true" />
             </Button>
             <Button
-              variant="ghost"
+              variant="secondary"
               size="xs"
               className="history-pager-btn"
               aria-label="Go to last page"

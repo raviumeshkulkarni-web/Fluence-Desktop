@@ -1,10 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import {
+  Empty,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableCaption,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { toast } from '@/components/fluence/Toasts';
 import {
   addSnippet,
@@ -103,8 +119,8 @@ export function SnippetsPage() {
         <p className="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
       </div>
 
-      <div className="settings-section">
-        <div className="setting-row" style={{ paddingBottom: 'var(--spacing-lg)', borderBottom: '1px solid var(--color-outline-variant)' }}>
+      <div className="settings-section settings-section--unboxed">
+        <div className="setting-row snippet-lead-row">
           <div className="setting-info">
             <div className="setting-label">Enable Text Expansion</div>
             <div className="setting-desc">Dictate a short trigger like &quot;my linkedin&quot; and Fluence pastes your expansion text instead</div>
@@ -121,13 +137,13 @@ export function SnippetsPage() {
           </div>
         </div>
 
-        <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 'var(--spacing-lg)' }}>
+        <div className="settings-section-header settings-section-header-actions is-spaced">
           <h2>My Snippets</h2>
           <Button variant="primary" size="sm" id="add-snippet-btn" onClick={openAdd}>Add Snippet</Button>
         </div>
         {showAdd && (
-          <div id="snippet-add-row" style={{ padding: 'var(--spacing-md)', display: 'flex', gap: 'var(--spacing-md)', alignItems: 'flex-end' }}>
-            <Field label="Spoken Trigger" htmlFor="snippet-trigger-input" style={{ flex: 1 }}>
+          <div id="snippet-add-row" className="snippet-add-form">
+            <Field label="Spoken Trigger" htmlFor="snippet-trigger-input" className="snippet-add-field">
               <Input
                 ref={triggerRef}
                 type="text"
@@ -138,7 +154,7 @@ export function SnippetsPage() {
                 onChange={(e) => setTrigger(e.target.value)}
               />
             </Field>
-            <Field label="Expansion Text" htmlFor="snippet-expansion-input" style={{ flex: 2 }}>
+            <Field label="Expansion Text" htmlFor="snippet-expansion-input" className="snippet-add-field-wide">
               <Input
                 type="text"
                 id="snippet-expansion-input"
@@ -148,63 +164,67 @@ export function SnippetsPage() {
                 onChange={(e) => setExpansion(e.target.value)}
               />
             </Field>
-            <div style={{ display: 'flex', gap: 'var(--spacing-sm)' }}>
+            <div className="snippet-add-actions">
               <Button variant="primary" size="sm" id="snippet-save-btn" onClick={() => void onSave()}>Save</Button>
               <Button variant="ghost" size="sm" id="snippet-cancel-btn" onClick={closeAdd}>Cancel</Button>
             </div>
           </div>
         )}
-        <table className="dict-table">
-          <thead>
-            <tr>
-              <th>Trigger</th>
-              <th>Expansion</th>
-              <th className="actions">Actions</th>
-            </tr>
-          </thead>
-          <tbody id="snippet-table-body">
+        <Table className="dict-table">
+          <TableCaption className="sr-only">Saved text expansion snippets</TableCaption>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Trigger</TableHead>
+              <TableHead>Expansion</TableHead>
+              <TableHead className="actions">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody id="snippet-table-body">
             {loading && (
-              <tr>
-                <td colSpan={3}>
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)' }}>
+              <TableRow>
+                <TableCell colSpan={3}>
+                  <div className="dict-loading">
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
                   </div>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && entries.length === 0 && (
-              <tr id="snippet-empty-row">
-                <td colSpan={3}>
-                  <div className="empty-state">
-                    <Zap className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-                    <div className="empty-state-title">No snippets yet</div>
-                    <div className="empty-state-hint">Add a trigger phrase and its expansion, e.g. &quot;my email&quot; becomes your full email address</div>
-                  </div>
-                </td>
-              </tr>
+              <TableRow id="snippet-empty-row">
+                <TableCell colSpan={3}>
+                  <Empty>
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <Zap strokeWidth={1.5} aria-hidden="true" />
+                      </EmptyMedia>
+                      <EmptyTitle>No snippets yet</EmptyTitle>
+                      <EmptyDescription>Add a trigger phrase and its expansion, e.g. &quot;my email&quot; becomes your full email address</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </TableCell>
+              </TableRow>
             )}
             {!loading && entries.map((entry) => (
-              <tr key={entry.id} data-snippet-id={entry.id}>
-                <td className="spoken-word">{entry.trigger}</td>
-                <td className="corrected-word">{entry.expansion}</td>
-                <td className="actions">
+              <TableRow key={entry.id} data-snippet-id={entry.id}>
+                <TableCell className="spoken-word">{entry.trigger}</TableCell>
+                <TableCell className="corrected-word">{entry.expansion}</TableCell>
+                <TableCell className="actions">
                   <Button
                     variant="ghost"
                     size="sm"
-                    className="snippet-delete-btn"
+                    className="agent-delete-btn destructive-action"
                     data-snippet-id={entry.id}
-                    style={{ padding: 'var(--spacing-xs) var(--spacing-sm)', fontSize: 'var(--text-label-sm)' }}
                     onClick={() => void onDelete(entry.id)}
                   >
                     Delete
                   </Button>
-                </td>
-              </tr>
+                </TableCell>
+              </TableRow>
             ))}
-          </tbody>
-        </table>
+          </TableBody>
+          </Table>
       </div>
     </section>
   );

@@ -30,6 +30,81 @@
 .provider-grid {
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
 }
+.provider-form-fields {
+  padding: 0 var(--spacing-md) var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.provider-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.provider-save-key {
+  white-space: nowrap;
+}
+.provider-test-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.offline-downloader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+}
+.offline-downloader-title {
+  font-weight: 600;
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+.offline-downloader-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.offline-downloader-heading {
+  font-weight: 600;
+}
+.offline-downloader-hint {
+  font-size: var(--text-label-sm);
+}
+.offline-model-btn {
+  min-width: 140px;
+}
+.offline-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  background: var(--color-surface-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+}
+.offline-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-label-sm);
+}
+.offline-progress-status {
+  font-weight: 500;
+}
+.offline-progress-percentage {
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+.offline-progress-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+}
 .offline-model-card {
   gap: 0;
   padding: 0;
@@ -97,6 +172,47 @@
 .input-with-btn .select-trigger {
   flex: 1 1 0%; /* frozen .input-with-btn select */
   min-width: 0;
+}
+.dict-header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.dict-add-field {
+  flex: 1;
+}
+.dict-add-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.dict-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.dict-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.snippet-lead-row {
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-outline-variant);
+}
+.snippet-add-form {
+  padding: var(--spacing-md);
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+}
+.snippet-add-field {
+  flex: 1;
+}
+.snippet-add-field-wide {
+  flex: 2;
+}
+.snippet-add-actions {
+  display: flex;
+  gap: var(--spacing-sm);
 }
 
 /* History context menu: Radix kit primitive wearing the dropdown tokens

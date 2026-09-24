@@ -1,6 +1,6 @@
 import { invokeCmd, listenEvent } from '@/ipc/tauri';
 
-export type ProviderKind = 'stt' | 'llm';
+export type ProviderKind = 'stt' | 'llm' | 'cleaner';
 
 export interface ProviderConfig {
   preset: string;
@@ -41,6 +41,8 @@ export function canonicalPresetSlug(preset: string): string {
 // Credential-store target shape: `Fluence/STT_ApiKey/<slug>` /
 // `Fluence/LLM_ApiKey/<slug>` using the canonical slug above, so save, read,
 // delete, and the backend's secure server-side lookup always name one slot.
+// The AI cleaner shares the LLM key family: backend polish resolves keys via
+// `get_llm_target`, so `cleaner` maps to the same slot as `llm` per preset.
 export function keyTarget(kind: ProviderKind, preset: string): string {
   const base = kind === 'stt' ? 'Fluence/STT_ApiKey' : 'Fluence/LLM_ApiKey';
   return `${base}/${canonicalPresetSlug(preset)}`;

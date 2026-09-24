@@ -76,6 +76,13 @@ const AlertDialogDescription = React.forwardRef<
 ));
 AlertDialogDescription.displayName = AlertDialogPrimitive.Description.displayName;
 
+// These two render BARE unstyled <button> elements by design: they carry
+// no classes, so using them with plain text children produces broken-looking
+// footer buttons. Always use them with asChild + Button, e.g.
+// <AlertDialogCancel asChild><Button variant="secondary">Cancel</Button></AlertDialogCancel>
+// <AlertDialogAction asChild><Button variant="destructive">Delete</Button></AlertDialogAction>
+// (see ConfirmDialog in dialog.tsx). Do not "fix" by adding paint here:
+// the variant (danger vs primary vs secondary) is the call site's decision.
 const AlertDialogAction = React.forwardRef<
   React.ElementRef<typeof AlertDialogPrimitive.Action>,
   React.ComponentPropsWithoutRef<typeof AlertDialogPrimitive.Action>

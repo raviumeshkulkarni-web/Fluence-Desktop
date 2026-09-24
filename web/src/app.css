@@ -21,6 +21,9 @@
  * the kit trigger's own width:100% would otherwise lose its size context
  * (settings.css loads before ui.css, so bare .select-md loses the cascade).
  */
+.select-trigger.select-sm {
+  width: 150px;
+}
 .select-trigger.select-md {
   width: 180px; /* frozen .select-md */
 }
@@ -31,7 +34,8 @@
   grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
 }
 .provider-form-fields {
-  padding: 0 var(--spacing-md) var(--spacing-md);
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--color-border-structural);
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -137,6 +141,84 @@
 .sync-signin-error {
   margin-top: var(--spacing-6);
 }
+/* Codex section & card architecture */
+.settings-section-header-outside {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+.settings-section-header-outside:first-child,
+.tab-content > .settings-section-header-outside:first-child,
+[data-slot='tabs-content'] > .settings-section-header-outside:first-child,
+[role='tabpanel'] > .settings-section-header-outside:first-child {
+  margin-top: 6px;
+}
+.settings-section-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-on-surface);
+  margin: 0;
+  text-transform: none;
+}
+.settings-section-desc {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-on-surface-variant);
+  margin: 2px 0 0;
+  line-height: 1.45;
+}
+.settings-section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.settings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+.settings-card-content {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: inherit;
+}
+.settings-card-selected {
+  border-color: var(--color-border-focus);
+}
+
+.settings-card + .settings-section-header-outside {
+  margin-top: 24px;
+}
+.settings-card + .settings-card {
+  margin-top: 12px;
+}
+.settings-card .setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border-structural);
+  transition: background-color 0.12s var(--ease-standard);
+}
+.settings-card .setting-row:last-child {
+  border-bottom: none;
+}
+.settings-card .setting-row:hover {
+  background: var(--color-hover);
+}
+
 .settings-section--unboxed {
   overflow: visible;
   background: transparent;
@@ -153,20 +235,79 @@
   content: '';
   background: var(--color-border-muted);
 }
-#page-history .settings-section--unboxed {
+
+.dict-add-card,
+.snippet-add-card {
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Table card & high-contrast headers */
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
   overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.dict-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.dict-table th {
+  text-align: left;
+  padding: 11px 18px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border-structural);
+}
+.dict-table td {
+  padding: 12px 18px;
+  font-size: 13px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-structural);
+  color: var(--color-on-surface);
+}
+.dict-table tr:last-child td {
+  border-bottom: none;
+}
+.dict-table tr:hover td {
+  background: var(--color-hover);
+}
+.dict-table th.actions,
+.dict-table td.actions {
+  text-align: right !important;
+  white-space: nowrap !important;
+  padding-right: 24px !important;
+}
+#suggestions-table th.actions,
+#suggestions-table td.actions {
+  width: 200px !important;
+}
+#suggestions-table td.actions .suggestion-dismiss-btn {
+  margin-left: 8px;
+}
+#dict-table th.actions,
+#dict-table td.actions,
+.snippet-table th.actions,
+.snippet-table td.actions {
+  width: 140px !important;
 }
 .data-surface {
   margin: 0 var(--spacing-md) var(--spacing-md);
   overflow: hidden;
   background: var(--color-surface);
-  border: 1px solid var(--color-border-muted);
-  border-radius: var(--radius-md);
-}
-.settings-section--unboxed #dict-add-row,
-.settings-section--unboxed #snippet-add-row {
-  margin: 0 var(--spacing-md) var(--spacing-md);
-  border: 1px solid var(--color-border-muted);
+  border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-md);
 }
 .input-with-btn .select-trigger {
@@ -297,9 +438,18 @@
 .history-item {
   border-radius: var(--radius-xs);
 }
-.history-item.is-selected {
-  background: var(--color-interactive-active);
-  box-shadow: inset 2px 0 0 var(--color-brand-cyan);
+.history-item-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.history-item[data-state='selected'] {
+  background: var(--color-selected);
+}
+.history-item[data-state='selected']:hover,
+.history-item[data-state='selected']:active {
+  background: var(--color-selected);
 }
 .history-selection-bar {
   display: flex;
@@ -316,6 +466,37 @@
   color: var(--color-on-surface-variant);
   margin-right: auto;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* History search row: search input on left, Clear All button on right */
+.history-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.history-search-row .search-wrapper {
+  position: relative;
+  flex: 1;
+  padding: 0;
+  border-bottom: none;
+  background: transparent;
+}
+.history-search-row .search-wrapper svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--color-ink-muted);
+  pointer-events: none;
+}
+.history-search-row #clear-history-btn {
+  flex-shrink: 0;
   white-space: nowrap;
 }
 
@@ -527,45 +708,11 @@ button.history-group-header {
 }
 
 .bubble-option {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  color: var(--color-on-surface);
-  border-radius: var(--radius-sm);
-  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  border-radius: 0;
 }
 
-.bubble-option + .bubble-option {
-  border-top: 1px solid var(--color-border-muted);
-}
-
-.bubble-option:hover {
-  background: var(--color-hover);
-}
-
-.bubble-option:active {
-  background: var(--color-active);
-}
-
-.bubble-option:focus-visible {
-  outline: 1.5px solid var(--color-border-focus);
-  outline-offset: -1.5px;
-}
-
-.bubble-option[aria-checked="true"] {
-  background: var(--choice-selected-bg);
-  box-shadow: inset 0 0 0 1px var(--choice-selected-border);
-}
-
-.bubble-option-text {
-  display: flex;
-  flex-direction: column;
-  gap: 0;
-  flex: 1 1 180px;
-  min-width: 0;
+.bubble-option.selected {
+  background: var(--color-interactive-active);
 }
 
 /* Live stage: transparent so the overlay's real glass (backdrop blur over
@@ -580,29 +727,36 @@ button.history-group-header {
   padding: 10px 8px;
 }
 
-/* Live previews render the real overlay markup + stylesheet (see
- * components/fluence/OverlayPreview.tsx) — no miniature styles here. */
-
-.bubble-radio {
-  position: relative;
+.overlay-preview {
+  display: block;
   flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-on-surface-variant);
-  transition: border-color 0.15s ease;
 }
 
-.bubble-option[aria-checked="true"] .bubble-radio {
-  border-color: var(--color-on-surface);
+.overlay-preview-full {
+  width: 320px;
+  height: 96px;
 }
 
-.bubble-option[aria-checked="true"] .bubble-radio::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: var(--color-on-surface);
+.overlay-preview-compact {
+  width: 118px;
+  height: 36px;
+}
+
+.overlay-preview-bubble {
+  width: 44px;
+  height: 44px;
+}
+
+.overlay-preview-full.has-pill {
+  height: 142px;
+}
+
+.overlay-preview-compact.has-pill {
+  height: 82px;
+}
+
+.overlay-preview-bubble.has-pill {
+  height: 90px;
 }
 
 .bubble-preview-label {
@@ -656,13 +810,17 @@ button.history-group-header {
 
 .selection-row {
   display: flex;
-  min-height: 104px;
-  flex-direction: column;
+  min-height: 52px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 12px 18px;
   background: transparent;
-  border-bottom: 1px solid var(--color-border-muted);
-  border-radius: var(--radius-sm);
+  border-bottom: 1px solid var(--color-border-structural);
+  border-radius: 0;
   color: var(--color-on-surface-variant);
-  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+  transition: background var(--transition-fast), color var(--transition-fast);
 }
 .selection-row:last-child {
   border-bottom: 0;
@@ -674,17 +832,16 @@ button.history-group-header {
   background: var(--color-active);
 }
 .selection-row.selected {
-  background: var(--color-interactive-active);
+  background: var(--color-surface-menu);
   color: var(--color-on-surface);
-  box-shadow: inset 0 0 0 1px var(--choice-selected-border);
 }
 .selection-row-main {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
-  width: 100%;
-  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
   background: transparent;
   border: 0;
   border-radius: inherit;
@@ -693,7 +850,7 @@ button.history-group-header {
   cursor: pointer;
 }
 .selection-row.has-actions .selection-row-main {
-  padding-bottom: 8px;
+  padding-bottom: 0;
 }
 .selection-row:not(.has-actions) .selection-row-main {
   flex: 1;
@@ -707,7 +864,7 @@ button.history-group-header {
   display: flex;
   min-width: 0;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
 }
 .selection-row-heading {
   display: flex;
@@ -717,13 +874,13 @@ button.history-group-header {
 }
 .selection-row-title {
   font-family: var(--font-body);
-  font-size: var(--text-body-md);
-  font-weight: 600;
+  font-size: 14px;
+  font-weight: 500;
   color: var(--color-on-surface);
 }
 .selection-row-description {
-  font-size: var(--text-label-sm);
-  line-height: 1.45;
+  font-size: 12px;
+  line-height: 1.4;
   color: var(--color-on-surface-variant);
 }
 .selection-row-actions {
@@ -731,11 +888,12 @@ button.history-group-header {
   align-items: center;
   justify-content: flex-end;
   gap: var(--spacing-sm);
-  padding: 0 18px 14px 50px;
+  padding: 0;
+  flex-shrink: 0;
 }
 .selection-row-actions .btn-secondary,
 .selection-row-actions .btn-danger {
-  min-height: 28px;
+  min-height: 30px;
 }
 .agent-row {
   display: flex;
@@ -900,6 +1058,31 @@ button.history-group-header {
 
 .app-rule-icon-fallback {
   color: var(--color-on-surface-variant);
+}
+
+.app-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.app-rule-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-rule-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.app-rule-select {
+  min-width: 150px;
 }
 
 .app-picker-list {

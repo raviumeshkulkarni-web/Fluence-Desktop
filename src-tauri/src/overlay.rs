@@ -144,9 +144,73 @@ pub fn set_overlay_style(app: AppHandle, style: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Fixed agent-picker geometry: the picker card is standardized to 220px wide
+/// in every tier (+20px margin on each side = 260px window width), harmonizing
+/// smoothly above full, compact, and bubble styles.
+/// Compact/bubble windows widen to this transiently while the picker is
+/// visible and shrink back on hide. Trade-off, made explicit: the wider
+/// transparent frame exists only for the agent turn, and only the
+/// picker/card pixels are interactive (body stays pointer-events-none).
+const AGENT_PICKER_WINDOW_WIDTH: f64 = 260.0;
+
+#[tauri::command]
+pub fn set_agent_picker_height(
+    app: AppHandle,
+    extra_height: f64,
+    picker_visible: bool,
+) -> Result<f64, String> {
+    let win = get_overlay_window(&app).ok_or("Overlay window not found")?;
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| win.primary_monitor().ok().flatten())
+        .ok_or("No monitor found")?;
+    let settings = crate::settings::load_settings().map_err(|e| e.to_string())?;
+    let (base_width, base_height) = overlay_window_size(&settings.overlay_style);
+    // Strip and card are both 320px in every tier: keep the tier width in
+    // full, widen compact/bubble while anything picker-related shows.
+    // extra == 0 with visible == false is the hide path (bare tier size).
+    let win_width = if picker_visible {
+        base_width.max(AGENT_PICKER_WINDOW_WIDTH)
+    } else {
+        base_width
+    };
+    let scale = monitor.scale_factor();
+    let requested = if extra_height.is_finite() {
+        extra_height.max(0.0)
+    } else {
+        0.0
+    };
+    let available = (monitor.size().height as f64 / scale - base_height - 64.0).max(0.0);
+    let applied_extra = requested.min(available);
+    place_overlay_window_sized(
+        &win,
+        &monitor,
+        &settings.overlay_position,
+        win_width,
+        base_height + applied_extra,
+    )?;
+    Ok(applied_extra)
+}
+
 #[tauri::command]
 pub fn hide_overlay(app: AppHandle) -> Result<(), String> {
     let win = get_overlay_window(&app).ok_or("Overlay window not found")?;
+    let monitor = win
+        .current_monitor()
+        .ok()
+        .flatten()
+        .or_else(|| win.primary_monitor().ok().flatten());
+    if let Some(monitor) = monitor {
+        if let Ok(settings) = crate::settings::load_settings() {
+            let _ = place_overlay_window(
+                &win,
+                &monitor,
+                &settings.overlay_position,
+                &settings.overlay_style,
+            );
+        }
+    }
     // Notify overlay frontend to stop the waveform animation loop
     let _ = win.emit("window-visibility", false);
     win.hide().map_err(|e| e.to_string())?;

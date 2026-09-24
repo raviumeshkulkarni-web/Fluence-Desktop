@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   hideMainWindow,
   minimizeMainWindow,
@@ -10,6 +10,11 @@ import {
 // close HIDES to tray (the app keeps running).
 export function Titlebar() {
   const [maximized, setMaximized] = useState(false);
+
+  useEffect(() => {
+    document.body.classList.toggle('is-maximized', maximized);
+    return () => document.body.classList.remove('is-maximized');
+  }, [maximized]);
 
   const onMaximize = async () => {
     try {

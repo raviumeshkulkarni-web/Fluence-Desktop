@@ -9,16 +9,32 @@ const RadioGroup = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Root>,
   React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Root>
 >(({ className, ...props }, ref) => (
-  <RadioGroupPrimitive.Root ref={ref} className={cn('radio-group', className)} {...props} />
+  <RadioGroupPrimitive.Root
+    ref={ref}
+    data-slot="radio-group"
+    className={cn('radio-group', className)}
+    {...props}
+  />
 ));
 RadioGroup.displayName = RadioGroupPrimitive.Root.displayName;
 
 const RadioGroupItem = React.forwardRef<
   React.ElementRef<typeof RadioGroupPrimitive.Item>,
   React.ComponentPropsWithoutRef<typeof RadioGroupPrimitive.Item>
->(({ className, ...props }, ref) => (
-  <RadioGroupPrimitive.Item ref={ref} className={cn('radio-item', className)} {...props}>
-    <RadioGroupPrimitive.Indicator className="radio-indicator" />
+>(({ asChild, className, children, ...props }, ref) => (
+  <RadioGroupPrimitive.Item
+    ref={ref}
+    data-slot="radio-group-item"
+    asChild={asChild}
+    className={cn(asChild ? className : 'radio-item', className)}
+    {...props}
+  >
+    {children ?? (
+      <RadioGroupPrimitive.Indicator
+        data-slot="radio-group-indicator"
+        className="radio-indicator"
+      />
+    )}
   </RadioGroupPrimitive.Item>
 ));
 RadioGroupItem.displayName = RadioGroupPrimitive.Item.displayName;

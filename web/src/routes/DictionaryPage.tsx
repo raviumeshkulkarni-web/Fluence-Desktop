@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { BookOpen, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
   Empty,
@@ -23,6 +24,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
 import {
   acceptSuggestion,
@@ -271,59 +273,62 @@ export function DictionaryPage() {
         </TabsList>
 
       <TabsContent value="learning">
-      <div className="settings-section settings-section--unboxed">
-        <div className="settings-section-header settings-section-header-actions">
-          <h2>Correction Learning</h2>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Auto-Learn Corrections</div>
-            <div className="setting-desc">Suggest transcription corrections based on detected patterns</div>
+        <SettingsSectionHeader
+          title="Correction Learning"
+          description="Configure automatic learning and dictionary suggestions"
+        />
+        <Card className="settings-card">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Auto-Learn Corrections</div>
+              <div className="setting-desc">Suggest transcription corrections based on detected patterns</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="auto-learn-cb"
+                  aria-label="Auto-learn transcription corrections"
+                  checked={learn}
+                  onCheckedChange={(v) => setAutoLearn(v)}
+                />
+              </Field>
+            </div>
           </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="auto-learn-cb"
-                aria-label="Auto-learn transcription corrections"
-                checked={learn}
-                onCheckedChange={(v) => setAutoLearn(v)}
-              />
-            </Field>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Auto-Accept Suggestions</div>
+              <div className="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="auto-accept-cb"
+                  aria-label="Auto-accept repeated correction suggestions"
+                  checked={accept}
+                  disabled={!learn}
+                  title={!learn ? 'Requires Auto-Learn' : undefined}
+                  onCheckedChange={(v) => setSettingField('auto_accept_enabled', v)}
+                />
+              </Field>
+            </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Auto-Accept Suggestions</div>
-            <div className="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="auto-accept-cb"
-                aria-label="Auto-accept repeated correction suggestions"
-                checked={accept}
-                disabled={!learn}
-                title={!learn ? 'Requires Auto-Learn' : undefined}
-                onCheckedChange={(v) => setSettingField('auto_accept_enabled', v)}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
+        </Card>
       </TabsContent>
 
       <TabsContent value="words">
-      <div className="settings-section settings-section--unboxed">
-        <div className="settings-section-header settings-section-header-actions">
-          <h2>Word Corrections</h2>
+        <SettingsSectionHeader
+          title="Word Corrections"
+          description="Saved replacements applied automatically after dictation"
+        >
           <div className="dict-header-actions">
             <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>Import</Button>
             <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>Export</Button>
-            <Button variant="primary" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
+            <Button variant="default" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
           </div>
-        </div>
+        </SettingsSectionHeader>
+
         {showAdd && (
-          <div id="dict-add-row">
+          <div id="dict-add-row" className="dict-add-card">
             <Field label="Spoken Word/Phrase" htmlFor="dict-spoken-input" className="dict-add-field">
               <Input
                 ref={spokenRef}
@@ -344,73 +349,76 @@ export function DictionaryPage() {
               />
             </Field>
             <div className="dict-add-actions">
-              <Button variant="primary" size="sm" id="dict-save-btn" onClick={() => void onSave()}>Save</Button>
+              <Button variant="default" size="sm" id="dict-save-btn" onClick={() => void onSave()}>Save</Button>
               <Button variant="ghost" size="sm" id="dict-cancel-btn" onClick={closeAdd}>Cancel</Button>
             </div>
           </div>
         )}
-        <Table className="dict-table" id="dict-table">
-          <TableCaption className="sr-only">Saved correction words</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="col-word">Spoken</TableHead>
-              <TableHead className="col-word">Corrected</TableHead>
-              <TableHead className="col-meta added-col">Added</TableHead>
-              <TableHead className="actions">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody id="dict-table-body">
-            {loading && (
+
+        <div className="table-card settings-card">
+          <Table className="dict-table" id="dict-table">
+            <TableCaption className="sr-only">Saved correction words</TableCaption>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={4}>
-                  <div className="dict-loading">
-                    <Skeleton style={{ height: 40 }} />
-                    <Skeleton style={{ height: 40 }} />
-                    <Skeleton style={{ height: 40 }} />
-                  </div>
-                </TableCell>
+                <TableHead className="col-word">Spoken</TableHead>
+                <TableHead className="col-word">Corrected</TableHead>
+                <TableHead className="col-meta added-col">Added</TableHead>
+                <TableHead className="actions">Actions</TableHead>
               </TableRow>
-            )}
-            {!loading && entries.length === 0 && (
-              <TableRow id="dict-empty-row">
-                <TableCell colSpan={4}>
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <BookOpen strokeWidth={1.5} aria-hidden="true" />
-                      </EmptyMedia>
-                      <EmptyTitle>No dictionary entries yet</EmptyTitle>
-                      <EmptyDescription>Add corrections for words that are often misheard during transcription</EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && entries.map((entry) => (
-              <TableRow key={entry.id} data-dict-id={entry.id}>
-                <TableCell className="spoken-word">{entry.spoken}</TableCell>
-                <TableCell className="corrected-word">{entry.corrected}</TableCell>
-                <TableCell className="col-meta added-col">
-                  {autoAdded.has(pairKey(entry.spoken, entry.corrected)) && (
-                    <span className="source-badge">auto</span>
-                  )}
-                </TableCell>
-                <TableCell className="actions">
-                  <Button variant="ghost" size="sm" className="agent-delete-btn destructive-action" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>
-                    Delete
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
+            </TableHeader>
+            <TableBody id="dict-table-body">
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={4}>
+                    <div className="dict-loading">
+                      <Skeleton style={{ height: 40 }} />
+                      <Skeleton style={{ height: 40 }} />
+                      <Skeleton style={{ height: 40 }} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && entries.length === 0 && (
+                <TableRow id="dict-empty-row">
+                  <TableCell colSpan={4}>
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <BookOpen strokeWidth={1.5} aria-hidden="true" />
+                        </EmptyMedia>
+                        <EmptyTitle>No dictionary entries yet</EmptyTitle>
+                        <EmptyDescription>Add corrections for words that are often misheard during transcription</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && entries.map((entry) => (
+                <TableRow key={entry.id} data-dict-id={entry.id}>
+                  <TableCell className="spoken-word">{entry.spoken}</TableCell>
+                  <TableCell className="corrected-word">{entry.corrected}</TableCell>
+                  <TableCell className="col-meta added-col">
+                    {autoAdded.has(pairKey(entry.spoken, entry.corrected)) && (
+                      <span className="source-badge">auto</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="actions">
+                    <Button variant="ghost" size="sm" className="agent-delete-btn destructive-action" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>
+                      Delete
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
           </Table>
-      </div>
+        </div>
       </TabsContent>
 
       <TabsContent value="suggestions">
-      <div className="settings-section settings-section--unboxed">
-        <div className="settings-section-header settings-section-header-actions">
-          <h2>Suggested Corrections</h2>
+        <SettingsSectionHeader
+          title="Suggested Corrections"
+          description="Review automated suggestions detected from your edits"
+        >
           <div className="suggestions-bulk-actions dict-bulk-actions">
             <span id="suggestions-selected-count">{selected.size} selected</span>
             <Button variant="ghost" size="sm" id="dismiss-selected-btn" disabled={selected.size === 0} onClick={() => void onDismissSelected()}>
@@ -422,91 +430,93 @@ export function DictionaryPage() {
               </Button>
             )}
           </div>
-        </div>
-        <Table className="dict-table" id="suggestions-table">
-          <TableCaption className="sr-only">Suggested corrections awaiting review</TableCaption>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="select-col">
-                <Checkbox
-                  id="select-all-suggestions"
-                  aria-label="Select all suggestions"
-                  disabled={suggestions.length === 0}
-                  checked={
-                    suggestions.length > 0 && selected.size === suggestions.length
-                      ? true
-                      : selected.size > 0
-                        ? 'indeterminate'
-                        : false
-                  }
-                  onCheckedChange={(v) => toggleSelectAll(v === true)}
-                />
-              </TableHead>
-              <TableHead className="col-word">Detected</TableHead>
-              <TableHead className="col-word">Should Be</TableHead>
-              <TableHead className="col-meta seen-col">Seen</TableHead>
-              <TableHead className="actions">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody id="suggestions-table-body">
-            {loading && (
+        </SettingsSectionHeader>
+
+        <div className="table-card settings-card">
+          <Table className="dict-table" id="suggestions-table">
+            <TableCaption className="sr-only">Suggested corrections awaiting review</TableCaption>
+            <TableHeader>
               <TableRow>
-                <TableCell colSpan={5}>
-                  <div className="dict-loading">
-                    <Skeleton style={{ height: 40 }} />
-                    <Skeleton style={{ height: 40 }} />
-                    <Skeleton style={{ height: 40 }} />
-                  </div>
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && suggestions.length === 0 && (
-              <TableRow id="suggestions-empty-row">
-                <TableCell colSpan={5}>
-                  <Empty>
-                    <EmptyHeader>
-                      <EmptyMedia variant="icon">
-                        <Lightbulb strokeWidth={1.5} aria-hidden="true" />
-                      </EmptyMedia>
-                      <EmptyTitle>No suggestions yet</EmptyTitle>
-                      <EmptyDescription>Correction suggestions will appear here as you use dictation regularly</EmptyDescription>
-                    </EmptyHeader>
-                  </Empty>
-                </TableCell>
-              </TableRow>
-            )}
-            {!loading && suggestions.map((s) => (
-              <TableRow
-                key={s.id}
-                data-srow="1"
-                data-suggestion-id={s.id}
-                data-state={selected.has(s.id) ? 'selected' : undefined}
-              >
-                <TableCell className="select-col">
+                <TableHead className="select-col">
                   <Checkbox
-                    className="suggestion-select"
-                    data-suggestion-id={s.id}
-                    aria-label="Select suggestion"
-                    checked={selected.has(s.id)}
-                    onCheckedChange={(v) => toggleSelect(s.id, v === true)}
+                    id="select-all-suggestions"
+                    aria-label="Select all suggestions"
+                    disabled={suggestions.length === 0}
+                    checked={
+                      suggestions.length > 0 && selected.size === suggestions.length
+                        ? true
+                        : selected.size > 0
+                          ? 'indeterminate'
+                          : false
+                    }
+                    onCheckedChange={(v) => toggleSelectAll(v === true)}
                   />
-                </TableCell>
-                <TableCell className="spoken-word">{s.spoken}</TableCell>
-                <TableCell className="corrected-word">{s.corrected}</TableCell>
-                <TableCell className="col-meta seen-col frequency">{s.frequency}x</TableCell>
-                <TableCell className="actions">
-                  <Button variant="ghost" size="sm" className="suggestion-accept-btn" data-suggestion-id={s.id} onClick={() => void onAccept(s.id)}>
-                    Accept
-                  </Button>
-                  <Button variant="ghost" size="sm" className="suggestion-dismiss-btn" data-suggestion-id={s.id} onClick={() => void onDismiss(s.id)}>
-                    Dismiss
-                  </Button>
-                </TableCell>
+                </TableHead>
+                <TableHead className="col-word">Detected</TableHead>
+                <TableHead className="col-word">Should Be</TableHead>
+                <TableHead className="col-meta seen-col">Seen</TableHead>
+                <TableHead className="actions">Actions</TableHead>
               </TableRow>
-            ))}
-          </TableBody>
+            </TableHeader>
+            <TableBody id="suggestions-table-body">
+              {loading && (
+                <TableRow>
+                  <TableCell colSpan={5}>
+                    <div className="dict-loading">
+                      <Skeleton style={{ height: 40 }} />
+                      <Skeleton style={{ height: 40 }} />
+                      <Skeleton style={{ height: 40 }} />
+                    </div>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && suggestions.length === 0 && (
+                <TableRow id="suggestions-empty-row">
+                  <TableCell colSpan={5}>
+                    <Empty>
+                      <EmptyHeader>
+                        <EmptyMedia variant="icon">
+                          <Lightbulb strokeWidth={1.5} aria-hidden="true" />
+                        </EmptyMedia>
+                        <EmptyTitle>No suggestions yet</EmptyTitle>
+                        <EmptyDescription>Correction suggestions will appear here as you use dictation regularly</EmptyDescription>
+                      </EmptyHeader>
+                    </Empty>
+                  </TableCell>
+                </TableRow>
+              )}
+              {!loading && suggestions.map((s) => (
+                <TableRow
+                  key={s.id}
+                  data-srow="1"
+                  data-suggestion-id={s.id}
+                  data-state={selected.has(s.id) ? 'selected' : undefined}
+                >
+                  <TableCell className="select-col">
+                    <Checkbox
+                      className="suggestion-select"
+                      data-suggestion-id={s.id}
+                      aria-label="Select suggestion"
+                      checked={selected.has(s.id)}
+                      onCheckedChange={(v) => toggleSelect(s.id, v === true)}
+                    />
+                  </TableCell>
+                  <TableCell className="spoken-word">{s.spoken}</TableCell>
+                  <TableCell className="corrected-word">{s.corrected}</TableCell>
+                  <TableCell className="col-meta seen-col frequency">{s.frequency}x</TableCell>
+                  <TableCell className="actions">
+                    <Button variant="ghost" size="sm" className="suggestion-accept-btn" data-suggestion-id={s.id} onClick={() => void onAccept(s.id)}>
+                      Accept
+                    </Button>
+                    <Button variant="ghost" size="sm" className="suggestion-dismiss-btn" data-suggestion-id={s.id} onClick={() => void onDismiss(s.id)}>
+                      Dismiss
+                    </Button>
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
           </Table>
-      </div>
+        </div>
       </TabsContent>
       </Tabs>
     </section>

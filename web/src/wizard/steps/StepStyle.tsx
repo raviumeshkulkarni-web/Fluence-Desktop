@@ -1,6 +1,5 @@
-import { useRef } from 'react';
-import type { KeyboardEvent } from 'react';
 import { OverlayPreview, type OverlayTier } from '@/components/fluence/OverlayPreview';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { WizardData } from '../Wizard';
 
 interface StepStyleProps {
@@ -20,29 +19,6 @@ const STYLE_OPTIONS: { value: OverlayTier; title: string; desc: string }[] = [
 ];
 
 export function StepStyle({ data, onPatch }: StepStyleProps) {
-  const groupRef = useRef<HTMLDivElement>(null);
-
-  const onGroupKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
-    const buttons = Array.from(
-      groupRef.current?.querySelectorAll<HTMLButtonElement>('.wiz-style-option') ?? [],
-    );
-    if (!buttons.length) return;
-    const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-    let next: number | null = null;
-    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
-      e.preventDefault();
-      next = (current + 1 + buttons.length) % buttons.length;
-    } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
-      e.preventDefault();
-      next = (current - 1 + buttons.length) % buttons.length;
-    } else {
-      return;
-    }
-    const target = buttons[next];
-    target?.focus();
-    target?.click();
-  };
-
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
@@ -52,45 +28,40 @@ export function StepStyle({ data, onPatch }: StepStyleProps) {
         This is what appears when you press your hotkey. Pick the look you prefer.
       </p>
       <div className="step-content">
-        <div
-          ref={groupRef}
-          role="radiogroup"
-          aria-label="Overlay style"
+        <RadioGroup
           className="wiz-style-list"
-          onKeyDown={onGroupKeyDown}
+          value={data.overlayStyle}
+          onValueChange={(overlayStyle) => onPatch({ overlayStyle: overlayStyle as OverlayTier })}
+          aria-label="Overlay style"
         >
           {STYLE_OPTIONS.map((option) => (
-            <button
-              key={option.value}
-              type="button"
-              role="radio"
-              aria-checked={data.overlayStyle === option.value}
-              aria-label={option.title}
-              className={`wiz-style-option${
-                data.overlayStyle === option.value ? ' selected' : ''
-              }`}
-              onClick={() => onPatch({ overlayStyle: option.value })}
-            >
-              <span className="wiz-style-radio" aria-hidden="true" />
-              <span className="wiz-style-text">
-                <span className="wiz-style-title">{option.title}</span>
-                <span className="wiz-style-desc">{option.desc}</span>
-              </span>
-              <span
-                className="wiz-style-stage"
-                data-tier={option.value}
-                aria-hidden="true"
+            <RadioGroupItem key={option.value} value={option.value} asChild>
+              <button
+                type="button"
+                aria-label={option.title}
+                className="choice-surface wiz-style-option"
               >
-                <OverlayPreview
-                  tier={option.value}
-                  glowOn
-                  position="center"
-                  pillOn={false}
-                />
-              </span>
-            </button>
+                <span className="wiz-style-radio" aria-hidden="true" />
+                <span className="wiz-style-text">
+                  <span className="wiz-style-title">{option.title}</span>
+                  <span className="wiz-style-desc">{option.desc}</span>
+                </span>
+                <span
+                  className="wiz-style-stage"
+                  data-tier={option.value}
+                  aria-hidden="true"
+                >
+                  <OverlayPreview
+                    tier={option.value}
+                    glowOn
+                    position="center"
+                    pillOn={false}
+                  />
+                </span>
+              </button>
+            </RadioGroupItem>
           ))}
-        </div>
+        </RadioGroup>
       </div>
     </>
   );

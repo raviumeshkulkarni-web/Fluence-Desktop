@@ -28,6 +28,7 @@ let cachedSettings = null;
 let timerInterval = null;
 let recordingStartTime = 0;
 let retryTimer = null;
+let statusResetTimer = null;
 let nextSessionId = 0;
 let activeSessionId = 0;
 let chimeCtx = null;
@@ -35,6 +36,16 @@ let chimeCtx = null;
 let agentRequestSeq = 0;
 let agentRetryContext = null;
 let lastAgentStartAt = 0;
+// One-turn agent picker (Slice 5): id-only selection, resolved server-side.
+// Null = built-in default. The STT flow never reads these.
+let activeAgentId = null;
+let agentPickerAgents = [];
+let agentPickerDefaultId = 'builtin';
+let agentPickerVisible = false;
+let agentPickerExpanded = false;
+let agentPickerAppPillVisible = true;
+let agentPickerResizeQueue = Promise.resolve();
+const AGENT_STRIP_EXTRA = 38;
 const AGENT_LLM_WATCHDOG_MS = 25000;
 
 function beginSession(explicitId) {
@@ -63,6 +74,8 @@ function resetTransientUi() {
   hideRecHint();
   setStatusMessage('');
   hideAppPill();
+  hideAgentPicker();
+  activeAgentId = null;
   // A new recording invalidates any cached agent retry (A2).
   agentRetryContext = null;
 }
@@ -91,7 +104,7 @@ async function reconcileWithNativeState() {
       }
 
       resetTransientUi();
-      setState(isAgent ? 'agent' : 'recording');
+      setState(isAgent ? 'agent' : 'recording', false);
       setMode(isAgent ? 'agent' : 'stt');
 
       try {
@@ -128,10 +141,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const prefs = await getRecordingPreferences();
     applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
   } catch {}
+  void preloadAgents();
   await reconcileWithNativeState();
 });
 
 window.addEventListener('pageshow', () => {
+  void preloadAgents();
   reconcileWithNativeState().catch(() => {});
 });
 
@@ -147,7 +162,7 @@ async function setupEventListeners() {
       : undefined;
     const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
-    setState('recording');
+    setState('recording', false);
     setMode('stt');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
@@ -232,12 +247,17 @@ async function setupEventListeners() {
       : undefined;
     const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
-    setState('agent');
+    setState('agent', false);
     setMode('agent');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
     // target app owns focus (timing-sensitive).
     const appIcon = loadAppIcon(sessionId);
+    const strip = document.getElementById('agent-strip');
+    if (strip && !strip.dataset.wired) {
+      strip.dataset.wired = 'true';
+      strip.addEventListener('click', toggleAgentCard);
+    }
     let recordingStarted = false;
     try {
       const prefs = await getRecordingPreferences();
@@ -249,6 +269,11 @@ async function setupEventListeners() {
       }
       setOverlayCorner(prefs.overlayPosition);
       await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+
+      if (agentPickerAgents.length > 0) {
+        showAgentPicker(prefs.showAppPill);
+      }
+
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -260,6 +285,7 @@ async function setupEventListeners() {
       if (overlayRoot) overlayRoot.classList.add('active');
       startTimer();
       void appIcon;
+      void loadAgentPicker(sessionId, prefs.showAppPill);
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
       if (recordingStarted) {
@@ -447,6 +473,201 @@ function hideAppPill() {
   }
 }
 
+// ── One-turn agent picker (Slice 5, agent mode only) ──────────────
+// Fail-closed: hidden on any error or when no custom agents exist.
+// Only agent ids cross IPC; prompt text stays server-side in agents.json.
+function agentDisplayName(id) {
+  if (!id || id === 'builtin') return 'Fluence Agent';
+  const found = agentPickerAgents.find((a) => a.id === id);
+  return found ? found.name : 'Fluence Agent';
+}
+
+function computeAgentPickerExpansion(cardHeight) {
+  const gap = 8;
+  const height = Number.isFinite(cardHeight) ? Math.max(0, cardHeight) : 0;
+  return height + gap;
+}
+
+function renderAgentPicker() {
+  const picker = document.getElementById('agent-picker');
+  const card = document.getElementById('agent-card');
+  const list = document.getElementById('agent-list');
+  const stripName = document.getElementById('agent-strip-name');
+  if (!picker || !card || !list) return;
+  if (stripName) stripName.textContent = agentDisplayName(activeAgentId);
+  list.textContent = '';
+  const rows = [
+    { id: 'builtin', name: 'Fluence Agent', sub: 'The all-rounder' },
+    ...agentPickerAgents.map((a) => ({ id: a.id, name: a.name, sub: a.hint })),
+  ];
+  for (const row of rows) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'agent-row-btn';
+    btn.setAttribute('role', 'radio');
+    btn.setAttribute('aria-checked', row.id === activeAgentId ? 'true' : 'false');
+    btn.setAttribute('aria-label', `Use ${row.name} for this turn`);
+    const text = document.createElement('span');
+    text.className = 'agent-row-text';
+    const nameEl = document.createElement('span');
+    nameEl.className = 'agent-row-name';
+    nameEl.textContent = row.name;
+    text.appendChild(nameEl);
+    if (row.sub) {
+      const sub = document.createElement('span');
+      sub.className = 'agent-row-sub';
+      sub.textContent = row.sub;
+      text.appendChild(sub);
+    }
+    if (row.id === agentPickerDefaultId) {
+      const badge = document.createElement('span');
+      badge.className = 'agent-row-default';
+      badge.textContent = 'Default';
+      text.appendChild(badge);
+    }
+    btn.appendChild(text);
+    if (row.id === activeAgentId) {
+      const check = document.createElement('span');
+      check.className = 'agent-row-check';
+      check.textContent = '✓';
+      check.setAttribute('aria-hidden', 'true');
+      btn.appendChild(check);
+    }
+    btn.addEventListener('click', () => {
+      activeAgentId = row.id;
+      renderAgentPicker();
+      void setAgentPickerExpanded(false);
+    });
+    list.appendChild(btn);
+  }
+}
+
+function setAgentPickerLayout(extraHeight, cardHeight = 0) {
+  const extra = Number.isFinite(extraHeight) ? Math.max(0, extraHeight) : 0;
+  const card = Number.isFinite(cardHeight) ? Math.max(0, cardHeight) : 0;
+  document.body.style.setProperty('--agent-picker-extra', `${extra}px`);
+  document.body.style.setProperty('--agent-picker-card-height', `${card}px`);
+  document.body.classList.toggle('agent-picker-visible', agentPickerVisible);
+  document.body.classList.toggle('agent-picker-expanded', agentPickerExpanded);
+  document.body.classList.toggle('agent-pill-visible', agentPickerAppPillVisible);
+}
+
+function queueAgentPickerHeight(extraHeight, pickerVisible) {
+  agentPickerResizeQueue = agentPickerResizeQueue
+    .catch(() => {})
+    .then(() => invoke('set_agent_picker_height', { extraHeight, pickerVisible }));
+  return agentPickerResizeQueue;
+}
+
+async function preloadAgents() {
+  try {
+    const view = await invoke('get_agents');
+    const customs = (view && view.custom_agents) || [];
+    agentPickerAgents = customs;
+    agentPickerDefaultId = (view && view.default_id) || 'builtin';
+    if (!activeAgentId) activeAgentId = agentPickerDefaultId;
+    renderAgentPicker();
+  } catch (err) {
+    console.warn('Failed to preload agents:', err);
+  }
+}
+
+function showAgentPicker(showAppPill) {
+  const picker = document.getElementById('agent-picker');
+  if (!picker) return;
+  agentPickerAppPillVisible = showAppPill !== false;
+  if (agentPickerVisible) {
+    const card = document.getElementById('agent-card');
+    const cardHeight = agentPickerExpanded && card ? card.getBoundingClientRect().height : 0;
+    const extra = agentPickerExpanded ? (AGENT_STRIP_EXTRA + computeAgentPickerExpansion(cardHeight)) : AGENT_STRIP_EXTRA;
+    setAgentPickerLayout(extra, cardHeight);
+    return;
+  }
+  agentPickerVisible = true;
+  setAgentPickerLayout(AGENT_STRIP_EXTRA, 0);
+  picker.hidden = false;
+  // Sized to AGENT_STRIP_EXTRA and widened to AGENT_PICKER_WINDOW_WIDTH (260px)
+  queueAgentPickerHeight(AGENT_STRIP_EXTRA, true).catch((err) => {
+    console.warn('Failed to size agent picker window:', err);
+  });
+}
+
+async function setAgentPickerExpanded(expanded) {
+  const card = document.getElementById('agent-card');
+  const strip = document.getElementById('agent-strip');
+  if (!card || !strip || !agentPickerVisible || agentPickerExpanded === expanded) return;
+
+  agentPickerExpanded = expanded;
+  card.hidden = !expanded;
+  strip.setAttribute('aria-expanded', expanded ? 'true' : 'false');
+
+  if (!expanded) {
+    setAgentPickerLayout(AGENT_STRIP_EXTRA, 0);
+    try {
+      // Strip stays visible: keep the widened window, collapse to base strip extra height.
+      await queueAgentPickerHeight(AGENT_STRIP_EXTRA, true);
+    } catch (err) {
+      console.warn('Failed to collapse agent picker window:', err);
+    }
+    return;
+  }
+
+  const cardHeight = card.getBoundingClientRect().height;
+  const extraHeight = AGENT_STRIP_EXTRA + computeAgentPickerExpansion(cardHeight);
+  setAgentPickerLayout(extraHeight, cardHeight);
+  try {
+    const appliedExtra = await queueAgentPickerHeight(extraHeight, true);
+    if (agentPickerExpanded) setAgentPickerLayout(appliedExtra, cardHeight);
+  } catch (err) {
+    console.warn('Failed to expand agent picker window:', err);
+  }
+}
+
+function hideAgentPicker(resetWindow = true) {
+  const picker = document.getElementById('agent-picker');
+  const card = document.getElementById('agent-card');
+  const strip = document.getElementById('agent-strip');
+  const shouldResetHeight = agentPickerVisible || agentPickerExpanded;
+  agentPickerVisible = false;
+  agentPickerExpanded = false;
+  if (card) card.hidden = true;
+  if (strip) strip.setAttribute('aria-expanded', 'false');
+  if (picker) picker.hidden = true;
+  setAgentPickerLayout(0, 0);
+  if (shouldResetHeight && resetWindow) {
+    // Picker fully gone: window shrinks back to the bare tier size.
+    queueAgentPickerHeight(0, false).catch((err) => {
+      console.warn('Failed to reset agent picker window:', err);
+    });
+  }
+}
+
+async function loadAgentPicker(sessionId, showAppPill) {
+  try {
+    const view = await invoke('get_agents');
+    if (!isSessionActive(sessionId)) return;
+    const customs = (view && view.custom_agents) || [];
+    agentPickerAgents = customs;
+    agentPickerDefaultId = (view && view.default_id) || 'builtin';
+    if (!activeAgentId) activeAgentId = agentPickerDefaultId;
+    renderAgentPicker();
+    if (!customs.length) {
+      if (agentPickerVisible) hideAgentPicker();
+      return;
+    }
+    if (currentState === 'agent' && !agentPickerVisible) {
+      showAgentPicker(showAppPill);
+    }
+  } catch (err) {
+    // Fail-closed: picker stays hidden, built-in default applies.
+    console.warn('Failed to load agents for picker:', err);
+  }
+}
+
+function toggleAgentCard() {
+  void setAgentPickerExpanded(!agentPickerExpanded);
+}
+
 function setOverlayCorner(position) {
   if (!overlayRoot) return;
   overlayRoot.classList.remove('corner-bottom-left', 'corner-bottom-right', 'corner-bottom-center', 'corner-top-left', 'corner-top-right', 'corner-top-center');
@@ -488,7 +709,7 @@ async function applyOverlayStyle(style, glowOn = true) {
 function setStatusMessage(text) {
   if (statusMsg) {
     statusMsg.textContent = text || '';
-    // Compact/bubble hide the text visually — keep it available as hover
+    // Compact/bubble hide the text visually - keep it available as hover
     // tooltip so minimal-tier users still get the failure reason.
     if (text) statusMsg.title = text;
     else statusMsg.removeAttribute('title');
@@ -498,7 +719,7 @@ function setStatusMessage(text) {
     if (text) overlayRoot.title = text;
     else overlayRoot.removeAttribute('title');
   }
-  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry — ${text}`);
+  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry - ${text}`);
   else if (statusRetry) statusRetry.removeAttribute('aria-label');
 }
 
@@ -517,7 +738,26 @@ let autoDismissPauseBound = false;
 let autoDismissHover = false;
 let autoDismissFocus = false;
 
+function clearStatusReset() {
+  if (statusResetTimer) {
+    clearTimeout(statusResetTimer);
+    statusResetTimer = null;
+  }
+}
+
+function scheduleStatusReset(message, delay) {
+  clearStatusReset();
+  const sessionId = activeSessionId;
+  statusResetTimer = setTimeout(() => {
+    statusResetTimer = null;
+    if (isSessionActive(sessionId) && (!statusMsg || statusMsg.textContent === message)) {
+      setStatusMessage('');
+    }
+  }, delay);
+}
+
 function clearAutoDismiss() {
+  clearStatusReset();
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
@@ -627,7 +867,7 @@ function setupRetryButton() {
         agentRetryContext = null;
         setState('agent_transcribing');
         if (recLabel) recLabel.textContent = 'PROCESSING';
-        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId);
+        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId, ctx.agentId);
         return;
       }
       setState('transcribing');
@@ -714,7 +954,7 @@ function setupDiscardButton() {
     // Bubble tier: the visible chip is a 20px badge with a 12px invisible
     // halo that belongs to the footer container, not the button. Clicks on
     // the halo/padding would otherwise hit the footer (no handler) or start
-    // a window drag — a dead close button. Forward those to the same path.
+    // a window drag - a dead close button. Forward those to the same path.
     // Guarded to bubble tier and non-button targets so full/compact tiers
     // and the button itself never double-fire.
     const badge = cardDiscard.parentElement;
@@ -751,6 +991,7 @@ async function fadeAndHide(sessionId = activeSessionId) {
   hideRetry();
   setStatusMessage('');
   hideAppPill();
+  hideAgentPicker(false);
   if (overlayRoot) {
     overlayRoot.classList.remove('active');
   }
@@ -859,8 +1100,6 @@ async function runSttFlow(sessionId, retry = false) {
       await invoke('inject_text', { text: result.text, monitorAutoLearn: true });
       if (!isSessionActive(sessionId)) return;
       setState('success');
-      // Realtime was selected but batch served: say so instead of a plain
-      // "Inserted" so streaming silently downgrading stays visible.
       setStatusMessage(result.realtimeFallback ? 'Inserted (standard mode)' : 'Inserted');
       playCompletionChime();
       await new Promise(r => setTimeout(r, 1000));
@@ -879,6 +1118,24 @@ async function runSttFlow(sessionId, retry = false) {
     setStatusMessage('Transcription failed');
     showRetry();
     scheduleAutoDismiss(8000);
+  }
+}
+
+// Polish skip reason → user-facing status label (pure function - no DOM, so
+// it can be unit-tested in Node like mapAgentErrorToStatus; the agent flow
+// never calls it).
+function mapPolishReason(reason) {
+  switch (reason) {
+    case 'missing_key':
+      return 'no key set';
+    case 'rate_limited':
+      return 'rate limited';
+    case 'network_error':
+      return 'network error';
+    case 'rejected':
+      return 'AI output rejected';
+    default:
+      return 'AI error';
   }
 }
 
@@ -906,12 +1163,14 @@ function mapAgentErrorToStatus(err) {
   return { label: 'Agent failed', retryable: true };
 }
 
-async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId) {
+async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId, retryAgentId) {
   if (!isSessionActive(sessionId)) return;
   // Function scope (NOT inside try): the catch block below caches this for
   // Retry, and try-block `let`s are invisible to catch. Params are already
   // function-scoped, so only this one needs hoisting.
   let clipboardCtx = '';
+  // Per-turn agent: retry reuses the turn's pick, else the live picker value.
+  const turnAgentId = retryAgentId !== undefined ? retryAgentId : activeAgentId;
   try {
     // Credentials stay server-side: the secure command resolves the saved
     // LLM provider/key from settings + Credential Manager. No api_key in
@@ -941,6 +1200,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
         voice_command: voiceCommand,
         clipboard_context: clipboardCtx,
         request_id: agentRequestId,
+        agent_id: turnAgentId,
       }
     });
     // Watchdog (A3): the backend caps at 20s; if the IPC promise never
@@ -1032,7 +1292,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     const { label, retryable } = mapAgentErrorToStatus(err);
     setStatusMessage(label);
     if (retryable) {
-      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId };
+      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId, agentId: turnAgentId };
       showRetry();
     }
     scheduleAutoDismiss(8000);
@@ -1044,16 +1304,15 @@ async function setupHotkeyBusyFeedback() {
   await listen('hotkey-busy', (evt) => {
     console.warn('Hotkey busy:', evt.payload);
     if (currentState === 'recording' || currentState === 'agent' || currentState === 'transcribing' || currentState === 'agent_transcribing') {
-      // already busy recording - gentle hint, not error
       setStatusMessage('Recording busy');
-      scheduleAutoDismiss(1200);
+      scheduleStatusReset('Recording busy', 1200);
     }
   });
 }
 
 // ── State Management ────────────────────────────────────────────
 
-function setState(state) {
+function setState(state, updateVisibility = true) {
   currentState = state;
 
   if (aura) aura.setState(state);
@@ -1066,7 +1325,7 @@ function setState(state) {
     stopAppPolling();
   }
 
-  if (overlayRoot) {
+  if (overlayRoot && updateVisibility) {
     if (state !== 'idle') {
       overlayRoot.classList.add('active');
     } else {

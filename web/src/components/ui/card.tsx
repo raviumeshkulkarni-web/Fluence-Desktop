@@ -1,49 +1,61 @@
 import * as React from 'react';
 import { cn } from '@/lib/cn';
 
-// shadcn-canonical Card anatomy (div-based, composable). Paint comes
-// exclusively from ui.css `.card*` classes (Fluence tokens).
-const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+const Card = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('card', className)} {...props} />
+    <div ref={ref} data-slot="card" className={cn('card', className)} {...props} />
   ),
 );
 Card.displayName = 'Card';
 
-const CardHeader = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+const CardHeader = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('card-header', className)} {...props} />
+    <div ref={ref} data-slot="card-header" className={cn('card-header', className)} {...props} />
   ),
 );
 CardHeader.displayName = 'CardHeader';
 
-const CardTitle = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+const CardTitle = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('card-title', className)} {...props} />
+    <div ref={ref} data-slot="card-title" className={cn('card-title', className)} {...props} />
   ),
 );
 CardTitle.displayName = 'CardTitle';
 
-const CardDescription = React.forwardRef<
-  HTMLDivElement,
-  React.HTMLAttributes<HTMLDivElement>
->(({ className, ...props }, ref) => (
-  <div ref={ref} className={cn('card-description', className)} {...props} />
-));
+const CardDescription = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} data-slot="card-description" className={cn('card-description', className)} {...props} />
+  ),
+);
 CardDescription.displayName = 'CardDescription';
 
-const CardContent = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+const CardAction = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('card-content', className)} {...props} />
+    <div ref={ref} data-slot="card-action" className={cn('card-action', className)} {...props} />
+  ),
+);
+CardAction.displayName = 'CardAction';
+
+const CardContent = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
+  ({ className, ...props }, ref) => (
+    <div ref={ref} data-slot="card-content" className={cn('card-content', className)} {...props} />
   ),
 );
 CardContent.displayName = 'CardContent';
 
-const CardFooter = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElement>>(
+const CardFooter = React.forwardRef<HTMLDivElement, React.ComponentProps<'div'>>(
   ({ className, ...props }, ref) => (
-    <div ref={ref} className={cn('card-footer', className)} {...props} />
+    <div ref={ref} data-slot="card-footer" className={cn('card-footer', className)} {...props} />
   ),
 );
 CardFooter.displayName = 'CardFooter';
 
-export { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter };
+export {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardAction,
+  CardContent,
+  CardFooter,
+};

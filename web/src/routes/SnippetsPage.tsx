@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
 import {
   Empty,
   EmptyDescription,
@@ -21,6 +22,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
 import {
   addSnippet,
@@ -119,8 +121,12 @@ export function SnippetsPage() {
         <p className="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
       </div>
 
-      <div className="settings-section settings-section--unboxed">
-        <div className="setting-row snippet-lead-row">
+      <SettingsSectionHeader
+        title="Text Expansion"
+        description="Configure shorthand triggers that expand into longer text"
+      />
+      <Card className="settings-card">
+        <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label">Enable Text Expansion</div>
             <div className="setting-desc">Dictate a short trigger like &quot;my linkedin&quot; and Fluence pastes your expansion text instead</div>
@@ -136,41 +142,47 @@ export function SnippetsPage() {
             </Field>
           </div>
         </div>
+      </Card>
 
-        <div className="settings-section-header settings-section-header-actions is-spaced">
-          <h2>My Snippets</h2>
-          <Button variant="primary" size="sm" id="add-snippet-btn" onClick={openAdd}>Add Snippet</Button>
-        </div>
-        {showAdd && (
-          <div id="snippet-add-row" className="snippet-add-form">
-            <Field label="Spoken Trigger" htmlFor="snippet-trigger-input" className="snippet-add-field">
-              <Input
-                ref={triggerRef}
-                type="text"
-                id="snippet-trigger-input"
-                maxLength={100}
-                placeholder="e.g. my linkedin"
-                value={trigger}
-                onChange={(e) => setTrigger(e.target.value)}
-              />
-            </Field>
-            <Field label="Expansion Text" htmlFor="snippet-expansion-input" className="snippet-add-field-wide">
-              <Input
-                type="text"
-                id="snippet-expansion-input"
-                maxLength={500}
-                placeholder="e.g. https://linkedin.com/in/username"
-                value={expansion}
-                onChange={(e) => setExpansion(e.target.value)}
-              />
-            </Field>
-            <div className="snippet-add-actions">
-              <Button variant="primary" size="sm" id="snippet-save-btn" onClick={() => void onSave()}>Save</Button>
-              <Button variant="ghost" size="sm" id="snippet-cancel-btn" onClick={closeAdd}>Cancel</Button>
-            </div>
+      <SettingsSectionHeader
+        title="My Snippets"
+        description="Custom triggers and phrases mapped to expanded text"
+      >
+        <Button variant="default" size="sm" id="add-snippet-btn" onClick={openAdd}>Add Snippet</Button>
+      </SettingsSectionHeader>
+
+      {showAdd && (
+        <div id="snippet-add-row" className="snippet-add-card snippet-add-form">
+          <Field label="Spoken Trigger" htmlFor="snippet-trigger-input" className="snippet-add-field">
+            <Input
+              ref={triggerRef}
+              type="text"
+              id="snippet-trigger-input"
+              maxLength={100}
+              placeholder="e.g. my linkedin"
+              value={trigger}
+              onChange={(e) => setTrigger(e.target.value)}
+            />
+          </Field>
+          <Field label="Expansion Text" htmlFor="snippet-expansion-input" className="snippet-add-field-wide">
+            <Input
+              type="text"
+              id="snippet-expansion-input"
+              maxLength={500}
+              placeholder="e.g. https://linkedin.com/in/username"
+              value={expansion}
+              onChange={(e) => setExpansion(e.target.value)}
+            />
+          </Field>
+          <div className="snippet-add-actions">
+            <Button variant="default" size="sm" id="snippet-save-btn" onClick={() => void onSave()}>Save</Button>
+            <Button variant="ghost" size="sm" id="snippet-cancel-btn" onClick={closeAdd}>Cancel</Button>
           </div>
-        )}
-        <Table className="dict-table">
+        </div>
+      )}
+
+      <div className="table-card settings-card">
+        <Table className="dict-table snippet-table">
           <TableCaption className="sr-only">Saved text expansion snippets</TableCaption>
           <TableHeader>
             <TableRow>
@@ -224,7 +236,7 @@ export function SnippetsPage() {
               </TableRow>
             ))}
           </TableBody>
-          </Table>
+        </Table>
       </div>
     </section>
   );

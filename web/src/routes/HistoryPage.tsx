@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/components/fluence/Toasts';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import {
@@ -33,6 +34,7 @@ import { Kbd } from '@/components/ui/kbd';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -46,6 +48,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { acceptSuggestion } from '@/ipc/dictionary';
+import { cn } from '@/lib/cn';
 import {
   clearHistory,
   consumeHistorySearchFocus,
@@ -279,8 +282,14 @@ const HistoryRow = memo(function HistoryRow({
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
-          className={`history-item${flash ? ' copy-flash' : ''}${isLast ? ' is-last' : ''}${expanded ? ' is-expanded' : ''}${selected ? ' is-selected' : ''}`}
+          className={cn(
+            'history-item',
+            flash && 'copy-flash',
+            isLast && 'is-last',
+            expanded && 'is-expanded',
+          )}
           data-history-id={entry.id}
+          data-state={selected ? 'selected' : undefined}
           tabIndex={tabIndex}
           role="button"
           aria-expanded={expanded}
@@ -310,12 +319,22 @@ const HistoryRow = memo(function HistoryRow({
           }}
         >
           <div className="history-item-header">
-            <span className="history-meta-wrap">
-              <span className="history-item-time" title={date.toLocaleString()}>
-                {formatHistoryTimestamp(entry.timestamp)}
+            <div className="history-item-main">
+              <Checkbox
+                checked={selected}
+                aria-label={selected ? 'Deselect transcription' : 'Select transcription'}
+                onClick={(e) => e.stopPropagation()}
+                onCheckedChange={(checked) => {
+                  if (checked !== selected) onToggleSelect(entry.id);
+                }}
+              />
+              <span className="history-meta-wrap">
+                <span className="history-item-time" title={date.toLocaleString()}>
+                  {formatHistoryTimestamp(entry.timestamp)}
+                </span>
+                <span className="history-item-meta">{historyItemMeta(entry)}{expanded && entry.provider ? ` · ${entry.provider}` : ''}</span>
               </span>
-              <span className="history-item-meta">{historyItemMeta(entry)}{expanded && entry.provider ? ` · ${entry.provider}` : ''}</span>
-            </span>
+            </div>
             <div className="history-actions">
               <Badge variant={entry.mode === 'agent' ? 'secondary' : 'success'}>{entry.mode}</Badge>
               <Button
@@ -1081,22 +1100,28 @@ export function HistoryPage() {
         <p className="page-subtitle">Browse and search every transcription on this device</p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header settings-section-header-actions">
-          <h2>Recent Transcriptions</h2>
-          <Button variant="danger" size="xs" id="clear-history-btn" onClick={() => setConfirmClear(true)}>Clear All</Button>
-        </div>
-        <div className="search-wrapper">
-          <Search size={15} strokeWidth={2} aria-hidden="true" />
-          <Input
-            ref={searchFieldRef}
-            type="search"
-            id="history-search"
-            placeholder="Search transcriptions…"
-            aria-label="Search transcriptions"
-            value={searchInput}
-            onChange={(e) => onSearchInput(e.target.value)}
-          />
+      <div className="settings-card history-card" id="history-container">
+        <div className="history-search-row">
+          <div className="search-wrapper">
+            <Search size={15} strokeWidth={2} aria-hidden="true" />
+            <Input
+              ref={searchFieldRef}
+              type="search"
+              id="history-search"
+              placeholder="Search transcriptions…"
+              aria-label="Search transcriptions"
+              value={searchInput}
+              onChange={(e) => onSearchInput(e.target.value)}
+            />
+          </div>
+          <Button
+            variant="destructive"
+            size="sm"
+            id="clear-history-btn"
+            onClick={() => setConfirmClear(true)}
+          >
+            Clear All
+          </Button>
         </div>
         <div className="history-filter-bar">
           <ToggleGroup
@@ -1127,10 +1152,12 @@ export function HistoryPage() {
                   <SelectValue placeholder="Provider" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All providers</SelectItem>
-                  {providerOptions.map((p) => (
-                    <SelectItem key={p} value={p}>{p}</SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectItem value="all">All providers</SelectItem>
+                    {providerOptions.map((p) => (
+                      <SelectItem key={p} value={p}>{p}</SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
@@ -1142,9 +1169,11 @@ export function HistoryPage() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {SORT_OPTIONS.map((o) => (
-                  <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
-                ))}
+                <SelectGroup>
+                  {SORT_OPTIONS.map((o) => (
+                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                  ))}
+                </SelectGroup>
               </SelectContent>
             </Select>
           </div>
@@ -1280,11 +1309,9 @@ export function HistoryPage() {
           className={pagedEntries.length === 0 ? 'hidden' : undefined}
         >
           <span className="history-pager-count">
-            {selectedIds.size} of {(fullActive ? allEntries : entries).length} row(s) selected.
+            Rows per page: {HISTORY_PAGE_SIZE}
           </span>
           <div className="history-pager-controls">
-            <span className="history-pager-label">Rows per page</span>
-            <span className="history-pager-size">{HISTORY_PAGE_SIZE}</span>
             <span className="history-pager-page" aria-live="polite">
               {loadingMore ? 'Loading…' : `Page ${page + 1}${totalPages != null ? ` of ${totalPages}` : ''}`}
             </span>

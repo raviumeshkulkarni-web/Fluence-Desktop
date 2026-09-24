@@ -42,7 +42,13 @@ const DARK_TOKENS_CSS = tokensCssRaw
 // - `-webkit-app-region: no-drag` so dragging a preview never drags the
 //   settings window (production needs drag; the preview must not).
 const FRAME_CSS = `
-.ovpv-frame { position: relative; display: flex; justify-content: center; }
+.ovpv-frame {
+  position: relative;
+  display: flex;
+  justify-content: center;
+  --agent-picker-card-height: 0px;
+  --agent-picker-extra: 0px;
+}
 /* Pill reserve mirrors overlay.html body padding-top:46 — room for the
  * half-docked app pill, taken only while the pill is shown. */
 .ovpv-frame.has-pill { padding-top: 46px; }
@@ -292,5 +298,10 @@ export function OverlayPreview({
     };
   }, [tier, glowOn, position, pillOn]);
 
-  return <div ref={hostRef} className={`overlay-preview overlay-preview-${tier}`} />;
+  return (
+    <div
+      ref={hostRef}
+      className={`overlay-preview overlay-preview-${tier}${pillOn !== false ? ' has-pill' : ''}`}
+    />
+  );
 }

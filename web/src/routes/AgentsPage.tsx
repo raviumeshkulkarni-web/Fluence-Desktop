@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Plus, Zap } from 'lucide-react';
+import { AlertCircle, Zap } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import {
   Empty,
   EmptyContent,
@@ -18,7 +20,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { Field } from '@/components/ui/field';
+import { Field, FieldGroup } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -49,6 +51,7 @@ import {
 export function AgentsPage() {
   const [view, setView] = useState<AgentsView | null>(null);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [showEditor, setShowEditor] = useState(false);
   const [editing, setEditing] = useState<CustomAgent | null>(null);
   const [name, setName] = useState('');
@@ -59,8 +62,11 @@ export function AgentsPage() {
   const load = useCallback(async () => {
     try {
       setView(await getAgents());
+      setError(null);
     } catch (err) {
-      toast('Failed to load agents: ' + String(err), 'error');
+      const message = String(err).replace(/^Error:\s*/, '');
+      setError(message);
+      toast('Failed to load agents: ' + message, 'error');
     } finally {
       setLoading(false);
     }
@@ -72,6 +78,12 @@ export function AgentsPage() {
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [load]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setError(null);
+    void load();
+  };
 
   const onSelectDefault = async (id: string) => {
     try {
@@ -133,13 +145,40 @@ export function AgentsPage() {
     }
   };
 
-  if (loading || !view) {
+  if (loading) {
     return (
       <section className="page active" id="page-agents">
         <div className="page-header">
           <h1 className="page-title" tabIndex={-1}>Agents</h1>
         </div>
         <Skeleton className="route-skeleton" />
+      </section>
+    );
+  }
+
+  if (error || !view) {
+    return (
+      <section className="page active" id="page-agents">
+        <div className="page-header">
+          <h1 className="page-title" tabIndex={-1}>Agents</h1>
+          <p className="page-subtitle">Saved agents are temporarily unavailable.</p>
+        </div>
+        <Empty className="agents-empty agents-error" role="alert">
+          <EmptyHeader>
+            <EmptyMedia variant="icon">
+              <AlertCircle className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
+            </EmptyMedia>
+            <EmptyTitle className="agents-empty-title">Unable to load agents</EmptyTitle>
+            <EmptyDescription className="agents-empty-desc">
+              {error || 'Try again to load your saved agents.'}
+            </EmptyDescription>
+          </EmptyHeader>
+          <EmptyContent>
+            <Button variant="default" size="sm" onClick={retryLoad}>
+              Try again
+            </Button>
+          </EmptyContent>
+        </Empty>
       </section>
     );
   }
@@ -158,10 +197,14 @@ export function AgentsPage() {
           </p>
         </div>
 
-        <div className="settings-section settings-section--unboxed">
-          <div className="settings-section-header">
-            <h2>Built in</h2>
-          </div>
+      <SettingsSectionHeader
+        title="Built-in Agent"
+        description="The default multipurpose agent that handles general dictation and formatting"
+      />
+      <Card
+        className={`settings-card${view.default_id === view.builtin_id ? ' settings-card-selected' : ''}`}
+      >
+        <CardContent className="settings-card-content">
           <RadioGroup
             className="agent-choice-group"
             value={view.default_id}
@@ -177,65 +220,70 @@ export function AgentsPage() {
               onSelect={() => void onSelectDefault(view.builtin_id)}
             />
           </RadioGroup>
+        </CardContent>
+      </Card>
 
-          <div className="settings-section-header settings-section-header-actions is-spaced">
-            <h2>Custom agents</h2>
-            <Button
-              variant="primary"
-              size="sm"
-              id="agents-new-btn"
-              onClick={openNew}
-            >
-              <Plus data-icon="inline-start" size={14} aria-hidden="true" />
-              New
-            </Button>
-          </div>
-
+      <SettingsSectionHeader
+        title="Custom Agents"
+        description="Custom instructions for specific writing styles or workflows"
+      >
+        <Button
+          variant="default"
+          size="sm"
+          id="agents-new-btn"
+          onClick={openNew}
+        >
+          New Agent
+        </Button>
+      </SettingsSectionHeader>
+      <Card className="settings-card">
+        <CardContent className="settings-card-content">
           {customs.length === 0 ? (
-            <Empty className="agents-empty">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <Zap className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
-                </EmptyMedia>
-                <EmptyTitle className="agents-empty-title">No custom agents yet</EmptyTitle>
-                <EmptyDescription className="agents-empty-desc">
-                  Create one that writes the way you want, e.g. a translator
-                  that always replies in Hindi
-                </EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button
-                  variant="secondary"
-                  size="sm"
-                  onClick={openNew}
-                >
-                  Create your first agent
-                </Button>
-              </EmptyContent>
-            </Empty>
-          ) : (
-            <RadioGroup
-              className="agent-choice-group"
-              value={view.default_id}
-              onValueChange={(id) => void onSelectDefault(id)}
-              aria-label="Custom agents"
-            >
-              {customs.map((agent) => (
-                <AgentRow
-                  key={agent.id}
-                  value={agent.id}
-                  title={agent.name}
-                  description={agent.hint}
-                  isDefault={view.default_id === agent.id}
-                  selected={view.default_id === agent.id}
-                  onSelect={() => void onSelectDefault(agent.id)}
-                  onEdit={() => openEdit(agent)}
-                  onDelete={() => setPendingDelete(agent)}
-                />
-              ))}
-            </RadioGroup>
-          )}
-        </div>
+          <Empty className="agents-empty">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <Zap className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
+              </EmptyMedia>
+              <EmptyTitle className="agents-empty-title">No custom agents yet</EmptyTitle>
+              <EmptyDescription className="agents-empty-desc">
+                Create one that writes the way you want, e.g. a translator
+                that always replies in Hindi
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={openNew}
+              >
+                Create your first agent
+              </Button>
+            </EmptyContent>
+          </Empty>
+        ) : (
+          <RadioGroup
+            className="agent-choice-group"
+            value={view.default_id}
+            onValueChange={(id) => void onSelectDefault(id)}
+            aria-label="Custom agents"
+          >
+            {customs.map((agent) => (
+              <AgentRow
+                key={agent.id}
+                value={agent.id}
+                title={agent.name}
+                description={agent.hint}
+                isDefault={view.default_id === agent.id}
+                selected={view.default_id === agent.id}
+                onSelect={() => void onSelectDefault(agent.id)}
+                onEdit={() => openEdit(agent)}
+                onDelete={() => setPendingDelete(agent)}
+              />
+            ))}
+          </RadioGroup>
+        )}
+        </CardContent>
+      </Card>
 
       <Dialog
         open={showEditor}
@@ -252,28 +300,30 @@ export function AgentsPage() {
                 : 'Create reusable instructions for how this agent should respond.'}
             </DialogDescription>
           </DialogHeader>
-          <Field label="Name (max 30 characters)" htmlFor="agent-name-input">
-            <Input
-              id="agent-name-input"
-              value={name}
-              maxLength={30}
-              placeholder="e.g. Translator"
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Instructions (max 1000 characters)"
-            htmlFor="agent-hint-input"
-          >
-            <Textarea
-              id="agent-hint-input"
-              value={hint}
-              maxLength={1000}
-              rows={4}
-              placeholder="e.g. always reply in Hindi, keep it short"
-              onChange={(e) => setHint(e.target.value)}
-            />
-          </Field>
+          <FieldGroup>
+            <Field label="Name (max 30 characters)" htmlFor="agent-name-input">
+              <Input
+                id="agent-name-input"
+                value={name}
+                maxLength={30}
+                placeholder="e.g. Translator"
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field
+              label="Instructions (max 1000 characters)"
+              htmlFor="agent-hint-input"
+            >
+              <Textarea
+                id="agent-hint-input"
+                value={hint}
+                maxLength={1000}
+                rows={4}
+                placeholder="e.g. always reply in Hindi, keep it short"
+                onChange={(e) => setHint(e.target.value)}
+              />
+            </Field>
+          </FieldGroup>
           <DialogFooter>
             <Button
               variant="secondary"
@@ -309,7 +359,7 @@ export function AgentsPage() {
               <Button variant="secondary">Cancel</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button variant="danger" onClick={() => void onDelete()}>
+              <Button variant="destructive" onClick={() => void onDelete()}>
                 Delete
               </Button>
             </AlertDialogAction>
@@ -344,7 +394,7 @@ function AgentRow({
 
   return (
     <div
-      className={`choice-surface selection-row agent-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}`}
+      className={`selection-row agent-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}`}
     >
       <RadioGroupItem value={value} asChild>
         <button
@@ -358,7 +408,7 @@ function AgentRow({
               <span className="selection-row-title">{title}</span>
               {isDefault && (
                  <Badge variant="secondary" className="agent-default-badge">
-                   Default
+                    DEFAULT
                  </Badge>
               )}
             </span>
@@ -380,9 +430,8 @@ function AgentRow({
           )}
           {onDelete && (
             <Button
-              variant="danger"
+              variant="destructive"
               size="xs"
-              className="agent-delete-btn destructive-action"
               onClick={onDelete}
             >
               Delete

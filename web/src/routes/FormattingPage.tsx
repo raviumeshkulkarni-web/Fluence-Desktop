@@ -1,19 +1,30 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { AppWindow, Check, Plus, RefreshCw } from 'lucide-react';
+import { AppWindow, Check, RefreshCw } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Card } from '@/components/ui/card';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { Field } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import {
   ConfirmDialog,
   Dialog,
@@ -144,9 +155,8 @@ function StyleChoiceCard({
           )}
           {onDelete && (
             <Button
-              variant="danger"
+              variant="destructive"
               size="xs"
-              className="agent-delete-btn destructive-action"
               onClick={onDelete}
             >
               Delete
@@ -174,7 +184,7 @@ export function FormattingPage() {
   const [showPicker, setShowPicker] = useState(false);
   const [pickerQuery, setPickerQuery] = useState('');
   const [pickerExe, setPickerExe] = useState<string | null>(null);
-  const [pickerStyle, setPickerStyle] = useState('proofread');
+  const [pickerStyle, setPickerStyle] = useState('default');
 
   const [showEditor, setShowEditor] = useState(false);
   const [editing, setEditing] = useState<CustomPromptStyle | null>(null);
@@ -249,15 +259,21 @@ export function FormattingPage() {
   const enabled = aiPolish !== 'none';
 
   const onToggleCleanup = (on: boolean) => {
-    if (on) {
-      const restore =
-        lastNonNone && lastNonNone !== 'none' ? lastNonNone : 'default';
-      setAiPolish(restore);
-      if (getCachedSettings()) setSettingField('ai_polish_style', restore);
-    } else {
-      if (aiPolish !== 'none') setLastNonNone(aiPolish);
-      setAiPolish('none');
-      if (getCachedSettings()) setSettingField('ai_polish_style', 'none');
+    try {
+      if (on) {
+        const restore =
+          lastNonNone && lastNonNone !== 'none' ? lastNonNone : 'default';
+        setAiPolish(restore);
+        if (getCachedSettings()) setSettingField('ai_polish_style', restore);
+        toast('AI post processing enabled', 'success');
+      } else {
+        if (aiPolish !== 'none') setLastNonNone(aiPolish);
+        setAiPolish('none');
+        if (getCachedSettings()) setSettingField('ai_polish_style', 'none');
+        toast('AI post processing disabled', 'success');
+      }
+    } catch (err) {
+      toast('Failed to update: ' + String(err), 'error');
     }
   };
 
@@ -279,29 +295,41 @@ export function FormattingPage() {
   const aiRuleExes = prompts ? Object.keys(prompts.overrides) : [];
 
   const aiStyleLabel = (styleId: string): string => {
+    if (styleId === 'default' || styleId === 'proofread') return 'Default cleanup';
     const b = builtins.find((x) => x.id === styleId);
     if (b) return b.title;
     const c = customs.find((x) => x.id === styleId);
     if (c) return c.name;
-    if (styleId === 'default') return 'Default cleanup';
     return styleId;
   };
 
   // Global default style (mirrors the Agents page default agent): every app
   // without its own override uses this. The backend resolves "custom:<id>"
   // for the global style the same way it does for per-app overrides.
+  // Normalize so that if not a recognized custom style, it defaults to 'default'.
+  const rawDefault = (enabled ? aiPolish : lastNonNone) || 'default';
+  const isCustomDefault = customs.some((c) => c.id === rawDefault);
+  const effectiveDefault = isCustomDefault ? rawDefault : 'default';
+
   const setDefaultStyle = (styleId: string) => {
     const next = styleId || 'default';
-    setAiPolish(next);
     setLastNonNone(next);
-    if (getCachedSettings()) setSettingField('ai_polish_style', next);
+    if (enabled) {
+      setAiPolish(next);
+      if (getCachedSettings()) setSettingField('ai_polish_style', next);
+    }
     toast(`${aiStyleLabel(next)} is now the default`, 'success');
   };
 
   const setExeAiStyle = async (exe: string, value: string) => {
     try {
-      if (value === 'global') await clearPromptOverride(exe);
-      else await setPromptOverride(exe, value);
+      if (value === 'global') {
+        await clearPromptOverride(exe);
+        toast(`Removed style for ${appNameOf(exe)}`, 'success');
+      } else {
+        await setPromptOverride(exe, value);
+        toast(`Updated style for ${appNameOf(exe)}`, 'success');
+      }
       await loadPrompts();
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
@@ -311,7 +339,7 @@ export function FormattingPage() {
   const openPicker = () => {
     setPickerQuery('');
     setPickerExe(null);
-    setPickerStyle('proofread');
+    setPickerStyle('default');
     setShowPicker(true);
     loadInstalledApps();
   };
@@ -433,18 +461,23 @@ export function FormattingPage() {
           AI Post Processing
         </h1>
         <p className="page-subtitle">
-          Clean up transcripts automatically. Turn it on and every dictation
-          is tidied while keeping your words. Create custom styles or
+          Clean up transcripts automatically while keeping your original words. Create custom styles or
           assign apps for more control.
         </p>
       </div>
 
-      <div className="settings-section settings-section--unboxed">
+      <SettingsSectionHeader
+        title="AI Post Processing"
+        description="Automatically refine and clean up dictations"
+      />
+      <Card className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">AI post processing</div>
+            <div className="setting-label">Enable AI Post Processing</div>
             <div className="setting-desc">
-              {enabled ? 'On' : 'Off, transcripts stay as spoken'}
+              {enabled
+                ? 'On: transcripts are cleaned up automatically'
+                : 'Off: transcripts stay exactly as spoken'}
             </div>
           </div>
           <div className="setting-control">
@@ -458,23 +491,25 @@ export function FormattingPage() {
             </Field>
           </div>
         </div>
+      </Card>
 
-        <p className="format-note">
-          When on, every app uses {aiStyleLabel(enabled ? aiPolish : lastNonNone)}:
-          filler words removed, grammar fixed, your words kept. Assign an
-          app below to use a different style.
-        </p>
-
-        <div className="settings-section-header settings-section-header-actions">
-          <h2>Custom styles</h2>
-          <Button variant="primary" size="sm" onClick={openNewStyle}>
-            <Plus data-icon="inline-start" size={14} aria-hidden="true" />
-            New style
-          </Button>
-        </div>
+      <SettingsSectionHeader
+        title="Cleanup Styles"
+        description="Choose a default cleanup style or create custom prompt instructions"
+      >
+        <Button
+          variant="default"
+          size="sm"
+          id="ai-style-new-btn"
+          onClick={openNewStyle}
+        >
+          Add Style
+        </Button>
+      </SettingsSectionHeader>
+      <Card className="settings-card">
         <RadioGroup
           className="style-choice-group"
-          value={enabled ? aiPolish : ''}
+          value={effectiveDefault}
           onValueChange={(styleId) => void setDefaultStyle(styleId)}
           aria-label="Default cleanup style"
         >
@@ -482,7 +517,7 @@ export function FormattingPage() {
             value="default"
             title="Default cleanup"
             description="Filler words removed, grammar fixed, your words kept."
-            selected={enabled && aiPolish === 'default'}
+            selected={effectiveDefault === 'default'}
             onSetDefault={() => setDefaultStyle('default')}
           />
           {customs.map((style) => (
@@ -491,52 +526,108 @@ export function FormattingPage() {
               value={style.id}
               title={style.name}
               description={style.hint}
-              selected={enabled && aiPolish === style.id}
+              selected={effectiveDefault === style.id}
               onSetDefault={() => setDefaultStyle(style.id)}
               onEdit={() => openEditStyle(style)}
               onDelete={() => setPendingDelete(style)}
             />
           ))}
         </RadioGroup>
-        {customs.length === 0 && (
-          <p className="format-note">
-            No custom styles yet. Create a reusable style for the way you want
-            text cleaned up.
-          </p>
-        )}
+      </Card>
 
-        <div className="settings-section-header settings-section-header-actions is-spaced">
-          <h2>App styles</h2>
-          <Button
-            variant="primary"
-            size="sm"
-            id="ai-style-add-app-btn"
-            onClick={openPicker}
-          >
-            <Plus data-icon="inline-start" size={14} aria-hidden="true" />
-            Add app
-          </Button>
-        </div>
+      <SettingsSectionHeader
+        title="App Styles"
+        description="Assign custom cleanup styles to specific applications"
+      >
+        <Button
+          variant="default"
+          size="sm"
+          id="ai-style-add-app-btn"
+          onClick={openPicker}
+        >
+          Add App
+        </Button>
+      </SettingsSectionHeader>
+      <Card className="settings-card">
         {aiRuleExes.length === 0 ? (
-          <p className="format-note">
-            No per-app styles. Every app uses the style above.
-          </p>
+          <Empty className="agents-empty">
+            <EmptyHeader>
+              <EmptyMedia variant="icon">
+                <AppWindow
+                  className="agents-empty-icon"
+                  strokeWidth={1.5}
+                  aria-hidden="true"
+                />
+              </EmptyMedia>
+              <EmptyTitle className="agents-empty-title">
+                No per-app styles yet
+              </EmptyTitle>
+              <EmptyDescription className="agents-empty-desc">
+                Every application will use the cleanup style selected above.
+                Add an app to customize its style.
+              </EmptyDescription>
+            </EmptyHeader>
+            <EmptyContent>
+              <Button variant="secondary" size="sm" onClick={openPicker}>
+                Add your first app style
+              </Button>
+            </EmptyContent>
+          </Empty>
         ) : (
           aiRuleExes.map((exe) => {
             const key = prompts
               ? (findKey(prompts.overrides, exe) ?? exe)
               : exe;
             const styleId = prompts?.overrides[key] ?? '';
+            const normalizedStyleId =
+              styleId === 'proofread' ? 'default' : styleId;
+            const isKnown =
+              normalizedStyleId === 'default' ||
+              builtins.some((b) => b.id === normalizedStyleId) ||
+              customs.some((c) => c.id === normalizedStyleId);
+
             return (
-              <div key={key.toLowerCase()} className="agent-row">
-                <span className="agent-row-main agent-row-static">
+              <div key={key.toLowerCase()} className="setting-row app-rule-row">
+                <div className="setting-info app-rule-info">
                   <AppGlyph iconUrl={appIconOf(exe)} name={appNameOf(exe)} />
-                  <span className="agent-row-text">
-                    <span className="agent-row-title">{appNameOf(exe)}</span>
-                  </span>
-                  <Badge variant="secondary">{aiStyleLabel(styleId)}</Badge>
-                </span>
-                <span className="agent-row-actions">
+                  <span className="setting-label">{appNameOf(exe)}</span>
+                </div>
+                <div className="setting-control app-rule-control">
+                  <Select
+                    value={normalizedStyleId}
+                    onValueChange={(val) => void setExeAiStyle(key, val)}
+                  >
+                    <SelectTrigger
+                      className="select-sm app-rule-select"
+                      aria-label={`Style for ${appNameOf(exe)}`}
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectGroup>
+                        <SelectItem value="default">Default cleanup</SelectItem>
+                        {builtins
+                          .filter(
+                            (b) => b.id !== 'proofread' && b.id !== 'default',
+                          )
+                          .map((b) => (
+                            <SelectItem key={b.id} value={b.id}>
+                              {b.title}
+                            </SelectItem>
+                          ))}
+                        {customs.map((c) => (
+                          <SelectItem key={c.id} value={c.id}>
+                            {c.name}
+                          </SelectItem>
+                        ))}
+                        {!isKnown && styleId && (
+                          <SelectItem value={styleId}>
+                            {aiStyleLabel(styleId)}
+                          </SelectItem>
+                        )}
+                      </SelectGroup>
+                    </SelectContent>
+                  </Select>
                   <Button
                     variant="ghost"
                     size="sm"
@@ -546,12 +637,12 @@ export function FormattingPage() {
                   >
                     Remove
                   </Button>
-                </span>
+                </div>
               </div>
             );
           })
         )}
-      </div>
+      </Card>
 
       <Dialog
         open={showPicker}
@@ -632,16 +723,21 @@ export function FormattingPage() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {builtins.map((b) => (
-                    <SelectItem key={b.id} value={b.id}>
-                      {b.title}
-                    </SelectItem>
-                  ))}
-                  {customs.map((c) => (
-                    <SelectItem key={c.id} value={c.id}>
-                      {c.name}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    <SelectItem value="default">Default cleanup</SelectItem>
+                    {builtins
+                      .filter((b) => b.id !== 'proofread' && b.id !== 'default')
+                      .map((b) => (
+                        <SelectItem key={b.id} value={b.id}>
+                          {b.title}
+                        </SelectItem>
+                      ))}
+                    {customs.map((c) => (
+                      <SelectItem key={c.id} value={c.id}>
+                        {c.name}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             ) : (
@@ -755,7 +851,7 @@ export function FormattingPage() {
               <Button variant="secondary">Cancel</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button variant="danger" onClick={() => void onDeleteStyle()}>
+              <Button variant="destructive" onClick={() => void onDeleteStyle()}>
                 Delete
               </Button>
             </AlertDialogAction>

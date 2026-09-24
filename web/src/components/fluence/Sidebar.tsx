@@ -65,7 +65,7 @@ const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
   { page: 'general', label: 'General', icon: Settings2 },
   { page: 'bubble', label: 'Floating Bubble', icon: CircleDot },
   { page: 'providers', label: 'Providers', icon: Server },
-  { page: 'formatting', label: 'AI Post Processing', icon: CaseSensitive },
+  { page: 'formatting', label: 'AI Cleanup', icon: CaseSensitive },
   { page: 'agents', label: 'Agents', icon: Bot },
   { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
   { page: 'snippets', label: 'Snippets', icon: Braces },
@@ -124,7 +124,7 @@ export function Sidebar({
       aria-label={collapsed
         ? `Theme: ${THEME_META[themeChoice].label}. Activate for ${THEME_META[THEME_CYCLE[themeChoice]].label}.`
         : `Theme: ${THEME_META[themeChoice].label} (Ctrl+Shift+L toggles dark and light)`}
-      title={collapsed ? undefined : `Theme: ${THEME_META[themeChoice].label} — activate to cycle`}
+      title={collapsed ? undefined : `Theme: ${THEME_META[themeChoice].label}. Click to cycle`}
       onClick={onCycleTheme}
     >
       {THEME_META[themeChoice].Icon}

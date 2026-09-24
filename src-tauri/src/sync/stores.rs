@@ -912,10 +912,7 @@ impl StatsDirtyStore {
             .collect()
     }
 
-    fn cached_event_rows(
-        key: Option<String>,
-        load: impl FnOnce() -> ActivityRows,
-    ) -> ActivityRows {
+    fn cached_event_rows(key: Option<String>, load: impl FnOnce() -> ActivityRows) -> ActivityRows {
         if let Ok(guard) = ACTIVITY_CACHE.lock() {
             if let Some((cached_key, rows)) = guard.as_ref() {
                 if *cached_key == key {

@@ -19,7 +19,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -637,20 +637,32 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
               </CardDescription>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
-            <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-              <TabsList aria-label="Chart metric">
-                <TabsTrigger value="sessions">Sessions</TabsTrigger>
-                <TabsTrigger value="words">Words</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Tabs value={range} onValueChange={(v) => setRange(v as Range)}>
-              <TabsList aria-label="Activity range">
-                <TabsTrigger value="7d">Last 7 days</TabsTrigger>
-                <TabsTrigger value="30d">Last 30 days</TabsTrigger>
-                <TabsTrigger value="90d">Last 90 days</TabsTrigger>
-                <TabsTrigger value="all">All time</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <ToggleGroup
+              type="single"
+              className="tabs-list"
+              value={metric}
+              onValueChange={(v) => {
+                if (v) setMetric(v as Metric);
+              }}
+              aria-label="Chart metric"
+            >
+              <ToggleGroupItem value="sessions" className="tabs-trigger">Sessions</ToggleGroupItem>
+              <ToggleGroupItem value="words" className="tabs-trigger">Words</ToggleGroupItem>
+            </ToggleGroup>
+            <ToggleGroup
+              type="single"
+              className="tabs-list"
+              value={range}
+              onValueChange={(v) => {
+                if (v) setRange(v as Range);
+              }}
+              aria-label="Activity range"
+            >
+              <ToggleGroupItem value="7d" className="tabs-trigger">Last 7 days</ToggleGroupItem>
+              <ToggleGroupItem value="30d" className="tabs-trigger">Last 30 days</ToggleGroupItem>
+              <ToggleGroupItem value="90d" className="tabs-trigger">Last 90 days</ToggleGroupItem>
+              <ToggleGroupItem value="all" className="tabs-trigger">All time</ToggleGroupItem>
+            </ToggleGroup>
             </div>
           </CardHeader>
           <CardContent>

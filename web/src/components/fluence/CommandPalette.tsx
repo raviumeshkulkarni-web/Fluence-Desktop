@@ -1,6 +1,8 @@
 import * as React from 'react';
 import {
   BookOpen,
+  Bot,
+  CaseSensitive,
   CircleDot,
   Command as CommandIcon,
   History,
@@ -35,6 +37,7 @@ import {
   DialogFooter,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
+import { Kbd } from '@/components/ui/kbd';
 import { hideMainWindow, minimizeMainWindow } from '@/ipc/tauri';
 import { updaterStore } from '@/ipc/updater';
 import { requestHistorySearchFocus } from '@/ipc/history';
@@ -66,6 +69,8 @@ const PAGE_META: Record<Route, { label: string; icon: React.ReactNode }> = {
   general: { label: 'General', icon: <Settings2 className="command-item-icon" /> },
   bubble: { label: 'Floating Bubble', icon: <CircleDot className="command-item-icon" /> },
   providers: { label: 'Providers', icon: <Server className="command-item-icon" /> },
+  formatting: { label: 'AI Cleanup', icon: <CaseSensitive className="command-item-icon" /> },
+  agents: { label: 'Agents', icon: <Bot className="command-item-icon" /> },
   dictionary: { label: 'Dictionary', icon: <BookOpen className="command-item-icon" /> },
   snippets: { label: 'Snippets', icon: <Braces className="command-item-icon" /> },
   sync: { label: 'Sync', icon: <RefreshCw className="command-item-icon" /> },
@@ -206,7 +211,7 @@ export function CommandPalette({
               <span>{highlightMatch(a.label, search)}</span>
               {a.shortcut ? (
                 <CommandShortcut>
-                  <kbd>{a.shortcut}</kbd>
+                  <Kbd>{a.shortcut}</Kbd>
                 </CommandShortcut>
               ) : null}
             </CommandItem>
@@ -235,7 +240,7 @@ export function CommandPalette({
       <DialogFooter className="command-footer">
         <span className="command-hint">
           <CommandIcon className="command-hint-icon" />
-          <kbd>Ctrl K</kbd>
+          <Kbd>Ctrl K</Kbd>
         </span>
         <DialogClose asChild>
           <Button variant="ghost" size="xs">Close</Button>

@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -120,6 +122,7 @@ interface LlmSectionProps {
   fetching: boolean;
   idPrefix: string;
   title: string;
+  description: string;
   onSelectCard: (kind: ProviderKind, preset: string) => void;
   onSetForm: (kind: ProviderKind, next: FormState) => void;
   onKeyInput: (kind: ProviderKind, value: string) => void;
@@ -139,6 +142,7 @@ function LlmProviderSection({
   fetching,
   idPrefix,
   title,
+  description,
   onSelectCard,
   onSetForm,
   onKeyInput,
@@ -147,95 +151,99 @@ function LlmProviderSection({
   onFetchModels,
 }: LlmSectionProps) {
   return (
-    <div className="settings-section settings-section--unboxed">
-      <div className="settings-section-header"><h2>{title}</h2></div>
-      <RadioGroup
-        className="provider-grid"
-        id={`${idPrefix}-provider-grid`}
-        value={form.preset}
-        onValueChange={(preset) => void onSelectCard(kind, preset)}
-        aria-label={title}
-      >
-        {LLM_ORDER.map((preset) => (
-          <RadioGroupItem key={preset} value={preset} asChild>
-            <button
-              type="button"
-              className={`choice-surface provider-card${form.preset === preset ? ' selected' : ''}`}
-              data-provider={preset}
-              id={`${idPrefix}-${preset}`}
-            >
-              <LlmIcon preset={preset} />
-              <span className="provider-name">{LLM_NAMES[preset]}</span>
-            </button>
-          </RadioGroupItem>
-        ))}
-      </RadioGroup>
-      <div className="provider-form-fields">
-        <Field label="API Endpoint" htmlFor={`${idPrefix}-base-url`}>
-          <Input
-            type="url"
-            id={`${idPrefix}-base-url`}
-            placeholder="https://api.groq.com/openai"
-            value={form.baseUrl}
-            onChange={(e) => onSetForm(kind, { ...form, baseUrl: e.target.value })}
-          />
-          {isCustomHttpsEndpoint(form.baseUrl) && (
-            <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
-          )}
-        </Field>
-        <Field label="API Key" htmlFor={`${idPrefix}-api-key`}>
-          <div className="input-with-btn">
+    <>
+      <SettingsSectionHeader title={title} description={description} />
+      <div className="settings-card provider-card-container">
+        <RadioGroup
+          className="provider-grid"
+          id={`${idPrefix}-provider-grid`}
+          value={form.preset}
+          onValueChange={(preset) => void onSelectCard(kind, preset)}
+          aria-label={title}
+        >
+          {LLM_ORDER.map((preset) => (
+            <RadioGroupItem key={preset} value={preset} asChild>
+              <button
+                type="button"
+                className={`choice-surface provider-card${form.preset === preset ? ' selected' : ''}`}
+                data-provider={preset}
+                id={`${idPrefix}-${preset}`}
+              >
+                <LlmIcon preset={preset} />
+                <span className="provider-name">{LLM_NAMES[preset]}</span>
+              </button>
+            </RadioGroupItem>
+          ))}
+        </RadioGroup>
+        <div className="provider-form-fields">
+          <Field label="API Endpoint" htmlFor={`${idPrefix}-base-url`}>
             <Input
-              type="password"
-              id={`${idPrefix}-api-key`}
-              placeholder="sk-•••••••••••••••"
-              autoComplete="off"
-              value={form.apiKey}
-              onChange={(e) => onKeyInput(kind, e.target.value)}
+              type="url"
+              id={`${idPrefix}-base-url`}
+              placeholder="https://api.groq.com/openai"
+              value={form.baseUrl}
+              onChange={(e) => onSetForm(kind, { ...form, baseUrl: e.target.value })}
             />
-            <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>Save Key</Button>
-          </div>
-        </Field>
-        <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
-          <div className="input-with-btn">
-            <Select
-              value={form.model}
-              onValueChange={(v) => onSetForm(kind, { ...form, model: v })}
-            >
-              <SelectTrigger id={`${idPrefix}-model-select`}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {form.models.map((m) => (
-                  <SelectItem key={m} value={m}>{m}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="ghost"
-                  id={`${idPrefix}-fetch-models-btn`}
-                  className={fetching ? 'animate-spin' : undefined}
-                  aria-label="Fetch language models from API"
-                  onClick={() => void onFetchModels(kind, form, false)}
-                >
-                  <RefreshIcon />
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Fetch models from API</TooltipContent>
-            </Tooltip>
-          </div>
-        </Field>
-        <div className="provider-test-row">
-          <Button variant="secondary" id={`${idPrefix}-test-btn`} onClick={() => void onTest(kind)}>Test Connection</Button>
-          <div className="connection-status" id={`${idPrefix}-status`} role="status">
-            <div className={status.dot}></div>
-            <span id={`${idPrefix}-status-text`}>{status.text}</span>
+            {isCustomHttpsEndpoint(form.baseUrl) && (
+              <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
+            )}
+          </Field>
+          <Field label="API Key" htmlFor={`${idPrefix}-api-key`}>
+            <div className="input-with-btn">
+              <Input
+                type="password"
+                id={`${idPrefix}-api-key`}
+                placeholder="sk-•••••••••••••••"
+                autoComplete="off"
+                value={form.apiKey}
+                onChange={(e) => onKeyInput(kind, e.target.value)}
+              />
+              <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>Save Key</Button>
+            </div>
+          </Field>
+          <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
+            <div className="input-with-btn">
+              <Select
+                value={form.model}
+                onValueChange={(v) => onSetForm(kind, { ...form, model: v })}
+              >
+                <SelectTrigger id={`${idPrefix}-model-select`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {form.models.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    id={`${idPrefix}-fetch-models-btn`}
+                    className={fetching ? 'animate-spin' : undefined}
+                    aria-label="Fetch language models from API"
+                    onClick={() => void onFetchModels(kind, form, false)}
+                  >
+                    <RefreshIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Fetch models from API</TooltipContent>
+              </Tooltip>
+            </div>
+          </Field>
+          <div className="provider-test-row">
+            <Button variant="secondary" id={`${idPrefix}-test-btn`} onClick={() => void onTest(kind)}>Test Connection</Button>
+            <div className="connection-status" id={`${idPrefix}-status`} role="status">
+              <div className={status.dot}></div>
+              <span id={`${idPrefix}-status-text`}>{status.text}</span>
+            </div>
           </div>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -760,6 +768,7 @@ export function ProvidersPage() {
       await saveSettingsNow();
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
+      return;
     }
     toast('Provider settings saved', 'success');
   };
@@ -811,7 +820,7 @@ export function ProvidersPage() {
     <section className="page active" id="page-providers">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>Providers</h1>
-        <p className="page-subtitle">Configure dictation, agent mode, and AI cleaner providers</p>
+        <p className="page-subtitle">Configure dictation, agent mode, and AI cleanup</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as ProvidersTab)}>
@@ -822,8 +831,11 @@ export function ProvidersPage() {
         </TabsList>
 
       <TabsContent value="dictation">
-      <div className="settings-section settings-section--unboxed">
-        <div className="settings-section-header"><h2>Speech-to-Text (STT)</h2></div>
+      <SettingsSectionHeader
+        title="Speech-to-Text (STT)"
+        description="Choose the engine used to transcribe your live microphone input"
+      />
+      <div className="settings-card provider-card-container">
         <RadioGroup
           className="provider-grid"
           id="stt-provider-grid"
@@ -882,9 +894,11 @@ export function ProvidersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {stt.models.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {stt.models.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 <Tooltip>
@@ -971,7 +985,7 @@ export function ProvidersPage() {
                     </RadioGroupItem>
                     <div className="offline-model-actions">
                       <Button
-                        variant="primary"
+                        variant="default"
                         id={cfg.downloadBtnId}
                         className="offline-model-btn"
                         disabled={isInstalled || isDownloading}
@@ -980,7 +994,7 @@ export function ProvidersPage() {
                         {isInstalled ? 'Installed' : isDownloading ? 'Connecting…' : 'Download Model'}
                       </Button>
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         id={cfg.deleteBtnId}
                         className={`offline-model-btn${isInstalled ? '' : ' hidden'}`}
                         onClick={() => setDeleteTarget(cfg)}
@@ -1024,6 +1038,7 @@ export function ProvidersPage() {
           fetching={llmFetching}
           idPrefix="llm"
           title="Language Model (Agent Mode)"
+          description="Choose the model that handles Agent Mode commands and text actions."
           onSelectCard={selectCard}
           onSetForm={setForm}
           onKeyInput={onKeyInput}
@@ -1041,6 +1056,7 @@ export function ProvidersPage() {
           fetching={cleanerFetching}
           idPrefix="cleaner"
           title="AI Cleaner"
+          description="Choose the model that cleans up your transcriptions after dictation."
           onSelectCard={selectCard}
           onSetForm={setForm}
           onKeyInput={onKeyInput}
@@ -1052,7 +1068,7 @@ export function ProvidersPage() {
       </Tabs>
 
       <div className="page-actions">
-        <Button variant="primary" id="save-providers-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+        <Button variant="default" id="save-providers-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
       </div>
 
       <ConfirmDialog

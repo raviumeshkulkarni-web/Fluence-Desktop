@@ -107,7 +107,7 @@ fn query_process_path(pid: u32) -> Result<String, String> {
     }
 }
 
-fn load_exe_icon(exe_path: &str) -> Result<HICON, String> {
+pub(crate) fn load_exe_icon(exe_path: &str) -> Result<HICON, String> {
     unsafe {
         let wide: Vec<u16> = exe_path.encode_utf16().chain(std::iter::once(0)).collect();
 
@@ -143,7 +143,7 @@ fn load_exe_icon(exe_path: &str) -> Result<HICON, String> {
 }
 
 /// Rasterise an HICON into a 32bpp DIB and return it as a base64 PNG data URL.
-fn icon_to_data_url(icon: HICON) -> Result<String, String> {
+pub(crate) fn icon_to_data_url(icon: HICON) -> Result<String, String> {
     unsafe {
         let width = GetSystemMetrics(SM_CXICON) as i32;
         let height = GetSystemMetrics(SM_CYICON) as i32;

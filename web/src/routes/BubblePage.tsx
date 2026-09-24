@@ -1,15 +1,19 @@
-import { useEffect, useState, type KeyboardEvent } from 'react';
+import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/fluence/Toasts';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { OverlayPreview, type OverlayTier } from '@/components/fluence/OverlayPreview';
 import {
   getCachedSettings,
@@ -45,6 +49,12 @@ export function BubblePage() {
   const [overlayPosition, setOverlayPosition] = useState('bottom_right');
   const [overlayGlow, setOverlayGlow] = useState(true);
   const [showAppPill, setShowAppPill] = useState(true);
+
+  // Style picks the overlay; Appearance tunes how it looks and where it
+  // sits. Placement lives with appearance (a one-row tab of its own would
+  // feel artificial), and the live previews keep reacting either way.
+  type BubbleTab = 'style' | 'appearance';
+  const [tab, setTab] = useState<BubbleTab>('style');
 
   useEffect(() => {
     let cancelled = false;
@@ -119,28 +129,9 @@ export function BubblePage() {
       await saveSettingsNow();
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
-    }
-    toast('Settings saved', 'success');
-  };
-
-  const onOptionKeyDown = (e: KeyboardEvent<HTMLDivElement>, index: number) => {
-    const current = STYLE_OPTIONS[index]?.value;
-    if (!current) return;
-    if (e.key === 'Enter' || e.key === ' ') {
-      e.preventDefault();
-      onStyleChange(current);
       return;
     }
-    let next: number | null = null;
-    if (e.key === 'ArrowDown' || e.key === 'ArrowRight') next = (index + 1) % STYLE_OPTIONS.length;
-    if (e.key === 'ArrowUp' || e.key === 'ArrowLeft') {
-      next = (index - 1 + STYLE_OPTIONS.length) % STYLE_OPTIONS.length;
-    }
-    if (next !== null) {
-      e.preventDefault();
-      e.currentTarget.parentElement
-        ?.querySelectorAll<HTMLElement>('.bubble-option')[next]?.focus();
-    }
+    toast('Settings saved', 'success');
   };
 
   return (
@@ -152,32 +143,54 @@ export function BubblePage() {
         <p className="page-subtitle">Preview each style live, then set the appearance and placement</p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <h2>Overlay Style</h2>
-        </div>
-        <div role="radiogroup" aria-label="Overlay style">
-          {STYLE_OPTIONS.map((option, index) => (
-            <div
-              key={option.value}
-              className="bubble-option"
-              role="radio"
-              aria-checked={overlayStyle === option.value}
-              aria-label={option.title}
-              tabIndex={0}
-              onClick={() => onStyleChange(option.value)}
-              onKeyDown={(e) => onOptionKeyDown(e, index)}
-            >
-              <span className="bubble-radio" aria-hidden="true" />
-              <span className="bubble-option-text">
-                <span className="bubble-preview-label">{option.title}</span>
-                <span className="bubble-preview-desc">{option.desc}</span>
-              </span>
-              <span className="bubble-live-stage">
-                <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} />
-              </span>
-            </div>
-          ))}
+      <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as BubbleTab)}>
+        <TabsList aria-label="Floating bubble area">
+          <TabsTrigger value="style">Style</TabsTrigger>
+          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="style">
+        <SettingsSectionHeader
+          title="Overlay Style"
+          description="Choose the floating recording indicator that appears on screen"
+        />
+        <div className="settings-card">
+          <RadioGroup
+            className="bubble-option-list"
+            value={overlayStyle}
+            onValueChange={onStyleChange}
+            aria-label="Overlay style"
+          >
+            {STYLE_OPTIONS.map((option) => {
+              const selected = overlayStyle === option.value;
+              return (
+                <div
+                  key={option.value}
+                  className={`choice-surface selection-row bubble-option${selected ? ' selected' : ''}`}
+                  onClick={() => onStyleChange(option.value)}
+                >
+                  <RadioGroupItem value={option.value} asChild>
+                    <button
+                      type="button"
+                      className="selection-row-main"
+                      aria-label={`Select ${option.title}`}
+                    >
+                      <span className="selection-radio" aria-hidden="true" />
+                      <span className="selection-row-copy">
+                        <span className="selection-row-heading">
+                          <span className="selection-row-title">{option.title}</span>
+                        </span>
+                        <span className="selection-row-description">{option.desc}</span>
+                      </span>
+                    </button>
+                  </RadioGroupItem>
+                  <div className="bubble-live-stage" onClick={(e) => e.stopPropagation()}>
+                    <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} />
+                  </div>
+                </div>
+              );
+            })}
+          </RadioGroup>
         </div>
         <div className="bubble-legend">
           <span className="bubble-legend-item">
@@ -189,77 +202,84 @@ export function BubblePage() {
             Agent mode
           </span>
         </div>
-      </div>
+      </TabsContent>
 
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <h2>Appearance</h2>
+      <TabsContent value="appearance">
+        <SettingsSectionHeader
+          title="Appearance"
+          description="Visual indicators and glow effects for dictation"
+        />
+        <div className="settings-card">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Halo Glow</div>
+              <div className="setting-desc">Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="bubble-glow-cb"
+                  aria-label="Overlay halo glow"
+                  checked={overlayGlow}
+                  onCheckedChange={onGlowChange}
+                />
+              </Field>
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">App Pill</div>
+              <div className="setting-desc">Shows the name and icon of the app you are dictating into</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="bubble-app-pill-cb"
+                  aria-label="Foreground app pill"
+                  checked={showAppPill}
+                  onCheckedChange={onAppPillChange}
+                />
+              </Field>
+            </div>
+          </div>
         </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Halo Glow</div>
-            <div className="setting-desc">Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="bubble-glow-cb"
-                aria-label="Overlay halo glow"
-                checked={overlayGlow}
-                onCheckedChange={onGlowChange}
-              />
-            </Field>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">App Pill</div>
-            <div className="setting-desc">Shows the name and icon of the app you are dictating into</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="bubble-app-pill-cb"
-                aria-label="Foreground app pill"
-                checked={showAppPill}
-                onCheckedChange={onAppPillChange}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header">
-          <h2>Placement</h2>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Overlay Position</div>
-            <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
+        <SettingsSectionHeader
+          title="Placement"
+          description="Where the floating overlay appears on screen during recording"
+        />
+        <div className="settings-card">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Overlay Position</div>
+              <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select value={overlayPosition} onValueChange={onPositionChange}>
+                  <SelectTrigger id="bubble-position-select" className="select-md" aria-label="Overlay position">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="bottom_right">Bottom Right</SelectItem>
+                      <SelectItem value="bottom_left">Bottom Left</SelectItem>
+                      <SelectItem value="center">Center Bottom</SelectItem>
+                      <SelectItem value="top_left">Top Left</SelectItem>
+                      <SelectItem value="top_center">Top Center</SelectItem>
+                      <SelectItem value="top_right">Top Right</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
           </div>
-          <div className="setting-control">
-            <Field>
-              <Select value={overlayPosition} onValueChange={onPositionChange}>
-                <SelectTrigger id="bubble-position-select" className="select-md" aria-label="Overlay position">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bottom_right">Bottom Right</SelectItem>
-                  <SelectItem value="bottom_left">Bottom Left</SelectItem>
-                  <SelectItem value="center">Center Bottom</SelectItem>
-                  <SelectItem value="top_left">Top Left</SelectItem>
-                  <SelectItem value="top_center">Top Center</SelectItem>
-                  <SelectItem value="top_right">Top Right</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
         </div>
-      </div>
+      </TabsContent>
+      </Tabs>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--spacing-md)' }}>
-        <Button variant="primary" id="save-bubble-btn" style={{ minWidth: 120 }} onClick={() => void onSaveAll()}>Save Changes</Button>
+      <div className="page-actions">
+        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
       </div>
     </section>
   );

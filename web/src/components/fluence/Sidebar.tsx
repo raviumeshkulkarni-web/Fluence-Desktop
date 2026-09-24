@@ -2,7 +2,9 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   BookOpen,
+  Bot,
   Braces,
+  CaseSensitive,
   CircleDot,
   Download,
   History,
@@ -23,6 +25,21 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
+import {
+  Sidebar as SidebarPrimitive,
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuButton,
+  SidebarMenuItem,
+  SidebarSeparator,
+  SidebarTrigger,
+  useSidebar,
+} from '@/components/ui/sidebar';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 import type { ThemeChoice } from '@/lib/theme';
@@ -37,9 +54,9 @@ const THEME_CYCLE: Record<ThemeChoice, ThemeChoice> = {
 };
 
 const THEME_META: Record<ThemeChoice, { label: string; Icon: ReactNode }> = {
-  dark: { label: 'Dark', Icon: <Moon className="sidebar-theme-icon" aria-hidden="true" /> },
-  light: { label: 'Light', Icon: <Sun className="sidebar-theme-icon" aria-hidden="true" /> },
-  auto: { label: 'System', Icon: <Monitor className="sidebar-theme-icon" aria-hidden="true" /> },
+  dark: { label: 'Dark', Icon: <Moon className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
+  light: { label: 'Light', Icon: <Sun className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
+  auto: { label: 'System', Icon: <Monitor className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
 };
 
 const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
@@ -48,6 +65,8 @@ const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
   { page: 'general', label: 'General', icon: Settings2 },
   { page: 'bubble', label: 'Floating Bubble', icon: CircleDot },
   { page: 'providers', label: 'Providers', icon: Server },
+  { page: 'formatting', label: 'AI Post Processing', icon: CaseSensitive },
+  { page: 'agents', label: 'Agents', icon: Bot },
   { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
   { page: 'snippets', label: 'Snippets', icon: Braces },
   { page: 'sync', label: 'Sync', icon: RefreshCw },
@@ -57,18 +76,16 @@ const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
 export function Sidebar({
   route,
   onNavigate,
-  collapsed,
-  onToggleCollapsed,
   themeChoice,
   onCycleTheme,
 }: {
   route: Route;
   onNavigate: (page: Route) => void;
-  collapsed: boolean;
-  onToggleCollapsed: () => void;
   themeChoice: ThemeChoice;
   onCycleTheme: () => void;
 }) {
+  const { state: sidebarState } = useSidebar();
+  const collapsed = sidebarState === 'collapsed';
   const [appVersion, setAppVersion] = useState('1.0.0');
   const updater = useUpdater();
   // Idle "✓ Up to date" transient: mirrors vanilla (shown 3s after a check
@@ -99,90 +116,110 @@ export function Sidebar({
       ? RotateCcw
       : RefreshCw;
 
+  const themeButton = (
+    <Button
+      type="button"
+      variant="ghost"
+      className="sidebar-theme-btn"
+      aria-label={collapsed
+        ? `Theme: ${THEME_META[themeChoice].label}. Activate for ${THEME_META[THEME_CYCLE[themeChoice]].label}.`
+        : `Theme: ${THEME_META[themeChoice].label} (Ctrl+Shift+L toggles dark and light)`}
+      title={collapsed ? undefined : `Theme: ${THEME_META[themeChoice].label} — activate to cycle`}
+      onClick={onCycleTheme}
+    >
+      {THEME_META[themeChoice].Icon}
+      {!collapsed && <span className="sidebar-theme-label">{THEME_META[themeChoice].label}</span>}
+    </Button>
+  );
+
+  const updateButton = (
+    <Button
+      id="sidebar-update-btn"
+      type="button"
+      variant="secondary"
+      className={widget.btnClass}
+      disabled={widget.btnDisabled}
+      onClick={widget.onAction}
+      aria-label={collapsed ? widget.btnText : undefined}
+      title={collapsed ? undefined : widget.btnText}
+    >
+      <UpdateIcon className="sidebar-update-icon update-icon" data-icon="inline-start" aria-hidden="true" />
+      <span id="sidebar-update-btn-text">{widget.btnText}</span>
+    </Button>
+  );
+
   return (
-    <nav
-      className={collapsed ? 'sidebar collapsed' : 'sidebar'}
+    <SidebarPrimitive
       role="navigation"
       aria-label="Settings navigation"
-      data-collapsed={collapsed ? 'true' : 'false'}
+      collapsible="icon"
     >
-      <div className="sidebar-logo">
-        <div className="sidebar-brand">
-        <svg className="sidebar-logo-mark" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-          <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 2" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-sidebar)" />
-          <defs>
-            <linearGradient id="logo-grad-sidebar" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-              <stop offset="0%" stopColor="#8B45D8" />
-              <stop offset="50%" stopColor="#8B45D8" />
-              <stop offset="100%" stopColor="#0BD6E3" />
-            </linearGradient>
-          </defs>
-        </svg>
-        <span className="logo-text">
-          flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
-          <span className="logo-tagline">Transcribe</span>
-        </span>
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <button
-              type="button"
-              className="sidebar-collapse-toggle"
-              aria-label={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
-              aria-expanded={!collapsed}
-              onClick={onToggleCollapsed}
-            >
-              {collapsed ? <PanelLeftOpen aria-hidden="true" /> : <PanelLeftClose aria-hidden="true" />}
-            </button>
-          </TooltipTrigger>
-          <TooltipContent side="right">
-            {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
-          </TooltipContent>
-        </Tooltip>
-      </div>
-
-      <span className="nav-section-label">Home</span>
-      {NAV.slice(0, 2).map((item) => (
-        <NavButton key={item.page} item={item} active={route === item.page} collapsed={collapsed} onNavigate={onNavigate} />
-      ))}
-      <span className="nav-section-label" style={{ marginTop: 8 }}>Configuration</span>
-      {NAV.slice(2).map((item) => (
-        <NavButton key={item.page} item={item} active={route === item.page} collapsed={collapsed} onNavigate={onNavigate} />
-      ))}
-
-      <div className="sidebar-footer">
-        {collapsed ? (
+      <SidebarHeader>
+        <div className="sidebar-logo">
+          <div className="sidebar-brand">
+            <svg className="sidebar-logo-mark" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
+              <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
+              <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 2" strokeLinecap="round" />
+              <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-sidebar)" />
+              <defs>
+                <linearGradient id="logo-grad-sidebar" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stopColor="#8B45D8" />
+                  <stop offset="50%" stopColor="#8B45D8" />
+                  <stop offset="100%" stopColor="#0BD6E3" />
+                </linearGradient>
+              </defs>
+            </svg>
+            <span className="logo-text">
+              flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
+              <span className="logo-tagline">Transcribe</span>
+            </span>
+          </div>
           <Tooltip>
             <TooltipTrigger asChild>
-              <button
-                type="button"
-                className="sidebar-theme-btn"
-                aria-label={`Theme: ${THEME_META[themeChoice].label}. Activate for ${THEME_META[THEME_CYCLE[themeChoice]].label}.`}
-                onClick={onCycleTheme}
+              <SidebarTrigger
+                aria-label={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+                aria-expanded={!collapsed}
               >
-                {THEME_META[themeChoice].Icon}
-              </button>
+                {collapsed ? <PanelLeftOpen data-icon="inline-start" aria-hidden="true" /> : <PanelLeftClose data-icon="inline-start" aria-hidden="true" />}
+              </SidebarTrigger>
             </TooltipTrigger>
             <TooltipContent side="right">
-              {`Theme: ${THEME_META[themeChoice].label}`}
+              {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
             </TooltipContent>
           </Tooltip>
+        </div>
+        <SidebarSeparator className="sidebar-header-separator" />
+      </SidebarHeader>
+
+      <SidebarContent>
+        <SidebarGroup>
+          <SidebarGroupLabel className="nav-section-label">Home</SidebarGroupLabel>
+          <SidebarMenu>
+            {NAV.slice(0, 2).map((item) => (
+              <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+        <SidebarGroup className="sidebar-config-group">
+          <SidebarGroupLabel className="nav-section-label">Configuration</SidebarGroupLabel>
+          <SidebarMenu>
+            {NAV.slice(2).map((item) => (
+              <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
+            ))}
+          </SidebarMenu>
+        </SidebarGroup>
+      </SidebarContent>
+
+      <SidebarSeparator className="sidebar-footer-separator" />
+      <SidebarFooter>
+        {collapsed ? (
+          <Tooltip>
+            <TooltipTrigger asChild>{themeButton}</TooltipTrigger>
+            <TooltipContent side="right">{`Theme: ${THEME_META[themeChoice].label}`}</TooltipContent>
+          </Tooltip>
         ) : (
-          <button
-            type="button"
-            className="sidebar-theme-btn"
-            aria-label={`Theme: ${THEME_META[themeChoice].label} (Ctrl+Shift+L toggles dark and light)`}
-            title={`Theme: ${THEME_META[themeChoice].label} — activate to cycle`}
-            onClick={onCycleTheme}
-          >
-            {THEME_META[themeChoice].Icon}
-            <span className="sidebar-theme-label">
-              {THEME_META[themeChoice].label}
-            </span>
-          </button>
+          themeButton
         )}
         <div className="sidebar-update-widget" id="sidebar-update-widget">
           <div className={widget.labelClass} id="sidebar-version-label">{widget.label}</div>
@@ -212,35 +249,15 @@ export function Sidebar({
           </div>
           {collapsed ? (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <button
-                  id="sidebar-update-btn"
-                  className={widget.btnClass}
-                  disabled={widget.btnDisabled}
-                  onClick={widget.onAction}
-                  aria-label={widget.btnText}
-                >
-                  <UpdateIcon className="sidebar-update-icon update-icon" aria-hidden="true" />
-                  <span id="sidebar-update-btn-text">{widget.btnText}</span>
-                </button>
-              </TooltipTrigger>
+              <TooltipTrigger asChild>{updateButton}</TooltipTrigger>
               <TooltipContent side="right">{widget.btnText}</TooltipContent>
             </Tooltip>
           ) : (
-            <button
-              id="sidebar-update-btn"
-              className={widget.btnClass}
-              disabled={widget.btnDisabled}
-              onClick={widget.onAction}
-              title={widget.btnText}
-            >
-              <UpdateIcon className="sidebar-update-icon update-icon" aria-hidden="true" />
-              <span id="sidebar-update-btn-text">{widget.btnText}</span>
-            </button>
+            updateButton
           )}
         </div>
-      </div>
-    </nav>
+      </SidebarFooter>
+    </SidebarPrimitive>
   );
 
   function renderWidget(version: string, upToDate: boolean) {
@@ -297,38 +314,26 @@ export function Sidebar({
 function NavButton({
   item,
   active,
-  collapsed,
   onNavigate,
 }: {
   item: (typeof NAV)[number];
   active: boolean;
-  collapsed: boolean;
   onNavigate: (page: Route) => void;
 }) {
   const Icon = item.icon;
-  const button = (
-    <button
-      type="button"
-      className={active ? 'nav-item active' : 'nav-item'}
-      data-page={item.page}
-      id={`nav-${item.page}`}
-      aria-current={active ? 'page' : undefined}
-      aria-label={collapsed ? item.label : undefined}
-      onClick={() => onNavigate(item.page)}
-    >
-      <Icon className="nav-icon" aria-hidden="true" />
-      <span className="nav-item-label">{item.label}</span>
-    </button>
+  return (
+    <SidebarMenuItem>
+      <SidebarMenuButton
+        isActive={active}
+        tooltip={item.label}
+        data-page={item.page}
+        id={`nav-${item.page}`}
+        aria-current={active ? 'page' : undefined}
+        onClick={() => onNavigate(item.page)}
+      >
+        <Icon className="nav-icon" aria-hidden="true" />
+        <span className="nav-item-label">{item.label}</span>
+      </SidebarMenuButton>
+    </SidebarMenuItem>
   );
-
-  if (collapsed) {
-    return (
-      <Tooltip>
-        <TooltipTrigger asChild>{button}</TooltipTrigger>
-        <TooltipContent side="right">{item.label}</TooltipContent>
-      </Tooltip>
-    );
-  }
-
-  return button;
 }

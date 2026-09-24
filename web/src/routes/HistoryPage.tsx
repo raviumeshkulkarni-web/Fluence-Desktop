@@ -6,11 +6,30 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Search, Mic, X, ChevronDown } from 'lucide-react';
+import {
+  Search,
+  Mic,
+  X,
+  ChevronDown,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+} from 'lucide-react';
 import { toast } from '@/components/fluence/Toasts';
 import { Button } from '@/components/ui/button';
+import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/dialog';
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyMedia,
+  EmptyTitle,
+} from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
+import { Kbd } from '@/components/ui/kbd';
 import {
   Select,
   SelectContent,
@@ -19,7 +38,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Skeleton } from '@/components/ui/skeleton';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -215,6 +234,7 @@ let persistedHistorySearch = '';
 // delete, accept, clear-all, mount, Load More) bypass the TTL by calling
 // load() directly.
 const HISTORY_RELOAD_TTL_MS = 30000;
+const HISTORY_PAGE_SIZE = 50;
 
 interface HistoryRowProps {
   entry: HistoryEntry;
@@ -297,7 +317,7 @@ const HistoryRow = memo(function HistoryRow({
               <span className="history-item-meta">{historyItemMeta(entry)}{expanded && entry.provider ? ` · ${entry.provider}` : ''}</span>
             </span>
             <div className="history-actions">
-              <span className={`badge badge-${entry.mode === 'agent' ? 'secondary' : 'success'}`}>{entry.mode}</span>
+              <Badge variant={entry.mode === 'agent' ? 'secondary' : 'success'}>{entry.mode}</Badge>
               <Button
                 variant="ghost"
                 size="xs"
@@ -312,10 +332,9 @@ const HistoryRow = memo(function HistoryRow({
               <Button
                 variant="ghost"
                 size="xs"
-                className="history-delete-btn"
+                className="history-delete-btn destructive-action"
                 data-history-id={entry.id}
                 aria-label="Delete transcription"
-                style={{ color: 'var(--color-error)' }}
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(entry.id);
@@ -337,20 +356,20 @@ const HistoryRow = memo(function HistoryRow({
       <ContextMenuContent className="history-context-menu">
         <ContextMenuItem
           data-action="copy"
-          onClick={() => onCopy(entry.text, entry.id)}
+          onSelect={() => onCopy(entry.text, entry.id)}
         >
           Copy
         </ContextMenuItem>
         <ContextMenuItem
           data-action="select"
-          onClick={() => onToggleSelect(entry.id)}
+          onSelect={() => onToggleSelect(entry.id)}
         >
           {selected ? 'Deselect' : 'Select'}
         </ContextMenuItem>
         <ContextMenuItem
           data-action="delete"
-          style={{ color: 'var(--color-error-text)' }}
-          onClick={() => onDelete(entry.id)}
+          className="destructive-action"
+          onSelect={() => onDelete(entry.id)}
         >
           Delete
         </ContextMenuItem>
@@ -366,6 +385,7 @@ export function HistoryPage() {
   const [query, setQuery] = useState('');
   const [page, setPage] = useState(0);
   const [lastCount, setLastCount] = useState(0);
+  const [endPage, setEndPage] = useState<number | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
@@ -384,6 +404,9 @@ export function HistoryPage() {
   const fullActive = hasActiveFilter || sort !== 'newest';
   const fullActiveRef = useRef(false);
   fullActiveRef.current = fullActive;
+  const totalPages = fullActive
+    ? Math.max(1, Math.ceil(allEntries.length / HISTORY_PAGE_SIZE))
+    : endPage != null ? endPage + 1 : null;
   const queryRef = useRef('');
   const clearFilters = useCallback(() => {
     setDateFilter('all');
@@ -443,6 +466,7 @@ export function HistoryPage() {
       if (reset) {
         pageRef.current = 0;
         setPage(0);
+        setEndPage(null);
       }
       setQuery(merged);
       // Suggestions ride alongside history instead of blocking it: both
@@ -473,6 +497,7 @@ export function HistoryPage() {
           setEntries((prev) => [...prev, ...list]);
         }
         setLastCount(list.length);
+        if (list.length < HISTORY_PAGE_SIZE) setEndPage(pageRef.current);
         return list.length;
       } catch (err) {
         if (seq !== loadSeq.current) return null;
@@ -557,6 +582,8 @@ export function HistoryPage() {
     let cancelled = false;
     setFullStatus('loading');
     setAllEntries([]);
+    pageRef.current = 0;
+    setPage(0);
     void (async () => {
       const q = queryRef.current;
       const acc: HistoryEntry[] = [];
@@ -587,7 +614,7 @@ export function HistoryPage() {
         // Perf: single state commit at the end, not one render + O(n) copy
         // per page. The final list is identical; intermediate commits only
         // caused re-renders of a view still showing its loading state.
-        if (list.length < 50) break;
+        if (list.length < HISTORY_PAGE_SIZE) break;
         p += 1;
       }
       if (!cancelled) {
@@ -758,23 +785,35 @@ export function HistoryPage() {
     void load(true, '');
   };
 
-  const onLoadMore = async () => {
+  const goToPage = useCallback(async (target: number) => {
     if (loadingMore) return;
+    const lastKnown = (totalPages ?? Number.POSITIVE_INFINITY) - 1;
+    const clamped = Math.max(0, Math.min(target, lastKnown));
+    if (clamped === pageRef.current) return;
+    if (clamped < pageRef.current) {
+      pageRef.current = clamped;
+      setPage(clamped);
+      return;
+    }
     setLoadingMore(true);
-    pageRef.current += 1;
-    setPage(pageRef.current);
     try {
-      const n = await load(false, searchInputRef.current);
-      // A failed fetch must not consume the page, or the next retry
-      // would silently skip a page of results.
-      if (n === null) {
-        pageRef.current = Math.max(0, pageRef.current - 1);
+      while (pageRef.current < clamped) {
+        pageRef.current += 1;
         setPage(pageRef.current);
+        const n = await load(false, searchInputRef.current);
+        // A failed fetch must not consume the page, or the next retry
+        // would silently skip a page of results.
+        if (n === null) {
+          pageRef.current = Math.max(0, pageRef.current - 1);
+          setPage(pageRef.current);
+          return;
+        }
+        if (n < HISTORY_PAGE_SIZE) return;
       }
     } finally {
       setLoadingMore(false);
     }
-  };
+  }, [loadingMore, load, totalPages]);
 
   const doClearAll = async () => {
     try {
@@ -843,6 +882,11 @@ export function HistoryPage() {
     return out;
   }, [fullActive, allEntries, entries, hasActiveFilter, dateFilter, providerFilter, sort]);
 
+  const pagedEntries = useMemo(() => {
+    const start = page * HISTORY_PAGE_SIZE;
+    return viewEntries.slice(start, start + HISTORY_PAGE_SIZE);
+  }, [viewEntries, page]);
+
   // Filter option values come from the working set itself, so a control
   // never offers a value with no rows behind it.
   const providerOptions = useMemo(
@@ -852,7 +896,7 @@ export function HistoryPage() {
 
   const groups = useMemo(() => {
     const out: { dayKey: string; label: string; items: HistoryEntry[] }[] = [];
-    for (const entry of viewEntries) {
+    for (const entry of pagedEntries) {
       const date = new Date(entry.timestamp);
       const key = dayKeyFor(date);
       const lastGroup = out[out.length - 1];
@@ -860,12 +904,12 @@ export function HistoryPage() {
       else out.push({ dayKey: key, label: historyGroupForDate(date), items: [entry] });
     }
     return out;
-  }, [viewEntries]);
+  }, [pagedEntries]);
 
   // Rail end-stop (P2): only the last *visible* row, and only when the
   // working set is fully loaded — never while more pages hide behind
   // Load More or a full-set fetch is still running.
-  const endReached = fullActive ? fullStatus === 'ready' : lastCount < 50;
+  const endReached = fullActive ? fullStatus === 'ready' : lastCount < HISTORY_PAGE_SIZE;
   const lastEntryId = (() => {
     if (!endReached) return null;
     for (let gi = groups.length - 1; gi >= 0; gi--) {
@@ -1038,7 +1082,7 @@ export function HistoryPage() {
       </div>
 
       <div className="settings-section">
-        <div className="settings-section-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className="settings-section-header settings-section-header-actions">
           <h2>Recent Transcriptions</h2>
           <Button variant="danger" size="xs" id="clear-history-btn" onClick={() => setConfirmClear(true)}>Clear All</Button>
         </div>
@@ -1055,15 +1099,21 @@ export function HistoryPage() {
           />
         </div>
         <div className="history-filter-bar">
-          <Tabs value={dateFilter} onValueChange={(v) => setDateFilter(v as DateFilter)}>
-            <TabsList aria-label="Date range">
-              {DATE_FILTERS.map((f) => (
-                <TabsTrigger key={f.value} value={f.value}>
-                  {f.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
+          <ToggleGroup
+            type="single"
+            className="tabs-list"
+            value={dateFilter}
+            onValueChange={(value) => {
+              if (value) setDateFilter(value as DateFilter);
+            }}
+            aria-label="Date range"
+          >
+            {DATE_FILTERS.map((f) => (
+              <ToggleGroupItem key={f.value} value={f.value} className="tabs-trigger">
+                {f.label}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
           <div className="history-filter-controls">
             <div
               className={`history-filter-anim${showProviderFilter ? ' is-visible' : ''}`}
@@ -1097,11 +1147,6 @@ export function HistoryPage() {
                 ))}
               </SelectContent>
             </Select>
-            <span className="history-shown-count" aria-live="polite">
-              {viewEntries.length === 1
-                ? '1 shown'
-                : `${viewEntries.length} shown`}
-            </span>
           </div>
         </div>
         {selectedIds.size > 0 && (
@@ -1115,7 +1160,7 @@ export function HistoryPage() {
             <Button
               variant="ghost"
               size="xs"
-              style={{ color: 'var(--color-error)' }}
+              className="destructive-action"
               onClick={() => deleteItems([...selectedIds])}
             >
               Delete{selectedIds.size > 1 ? ` ${selectedIds.size}` : ''}
@@ -1138,31 +1183,47 @@ export function HistoryPage() {
             </div>
           )}
           {!initialLoading && showEmpty && (
-            <div className="empty-state" id="history-empty">
-              <Mic className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-              <div className="empty-state-title">No transcriptions yet</div>
-              <div className="empty-state-hint">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> to start your first transcription</div>
-            </div>
+            <Empty id="history-empty">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Mic strokeWidth={1.5} aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>No transcriptions yet</EmptyTitle>
+                <EmptyDescription>Press <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Space</Kbd> to start your first transcription</EmptyDescription>
+              </EmptyHeader>
+            </Empty>
           )}
           {!initialLoading && showNoResults && (
-            <div className="empty-state" id="history-no-results">
-              <Search className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-              <div className="empty-state-title">No matches</div>
-              <div className="empty-state-hint" id="history-no-results-hint">
-                {query ? `Nothing matches "${query}" on this device.` : 'Nothing matches your search.'}
-              </div>
-              <Button variant="ghost" size="sm" id="history-clear-search-btn" onClick={onClearSearch}>Clear search</Button>
-            </div>
+            <Empty id="history-no-results">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search strokeWidth={1.5} aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>No matches</EmptyTitle>
+                <EmptyDescription id="history-no-results-hint">
+                  {query ? `Nothing matches "${query}" on this device.` : 'Nothing matches your search.'}
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="ghost" size="sm" id="history-clear-search-btn" onClick={onClearSearch}>Clear search</Button>
+              </EmptyContent>
+            </Empty>
           )}
           {!initialLoading && showFilterEmpty && (
-            <div className="empty-state" id="history-no-filter-results">
-              <Search className="empty-state-icon" strokeWidth={1.5} aria-hidden="true" />
-              <div className="empty-state-title">No matches for these filters</div>
-              <div className="empty-state-hint">
-                Try widening the date range or clearing the filters.
-              </div>
-              <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
-            </div>
+            <Empty id="history-no-filter-results">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Search strokeWidth={1.5} aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>No matches for these filters</EmptyTitle>
+                <EmptyDescription>
+                  Try widening the date range or clearing the filters.
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
+              </EmptyContent>
+            </Empty>
           )}
           {!initialLoading && groups.map((group) => (
             <div key={group.dayKey} role="presentation">
@@ -1215,18 +1276,59 @@ export function HistoryPage() {
           ))}
         </div>
         <div
-          style={{ padding: 'var(--spacing-md)', display: 'flex', justifyContent: 'center' }}
-          id="history-load-more"
-          className={fullActive || lastCount < 50 ? 'hidden' : undefined}
+          id="history-pager"
+          className={pagedEntries.length === 0 ? 'hidden' : undefined}
         >
-          <Button
-            variant="ghost"
-            id="load-more-btn"
-            disabled={loadingMore}
-            onClick={() => void onLoadMore()}
-          >
-            {loadingMore ? 'Loading…' : 'Load More'}
-          </Button>
+          <span className="history-pager-count">
+            {selectedIds.size} of {(fullActive ? allEntries : entries).length} row(s) selected.
+          </span>
+          <div className="history-pager-controls">
+            <span className="history-pager-label">Rows per page</span>
+            <span className="history-pager-size">{HISTORY_PAGE_SIZE}</span>
+            <span className="history-pager-page" aria-live="polite">
+              {loadingMore ? 'Loading…' : `Page ${page + 1}${totalPages != null ? ` of ${totalPages}` : ''}`}
+            </span>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="history-pager-btn"
+              aria-label="Go to first page"
+              disabled={page === 0 || loadingMore}
+              onClick={() => void goToPage(0)}
+            >
+              <ChevronsLeft data-icon="inline-start" size={14} aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="history-pager-btn"
+              aria-label="Go to previous page"
+              disabled={page === 0 || loadingMore}
+              onClick={() => void goToPage(page - 1)}
+            >
+              <ChevronLeft data-icon="inline-start" size={14} aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="history-pager-btn"
+              aria-label="Go to next page"
+              disabled={loadingMore || (totalPages != null && page + 1 >= totalPages)}
+              onClick={() => void goToPage(page + 1)}
+            >
+              <ChevronRight data-icon="inline-start" size={14} aria-hidden="true" />
+            </Button>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="history-pager-btn"
+              aria-label="Go to last page"
+              disabled={loadingMore || (totalPages != null && page + 1 >= totalPages)}
+              onClick={() => void goToPage(Number.POSITIVE_INFINITY)}
+            >
+              <ChevronsRight data-icon="inline-start" size={14} aria-hidden="true" />
+            </Button>
+          </div>
         </div>
       </div>
 

@@ -412,7 +412,7 @@ function AgentRow({
                  </Badge>
               )}
             </span>
-            <span className="selection-row-description">{description}</span>
+            <span className="selection-row-description agent-row-desc">{description}</span>
           </span>
         </button>
       </RadioGroupItem>

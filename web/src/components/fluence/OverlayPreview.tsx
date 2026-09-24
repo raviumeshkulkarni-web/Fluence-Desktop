@@ -45,7 +45,10 @@ const FRAME_CSS = `
 .ovpv-frame {
   position: relative;
   display: flex;
+  width: max-content;
   justify-content: center;
+  transform: scale(var(--ovpv-scale, 1));
+  transform-origin: top left;
   --agent-picker-card-height: 0px;
   --agent-picker-extra: 0px;
 }

@@ -708,6 +708,8 @@ button.history-group-header {
 }
 
 .bubble-option {
+  height: 150px;
+  min-height: 150px;
   border-radius: 0;
 }
 
@@ -715,8 +717,6 @@ button.history-group-header {
   background: var(--color-interactive-active);
 }
 
-/* Live stage: transparent so the overlay's real glass (backdrop blur over
- * the page behind it) reads truthfully. Real-size tiers, never scaled. */
 .bubble-live-stage {
   margin-left: auto;
   flex: none;
@@ -733,8 +733,9 @@ button.history-group-header {
 }
 
 .overlay-preview-full {
-  width: 320px;
-  height: 96px;
+  --ovpv-scale: 0.75;
+  width: 240px;
+  height: 72px;
 }
 
 .overlay-preview-compact {
@@ -748,7 +749,7 @@ button.history-group-header {
 }
 
 .overlay-preview-full.has-pill {
-  height: 142px;
+  height: 107px;
 }
 
 .overlay-preview-compact.has-pill {

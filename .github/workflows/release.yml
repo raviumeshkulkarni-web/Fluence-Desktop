@@ -79,6 +79,12 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib
 
+      - name: run frontend + security test suite
+        shell: pwsh
+        run: |
+          node --test "tests/*.test.mjs"
+          pwsh -File tests/verify-security.ps1
+
       - name: install frontend dependencies
         run: npm ci
 
@@ -101,27 +107,42 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Premium Onboarding & System Theme
+            ## Fluence v__VERSION__ — Agent Mode, Formatting, and a rebuilt Settings shell
 
-            First impressions first: the Windows setup wizard is rebuilt as a calm, Windows-OOBE-style flow, and the app now follows your system theme automatically.
+            This release brings Agent Mode to life, adds a Formatting surface, and rebuilds the Settings app on a shared component shell.
 
-            ### New onboarding (9 steps)
+            ### Agent Mode
 
-            - Centered welcome with the brand-master mark, then a dedicated features showcase.
-            - Theme picker right up front (Dark / Light / System) with a live preview — the rest of onboarding renders in your choice.
-            - Overlay style picker with live previews of Full Status Island, Compact Pill, and Minimal Bubble — the same previews as Settings.
-            - Steps fit the window with no clipping; scrolling remains as a fallback for small windows and large text scaling.
-            - Monochrome wayfinding (progress + dots), text-only buttons, real button radios with visible labels everywhere.
+            - Start an agent turn from the keyboard with the agent hotkey, or from the tray.
+            - **Agents page:** create, edit, and delete custom agents, each with its own instructions.
+            - Pick a persistent **default agent** in Settings; Agent Mode runs with it, so you rarely need to think about which agent is active.
+            - New backend modules for the agent store, prompt templates, foreground-app detection, and installed-app enumeration.
+            - Only the agent *id* crosses the IPC boundary — prompt text stays on the server side, in `agents.json`.
+            - Credential handling is fail-closed: a missing LLM key or a denied credential target reports a clear, non-retryable status instead of a generic failure.
 
-            ### System theme in the app
+            ### Formatting
 
-            - New System option follows Windows dark/light live, no restart. Sidebar cycles Dark → Light → System.
-            - Onboarding saves your real choice (`auto` tracks the OS); the backend records the resolved value.
+            - New **Formatting page** for text cleanup and polish behaviour, backed by a new prompts service and a dedicated `Formatting` IPC module.
+
+            ### Settings rebuilt on a shared shell
+
+            - New shared `SettingsSection` composition and `Sidebar`, `Table`, `ToggleGroup`, and `Empty` primitives, so every page shares one layout and one table surface.
+            - **History:** row selection, purpose-built empty states, and a real pager with its own chrome instead of ad-hoc paging.
+            - **Providers, Dictionary, and Snippets:** one consistency pass across copy, layout, and empty states.
+            - Onboarding wizard steps updated to match the new Settings surfaces.
+            - Agent and bubble previews rebalanced so the overlays read the same in Settings as they do in the app.
+
+            ### Overlay
+
+            - The expandable Agent Picker card was built and then **intentionally held back from this release**: its bottom-docked placement had a rendering/compositor glitch. Agent Mode ships using the default agent chosen in Settings, and the overlay keeps the stable bubble and pill.
+            - Overlay geometry is still committed as a single atomic native window operation, so every dock — top, bottom, left, right, and the three bottom variants — places consistently.
 
             ### Verification
 
-            - Full Rust suite green in CI (`cargo test --lib`); credential-parity, agent error-mapping, and security suites green.
-            - Manually verified in the dev app: all 9 wizard steps end to end, settings/keys/overlay/theme persistence, and theme follow on OS switch.
+            - Full Rust suite green (`cargo test --lib`, 443 tests).
+            - Frontend and security suites are now a **required** CI gate on every tag (they were previously manual-only).
+            - Release-profile compile and Clippy are clean.
+            - Manually verified in the dev app: Agent Mode start/stop and agent execution, overlay bubble and pill across all six dock positions, and the Settings rebuild.
 
             ---
             ### Download & Install

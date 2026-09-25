@@ -36,16 +36,14 @@ let chimeCtx = null;
 let agentRequestSeq = 0;
 let agentRetryContext = null;
 let lastAgentStartAt = 0;
-// One-turn agent picker (Slice 5): id-only selection, resolved server-side.
-// Null = built-in default. The STT flow never reads these.
+// Agent Mode: id-only selection, resolved server-side. Null = built-in
+// default. Seeded from the persisted default chosen in Settings; this is the
+// only bridge between that setting and a turn. The STT flow never reads it.
 let activeAgentId = null;
-let agentPickerAgents = [];
-let agentPickerDefaultId = 'builtin';
-let agentPickerVisible = false;
-let agentPickerExpanded = false;
-let agentPickerAppPillVisible = true;
-let agentPickerResizeQueue = Promise.resolve();
-const AGENT_STRIP_EXTRA = 38;
+// Stable placement model: the floating bubble (overlay-root) is the anchor and
+// is pinned to the window edge the OS never moves, so the island's resting spot
+// is identical for every dock.
+let agentPickerPlacement = 'above'; // 'above' | 'below'
 const AGENT_LLM_WATCHDOG_MS = 25000;
 
 function beginSession(explicitId) {
@@ -74,7 +72,6 @@ function resetTransientUi() {
   hideRecHint();
   setStatusMessage('');
   hideAppPill();
-  hideAgentPicker();
   activeAgentId = null;
   // A new recording invalidates any cached agent retry (A2).
   agentRetryContext = null;
@@ -111,6 +108,13 @@ async function reconcileWithNativeState() {
         const prefs = await getRecordingPreferences();
         setOverlayCorner(prefs.overlayPosition);
         await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+        if (isAgent) {
+          await resolveDefaultAgentId();
+          setAgentPickerAnchor(
+            resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+            true,
+          );
+        }
         await invoke('show_overlay', { position: prefs.overlayPosition });
         updateRecHint();
         if (overlayRoot) overlayRoot.classList.add('active');
@@ -141,12 +145,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const prefs = await getRecordingPreferences();
     applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
   } catch {}
-  void preloadAgents();
+  void resolveDefaultAgentId();
   await reconcileWithNativeState();
 });
 
 window.addEventListener('pageshow', () => {
-  void preloadAgents();
+  void resolveDefaultAgentId();
   reconcileWithNativeState().catch(() => {});
 });
 
@@ -179,6 +183,9 @@ async function setupEventListeners() {
       }
       setOverlayCorner(prefs.overlayPosition);
       await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+      // Transcription mode has no picker: drop the agent edge anchor so the
+      // bubble uses the standard layout.
+      setAgentPickerAnchor('above', false);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -253,11 +260,6 @@ async function setupEventListeners() {
     // Capture the foreground app while the overlay is still hidden so the
     // target app owns focus (timing-sensitive).
     const appIcon = loadAppIcon(sessionId);
-    const strip = document.getElementById('agent-strip');
-    if (strip && !strip.dataset.wired) {
-      strip.dataset.wired = 'true';
-      strip.addEventListener('click', toggleAgentCard);
-    }
     let recordingStarted = false;
     try {
       const prefs = await getRecordingPreferences();
@@ -269,10 +271,15 @@ async function setupEventListeners() {
       }
       setOverlayCorner(prefs.overlayPosition);
       await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
-
-      if (agentPickerAgents.length > 0) {
-        showAgentPicker(prefs.showAppPill);
-      }
+      // Resolve the agent chosen in Settings before the overlay is shown, so
+      // the turn never runs against the built-in default by accident.
+      await resolveDefaultAgentId();
+      // Edge-anchor the whole agent session so the bubble's resting spot is
+      // identical for every dock and never moves during the turn.
+      setAgentPickerAnchor(
+        resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+        true,
+      );
 
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
@@ -285,7 +292,6 @@ async function setupEventListeners() {
       if (overlayRoot) overlayRoot.classList.add('active');
       startTimer();
       void appIcon;
-      void loadAgentPicker(sessionId, prefs.showAppPill);
     } catch (err) {
       console.error('Failed to start/show recording (agent):', err);
       if (recordingStarted) {
@@ -383,6 +389,7 @@ function setMode(mode) {
 
 let appPollTimer = null;
 let appPollRequestId = 0;
+let appPillHideTimer = null;
 
 // Floating Bubble app-pill toggle: absence means ON, so pre-toggle settings
 // files keep today's behavior. Read fresh in loadAppIcon (summon path) so a
@@ -419,6 +426,8 @@ function applyAppInfo(info) {
     pillIcon.alt = `${info.name} icon`;
     pillName.textContent = info.name;
   }
+  // A pending fade-out must not hide a pill that just became visible again.
+  if (appPillHideTimer) { clearTimeout(appPillHideTimer); appPillHideTimer = null; }
   pill.hidden = false;
   // Apply synchronously - requestAnimationFrame can be dropped while the
   // overlay window is still hidden, which would leave the pill at opacity 0.
@@ -465,207 +474,104 @@ function stopAppPolling() {
 function hideAppPill() {
   stopAppPolling();
   const pill = document.getElementById('app-pill');
-  if (pill) {
-    pill.classList.remove('visible');
-    pill.hidden = true;
+  if (!pill) return;
+  // Fade out before display:none — an instant hide reads as a pop, which is
+  // what made agent-mode transitions feel rougher than transcription.
+  pill.classList.remove('visible');
+  if (appPillHideTimer) clearTimeout(appPillHideTimer);
+  appPillHideTimer = setTimeout(() => {
+    appPillHideTimer = null;
+    const current = document.getElementById('app-pill');
+    if (!current || current.classList.contains('visible')) return;
+    current.hidden = true;
     const pillName = document.getElementById('app-pill-name');
     if (pillName) pillName.textContent = '';
-  }
+  }, 200);
 }
 
-// ── One-turn agent picker (Slice 5, agent mode only) ──────────────
-// Fail-closed: hidden on any error or when no custom agents exist.
-// Only agent ids cross IPC; prompt text stays server-side in agents.json.
-function agentDisplayName(id) {
-  if (!id || id === 'builtin') return 'Fluence Agent';
-  const found = agentPickerAgents.find((a) => a.id === id);
-  return found ? found.name : 'Fluence Agent';
-}
-
-function computeAgentPickerExpansion(cardHeight) {
-  const gap = 8;
-  const height = Number.isFinite(cardHeight) ? Math.max(0, cardHeight) : 0;
-  return height + gap;
-}
-
-function renderAgentPicker() {
-  const picker = document.getElementById('agent-picker');
-  const card = document.getElementById('agent-card');
-  const list = document.getElementById('agent-list');
-  const stripName = document.getElementById('agent-strip-name');
-  if (!picker || !card || !list) return;
-  if (stripName) stripName.textContent = agentDisplayName(activeAgentId);
-  list.textContent = '';
-  const rows = [
-    { id: 'builtin', name: 'Fluence Agent', sub: 'The all-rounder' },
-    ...agentPickerAgents.map((a) => ({ id: a.id, name: a.name, sub: a.hint })),
-  ];
-  for (const row of rows) {
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'agent-row-btn';
-    btn.setAttribute('role', 'radio');
-    btn.setAttribute('aria-checked', row.id === activeAgentId ? 'true' : 'false');
-    btn.setAttribute('aria-label', `Use ${row.name} for this turn`);
-    const text = document.createElement('span');
-    text.className = 'agent-row-text';
-    const nameEl = document.createElement('span');
-    nameEl.className = 'agent-row-name';
-    nameEl.textContent = row.name;
-    text.appendChild(nameEl);
-    if (row.sub) {
-      const sub = document.createElement('span');
-      sub.className = 'agent-row-sub';
-      sub.textContent = row.sub;
-      text.appendChild(sub);
-    }
-    if (row.id === agentPickerDefaultId) {
-      const badge = document.createElement('span');
-      badge.className = 'agent-row-default';
-      badge.textContent = 'Default';
-      text.appendChild(badge);
-    }
-    btn.appendChild(text);
-    if (row.id === activeAgentId) {
-      const check = document.createElement('span');
-      check.className = 'agent-row-check';
-      check.textContent = '✓';
-      check.setAttribute('aria-hidden', 'true');
-      btn.appendChild(check);
-    }
-    btn.addEventListener('click', () => {
-      activeAgentId = row.id;
-      renderAgentPicker();
-      void setAgentPickerExpanded(false);
-    });
-    list.appendChild(btn);
-  }
-}
-
-function setAgentPickerLayout(extraHeight, cardHeight = 0) {
-  const extra = Number.isFinite(extraHeight) ? Math.max(0, extraHeight) : 0;
-  const card = Number.isFinite(cardHeight) ? Math.max(0, cardHeight) : 0;
-  document.body.style.setProperty('--agent-picker-extra', `${extra}px`);
-  document.body.style.setProperty('--agent-picker-card-height', `${card}px`);
-  document.body.classList.toggle('agent-picker-visible', agentPickerVisible);
-  document.body.classList.toggle('agent-picker-expanded', agentPickerExpanded);
-  document.body.classList.toggle('agent-pill-visible', agentPickerAppPillVisible);
-}
-
-function queueAgentPickerHeight(extraHeight, pickerVisible) {
-  agentPickerResizeQueue = agentPickerResizeQueue
-    .catch(() => {})
-    .then(() => invoke('set_agent_picker_height', { extraHeight, pickerVisible }));
-  return agentPickerResizeQueue;
-}
-
-async function preloadAgents() {
+// ── Agent Mode agent resolution ───────────────────────────────────
+// Fail-closed: if the agent store cannot be read, activeAgentId stays null and
+// the backend falls back to the built-in agent. Only agent ids cross IPC;
+// prompt text stays server-side in agents.json.
+async function resolveDefaultAgentId() {
   try {
     const view = await invoke('get_agents');
-    const customs = (view && view.custom_agents) || [];
-    agentPickerAgents = customs;
-    agentPickerDefaultId = (view && view.default_id) || 'builtin';
-    if (!activeAgentId) activeAgentId = agentPickerDefaultId;
-    renderAgentPicker();
+    const defaultId = (view && view.default_id) || 'builtin';
+    if (!activeAgentId) activeAgentId = defaultId;
   } catch (err) {
-    console.warn('Failed to preload agents:', err);
+    console.warn('Failed to resolve default agent:', err);
   }
 }
 
-function showAgentPicker(showAppPill) {
-  const picker = document.getElementById('agent-picker');
-  if (!picker) return;
-  agentPickerAppPillVisible = showAppPill !== false;
-  if (agentPickerVisible) {
-    const card = document.getElementById('agent-card');
-    const cardHeight = agentPickerExpanded && card ? card.getBoundingClientRect().height : 0;
-    const extra = agentPickerExpanded ? (AGENT_STRIP_EXTRA + computeAgentPickerExpansion(cardHeight)) : AGENT_STRIP_EXTRA;
-    setAgentPickerLayout(extra, cardHeight);
-    return;
-  }
-  agentPickerVisible = true;
-  setAgentPickerLayout(AGENT_STRIP_EXTRA, 0);
-  picker.hidden = false;
-  // Sized to AGENT_STRIP_EXTRA and widened to AGENT_PICKER_WINDOW_WIDTH (260px)
-  queueAgentPickerHeight(AGENT_STRIP_EXTRA, true).catch((err) => {
-    console.warn('Failed to size agent picker window:', err);
-  });
+// Edge anchor for the whole agent session. The bubble is pinned to the docked
+// screen edge (the window edge the OS never moves) at a constant per-tier
+// offset, so no dock or session transition can reflow or shift it.
+function setAgentPickerAnchor(placement, active) {
+  const place = placement === 'below' ? 'below' : 'above';
+  const on = active !== false;
+  document.body.classList.toggle('agent-placement-above', on && place === 'above');
+  document.body.classList.toggle('agent-placement-below', on && place === 'below');
+  if (on) agentPickerPlacement = place;
 }
 
-async function setAgentPickerExpanded(expanded) {
-  const card = document.getElementById('agent-card');
-  const strip = document.getElementById('agent-strip');
-  if (!card || !strip || !agentPickerVisible || agentPickerExpanded === expanded) return;
-
-  agentPickerExpanded = expanded;
-  card.hidden = !expanded;
-  strip.setAttribute('aria-expanded', expanded ? 'true' : 'false');
-
-  if (!expanded) {
-    setAgentPickerLayout(AGENT_STRIP_EXTRA, 0);
-    try {
-      // Strip stays visible: keep the widened window, collapse to base strip extra height.
-      await queueAgentPickerHeight(AGENT_STRIP_EXTRA, true);
-    } catch (err) {
-      console.warn('Failed to collapse agent picker window:', err);
+// ── Agent placement model (single coherent function set) ────────
+// Anchor: the floating bubble (overlay-root). Placement is resolved from the
+// bubble's docked position hint plus, for unknown positions, the bubble's
+// actual rendered rect vs. viewport space — never from hardcoded per-corner
+// pixel coordinates. Pure + DOM-free so it is unit-testable in Node.
+function resolveAgentPickerPlacement(overlayPosition, anchorRect, viewport) {
+  const pos = typeof overlayPosition === 'string' ? overlayPosition.toLowerCase() : '';
+  const hasTop = pos.includes('top');
+  const hasBottom = pos.includes('bottom') || pos === 'center' || pos.includes('center_bottom') || pos.includes('bottom_center');
+  let hinted = '';
+  if (hasTop && !hasBottom) hinted = 'below'; // top dock → open downward, away from top edge
+  else if (hasBottom && !hasTop) hinted = 'above'; // bottom dock → open upward, away from bottom edge
+  else if (pos.includes('center_top')) hinted = 'below';
+  else if (pos.includes('center_bottom')) hinted = 'above';
+  // Unknown/ambiguous positions (e.g. a future center_left / center_right):
+  // pick the side with more measured space; default to above (current default dock).
+  // NOTE: The gap literal (8) is inlined so this function stays
+  // dependency-free and unit-testable in Node.
+  const rectOk = anchorRect && Number.isFinite(anchorRect.top) && Number.isFinite(anchorRect.bottom);
+  const vpOk = viewport && Number.isFinite(viewport.height) && viewport.height > 0;
+  if (!hinted) {
+    if (rectOk && vpOk) {
+      const spaceAbove = anchorRect.top - 8;
+      const spaceBelow = viewport.height - anchorRect.bottom - 8;
+      if (Number.isFinite(spaceAbove) && Number.isFinite(spaceBelow)) {
+        return spaceBelow > spaceAbove ? 'below' : 'above';
+      }
     }
-    return;
+    return 'above';
   }
+  // A docked hint is authoritative for direction — never re-flip it. The OS
+  // window grows INWARD from the docked edge, so the hinted side is exactly
+  // the side that gains room when the picker's extra height lands, while the
+  // opposite side stays fixed. Re-measuring here would compare window-local
+  // coordinates (the bubble sits ~46px from the window top in every tier, and
+  // is still the 36px pre-`active` box at this point) against a threshold
+  // written as if it were screen space — which read "more room below" for
+  // EVERY bottom dock and inverted them to `below`, dropping the strip past
+  // the island. Direction comes from the dock; measurement only arbitrates
+  // positions that have no dock (branch above).
+  return hinted;
+}
 
-  const cardHeight = card.getBoundingClientRect().height;
-  const extraHeight = AGENT_STRIP_EXTRA + computeAgentPickerExpansion(cardHeight);
-  setAgentPickerLayout(extraHeight, cardHeight);
+function readAgentPickerAnchor() {
   try {
-    const appliedExtra = await queueAgentPickerHeight(extraHeight, true);
-    if (agentPickerExpanded) setAgentPickerLayout(appliedExtra, cardHeight);
-  } catch (err) {
-    console.warn('Failed to expand agent picker window:', err);
-  }
+    const root = document.getElementById('overlay-root');
+    if (!root) return null;
+    const r = root.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+  } catch { return null; }
 }
 
-function hideAgentPicker(resetWindow = true) {
-  const picker = document.getElementById('agent-picker');
-  const card = document.getElementById('agent-card');
-  const strip = document.getElementById('agent-strip');
-  const shouldResetHeight = agentPickerVisible || agentPickerExpanded;
-  agentPickerVisible = false;
-  agentPickerExpanded = false;
-  if (card) card.hidden = true;
-  if (strip) strip.setAttribute('aria-expanded', 'false');
-  if (picker) picker.hidden = true;
-  setAgentPickerLayout(0, 0);
-  if (shouldResetHeight && resetWindow) {
-    // Picker fully gone: window shrinks back to the bare tier size.
-    queueAgentPickerHeight(0, false).catch((err) => {
-      console.warn('Failed to reset agent picker window:', err);
-    });
-  }
-}
-
-async function loadAgentPicker(sessionId, showAppPill) {
+function readAgentPickerViewport() {
   try {
-    const view = await invoke('get_agents');
-    if (!isSessionActive(sessionId)) return;
-    const customs = (view && view.custom_agents) || [];
-    agentPickerAgents = customs;
-    agentPickerDefaultId = (view && view.default_id) || 'builtin';
-    if (!activeAgentId) activeAgentId = agentPickerDefaultId;
-    renderAgentPicker();
-    if (!customs.length) {
-      if (agentPickerVisible) hideAgentPicker();
-      return;
-    }
-    if (currentState === 'agent' && !agentPickerVisible) {
-      showAgentPicker(showAppPill);
-    }
-  } catch (err) {
-    // Fail-closed: picker stays hidden, built-in default applies.
-    console.warn('Failed to load agents for picker:', err);
-  }
-}
-
-function toggleAgentCard() {
-  void setAgentPickerExpanded(!agentPickerExpanded);
+    if (!Number.isFinite(window.innerWidth) || !Number.isFinite(window.innerHeight)) return null;
+    return { width: window.innerWidth, height: window.innerHeight };
+  } catch { return null; }
 }
 
 function setOverlayCorner(position) {
@@ -991,7 +897,6 @@ async function fadeAndHide(sessionId = activeSessionId) {
   hideRetry();
   setStatusMessage('');
   hideAppPill();
-  hideAgentPicker(false);
   if (overlayRoot) {
     overlayRoot.classList.remove('active');
   }
@@ -999,6 +904,9 @@ async function fadeAndHide(sessionId = activeSessionId) {
   if (!isSessionActive(sessionId)) return;
   await invoke('hide_overlay');
   if (!isSessionActive(sessionId)) return;
+  // Window is hidden now: safe to drop the agent edge anchor without any
+  // visible shift. Geometry lives in CSS, so there is nothing to reset.
+  setAgentPickerAnchor(agentPickerPlacement, false);
   setState('idle');
   completeSession(sessionId);
 }

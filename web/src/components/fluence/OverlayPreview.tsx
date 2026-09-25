@@ -49,8 +49,6 @@ const FRAME_CSS = `
   justify-content: center;
   transform: scale(var(--ovpv-scale, 1));
   transform-origin: top left;
-  --agent-picker-card-height: 0px;
-  --agent-picker-extra: 0px;
 }
 /* Pill reserve mirrors overlay.html body padding-top:46 — room for the
  * half-docked app pill, taken only while the pill is shown. */

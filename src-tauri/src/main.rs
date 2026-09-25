@@ -237,7 +237,6 @@ pub fn run() {
             overlay::show_overlay,
             overlay::hide_overlay,
             overlay::set_overlay_style,
-            overlay::set_agent_picker_height,
             overlay::show_main_window,
             overlay::show_wizard_window,
             overlay::close_wizard,

@@ -107,42 +107,31 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Agent Mode, Formatting, and a rebuilt Settings shell
+            ## Fluence v__VERSION__ — Shared-scene dashboard analytics, History chrome unity, shared search field
 
-            This release brings Agent Mode to life, adds a Formatting surface, and rebuilds the Settings app on a shared component shell.
+            The dashboard gains two additive analytics cards beside the untouched Sessions area and Words bar charts, History's chrome speaks the same table-header language as every other screen, and both search boxes are now one shared component.
 
-            ### Agent Mode
+            ### Dashboard analytics
 
-            - Start an agent turn from the keyboard with the agent hotkey, or from the tray.
-            - **Agents page:** create, edit, and delete custom agents, each with its own instructions.
-            - Pick a persistent **default agent** in Settings; Agent Mode runs with it, so you rarely need to think about which agent is active.
-            - New backend modules for the agent store, prompt templates, foreground-app detection, and installed-app enumeration.
-            - Only the agent *id* crosses the IPC boundary — prompt text stays on the server side, in `agents.json`.
-            - Credential handling is fail-closed: a missing LLM key or a denied credential target reports a clear, non-retryable status instead of a generic failure.
+            - New **By weekday** card: a weekday-share donut (Monday-first, same synced ledger buckets as the hero chart) with hover-linked slice expansion, a centre readout, and a shadcn Table twin carrying every value as real text.
+            - New **Today** card: a today-vs-trailing-average momentum ring with an exact-value caption; a missing baseline renders an empty state, never a fabricated 0x.
+            - The hover dot now sits exactly on the stroke: axis domain and hover math share one scale, and recharts' own active marker is disabled so only the custom dot renders.
+            - KPI cards reserve the badge row's height, so the page no longer jumps when the trend pill appears or disappears.
 
-            ### Formatting
+            ### History
 
-            - New **Formatting page** for text cleanup and polish behaviour, backed by a new prompts service and a dedicated `Formatting` IPC module.
+            - Search row and filter bar merged into one header band using the exact table-head recipe; the divider between them is gone.
+            - Day-group headers regain table-head typography that a button reset had wiped, so day bands read as headers again.
 
-            ### Settings rebuilt on a shared shell
+            ### Search
 
-            - New shared `SettingsSection` composition and `Sidebar`, `Table`, `ToggleGroup`, and `Empty` primitives, so every page shares one layout and one table surface.
-            - **History:** row selection, purpose-built empty states, and a real pager with its own chrome instead of ad-hoc paging.
-            - **Providers, Dictionary, and Snippets:** one consistency pass across copy, layout, and empty states.
-            - Onboarding wizard steps updated to match the new Settings surfaces.
-            - Agent and bubble previews rebalanced so the overlays read the same in Settings as they do in the app.
-
-            ### Overlay
-
-            - The expandable Agent Picker card was built and then **intentionally held back from this release**: its bottom-docked placement had a rendering/compositor glitch. Agent Mode ships using the default agent chosen in Settings, and the overlay keeps the stable bubble and pill.
-            - Overlay geometry is still committed as a single atomic native window operation, so every dock — top, bottom, left, right, and the three bottom variants — places consistently.
+            - One shared `SearchField` (shared Input + magnifier) replaces the hand-rolled History wrapper and the bare app-picker input. Icon inset, type size, and focus behaviour are identical everywhere; the frozen vanilla `.search-wrapper` layer is untouched.
 
             ### Verification
 
             - Full Rust suite green (`cargo test --lib`, 443 tests).
-            - Frontend and security suites are now a **required** CI gate on every tag (they were previously manual-only).
-            - Release-profile compile and Clippy are clean.
-            - Manually verified in the dev app: Agent Mode start/stop and agent execution, overlay bubble and pill across all six dock positions, and the Settings rebuild.
+            - Frontend suite green (52 tests) and security suite green (54 assertions) — both required CI gates on every tag.
+            - Web typecheck and production build clean; no new dependencies, no sync/schema changes.
 
             ---
             ### Download & Install

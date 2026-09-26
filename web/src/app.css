@@ -469,23 +469,37 @@
   white-space: nowrap;
 }
 
-/* History search row: search input on left, Clear All button on right */
+/* History search row: search input on left, Clear All button on right.
+ * No bottom border: the search row and the filter bar below it are one
+ * chrome block, and the filter bar carries the header band (see
+ * .history-filter-bar), so a divider here only fragmented the two.
+ */
 .history-search-row {
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
   padding: 12px 18px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  /* Same header band as .history-filter-bar below (surface-secondary) with
+   * no divider between them: search + filters are one header block, closed
+   * by the single structural hairline the filter bar carries. */
+  background: var(--color-surface-secondary);
 }
-.history-search-row .search-wrapper {
+/* Shared search field (components/fluence/SearchField.tsx): the one search
+ * box in the app. The wrapper is a plain positioning context; the input keeps
+ * the global input base for surface/border/radius/focus, so a search field is
+ * indistinguishable from any other Input. Only the icon gutter and the
+ * label-size type are added here.
+ *
+ * The frozen vanilla layer owns `.search-wrapper` (settings.css) for the
+ * legacy markup and is left untouched; this class is the React-layer
+ * replacement, so the two never interact.
+ */
+.search-field {
   position: relative;
-  flex: 1;
-  padding: 0;
-  border-bottom: none;
-  background: transparent;
+  display: flex;
+  min-width: 0;
 }
-.history-search-row .search-wrapper svg {
+.search-field > svg {
   position: absolute;
   left: 12px;
   top: 50%;
@@ -494,6 +508,22 @@
   height: 15px;
   color: var(--color-ink-muted);
   pointer-events: none;
+  z-index: 1;
+}
+/* Attribute selector keeps this beating the global element rule on equal
+ * specificity (later in cascade) without a !important. */
+.search-field input[type='search'] {
+  padding-left: 35px;
+  font-size: 13px;
+}
+/* Native clear affordance would sit under the icon gutter. */
+.search-field input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.history-search-row .history-search-input {
+  flex: 1;
 }
 .history-search-row #clear-history-btn {
   flex-shrink: 0;
@@ -511,8 +541,11 @@
   align-items: center;
   gap: var(--spacing-12);
   padding: var(--spacing-10) var(--spacing-18);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  /* Header band: identical paint to .fluence-table-head (surface-secondary +
+   * structural hairline), so this row reads as a header the same way every
+   * table header does — including the dashboard weekday table. */
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border-structural);
   min-width: 0;
 }
 .history-filter-controls {
@@ -611,7 +644,10 @@
 }
 
 /* Collapsible day groups (P2): the sticky header is a button wearing the
- * frozen .history-group-header paint; only UA button defaults are reset.
+ * frozen .history-group-header layout (sticky, flex, padding); type paint
+ * mirrors .fluence-table-head exactly (body 12px/600, on-surface, structural
+ * hairline) instead of inheriting body text, so day bands read as headers
+ * the same way table headers do on every other screen.
  */
 button.history-group-header {
   width: 100%;
@@ -619,10 +655,13 @@ button.history-group-header {
   border-left: none;
   border-right: none;
   background: var(--color-surface-secondary);
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
+  border-bottom: 1px solid var(--color-border-structural);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
   cursor: pointer;
   text-align: left;
 }

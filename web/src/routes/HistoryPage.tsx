@@ -29,7 +29,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import { Input } from '@/components/ui/input';
 import { Kbd } from '@/components/ui/kbd';
 import {
   Select,
@@ -47,6 +46,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { SearchField } from '@/components/fluence/SearchField';
 import { acceptSuggestion } from '@/ipc/dictionary';
 import { cn } from '@/lib/cn';
 import {
@@ -1102,18 +1102,15 @@ export function HistoryPage() {
 
       <div className="settings-card history-card" id="history-container">
         <div className="history-search-row">
-          <div className="search-wrapper">
-            <Search size={15} strokeWidth={2} aria-hidden="true" />
-            <Input
-              ref={searchFieldRef}
-              type="search"
-              id="history-search"
-              placeholder="Search transcriptions…"
-              aria-label="Search transcriptions"
-              value={searchInput}
-              onChange={(e) => onSearchInput(e.target.value)}
-            />
-          </div>
+          <SearchField
+            ref={searchFieldRef}
+            id="history-search"
+            className="history-search-input"
+            placeholder="Search transcriptions…"
+            aria-label="Search transcriptions"
+            value={searchInput}
+            onChange={(e) => onSearchInput(e.target.value)}
+          />
           <Button
             variant="destructive"
             size="sm"

@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/empty';
 import { Field } from '@/components/ui/field';
 import { Input, Textarea } from '@/components/ui/input';
+import { SearchField } from '@/components/fluence/SearchField';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
@@ -658,7 +659,7 @@ export function FormattingPage() {
             </DialogDescription>
           </DialogHeader>
           <Field label="Search installed apps" htmlFor="app-picker-search">
-            <Input
+            <SearchField
               id="app-picker-search"
               value={pickerQuery}
               maxLength={60}

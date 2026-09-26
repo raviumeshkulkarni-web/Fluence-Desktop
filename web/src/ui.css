@@ -950,7 +950,6 @@
   height: 8px;
   border-radius: 999px;
   background: var(--color-brand-cyan);
-  box-shadow: 0 0 0 3px rgba(11, 214, 227, 0.25);
 }
 .chart-hover-chip {
   position: absolute;

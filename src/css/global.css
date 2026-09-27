@@ -154,7 +154,7 @@ button {
 }
 
 button:focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 
@@ -177,15 +177,15 @@ button:focus-visible {
 }
 
 .btn-primary:hover {
-  background: #FFFFFF;
-  color: #000000;
+  background: var(--color-btn-primary-hover-bg);
+  color: var(--color-btn-primary-hover-fg);
   transform: translateY(-1px);
   box-shadow: 0 3px 8px rgba(0, 0, 0, 0.5);
 }
 
 .btn-primary:active {
   transform: translateY(0) scale(0.98);
-  background: #E4E4E7;
+  background: var(--color-btn-primary-active-bg);
 }
 
 /* Secondary - surface elevation + crisp border */
@@ -257,7 +257,7 @@ button:focus-visible {
 }
 
 .btn-link:hover {
-  color: #FFFFFF;
+  color: var(--color-btn-hover-fg);
 }
 
 .btn-link:active {
@@ -360,8 +360,8 @@ input:not([type="checkbox"]):not([type="radio"]):focus-visible,
 select:focus-visible,
 textarea:focus-visible {
   background: var(--color-surface-menu);
-  border-color: rgba(255, 255, 255, 0.3);
-  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 1px var(--color-focus-ring), 0 0 0 4px var(--color-border-focus-glow);
   outline: none;
 }
 
@@ -495,7 +495,7 @@ input[type="checkbox"]:disabled {
 /* ── Status Dot ────────────────────────────────────────────────── */
 /* Status Dot */
 .dot { width: 8px; height: 8px; border-radius: var(--radius-full); }
-.dot-success { background: var(--color-success); box-shadow: 0 0 8px rgba(16, 185, 129, 0.4); }
+.dot-success { background: var(--color-success); box-shadow: 0 0 8px rgba(34, 197, 94, 0.4); }
 .dot-error   { background: var(--color-error); box-shadow: 0 0 8px rgba(239, 68, 68, 0.4); }
 .dot-idle    { background: var(--color-ink-muted); }
 
@@ -573,7 +573,7 @@ input[type="checkbox"]:disabled {
   color: var(--color-on-surface);
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-structural);
-  border-bottom: 2px solid #222228;
+  border-bottom: 2px solid #222222;
   border-radius: var(--radius-xs);
   padding: 2px 7px;
   box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
@@ -594,10 +594,14 @@ input[type="checkbox"]:disabled {
   text-transform: uppercase;
 }
 
-.badge-primary { background: rgba(0, 229, 255, 0.12); color: var(--color-brand-cyan); border: 1px solid rgba(0, 229, 255, 0.25); }
-.badge-success { background: var(--color-success-container); color: var(--color-success); border: 1px solid rgba(16, 185, 129, 0.25); }
-.badge-error   { background: var(--color-error-container); color: var(--color-error); border: 1px solid rgba(239, 68, 68, 0.25); }
-.badge-warning { background: var(--color-warning-container); color: var(--color-warning); border: 1px solid rgba(245, 158, 11, 0.25); }
+/* Hue corrections only - the alphas are unchanged. The previous literals
+ * used #00E5FF (a cyan that is not in the token set; the brand cyan is
+ * #0BD6E3) and #10B981 (a green that is neither --color-success dark
+ * #22C55E nor light #15803D). */
+.badge-primary { background: rgba(11, 214, 227, 0.12); color: var(--color-brand-cyan); border: 1px solid rgba(11, 214, 227, 0.25); }
+.badge-success { background: var(--color-success-container); color: var(--color-success); border: 1px solid rgba(34, 197, 94, 0.25); }
+.badge-error   { background: var(--color-error-container); color: var(--color-error); border: 1px solid var(--color-error-container); }
+.badge-warning { background: var(--color-warning-container); color: var(--color-warning); border: 1px solid var(--color-warning-container); }
 
 /* Technical Spec Chip */
 .spec-chip {
@@ -707,7 +711,7 @@ input[type="checkbox"]:disabled {
   justify-content: space-between;
   align-items: center;
   position: relative;
-  z-index: 9999;
+  z-index: var(--z-overlay);
   flex-shrink: 0;
   user-select: none;
   pointer-events: auto;
@@ -826,9 +830,13 @@ textarea:disabled {
 }
 [data-theme="light"] .btn-primary:hover {
   border-color: rgba(0, 0, 0, 0.25);
+  color: var(--color-btn-primary-hover-fg);
 }
 [data-theme="light"] .btn-primary:active {
-  color: #18181B;
+  color: var(--color-btn-primary-hover-fg);
+}
+[data-theme="light"] .btn-link:hover {
+  color: var(--color-btn-hover-fg);
 }
 [data-theme="light"] .btn-secondary:hover {
   border-color: rgba(0, 0, 0, 0.16);
@@ -843,8 +851,8 @@ textarea:disabled {
 [data-theme="light"] input:not([type="checkbox"]):not([type="radio"]):focus,
 [data-theme="light"] select:focus,
 [data-theme="light"] textarea:focus {
-  border-color: rgba(14, 116, 144, 0.55);
-  box-shadow: 0 0 0 1px rgba(14, 116, 144, 0.35);
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 1px var(--color-focus-ring), 0 0 0 4px var(--color-border-focus-glow);
 }
 [data-theme="light"] input[type="checkbox"] {
   background: #FFFFFF !important;

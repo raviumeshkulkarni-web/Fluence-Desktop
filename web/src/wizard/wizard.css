@@ -449,7 +449,7 @@ body {
   padding: 7px 14px;
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-structural);
-  border-bottom: 2px solid #222228;
+  border-bottom: 2px solid #222222;
   border-radius: var(--radius-sm);
   font-family: var(--font-label);
   font-size: 12px;
@@ -950,7 +950,7 @@ body {
 .test-record-btn.transcribing .test-record-orb {
   background: var(--color-brand-cyan);
   color: #09090b;
-  box-shadow: 0 0 16px rgba(0, 229, 255, 0.5);
+  box-shadow: 0 0 16px rgba(11, 214, 227, 0.5);
   animation: orb-pulse 1s ease-in-out infinite;
 }
 
@@ -978,12 +978,12 @@ body {
   width: 80px;
   height: 80px;
   border-radius: var(--radius-xl);
-  background: rgba(16, 185, 129, 0.12);
-  border: 1px solid rgba(16, 185, 129, 0.3);
+  background: rgba(34, 197, 94, 0.12);
+  border: 1px solid rgba(34, 197, 94, 0.3);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 8px 28px rgba(16, 185, 129, 0.2);
+  box-shadow: 0 8px 28px rgba(34, 197, 94, 0.2);
   animation: success-pop 0.5s var(--ease-premium) both;
 }
 

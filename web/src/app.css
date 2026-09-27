@@ -35,7 +35,13 @@
 }
 .provider-form-fields {
   padding: var(--spacing-md);
-  border-top: 1px solid var(--color-border-structural);
+  /* Inset region separator: the logo grid above and the credential fields
+   * below are two zones of one card, so the rule aligns with the 16px field
+   * padding instead of running edge to edge between the card borders. Drawn
+   * as a background gradient because a border cannot inset; `none` is
+   * explicit so no layer reintroduces the full-bleed edge. */
+  border-top: none;
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) top center / calc(100% - (var(--spacing-md) * 2)) 1px no-repeat;
   display: flex;
   flex-direction: column;
   gap: var(--spacing-md);
@@ -209,11 +215,28 @@
   justify-content: space-between;
   gap: var(--spacing-md);
   padding: 14px 18px;
-  border-bottom: 1px solid var(--color-border-structural);
+  position: relative;
+  /* Must neutralize, not just omit: the frozen vanilla layer
+   * (src/css/settings.css .setting-row) still paints a full-bleed
+   * border-bottom. Omitting the declaration lets it back in, which draws
+   * a second edge-to-edge line under the inset hairline. */
+  border-bottom: none;
   transition: background-color 0.12s var(--ease-standard);
 }
-.settings-card .setting-row:last-child {
-  border-bottom: none;
+/* Inset card dividers: row separators stop at the content padding (18px)
+ * instead of touching the card's left/right borders. The ::after hairline
+ * paints above the row background, so it stays visible on hover washes.
+ * Covers every settings screen (General, Sync, Bubble, Dictionary,
+ * Snippets, Formatting) since all rows live in .settings-card. */
+.settings-card .setting-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-border-structural);
+  pointer-events: none;
 }
 .settings-card .setting-row:hover {
   background: var(--color-hover);
@@ -268,18 +291,25 @@
   letter-spacing: 0.01em;
   text-transform: none;
   color: var(--color-on-surface);
+  /* The tinted band is its own separator: no rule under it. A 1px line
+   * here would either span edge to edge (frozen layer) or float as a stub
+   * (inset), and both read as an artifact. Neutralized explicitly. */
   background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--color-border-structural);
+  border-bottom: none;
 }
 .dict-table td {
   padding: 12px 18px;
   font-size: 13px;
   vertical-align: middle;
-  border-bottom: 1px solid var(--color-border-structural);
+  /* Neutralizes the frozen full-bleed td border (settings.css). */
+  border-bottom: none;
   color: var(--color-on-surface);
 }
-.dict-table tr:last-child td {
-  border-bottom: none;
+/* Inset row dividers: an 18px-inset 1px gradient on the row itself, because
+ * collapsed table borders cannot inset. Hover/selected cell washes paint
+ * above it, so an active row reads as one solid block. */
+.dict-table tbody tr:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / calc(100% - 36px) 1px no-repeat;
 }
 .dict-table tr:hover td {
   background: var(--color-hover);
@@ -857,13 +887,23 @@ button.history-group-header {
   gap: var(--spacing-md);
   padding: 12px 18px;
   background: transparent;
-  border-bottom: 1px solid var(--color-border-structural);
+  position: relative;
   border-radius: 0;
   color: var(--color-on-surface-variant);
   transition: background var(--transition-fast), color var(--transition-fast);
 }
-.selection-row:last-child {
-  border-bottom: 0;
+/* Inset card dividers (see .settings-card .setting-row note): choice-list
+ * separators align to the 18px content padding on Agents, Bubble, and
+ * Formatting cards instead of touching the card borders. */
+.selection-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 18px;
+  right: 18px;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-border-structural);
+  pointer-events: none;
 }
 .selection-row:hover {
   background: var(--color-hover);
@@ -1143,7 +1183,7 @@ button.history-group-header {
   padding: 10px 12px;
   background: none;
   border: none;
-  border-bottom: 1px solid var(--color-border-muted);
+  position: relative;
   border-radius: var(--radius-xs);
   cursor: pointer;
   color: var(--color-on-surface);
@@ -1151,8 +1191,17 @@ button.history-group-header {
   transition: background var(--transition-fast), box-shadow var(--transition-fast);
 }
 
-.app-pick-row:last-child {
-  border-bottom: none;
+/* Inset panel dividers: the bordered .app-picker-list gets the same
+ * content-aligned separators (12px, matching row padding). */
+.app-pick-row:not(:last-child)::after {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  bottom: 0;
+  height: 1px;
+  background: var(--color-border-muted);
+  pointer-events: none;
 }
 
 .app-pick-row:hover {

@@ -750,18 +750,32 @@
   letter-spacing: 0.01em;
   text-transform: none;
   color: var(--color-on-surface);
+  /* The tinted band is its own separator: no rule under it, so nothing
+   * spans edge to edge and no stub floats under the wash. */
   background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--color-border-structural);
+  border-bottom: none;
 }
 .fluence-table-cell {
   padding: 12px 18px;
   font-size: 13px;
   vertical-align: middle;
-  border-bottom: 1px solid var(--color-border-structural);
+  border-bottom: none;
   color: var(--color-on-surface);
 }
-.fluence-table-row:last-child .fluence-table-cell {
-  border-bottom: none;
+/* Inset row dividers: an 18px-inset 1px gradient on the row itself, because
+ * collapsed table borders cannot inset. Hover/selected cell washes paint
+ * above it, so an active row reads as one solid block. */
+.fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / calc(100% - 36px) 1px no-repeat;
+}
+/* Dashboard "By weekday" table: tabular data beside a chart, not a settings
+ * list, so its row rules run end to end and the block reads as one ledger.
+ * This also matches the real geometry — that table sets its own 10px cell
+ * padding inline, so the 18px settings inset would not line up with the text
+ * column and would drop 36px out of a card only ~220px wide. Scoped by page
+ * id so the Dictionary and Snippets settings tables keep the inset language. */
+#page-dashboard .fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / 100% 1px no-repeat;
 }
 .fluence-table-body .fluence-table-row:hover .fluence-table-cell {
   background: var(--color-hover);
@@ -902,11 +916,13 @@
   width: 100%;
   min-width: 0;
 }
-/* Dashboard chart absorbs leftover viewport space (floor keeps it
-   usable in short windows, where the page scrolls instead). */
-#page-dashboard {
-  min-height: 100%;
-}
+/* Dashboard chart: min-height is a floor so the plot stays readable in short
+   windows, where the page scrolls. It deliberately does NOT stretch to fill
+   the scrollport — `min-height: 100%` on the page root was unique to the
+   dashboard and pushed the last card row onto the container's content-box
+   edge, so .content-area's 28px bottom padding was pushed below the fold and
+   the row sat flush with the window. Every other page (AI Cleanup and the
+   rest) simply ends its content, which is what keeps their bottom margin. */
 #page-dashboard .chart-fill {
   flex: 1 0 auto;
   display: flex;
@@ -1008,7 +1024,7 @@
  * `.ui-focus-ring` is the shared helper for Phase 2/3 call sites.
  */
 .ui-focus-ring:focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 

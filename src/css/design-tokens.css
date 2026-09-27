@@ -30,7 +30,13 @@
 
 :root {
   /* Surface Hierarchy (Design System v2.1 Canonical) */
-  --color-canvas:                #121212;
+  /* App background / page plane. #0D0D0D is the value the system already
+   * declares as the Windows app background (--color-surface-sunken, and the
+   * Android AppBackground "spec/Windows app background"). At #121212 the page
+   * sat only 3/255 above the #141414 card, a 0.13-stop step that read as one
+   * flat plane; on #0D0D0D the card separation is 0.73 stops. Light mode was
+   * already correct (#FFFFFF card on #EFF0F3) and is unchanged below. */
+  --color-canvas:                #0D0D0D;
   --color-surface:               #141414;
   --color-surface-secondary:     #1E1E1E;
   --color-surface-elevated:      #262626;

@@ -10,7 +10,7 @@ interface StepTestProps {
 
 type Phase = 'idle' | 'recording' | 'transcribing';
 
-// Step 5: live record → stop → transcribe round-trip. State machine mirrors
+// Step 8: live record → stop → transcribe round-trip. State machine mirrors
 // vanilla setupStep5 one-to-one: same labels, same result copy, same
 // disabled-while-transcribing, same orb icon swap via the icon-mic/icon-stop
 // classes (lucide Mic + filled Square stand in for the vanilla inline SVGs).
@@ -66,6 +66,7 @@ export function StepTest({ data }: StepTestProps) {
       <p className="step-desc">Let&apos;s make sure everything is working. Click the button and say something.</p>
       <div className="test-area">
         <Button
+          variant="ghost"
           className={`test-record-btn${phase === 'idle' ? '' : ` ${phase}`}`}
           style={{ minWidth: 160 }}
           disabled={busy}
@@ -75,7 +76,7 @@ export function StepTest({ data }: StepTestProps) {
             <Mic className="icon-mic test-record-icon" size={22} strokeWidth={2} />
             <Square className="icon-stop" size={11} fill="currentColor" stroke="none" aria-hidden="true" />
           </span>
-          <span id="wiz-test-record-label">{label}</span>
+          <span id="wiz-test-record-label" className="test-record-label">{label}</span>
         </Button>
         <div
           className={`test-result${result.placeholder ? ' placeholder' : ''}`}

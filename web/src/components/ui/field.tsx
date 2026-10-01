@@ -7,26 +7,53 @@ export interface FieldProps extends React.HTMLAttributes<HTMLDivElement> {
   htmlFor?: string;
   hint?: React.ReactNode;
   error?: React.ReactNode;
+  orientation?: 'vertical' | 'horizontal';
 }
 
-// Labeled control group. Root reuses the frozen vanilla `.form-row`
-// (column / 6px gap); label paints as `.form-row label`; error mirrors the
-// wizard `.form-error` values (wizard.css is not loaded in the main window,
-// so the declarations live on `.field-error` here). Hint has no vanilla
-// ancestor — label-sm / ink-muted, tokens only.
-function Field({ label, htmlFor, hint, error, className, children, ...props }: FieldProps) {
+function FieldGroup({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div data-slot="field-group" className={cn('field-group', className)} {...props} />;
+}
+
+function FieldContent({ className, ...props }: React.ComponentProps<'div'>) {
+  return <div data-slot="field-content" className={cn('field-content', className)} {...props} />;
+}
+
+function FieldLabel({ className, ...props }: React.ComponentProps<typeof Label>) {
+  return <Label data-slot="field-label" className={cn('field-label', className)} {...props} />;
+}
+
+function FieldDescription({ className, ...props }: React.ComponentProps<'p'>) {
+  return <p data-slot="field-description" className={cn('field-hint', className)} {...props} />;
+}
+
+function FieldError({ className, ...props }: React.ComponentProps<'p'>) {
+  return <p data-slot="field-error" className={cn('field-error', className)} {...props} />;
+}
+
+function Field({
+  label,
+  htmlFor,
+  hint,
+  error,
+  orientation = 'vertical',
+  className,
+  children,
+  ...props
+}: FieldProps) {
   return (
-    <div className={cn('form-row', className)} {...props}>
-      {label ? <Label htmlFor={htmlFor}>{label}</Label> : null}
+    <div
+      role="group"
+      data-slot="field"
+      data-orientation={orientation}
+      className={cn('form-row', className)}
+      {...props}
+    >
+      {label ? <FieldLabel htmlFor={htmlFor}>{label}</FieldLabel> : null}
       {children}
-      {hint && !error ? <span className="field-hint">{hint}</span> : null}
-      {error ? (
-        <span className="field-error" role="alert">
-          {error}
-        </span>
-      ) : null}
+      {hint && !error ? <FieldDescription>{hint}</FieldDescription> : null}
+      {error ? <FieldError role="alert">{error}</FieldError> : null}
     </div>
   );
 }
 
-export { Field };
+export { Field, FieldGroup, FieldContent, FieldLabel, FieldDescription, FieldError };

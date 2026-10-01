@@ -11,6 +11,7 @@
 
 mod acl;
 mod agent;
+mod agents;
 mod app_icon;
 mod audio;
 mod auto_learn;
@@ -19,12 +20,15 @@ mod clipboard;
 mod credentials;
 mod dictionary;
 mod ducking;
+mod foreground;
 mod history;
 mod hotkey;
 mod http_client;
+mod installed_apps;
 mod offline_downloader;
 mod offline_transcribe;
 mod overlay;
+mod prompts;
 mod settings;
 mod snippets;
 mod suggestion;
@@ -202,6 +206,17 @@ pub fn run() {
             agent::execute_agent_command,
             agent::execute_agent_command_secure,
             agent::test_llm_connection,
+            // Custom agents board (Slice 4b, additive)
+            agents::get_agents,
+            agents::save_agent,
+            agents::delete_agent,
+            agents::set_default_agent,
+            // Custom AI cleanup prompts (Slice 4b, additive)
+            prompts::get_prompts,
+            prompts::save_prompt_style,
+            prompts::delete_prompt_style,
+            prompts::set_prompt_override,
+            prompts::clear_prompt_override,
             // Clipboard
             clipboard::inject_text,
             clipboard::copy_text,
@@ -216,6 +231,8 @@ pub fn run() {
             history::get_weekly_activity,
             // Foreground app icon (overlay chip)
             app_icon::get_foreground_app_icon,
+            // Installed apps enumeration (AI Post Processing picker)
+            installed_apps::list_installed_apps,
             // Overlay
             overlay::show_overlay,
             overlay::hide_overlay,

@@ -1,6 +1,6 @@
 [package]
 name = "fluence-windows"
-version = "1.22.1"
+version = "1.25.0"
 description = "Fluence - AI Voice Typing for Windows"
 authors = ["Fluence Team"]
 license = "AGPL-3.0-only"
@@ -90,6 +90,7 @@ windows = { version = "0.58", features = [
   "Win32_Graphics_Gdi",
   "Win32_UI_Shell",
   "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_Storage_FileSystem",
 ] }
 

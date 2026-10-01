@@ -15,11 +15,20 @@ html, body {
 }
 
 body {
+  --agent-bubble-height: 96px;
+  /* Island geometry, all declared once and never measured at runtime.
+     --agent-stack-top: the island's top inset inside the window (matches the
+       46px reserve in overlay.rs::overlay_window_size).
+     --agent-pill-top:  the app pill's top inset (fixed, never moves).
+     --agent-base-height: the tier's window height (overlay.rs::overlay_window_size). */
+  --agent-stack-top: 46px;
+  --agent-pill-top: 8px;
+  --agent-base-height: 190px;
   font-family: var(--font-body), system-ui, -apple-system, sans-serif;
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 46px;
+  padding-top: var(--agent-stack-top);
   position: relative;
   /* BUG-02: transparent area must not steal clicks. Only the orb/card is draggable */
   -webkit-app-region: no-drag;
@@ -70,36 +79,39 @@ body {
   opacity: 1;
   scale: 1;
   border-radius: 16px;
+  pointer-events: auto;
 }
 
-/* Docked-corner treatment - sharpen the corner that hugs the edge */
+/* Docked-corner treatment - keep transform-origin aligned to dock edge with unified curvature */
 .overlay-root.corner-bottom-left {
   transform-origin: 0% 100%;
-  border-radius: 16px 16px 16px 6px;
+  border-radius: 16px;
 }
 
 .overlay-root.corner-bottom-right {
   transform-origin: 100% 100%;
-  border-radius: 16px 16px 6px 16px;
+  border-radius: 16px;
 }
 
 .overlay-root.corner-bottom-center {
   transform-origin: 50% 100%;
+  border-radius: 16px;
 }
 
-/* Top dock: same treatment mirrored — sharpen the corner hugging the edge */
+/* Top dock: same treatment mirrored */
 .overlay-root.corner-top-left {
   transform-origin: 0% 0%;
-  border-radius: 6px 16px 16px 16px;
+  border-radius: 16px;
 }
 
 .overlay-root.corner-top-right {
   transform-origin: 100% 0%;
-  border-radius: 16px 6px 16px 16px;
+  border-radius: 16px;
 }
 
 .overlay-root.corner-top-center {
   transform-origin: 50% 0%;
+  border-radius: 16px;
 }
 
 /* ── Tier 2: Compact Pill Style ────────────────────────────────── */
@@ -571,7 +583,10 @@ body {
 /* ── Separate App Pill (foreground app icon + name, floats on top edge) ─── */
 .app-pill {
   position: absolute;
-  top: 8px;
+  /* The 8px fallback keeps this valid in body-less contexts: the settings
+     preview inlines this stylesheet into a shadow root with `.ovpv-frame`
+     standing in for `body`, so body-declared vars never resolve there. */
+  top: var(--agent-pill-top, 8px);
   left: 50%;
   z-index: 5;
   display: flex;
@@ -620,6 +635,50 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   max-width: 180px;
+}
+
+/* ── Agent placement model (edge-anchored) ─────────────────────────────── */
+/* The OS window is sized to the tier and never resized during a session, so
+   the island's resting spot is decided purely by which screen edge the window
+   is docked to:
+
+     above (bottom dock) → bottom-anchored at a constant per-tier offset
+     below (top dock)    → top-anchored 46px at a constant per-tier offset
+
+   Neither offset depends on the window height, so the island and the app pill
+   sit in exactly the same place for every dock. */
+body.agent-placement-above {
+  /* Vertical mirror of the below placement: bottom-anchor the island to the
+     window edge at a constant per-tier offset (base - stack-top - bubble-height). */
+  align-items: flex-end;
+  padding-top: var(--agent-stack-top);
+  padding-bottom: calc(var(--agent-base-height) - var(--agent-stack-top) - var(--agent-bubble-height));
+}
+
+body.agent-placement-below {
+  align-items: flex-start;
+  padding-top: var(--agent-stack-top);
+}
+
+/* Rendered bubble height + window height per tier, declared in CSS so nothing
+   has to be measured at runtime (reading offsetHeight here used to catch the
+   bubble mid-entry and pin an intermediate height for the whole session).
+   Keep in sync with overlay.rs::overlay_window_size. */
+body.style-full { --agent-bubble-height: 96px; --agent-base-height: 190px; }
+body.style-compact { --agent-bubble-height: 36px; --agent-base-height: 130px; }
+body.style-bubble { --agent-bubble-height: 44px; --agent-base-height: 140px; }
+
+body.agent-placement-below .app-pill {
+  top: var(--agent-pill-top);
+  bottom: auto;
+  transition: opacity 180ms ease-out, transform 220ms var(--ease-premium);
+}
+
+/* above: the pill is bottom-anchored to the window edge at the same constant
+   offset it settles at in transcription mode, so it never moves. */
+body.agent-placement-above .app-pill {
+  top: auto;
+  bottom: calc(var(--agent-base-height) - var(--agent-pill-top) - 24px);
 }
 
 /* ── Metadata Left Group (REC) ─────────────────────────────────── */
@@ -1013,6 +1072,10 @@ body {
   .overlay-root.state-transcribing .rec-label,
   .overlay-root.state-agent_transcribing .rec-label {
     animation: none !important;
+    transition-duration: 1ms;
+  }
+
+  body {
     transition-duration: 1ms;
   }
 

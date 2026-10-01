@@ -61,10 +61,15 @@ body {
 
 .wizard-steps {
   flex: 1;
+  min-height: 0;
   overflow: hidden;
   position: relative;
 }
 
+/* Each step is its own scrollport: tall content (notably Step 2, the API
+ * step) scrolls inside the fixed 680x540 window instead of clipping.
+ * Wheel / touch / PageUp-PageDown scroll; arrows keep the step-nav contract
+ * (see Wizard.tsx: Up/Down scroll first when overflow exists). */
 .wizard-step {
   position: absolute;
   inset: 0;
@@ -72,11 +77,36 @@ body {
   flex-direction: column;
   align-items: center;
   justify-content: flex-start;
-  padding: 32px var(--spacing-xl) var(--spacing-md);
-  gap: var(--spacing-md);
+  padding: 26px var(--spacing-xl) 20px;
+  gap: 14px;
   opacity: 0;
+  visibility: hidden;
   pointer-events: none;
-  transition: opacity 0.25s ease, transform 0.25s var(--ease-standard);
+  overflow-y: auto;
+  overflow-x: hidden;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-interactive) transparent;
+  transition: opacity 0.38s var(--ease-premium), transform 0.38s var(--ease-premium);
+}
+
+.wizard-step::-webkit-scrollbar {
+  width: 6px;
+}
+
+.wizard-step::-webkit-scrollbar-thumb {
+  background: var(--color-interactive);
+  border-radius: var(--radius-full);
+}
+
+.wizard-step::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.wizard-step.active,
+.wizard-step.exit-left,
+.wizard-step.exit-right {
+  visibility: visible;
 }
 
 .wizard-step.active {
@@ -87,22 +117,64 @@ body {
 
 .wizard-step.enter-right {
   opacity: 0;
-  transform: translateX(40px);
+  transform: translateX(28px);
+  will-change: transform, opacity;
 }
 
 .wizard-step.enter-left {
   opacity: 0;
-  transform: translateX(-40px);
+  transform: translateX(-28px);
+  will-change: transform, opacity;
 }
 
 .wizard-step.exit-left {
   opacity: 0;
-  transform: translateX(-40px);
+  transform: translateX(-28px);
 }
 
 .wizard-step.exit-right {
   opacity: 0;
-  transform: translateX(40px);
+  transform: translateX(28px);
+}
+
+/* Windows-OOBE style staggered rise: children settle in sequence behind the
+ * step slide. Transform + opacity only (60fps, no layout, no blur). */
+@media (prefers-reduced-motion: no-preference) {
+  .wizard-step.active > * {
+    animation: wiz-rise 0.5s var(--ease-premium) both;
+  }
+
+  .wizard-step.active > *:nth-child(2) {
+    animation-delay: 0.04s;
+  }
+
+  .wizard-step.active > *:nth-child(3) {
+    animation-delay: 0.08s;
+  }
+
+  .wizard-step.active > *:nth-child(4) {
+    animation-delay: 0.12s;
+  }
+
+  .wizard-step.active > *:nth-child(5) {
+    animation-delay: 0.16s;
+  }
+
+  .wizard-step.active > *:nth-child(n + 6) {
+    animation-delay: 0.2s;
+  }
+}
+
+@keyframes wiz-rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 .step-icon {
@@ -156,43 +228,77 @@ body {
   gap: var(--spacing-md);
 }
 
-.wizard-feature-list {
+/* Step 1 (welcome) is vertically centered: mark + title + promise only. */
+#step-1 {
+  justify-content: center;
+}
+
+/* Features showcase (step 2): the same numeral-and-hairline language, given
+ * room to breathe — wider measure, airier rows. No icon glyphs of any kind;
+ * the numerals carry the structure. */
+.wiz-features-showcase {
+  max-width: 480px;
+}
+
+.wiz-features-showcase .wiz-welcome-row {
+  padding: 10px 2px;
+}
+
+.wiz-features-showcase .wiz-welcome-num {
+  font-size: 12px;
+}
+
+/* Welcome feature rows: hairline-divided type rows with mono numerals.
+ * No icon glyphs of any kind — the numerals carry the structure. */
+.wiz-welcome-list {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  column-gap: var(--spacing-lg);
+  width: 100%;
+  max-width: 440px;
+  margin: var(--spacing-xs) 0 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--color-border-subtle);
+}
+
+.wiz-welcome-row {
+  display: flex;
+  align-items: baseline;
+  gap: var(--spacing-md);
+  padding: 8px 2px;
+  border-bottom: 1px solid var(--color-border-subtle);
+}
+
+.wiz-welcome-num {
+  flex: none;
+  font-family: var(--font-label);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  opacity: 0.7;
+  font-variant-numeric: tabular-nums;
+}
+
+.wiz-welcome-text {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-sm);
-  width: 100%;
-  max-width: 360px;
-  margin-top: var(--spacing-xs);
+  gap: 1px;
+  min-width: 0;
+  text-align: left;
 }
 
-.wizard-feature-card {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: 12px 14px;
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border-structural);
-  border-radius: var(--radius-md);
-  transition: var(--transition-fast);
+.wiz-welcome-title {
+  font-size: var(--text-body-md);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  letter-spacing: -0.01em;
 }
 
-.wizard-feature-card:hover {
-  background: var(--color-surface-elevated);
-  border-color: var(--color-border);
-  transform: translateY(-1px);
-}
-
-.wizard-feature-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: var(--radius-sm);
-  background: var(--color-surface);
-  border: 1px solid var(--color-border-structural);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  color: var(--color-brand-cyan);
+.wiz-welcome-desc {
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  line-height: 1.4;
 }
 
 .wizard-feature-info {
@@ -204,7 +310,7 @@ body {
 
 .wizard-feature-title {
   font-weight: 600;
-  font-size: var(--text-body-sm);
+  font-size: var(--text-body-md);
   color: var(--color-on-surface);
 }
 
@@ -246,8 +352,8 @@ body {
   justify-content: center;
   gap: 8px;
   padding: 12px 8px;
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border-structural);
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: var(--transition-fast);
@@ -256,29 +362,27 @@ body {
 }
 
 .provider-card:hover {
-  background: var(--color-surface-elevated);
-  border-color: var(--color-border);
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
   color: var(--color-on-surface);
-  transform: translateY(-1px);
 }
 
 .provider-card:active {
-  transform: translateY(0);
+  background: var(--color-active);
 }
 
-.provider-card.selected {
-  background: var(--color-surface-elevated);
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+.provider-card[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
 }
 
 .provider-card .provider-name {
-  font-family: var(--font-label);
-  font-size: 11px;
+  font-family: var(--font-body);
+  font-size: 12px;
   font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.01em;
   transition: color 0.2s ease;
 }
 
@@ -304,17 +408,17 @@ body {
   color: var(--color-on-surface-variant);
 }
 
-.provider-card.selected .openai-icon,
+.provider-card[data-state='checked'] .openai-icon,
 .provider-card:hover .openai-icon {
   color: var(--color-on-surface);
 }
 
-.provider-card.selected .custom-icon,
+.provider-card[data-state='checked'] .custom-icon,
 .provider-card:hover .custom-icon {
   color: var(--color-on-surface);
 }
 
-.provider-card.selected .offline-icon,
+.provider-card[data-state='checked'] .offline-icon,
 .provider-card:hover .offline-icon {
   color: var(--color-on-surface);
 }
@@ -341,81 +445,97 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 8px;
-  padding: 8px 18px;
+  gap: var(--spacing-6);
+  padding: 7px 14px;
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-structural);
   border-bottom: 2px solid #222228;
   border-radius: var(--radius-sm);
   font-family: var(--font-label);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   color: var(--color-on-surface);
   cursor: pointer;
-  min-width: 160px;
-  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35);
+  min-width: 140px;
+  box-shadow: var(--shadow-sm);
   transition: var(--transition-fast);
   user-select: none;
 }
 
 .hotkey-display:hover {
   background: var(--color-surface-elevated);
-  border-color: rgba(255, 255, 255, 0.2);
-  color: #ffffff;
+  border-color: var(--color-border-focus);
+  color: var(--color-on-surface);
 }
 
 .hotkey-display.recording {
   background: var(--color-surface-elevated);
-  border-color: var(--color-brand-amethyst);
-  box-shadow: 0 0 14px rgba(139, 69, 216, 0.35);
+  border-color: var(--color-brand-cyan);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
   animation: blink 1s ease-in-out infinite;
 }
 
-.mode-selector {
+/* Recording-mode segmented control: two real radio buttons side by side,
+ * title + desc always visible, selected gets the filled radio dot. */
+.seg-selector {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: var(--spacing-sm);
   width: 100%;
 }
 
-.mode-option {
+.seg-option {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  padding: 14px 16px;
-  background: var(--color-surface-secondary);
+  padding: 12px 14px 12px 38px;
+  background: transparent;
   border: 1px solid var(--color-border-structural);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: var(--transition-fast);
   text-align: left;
   position: relative;
+  font-family: var(--font-body);
+  color: var(--color-on-surface);
 }
 
-.mode-option:hover {
-  background: var(--color-surface-elevated);
-  border-color: var(--color-border);
-  transform: translateY(-1px);
+.seg-option:hover {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
 }
 
-.mode-option:active {
-  transform: translateY(0);
+.seg-option::before {
+  content: '';
+  position: absolute;
+  left: 14px;
+  top: 15px;
+  width: 14px;
+  height: 14px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-on-surface-variant);
+  transition: border-color 0.15s ease;
 }
 
-.mode-option.selected {
-  background: var(--color-surface-elevated);
-  border-color: rgba(255, 255, 255, 0.4);
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+.seg-option[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  box-shadow: var(--choice-selected-shadow);
 }
 
-.mode-option .mode-title {
+.seg-option[data-state='checked']::before {
+  border-color: var(--color-on-surface);
+  background: radial-gradient(circle, var(--color-on-surface) 0 3px, transparent 3.5px);
+}
+
+.seg-option .seg-title {
   font-weight: 600;
   color: var(--color-on-surface);
-  font-size: var(--text-body-sm);
+  font-size: var(--text-body-md);
   letter-spacing: -0.01em;
 }
 
-.mode-option .mode-desc {
+.seg-option .seg-desc {
   font-size: var(--text-label-xs);
   color: var(--color-on-surface-variant);
   line-height: 1.4;
@@ -434,36 +554,36 @@ body {
   align-items: center;
   gap: 10px;
   padding: 16px var(--spacing-md);
-  background: var(--color-surface-secondary);
-  border: 1px solid var(--color-border-structural);
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-border);
   border-radius: var(--radius-md);
   cursor: pointer;
   transition: var(--transition-fast);
   color: var(--color-on-surface-variant);
   position: relative;
+  font-family: var(--font-body);
 }
 
 .position-option:hover {
-  background: var(--color-surface-elevated);
-  border-color: var(--color-border);
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
   color: var(--color-on-surface);
-  transform: translateY(-1px);
 }
 
 .position-option:active {
-  transform: translateY(0);
+  background: var(--color-active);
 }
 
-.position-option.selected {
-  background: var(--color-surface-elevated);
-  border-color: rgba(255, 255, 255, 0.4);
-  color: #ffffff;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+.position-option[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
 }
 
 .position-preview {
-  width: 64px;
-  height: 42px;
+  width: 72px;
+  height: 48px;
   background: var(--color-surface-sunken);
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-sm);
@@ -480,9 +600,9 @@ body {
   transition: background 0.2s ease, box-shadow 0.2s ease;
 }
 
-.position-option.selected .position-dot {
-  background: #ffffff;
-  box-shadow: 0 0 6px rgba(255, 255, 255, 0.4);
+.position-option[data-state='checked'] .position-dot {
+  background: var(--color-on-surface);
+  box-shadow: 0 0 0 3px var(--color-interactive-active);
 }
 
 .pos-center .position-dot {
@@ -509,6 +629,222 @@ body {
   letter-spacing: 0.06em;
 }
 
+/* Theme step: three option cards, each previewing itself as a miniature
+ * settings window (sidebar strip + content lines). Dark and light mocks use
+ * the shipped shell paints; System is half of each. */
+.theme-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.theme-option {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 10px 12px;
+  background: transparent;
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  font-family: var(--font-body);
+  color: var(--color-on-surface);
+}
+
+.theme-option:hover {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
+}
+
+.theme-option[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+.theme-mock {
+  width: 84px;
+  height: 56px;
+  border-radius: 8px;
+  display: flex;
+  overflow: hidden;
+  border: 1px solid var(--color-border-structural);
+}
+
+.theme-mock-dark {
+  background: #141414;
+}
+
+.theme-mock-light {
+  background: #ffffff;
+  border-color: #dfe0e4;
+}
+
+.theme-mock-auto {
+  background: linear-gradient(90deg, #141414 0 50%, #ffffff 50% 100%);
+}
+
+.theme-mock-side {
+  flex: none;
+  width: 22px;
+  height: 100%;
+  background: rgba(127, 127, 127, 0.22);
+}
+
+.theme-mock-main {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5px;
+  padding: 0 10px;
+}
+
+.theme-mock-main i {
+  display: block;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(127, 127, 127, 0.55);
+}
+
+.theme-mock-main i:last-child {
+  width: 55%;
+}
+
+.theme-label {
+  font-size: var(--text-body-md);
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.theme-desc {
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  line-height: 1.35;
+  text-align: center;
+}
+
+/* Overlay-style step: same row language as Settings → Floating Bubble
+ * (radio dot + title/desc + live preview stage), compressed for the 440px
+ * wizard column. Previews are the real overlay tiers, scaled to fit — scale
+ * is compositor-only, so no layout or paint cost while scrolling. */
+.wiz-style-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.wiz-style-option {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  width: 100%;
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  text-align: left;
+  font-family: var(--font-body);
+  color: var(--color-on-surface);
+}
+
+.wiz-style-option:hover {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
+}
+
+.seg-option:active,
+.theme-option:active,
+.wiz-style-option:active {
+  background: var(--color-active);
+}
+
+.wiz-style-option[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+.wiz-style-radio {
+  position: relative;
+  flex: none;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 1.5px solid var(--color-on-surface-variant);
+  transition: border-color 0.15s ease;
+}
+
+.wiz-style-option[data-state='checked'] .wiz-style-radio {
+  border-color: var(--color-on-surface);
+}
+
+.wiz-style-option[data-state='checked'] .wiz-style-radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+
+.wiz-style-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.wiz-style-title {
+  font-size: var(--text-body-md);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  letter-spacing: -0.01em;
+}
+
+.wiz-style-desc {
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  line-height: 1.4;
+}
+
+/* The overlay floats directly in the option card — no inner stage box, no
+ * second background. Compact (118px) and bubble render at natural size,
+ * centered. The full island is 320px wide, so it is absolutely centered and
+ * scaled to fit: the scale is set on a positioned box, never a clipped
+ * overflow, so no edge can be cut off. */
+.wiz-style-stage {
+  flex: none;
+  width: 190px;
+  min-height: 64px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  background: transparent;
+  border: 0;
+}
+
+.wiz-style-stage[data-tier='full'] {
+  height: 64px;
+  display: block;
+}
+
+.wiz-style-stage[data-tier='full'] .overlay-preview {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 320px;
+  height: 96px;
+  transform: translate(-50%, -50%) scale(0.58);
+}
+
 .test-area {
   width: 100%;
   max-width: 440px;
@@ -531,7 +867,7 @@ body {
   border: 1px solid var(--color-border-subtle);
   border-radius: var(--radius-md);
   font-family: var(--font-body);
-  font-size: var(--text-body-sm);
+  font-size: var(--text-body-md);
   color: var(--color-on-surface);
   line-height: 1.5;
   text-align: left;
@@ -543,26 +879,42 @@ body {
   font-style: normal;
 }
 
+/* Record control is chromeless — unified with the card behind it, no white
+ * button square. The affordance is the white mic orb above the label; hover
+ * answers with a soft ring, press with a scale settle. */
 .test-record-btn {
-  position: relative;
-  margin-top: 26px;
-  padding-top: 16px;
-  padding-bottom: 10px;
-  gap: var(--spacing-sm);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
   min-width: 170px;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.test-record-btn:hover {
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+
+.test-record-btn .test-record-label {
+  color: var(--color-on-surface-variant);
+}
+
+.test-record-btn:hover .test-record-label {
+  color: var(--color-on-surface);
 }
 
 .test-record-orb {
-  position: absolute;
-  top: 0;
-  left: 50%;
-  translate: -50% -50%;
-  width: 46px;
-  height: 46px;
+  width: 52px;
+  height: 52px;
   border-radius: var(--radius-full);
-  background: var(--color-surface-elevated);
-  color: var(--color-on-surface);
-  border: 3px solid var(--color-canvas);
+  background: #ffffff;
+  color: #121212;
+  border: 1px solid rgba(255, 255, 255, 0.2);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -571,11 +923,12 @@ body {
 }
 
 .test-record-btn:hover .test-record-orb {
-  background: var(--color-surface-sunken);
+  background: #ffffff;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5), 0 0 0 5px rgba(255, 255, 255, 0.1);
 }
 
 .test-record-btn:active .test-record-orb {
-  transform: translateY(1px);
+  transform: scale(0.96);
 }
 
 .test-record-btn:not(.recording):not(.transcribing) .icon-stop {
@@ -631,7 +984,7 @@ body {
   align-items: center;
   justify-content: center;
   box-shadow: 0 8px 28px rgba(16, 185, 129, 0.2);
-  animation: success-pop 0.5s cubic-bezier(0.34, 1.2, 0.64, 1) both;
+  animation: success-pop 0.5s var(--ease-premium) both;
 }
 
 .done-badge svg {
@@ -676,35 +1029,46 @@ body {
   gap: 6px;
 }
 
+/* Progress + dots are monochrome by owner direction: no accent color in the
+ * wayfinding chrome. The fill and the active dot use the on-surface ink, so
+ * they read correctly in both themes with zero overrides. */
+.progress-track .progress-fill {
+  background: var(--color-on-surface);
+}
+
 .step-dot {
   width: 6px;
   height: 6px;
   border-radius: var(--radius-full);
-  background: rgba(255, 255, 255, 0.15);
+  background: var(--color-interactive-hover);
   transition: width 0.35s var(--ease-spring), background-color 0.25s ease;
 }
 
 .step-dot.active {
   width: 20px;
   border-radius: var(--radius-xs);
-  background: var(--color-brand-cyan);
+  background: var(--color-on-surface);
 }
 
 .step-dot.done {
-  background: rgba(255, 255, 255, 0.35);
+  background: var(--color-on-surface-variant);
+  opacity: 0.45;
 }
 
+/* Brand master symbol, shown at its drawn weight — nothing redrawn. */
 .fluence-logo-container {
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
   margin-bottom: var(--spacing-xs);
-  width: 80px;
-  height: 80px;
+  width: 72px;
+  height: 72px;
+  flex-shrink: 0;
 }
 
 .fluence-logo-svg {
+  display: block;
   filter: none;
 }
 
@@ -713,4 +1077,154 @@ body {
 .titlebar {
   border-bottom: 1px solid var(--color-border) !important;
   background: var(--color-canvas) !important;
+}
+
+/* Narrow / short-window guards: the 680px dialog plus Windows text scaling
+ * (125–150%) must never clip. Two-col collapses, provider grid holds 3
+ * across, short heights tighten rhythm — the step itself scrolls past this. */
+@media (max-width: 520px) {
+  .wizard-step {
+    padding-left: var(--spacing-md);
+    padding-right: var(--spacing-md);
+  }
+
+  .wizard-two-col {
+    grid-template-columns: 1fr;
+  }
+
+  .wizard-provider-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+
+  .position-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .seg-selector {
+    grid-template-columns: 1fr;
+  }
+
+  .wiz-welcome-list {
+    grid-template-columns: 1fr;
+  }
+
+  .wiz-style-stage {
+    width: 150px;
+  }
+
+  .wiz-style-stage[data-tier='full'] .overlay-preview {
+    transform: translate(-50%, -50%) scale(0.45);
+  }
+}
+
+@media (max-height: 560px) {
+  .wizard-step {
+    padding-top: 20px;
+    gap: 12px;
+  }
+
+  .fluence-logo-container {
+    width: 60px;
+    height: 60px;
+  }
+
+  .fluence-logo-container .fluence-logo-svg {
+    width: 60px;
+    height: 60px;
+  }
+
+  .test-area {
+    padding: var(--spacing-md);
+  }
+
+  .done-badge {
+    width: 64px;
+    height: 64px;
+  }
+}
+
+/* Light theme: the wizard previews live when the user picks Light/System,
+ * so every hardcoded dark paint above gets a light twin here. Token-driven
+ * rules need nothing — only literal whites and white-on-dark glows. */
+[data-theme='light'] .hotkey-display {
+  border-bottom-color: #d4d4d8;
+}
+
+[data-theme='light'] .hotkey-display:hover {
+  border-color: rgba(0, 0, 0, 0.2);
+  color: #18181b;
+}
+
+[data-theme='light'] .provider-card[data-state='checked'] {
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+[data-theme='light'] .seg-option[data-state='checked'] {
+  border-color: var(--choice-selected-border);
+}
+
+[data-theme='light'] .seg-option[data-state='checked']::before {
+  border-color: var(--color-on-surface);
+  background: radial-gradient(circle, var(--color-on-surface) 0 3px, transparent 3.5px);
+}
+
+[data-theme='light'] .position-option[data-state='checked'] {
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+[data-theme='light'] .position-dot {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+[data-theme='light'] .position-option[data-state='checked'] .position-dot {
+  background: var(--color-on-surface);
+  box-shadow: none;
+}
+
+[data-theme='light'] .theme-option[data-state='checked'],
+[data-theme='light'] .wiz-style-option[data-state='checked'] {
+  border-color: var(--choice-selected-border);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+[data-theme='light'] .wiz-style-option[data-state='checked'] .wiz-style-radio {
+  border-color: var(--color-on-surface);
+}
+
+[data-theme='light'] .wiz-style-option[data-state='checked'] .wiz-style-radio::after {
+  background: var(--color-on-surface);
+}
+
+[data-theme='light'] .test-record-orb {
+  background: #18181b;
+  color: #ffffff;
+  border-color: rgba(0, 0, 0, 0.2);
+}
+
+[data-theme='light'] .test-record-btn:hover .test-record-orb {
+  background: #18181b;
+  box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25), 0 0 0 5px rgba(0, 0, 0, 0.08);
+}
+
+/* Reduced motion: steps cut instantly, stagger and orb pulses collapse to
+ * static. The frozen global guard already shortens transitions; this kills
+ * the rise/pulse loops that guard cannot reach by name. */
+@media (prefers-reduced-motion: reduce) {
+  .wizard-step {
+    transition: none;
+  }
+
+  .wizard-step.active > * {
+    animation: none;
+  }
+
+  .test-record-btn.recording .test-record-orb,
+  .test-record-btn.transcribing .test-record-orb,
+  .done-badge {
+    animation: none;
+  }
 }

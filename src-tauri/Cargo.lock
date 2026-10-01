@@ -1437,7 +1437,7 @@ dependencies = [
 
 [[package]]
 name = "fluence-windows"
-version = "1.22.1"
+version = "1.25.0"
 dependencies = [
  "anyhow",
  "arboard",

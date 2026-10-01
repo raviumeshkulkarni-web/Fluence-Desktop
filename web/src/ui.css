@@ -28,11 +28,11 @@
 }
 .card-title {
   font-family: var(--font-body);
-  font-size: var(--text-label-lg);
+  font-size: 14px;
   font-weight: 600;
-  color: var(--color-on-surface-variant);
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
+  color: var(--color-on-surface);
+  letter-spacing: -0.01em;
+  text-transform: none;
   margin: 0;
 }
 .card-description {
@@ -124,7 +124,8 @@
 .tabs-trigger:hover {
   color: var(--color-on-surface);
 }
-.tabs-trigger[data-state='active'] {
+.tabs-trigger[data-state='active'],
+.toggle-group-item[data-state='on'] {
   background: var(--color-surface-elevated);
   color: var(--color-on-surface);
   box-shadow: var(--shadow-sm);
@@ -158,7 +159,8 @@
   user-select: none;
 }
 .dropdown-item[data-highlighted] {
-  background: var(--color-hover);
+  background: var(--color-interactive-hover);
+  color: var(--color-on-surface);
 }
 .dropdown-item[data-disabled] {
   color: var(--color-ink-disabled);
@@ -176,6 +178,122 @@
   border-radius: var(--radius-xs);
   animation: ui-skeleton-pulse 1.6s ease-in-out infinite;
 }
+.route-skeleton {
+  width: 100%;
+  height: 96px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.page-tabs {
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.page-tabs > .tabs-list {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding-top: 0;
+}
+.page-actions .btn-primary {
+  min-width: 120px;
+}
+.empty-state-header,
+.empty-state-content {
+  display: contents;
+}
+.choice-surface {
+  --choice-bg: var(--color-surface-secondary);
+  --choice-border: var(--color-border-structural);
+  --choice-hover-bg: var(--color-surface-elevated);
+  --choice-hover-border: var(--color-border-focus);
+  --choice-selected-bg: var(--color-interactive-active);
+  --choice-selected-border: var(--color-border-focus);
+  --choice-selected-shadow: var(--shadow-sm);
+}
+.choice-surface.provider-card,
+.choice-surface.offline-model-card {
+  background: var(--choice-bg);
+  border-color: var(--choice-border);
+  color: var(--color-on-surface-variant);
+}
+.choice-surface.provider-card:hover:not(:disabled),
+.choice-surface.offline-model-card:hover:not([data-disabled]) {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
+  color: var(--color-on-surface);
+}
+.choice-surface.provider-card:active:not(:disabled),
+.choice-surface.offline-model-card:active:not([data-disabled]) {
+  background: var(--color-active);
+}
+.choice-surface.provider-card.selected,
+.choice-surface.provider-card[aria-pressed='true'],
+.choice-surface.provider-card[data-state='checked'],
+.choice-surface.offline-model-card.selected,
+.choice-surface.offline-model-card[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+.selection-radio {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-on-surface-variant);
+  border-radius: var(--radius-full);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.choice-surface[aria-checked='true'] .selection-radio,
+.choice-surface[aria-pressed='true'] .selection-radio,
+.choice-surface.selected .selection-radio,
+.choice-surface[data-state='checked'] .selection-radio,
+.selection-row-main[aria-checked='true'] .selection-radio,
+.selection-row-main[data-state='checked'] .selection-radio {
+  border-color: var(--color-on-surface);
+}
+.choice-surface[aria-checked='true'] .selection-radio::after,
+.choice-surface[aria-pressed='true'] .selection-radio::after,
+.choice-surface.selected .selection-radio::after,
+.choice-surface[data-state='checked'] .selection-radio::after,
+.selection-row-main[aria-checked='true'] .selection-radio::after,
+.selection-row-main[data-state='checked'] .selection-radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+.choice-surface:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.choice-surface:disabled,
+.choice-surface[data-disabled],
+.choice-surface[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-ghost.destructive-action,
+.dropdown-item.destructive-action {
+  color: var(--color-error-text);
+}
+.btn-ghost.destructive-action:hover:not(:disabled),
+.dropdown-item.destructive-action[data-highlighted] {
+  color: var(--color-error-text);
+  background: var(--color-error-container);
+  border-color: var(--color-error);
+}
 @keyframes ui-skeleton-pulse {
   0%,
   100% {
@@ -187,6 +305,18 @@
 }
 
 /* ——— Field / Label (vanilla `.form-row label` values) ——— */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.field-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
 .field-label {
   font-family: var(--font-body);
   font-size: var(--text-label-lg);
@@ -199,12 +329,18 @@
   color: var(--color-ink-muted);
   line-height: 1.4;
 }
+.field-warning,
 .field-error {
   font-family: var(--font-body);
   font-size: var(--text-label-sm);
   font-weight: 500;
-  color: var(--color-error);
   line-height: 1.4;
+}
+.field-warning {
+  color: var(--color-warning);
+}
+.field-error {
+  color: var(--color-error-text);
 }
 
 /* ——— Checkbox (vanilla tactile monochrome square, global.css) ——— */
@@ -235,7 +371,8 @@
   border-color: var(--color-outline);
 }
 .checkbox:focus-visible {
-  border-color: var(--color-ink-muted);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
 }
 .checkbox[data-state='checked'],
 .checkbox[data-state='indeterminate'] {
@@ -294,12 +431,17 @@
   height: 16px;
   background: var(--color-on-surface-variant);
   border-radius: var(--radius-full);
-  transition: transform 0.22s var(--ease-spring), background-color 0.15s ease, width 0.15s ease;
+  transform-origin: left center;
+  scale: 1 1;
+  transition: transform 0.22s var(--ease-spring), background-color 0.15s ease, scale 0.15s ease;
   box-shadow: var(--shadow-sm);
   display: block;
 }
+.switch:hover:not([data-disabled]) .switch-track {
+  border-color: var(--color-border-focus);
+}
 .switch:active .switch-thumb {
-  width: 19px;
+  scale: 1.1875 1;
 }
 .switch[data-state='checked'] .switch-track {
   background: var(--color-interactive-active);
@@ -351,7 +493,7 @@
 .select-trigger:focus-visible {
   background-color: var(--color-surface-menu);
   border-color: var(--color-border-focus);
-  box-shadow: 0 0 0 1px var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
   outline: none;
 }
 .select-trigger[data-placeholder] {
@@ -377,7 +519,11 @@
   border-radius: var(--radius-sm);
   box-shadow: var(--shadow-md);
   padding: 4px;
-  z-index: var(--z-dropdown);
+  /* Selects portal to body, so a select opened from inside a dialog would
+  otherwise paint behind the dialog chrome (modal 200 > dropdown 150).
+  A select list is always the topmost interaction: nothing behind an open
+  modal is clickable, so floating above it is always correct. */
+  z-index: calc(var(--z-modal) + 10);
   overflow: hidden;
 }
 .select-viewport {
@@ -394,6 +540,7 @@
   user-select: none;
 }
 .select-item {
+  position: relative;
   display: flex;
   align-items: center;
   gap: var(--spacing-sm);
@@ -401,19 +548,32 @@
   font-size: var(--text-label-lg);
   color: var(--color-on-surface);
   border-radius: var(--radius-xs);
-  padding: 7px 10px;
+  padding: 7px 32px 7px 10px;
   cursor: pointer;
   outline: none;
   user-select: none;
 }
 .select-item[data-highlighted] {
-  background: var(--color-hover);
+  background: var(--color-interactive-hover);
+  color: var(--color-on-surface);
+}
+.select-item[data-state='checked'] {
+  color: var(--color-on-surface);
+  font-weight: 600;
 }
 .select-item[data-disabled] {
   color: var(--color-ink-disabled);
   cursor: default;
 }
+.select-item-text {
+  min-width: 0;
+  flex: 1;
+}
+
 .select-item-indicator {
+  position: absolute;
+  top: 50%;
+  right: 8px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -421,6 +581,7 @@
   height: 14px;
   flex-shrink: 0;
   color: var(--color-on-surface);
+  transform: translateY(-50%);
 }
 .select-separator {
   height: 1px;
@@ -542,6 +703,55 @@
   margin: 0 var(--spacing-sm);
 }
 
+/* ——— Table (shadcn anatomy, Fluence tokens) ——— */
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.fluence-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.fluence-table-caption {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+}
+.fluence-table-head {
+  text-align: left;
+  padding: 11px 18px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border-structural);
+}
+.fluence-table-cell {
+  padding: 12px 18px;
+  font-size: 13px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-structural);
+  color: var(--color-on-surface);
+}
+.fluence-table-row:last-child .fluence-table-cell {
+  border-bottom: none;
+}
+.fluence-table-body .fluence-table-row:hover .fluence-table-cell {
+  background: var(--color-hover);
+}
+.fluence-table-row[data-state='selected'] .fluence-table-cell,
+.fluence-table-row.is-selected .fluence-table-cell {
+  background: var(--color-selected);
+}
+
 /* ——— Tooltip (menu paint; portaled by default) ——— */
 .tooltip-content {
   background: var(--color-surface-menu);
@@ -604,6 +814,12 @@
   flex-direction: column;
   gap: var(--spacing-sm);
 }
+/* Provider logo grids reuse RadioGroup for arrow-key behavior, but keep
+   their small-card grid layout: the grid display must win over the
+   column default above (same grid as before the RadioGroup migration). */
+.radio-group.provider-grid {
+  display: grid;
+}
 .radio-item {
   appearance: none;
   width: 14px;
@@ -631,7 +847,8 @@
   border-color: var(--color-outline);
 }
 .radio-item:focus-visible {
-  border-color: var(--color-ink-muted);
+  border-color: var(--color-border-focus);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
 }
 .radio-item[data-state='checked'] {
   border-color: var(--color-on-surface);
@@ -733,7 +950,6 @@
   height: 8px;
   border-radius: 999px;
   background: var(--color-brand-cyan);
-  box-shadow: 0 0 0 3px rgba(11, 214, 227, 0.25);
 }
 .chart-hover-chip {
   position: absolute;
@@ -1252,6 +1468,65 @@
   width: 100%;
 }
 
+.sidebar-header,
+.sidebar-content,
+.sidebar-group,
+.sidebar-menu,
+.sidebar-menu-item {
+  min-width: 0;
+}
+.sidebar-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-group + .sidebar-group {
+  margin-top: 8px;
+}
+.sidebar-group-label {
+  display: block;
+  flex-shrink: 0;
+}
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sidebar-menu-item {
+  display: flex;
+  list-style: none;
+}
+.sidebar-menu-item .nav-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sidebar-logo {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+.sidebar-header-separator {
+  margin: 0 0 12px;
+}
+.sidebar-footer-separator {
+  margin: 0;
+}
+.sidebar-footer {
+  border-top: 0;
+}
+.sidebar.collapsed .sidebar-logo {
+  border-bottom: 0;
+}
+.sidebar.collapsed .sidebar-header-separator {
+  margin-bottom: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .sidebar,
   .sidebar-logo,
@@ -1290,7 +1565,7 @@
   background: rgba(0, 0, 0, 0.15);
 }
 [data-theme="light"] .skeleton {
-  background: #E7E8EC;
+  background: var(--color-surface-sunken);
 }
 [data-theme="light"] .switch[data-state='checked'] .switch-track {
   background: var(--color-charcoal);

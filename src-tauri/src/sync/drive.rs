@@ -137,7 +137,9 @@ fn maybe_inject_fault(op: &str) -> Option<SyncError> {
     }
     // corrupt/duplicate faults are handled by separate helpers, not as SyncError
     if v.get("corrupt").and_then(|x| x.as_bool()).unwrap_or(false)
-        || v.get("duplicate").and_then(|x| x.as_bool()).unwrap_or(false)
+        || v.get("duplicate")
+            .and_then(|x| x.as_bool())
+            .unwrap_or(false)
     {
         return None;
     }
@@ -149,18 +151,26 @@ fn maybe_inject_fault(op: &str) -> Option<SyncError> {
     let mut new_v = v.clone();
     if let Some(obj) = new_v.as_object_mut() {
         obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()),
+        );
         if remaining - 1 == 0 {
             let _ = std::fs::remove_file(&path);
         }
     }
     let status = v.get("status").and_then(|x| x.as_u64()).unwrap_or(429) as u16;
     let retry_after = v.get("retry_after_secs").and_then(|x| x.as_u64());
-    let is_timeout = v.get("is_timeout").and_then(|x| x.as_bool()).unwrap_or(false);
+    let is_timeout = v
+        .get("is_timeout")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false);
     let injected = if is_timeout {
         SyncError::Retryable(format!("injected timeout for {op}"))
     } else if status == 429 {
-        SyncError::Throttled { retry_after_ms: retry_after.map(|s| s * 1000) }
+        SyncError::Throttled {
+            retry_after_ms: retry_after.map(|s| s * 1000),
+        }
     } else if status == 401 {
         SyncError::AuthRequired
     } else if (500..=599).contains(&status) {
@@ -168,7 +178,12 @@ fn maybe_inject_fault(op: &str) -> Option<SyncError> {
     } else {
         SyncError::Retryable(format!("injected fault {status} for {op}"))
     };
-    log::warn!("FAULT INJECTED op={} remaining={} -> {:?}", op, remaining, injected);
+    log::warn!(
+        "FAULT INJECTED op={} remaining={} -> {:?}",
+        op,
+        remaining,
+        injected
+    );
     Some(injected)
 }
 
@@ -199,7 +214,10 @@ fn maybe_inject_corrupt_body(op: &str) -> Option<Vec<u8>> {
     let mut new_v = v.clone();
     if let Some(obj) = new_v.as_object_mut() {
         obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()),
+        );
         if remaining - 1 == 0 {
             let _ = std::fs::remove_file(&path);
         }
@@ -208,7 +226,12 @@ fn maybe_inject_corrupt_body(op: &str) -> Option<Vec<u8>> {
         .get("corrupt_body")
         .and_then(|x| x.as_str())
         .unwrap_or("corrupt");
-    log::warn!("FAULT INJECTED corrupt_body op={} remaining={} body={:?}", op, remaining, body);
+    log::warn!(
+        "FAULT INJECTED corrupt_body op={} remaining={} body={:?}",
+        op,
+        remaining,
+        body
+    );
     Some(body.as_bytes().to_vec())
 }
 
@@ -230,7 +253,11 @@ fn maybe_inject_duplicate(op: &str) -> bool {
         Ok(v) => v,
         Err(_) => return false,
     };
-    if !v.get("duplicate").and_then(|x| x.as_bool()).unwrap_or(false) {
+    if !v
+        .get("duplicate")
+        .and_then(|x| x.as_bool())
+        .unwrap_or(false)
+    {
         return false;
     }
     if let Some(filter) = v.get("op").and_then(|x| x.as_str()) {
@@ -245,7 +272,10 @@ fn maybe_inject_duplicate(op: &str) -> bool {
     let mut new_v = v.clone();
     if let Some(obj) = new_v.as_object_mut() {
         obj.insert("remaining".to_string(), serde_json::json!(remaining - 1));
-        let _ = std::fs::write(&path, serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()));
+        let _ = std::fs::write(
+            &path,
+            serde_json::to_string_pretty(&new_v).unwrap_or(raw.clone()),
+        );
         if remaining - 1 == 0 {
             let _ = std::fs::remove_file(&path);
         }
@@ -808,7 +838,11 @@ impl DomainDriveStore for GoogleDriveStore {
                     name: first.name.clone(),
                     version: Some("999".to_string()),
                 };
-                log::warn!("FAULT INJECTED duplicate list_v1_files: cloning {} -> {}", first.file_id, dup.file_id);
+                log::warn!(
+                    "FAULT INJECTED duplicate list_v1_files: cloning {} -> {}",
+                    first.file_id,
+                    dup.file_id
+                );
                 all.push(dup);
             } else if !all.is_empty() {
                 let first = all[0].clone();
@@ -817,7 +851,11 @@ impl DomainDriveStore for GoogleDriveStore {
                     name: first.name.clone(),
                     version: Some("999".to_string()),
                 };
-                log::warn!("FAULT INJECTED duplicate list_v1_files: cloning {} -> {}", first.file_id, dup.file_id);
+                log::warn!(
+                    "FAULT INJECTED duplicate list_v1_files: cloning {} -> {}",
+                    first.file_id,
+                    dup.file_id
+                );
                 all.push(dup);
             } else {
                 // No existing files - create a synthetic duplicate pair for the test.
@@ -865,7 +903,10 @@ impl DomainDriveStore for GoogleDriveStore {
                 }]
             });
             let bytes = serde_json::to_vec(&dup_content).unwrap();
-            log::warn!("DUPLICATE INJECTED get_domain_content file_id={} returning synthetic valid", file_id);
+            log::warn!(
+                "DUPLICATE INJECTED get_domain_content file_id={} returning synthetic valid",
+                file_id
+            );
             return Ok(Some(bytes));
         }
         let url = format!("{API_BASE}/files/{file_id}?alt=media");

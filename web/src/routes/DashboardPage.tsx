@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { MouseEvent as ReactMouseEvent } from 'react';
-import { Area, AreaChart, Bar, BarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, Bar, BarChart, CartesianGrid, Cell, Pie, PieChart, Sector, XAxis, YAxis } from 'recharts';
 import {
   Copy,
   Minus,
@@ -19,7 +19,7 @@ import {
   CardTitle,
 } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -28,6 +28,14 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { Skeleton } from '@/components/ui/skeleton';
 import { ChartContainer } from '@/components/ui/chart';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '@/components/ui/table';
 import { toast } from '@/components/fluence/Toasts';
 import {
   getAccountActivity,
@@ -264,6 +272,103 @@ function dailyPoints(
   });
 }
 
+// Rounds up to the next 1/1.5/2/2.5/3/4/5/6/8/10 x 10^k step, so the shared
+// ceiling is always a clean number, always leaves headroom above the peak (a
+// peak stroke at the exact domain max would be clipped by the plot edge), and
+// yields 4-6 gridlines instead of the float ceilings a raw x1.05 produces.
+function niceCeiling(v: number): number {
+  if (!(v > 0)) return 1;
+  const mag = Math.pow(10, Math.floor(Math.log10(v)));
+  for (const step of [1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10]) {
+    const ceiling = step * mag;
+    if (ceiling > v) return ceiling;
+  }
+  return 10 * mag;
+}
+
+interface WeekdayPoint {
+  weekday: string;
+  full: string;
+  sessions: number;
+  words: number;
+}
+
+// Fixed Monday-first weekday labels derived from a known Monday
+// (2024-01-01) so order is always Mon -> Sun and names stay locale-aware.
+// Module scope: the values are constant for the session.
+const WEEKDAY_LABELS: { short: string[]; full: string[] } = (() => {
+  const short: string[] = [];
+  const full: string[] = [];
+  for (let i = 0; i < 7; i += 1) {
+    const d = new Date(Date.UTC(2024, 0, 1 + i));
+    short.push(d.toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' }));
+    full.push(d.toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' }));
+  }
+  return { short, full };
+})();
+
+// Additive weekday distribution: folds the same synced DailyBucket[] rows
+// into exactly seven Monday-first buckets (never sorted by value).
+// O(days), never O(events); no new IPC, no history reads.
+function weekdayData(buckets: DailyBucket[], range: Range): WeekdayPoint[] {
+  const { short, full } = WEEKDAY_LABELS;
+  const points: WeekdayPoint[] = short.map((weekday, i) => ({
+    weekday,
+    full: full[i],
+    sessions: 0,
+    words: 0,
+  }));
+  const today = utcDayStart(Date.now());
+  const n = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : 0;
+  const startMs = n > 0 ? today - (n - 1) * DAY_MS : 0;
+  const endMs = today + DAY_MS;
+  for (const b of buckets) {
+    if (b.day_start_ms < startMs || b.day_start_ms >= endMs) continue;
+    // getUTCDay: 0 = Sunday. Shift so Monday = 0 .. Sunday = 6.
+    const idx = (new Date(b.day_start_ms).getUTCDay() + 6) % 7;
+    points[idx].sessions += b.sessions;
+    points[idx].words += b.words;
+  }
+  return points;
+}
+
+// Interpolates the chart duo (a -> b -> c) into n slice fills so the donut
+// stays in the existing chart language without introducing new tokens.
+function duoRamp(duo: { a: string; b: string; c: string }, n: number): string[] {
+  const toRgb = (hex: string): [number, number, number] => {
+    const v = parseInt(hex.slice(1), 16);
+    return [(v >> 16) & 255, (v >> 8) & 255, v & 255];
+  };
+  const mix = (from: string, to: string, t: number): string => {
+    const f = toRgb(from);
+    const e = toRgb(to);
+    const c = f.map((x, i) => Math.round(x + (e[i] - x) * t));
+    return `#${c.map((x) => x.toString(16).padStart(2, '0')).join('')}`;
+  };
+  return Array.from({ length: n }, (_, i) => {
+    const t = n < 2 ? 0 : i / (n - 1);
+    return t < 0.5 ? mix(duo.a, duo.b, t * 2) : mix(duo.b, duo.c, (t - 0.5) * 2);
+  });
+}
+
+// Donut sector shape (recharts v3 `shape` API). One STABLE component for the
+// lifetime of the page: the active index is read from a ref rather than closed
+// over, so hovering never changes the component identity and the 7 sectors are
+// re-rendered instead of unmounted/remounted. Expansion is instant (no
+// transition), so reduced-motion needs no special-casing.
+function makeWeekdaySectorShape(activeIndexRef: { current: number | null }) {
+  return function WeekdaySector(props: any) {
+    const active = props.index === activeIndexRef.current;
+    return (
+      <Sector
+        {...props}
+        outerRadius={props.outerRadius + (active ? 6 : 0)}
+        cornerRadius={active ? 4 : 0}
+      />
+    );
+  };
+}
+
 // Session-count momentum badge for the active range. All-time and
 // uncovered prior windows show nothing rather than a fabricated delta.
 function TrendBadge({
@@ -485,6 +590,59 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const points = useMemo(() => viewData(buckets, range), [buckets, range]);
   const activeValue = (p: RangePoint) => (metric === 'sessions' ? p.count : p.words);
   const rangeTotal = points.reduce((a, p) => a + activeValue(p), 0);
+  // Additive weekday card: same buckets, same range, same metric toggle.
+  // Independent of the hero series (never reads points, which lose weekday
+  // detail under all-time weekly/monthly aggregation).
+  const weekdayPoints = useMemo(() => weekdayData(buckets, range), [buckets, range]);
+  const weekdayValue = (p: WeekdayPoint) => (metric === 'sessions' ? p.sessions : p.words);
+  const weekdayTotal = weekdayPoints.reduce((a, p) => a + weekdayValue(p), 0);
+  const weekdayPeak = weekdayPoints.reduce((best, p) =>
+    weekdayValue(p) > weekdayValue(best) ? p : best,
+  );
+  const rangeLabel =
+    range === '7d' ? 'Last 7 days' : range === '30d' ? 'Last 30 days' : range === '90d' ? 'Last 90 days' : 'All time';
+  const weekdayUnit = (v: number) =>
+    metric === 'sessions' ? `session${v === 1 ? '' : 's'}` : `word${v === 1 ? '' : 's'}`;
+  const weekdayPeakShare =
+    weekdayTotal > 0 ? Math.round((weekdayValue(weekdayPeak) / weekdayTotal) * 100) : 0;
+  const weekdaySummary =
+    weekdayTotal === 0
+      ? `No activity in this range yet`
+      : `Peak ${weekdayPeak.full} ${weekdayPeakShare}% · ${weekdayValue(weekdayPeak).toLocaleString()} ${weekdayUnit(weekdayValue(weekdayPeak))} · ${rangeLabel.toLowerCase()}`;
+  // Slice fills interpolated from the existing chart duo (no new tokens).
+  // Depend on `theme`, not the `duo` object literal, which is rebuilt every
+  // render and would defeat the memo.
+  const weekdayFills = useMemo(
+    () => duoRamp(duo, weekdayPoints.length),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [theme, weekdayPoints.length],
+  );
+
+  // Additive momentum ring: today vs trailing daily average from the same
+  // synced buckets. The average covers up to 30 prior calendar days (fewer
+  // for new accounts, labelled honestly); a null ratio means no baseline yet
+  // rather than a fabricated comparison.
+  const todayStart = utcDayStart(Date.now());
+  const todayBucket = buckets.find((b) => b.day_start_ms === todayStart);
+  const todayValue =
+    metric === 'sessions' ? (todayBucket?.sessions ?? 0) : (todayBucket?.words ?? 0);
+  const trailStart = todayStart - 30 * DAY_MS;
+  const coverageStart =
+    buckets.length > 0 ? Math.max(trailStart, buckets[0].day_start_ms) : todayStart;
+  let trailSum = 0;
+  for (const b of buckets) {
+    if (b.day_start_ms >= coverageStart && b.day_start_ms < todayStart) {
+      trailSum += metric === 'sessions' ? b.sessions : b.words;
+    }
+  }
+  const trailDays = Math.max(1, Math.round((todayStart - coverageStart) / DAY_MS));
+  const trailAvg = trailSum / trailDays;
+  const todayRatio = trailAvg > 0 ? todayValue / trailAvg : null;
+  const ringSweep = todayRatio == null ? 0 : Math.min(1, todayRatio);
+  const todaySummary =
+    todayRatio == null
+      ? `No baseline yet — dictate to build your average`
+      : `${todayRatio.toFixed(1)}× your daily average`;
   // Recharts does not auto-size the axis: 4-digit counts overflow a 32px
   // gutter and the SVG viewport clips their leading digit.
   const yWidth = points.some((p) => activeValue(p) >= 1000) ? 44 : 32;
@@ -497,6 +655,20 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const hostRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLDivElement>(null);
   const [hoverIdx, setHoverIdx] = useState<number | null>(null);
+  // Donut/table link: hovering a slice highlights its table row and vice
+  // versa. Indexes the fixed Mon -> Sun slots, so it stays meaningful across
+  // metric/range changes (no reset needed). The ref mirrors the state so the
+  // stable sector shape can read it without changing component identity.
+  const [activeWeekday, setActiveWeekdayState] = useState<number | null>(null);
+  const activeWeekdayRef = useRef<number | null>(null);
+  const weekdaySectorShape = useMemo(
+    () => makeWeekdaySectorShape(activeWeekdayRef),
+    [],
+  );
+  const setActiveWeekday = useCallback((index: number | null) => {
+    activeWeekdayRef.current = index;
+    setActiveWeekdayState(index);
+  }, []);
   const [chipBox, setChipBox] = useState({ w: 0, h: 0 });
   useLayoutEffect(() => {
     const el = chipRef.current;
@@ -528,7 +700,15 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
   const hovered = hoverIdx != null && points[hoverIdx] != null ? points[hoverIdx] : null;
   const hostW = hostRef.current?.offsetWidth ?? 0;
   const hostH = hostRef.current?.offsetHeight ?? 0;
-  const yMax = Math.max(1, ...points.map((p) => activeValue(p)));
+  // ONE y scale shared by the axis and the hover math. Recharts would
+  // otherwise round the domain up to a "nice" maximum of its own choosing
+  // (220 for a 200 peak), so the hand-computed dot Y used a different scale
+  // than the rendered line and drifted off it — sometimes touching, sometimes
+  // floating clear of the stroke. Both sides read this one value.
+  const yScaleMax = useMemo(
+    () => niceCeiling(Math.max(0, ...points.map((p) => activeValue(p)))),
+    [points, metric],
+  );
   const hoverGeom = (() => {
     if (hovered == null || hoverIdx == null || hostW <= 0 || hostH <= 0) return null;
     const plotL = yWidth;
@@ -542,7 +722,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
           ? hoverIdx / (points.length - 1)
           : (hoverIdx + 0.5) / points.length;
     const dotX = plotL + frac * Math.max(0, plotR - plotL);
-    const dotY = plotT + (1 - activeValue(hovered) / yMax) * Math.max(0, plotB - plotT);
+    const dotY = plotT + (1 - activeValue(hovered) / yScaleMax) * Math.max(0, plotB - plotT);
     const left =
       chipBox.w >= plotR - plotL
         ? plotL
@@ -619,7 +799,21 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                 <CardContent>
                   <AnimatedStat id={kpi.id} value={kpi.value} />
                   <div className="kpi-trendrow">
-                    <TrendBadge buckets={buckets} range={range} />
+                    {/* Reserved badge slot: the pill (or its absence) must never
+                        change card height. The slot always occupies the first
+                        line at badge height (12px icon + 8px padding + 2px
+                        border), the foot always the second, so badge/no-badge
+                        states have identical geometry and the page can't jump. */}
+                    <span
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        flexBasis: '100%',
+                        minHeight: 22,
+                      }}
+                    >
+                      <TrendBadge buckets={buckets} range={range} />
+                    </span>
                     <div className="kpi-foot">{kpi.foot}</div>
                   </div>
                 </CardContent>
@@ -637,20 +831,32 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
               </CardDescription>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
-            <Tabs value={metric} onValueChange={(v) => setMetric(v as Metric)}>
-              <TabsList aria-label="Chart metric">
-                <TabsTrigger value="sessions">Sessions</TabsTrigger>
-                <TabsTrigger value="words">Words</TabsTrigger>
-              </TabsList>
-            </Tabs>
-            <Tabs value={range} onValueChange={(v) => setRange(v as Range)}>
-              <TabsList aria-label="Activity range">
-                <TabsTrigger value="7d">Last 7 days</TabsTrigger>
-                <TabsTrigger value="30d">Last 30 days</TabsTrigger>
-                <TabsTrigger value="90d">Last 90 days</TabsTrigger>
-                <TabsTrigger value="all">All time</TabsTrigger>
-              </TabsList>
-            </Tabs>
+            <ToggleGroup
+              type="single"
+              className="tabs-list"
+              value={metric}
+              onValueChange={(v) => {
+                if (v) setMetric(v as Metric);
+              }}
+              aria-label="Chart metric"
+            >
+              <ToggleGroupItem value="sessions" className="tabs-trigger">Sessions</ToggleGroupItem>
+              <ToggleGroupItem value="words" className="tabs-trigger">Words</ToggleGroupItem>
+            </ToggleGroup>
+            <ToggleGroup
+              type="single"
+              className="tabs-list"
+              value={range}
+              onValueChange={(v) => {
+                if (v) setRange(v as Range);
+              }}
+              aria-label="Activity range"
+            >
+              <ToggleGroupItem value="7d" className="tabs-trigger">Last 7 days</ToggleGroupItem>
+              <ToggleGroupItem value="30d" className="tabs-trigger">Last 30 days</ToggleGroupItem>
+              <ToggleGroupItem value="90d" className="tabs-trigger">Last 90 days</ToggleGroupItem>
+              <ToggleGroupItem value="all" className="tabs-trigger">All time</ToggleGroupItem>
+            </ToggleGroup>
             </div>
           </CardHeader>
           <CardContent>
@@ -691,6 +897,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                   <YAxis
                     allowDecimals={false}
                     width={yWidth}
+                    domain={[0, yScaleMax]}
                     tickLine={false}
                     axisLine={false}
                     tick={{ fill: '#A0A0A0', fontSize: 12 }}
@@ -704,6 +911,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                     strokeWidth={2}
                     fill="url(#dashAreaGrad)"
                     dot={false}
+                    activeDot={false}
                     isAnimationActive={!reduced}
                     animationDuration={225}
                   />
@@ -727,6 +935,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                   <YAxis
                     allowDecimals={false}
                     width={yWidth}
+                    domain={[0, yScaleMax]}
                     tickLine={false}
                     axisLine={false}
                     tick={{ fill: '#A0A0A0', fontSize: 12 }}
@@ -738,6 +947,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
                     fill="url(#dashBarGrad)"
                     radius={[3, 3, 0, 0]}
                     maxBarSize={26}
+                    activeBar={false}
                     isAnimationActive={!reduced}
                     animationDuration={225}
                   />
@@ -777,6 +987,270 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
             )}
           </CardContent>
         </Card>
+        <div
+          style={{
+            marginTop: 'var(--spacing-md)',
+            display: 'flex',
+            gap: 'var(--spacing-md)',
+            flexWrap: 'wrap',
+          }}
+        >
+        <Card style={{ flex: '2 1 340px', minWidth: 0 }}>
+          <CardHeader>
+            <div>
+              <CardTitle>By weekday</CardTitle>
+              <CardDescription>
+                {metric === 'sessions' ? 'Sessions share by weekday' : 'Words share by weekday'} · {weekdaySummary}
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {weekdayTotal === 0 ? (
+              <div className="chart-empty">
+                No activity in this range yet. Press your hotkey to dictate.
+              </div>
+            ) : (
+              <figure style={{ margin: 0 }}>
+                <div
+                  style={{
+                    display: 'flex',
+                    flexWrap: 'wrap',
+                    alignItems: 'center',
+                    gap: 'var(--spacing-md)',
+                  }}
+                >
+                  <div style={{ flex: '0 1 240px', minWidth: 200, position: 'relative' }}>
+                  <ChartContainer config={themedConfig} height={200}>
+                    <PieChart onMouseLeave={() => setActiveWeekday(null)}>
+                      <Pie
+                        data={weekdayPoints}
+                        dataKey={metric === 'sessions' ? 'sessions' : 'words'}
+                        nameKey="full"
+                        innerRadius="58%"
+                        outerRadius="88%"
+                        paddingAngle={2}
+                        strokeWidth={0}
+                        isAnimationActive={!reduced}
+                        animationDuration={225}
+                        shape={weekdaySectorShape}
+                        onMouseEnter={(_, i) => setActiveWeekday(i)}
+                        onMouseLeave={() => setActiveWeekday(null)}
+                      >
+                        {weekdayPoints.map((p, i) => (
+                          <Cell key={p.full} fill={weekdayFills[i]} />
+                        ))}
+                      </Pie>
+                    </PieChart>
+                  </ChartContainer>
+                  {/* Center readout: total by default, hovered slice detail on
+                      hover. Pointer-transparent so slice hover keeps working;
+                      the Table below carries the same data for SR/keyboard. */}
+                  <div
+                    aria-hidden="true"
+                    style={{
+                      position: 'absolute',
+                      inset: 0,
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      textAlign: 'center',
+                      pointerEvents: 'none',
+                    }}
+                  >
+                    {activeWeekday != null && weekdayPoints[activeWeekday] != null ? (
+                      <>
+                        <span style={{ fontSize: 12, color: 'var(--color-on-surface-variant)' }}>
+                          {weekdayPoints[activeWeekday].full}
+                        </span>
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: 17,
+                            fontWeight: 600,
+                            color: 'var(--color-on-surface)',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {weekdayValue(weekdayPoints[activeWeekday]).toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--color-on-surface-variant)' }}>
+                          {weekdayTotal > 0
+                            ? Math.round(
+                                (weekdayValue(weekdayPoints[activeWeekday]) / weekdayTotal) * 100,
+                              )
+                            : 0}
+                          %
+                        </span>
+                      </>
+                    ) : (
+                      <>
+                        <span
+                          style={{
+                            fontFamily: 'var(--font-display)',
+                            fontSize: 17,
+                            fontWeight: 600,
+                            color: 'var(--color-on-surface)',
+                            fontVariantNumeric: 'tabular-nums',
+                          }}
+                        >
+                          {weekdayTotal.toLocaleString()}
+                        </span>
+                        <span style={{ fontSize: 11, color: 'var(--color-on-surface-variant)' }}>
+                          {metric === 'sessions' ? 'sessions' : 'words'} total
+                        </span>
+                      </>
+                    )}
+                  </div>
+                  </div>
+                  <div className="table-card" style={{ flex: '1 1 220px', minWidth: 0, alignSelf: 'center' }}>
+                  <Table>
+                    {/* Caller-owned column widths (the component fixes layout
+                        only): 3-char day names need little room, right-aligned
+                        numbers need the remainder split so the Day|Value and
+                        Value|Share gutters measure equal. */}
+                    <colgroup>
+                      <col style={{ width: '22%' }} />
+                      <col style={{ width: '38%' }} />
+                      <col style={{ width: '40%' }} />
+                    </colgroup>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead style={{ padding: '7px 10px' }}>Day</TableHead>
+                        <TableHead style={{ padding: '7px 10px', textAlign: 'right' }}>
+                          {metric === 'sessions' ? 'Sessions' : 'Words'}
+                        </TableHead>
+                        <TableHead style={{ padding: '7px 10px', textAlign: 'right' }}>Share</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {weekdayPoints.map((p, i) => {
+                        const share =
+                          weekdayTotal > 0 ? Math.round((weekdayValue(p) / weekdayTotal) * 100) : 0;
+                        return (
+                          <TableRow
+                            key={p.full}
+                            data-state={activeWeekday === i ? 'selected' : undefined}
+                            onMouseEnter={() => setActiveWeekday(i)}
+                            onMouseLeave={() => setActiveWeekday(null)}
+                          >
+                            <TableCell style={{ padding: '7px 10px', whiteSpace: 'nowrap' }}>
+                              {p.weekday}
+                            </TableCell>
+                            <TableCell
+                              style={{
+                                padding: '7px 10px',
+                                textAlign: 'right',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}
+                            >
+                              {weekdayValue(p).toLocaleString()}
+                            </TableCell>
+                            <TableCell
+                              style={{
+                                padding: '7px 10px',
+                                textAlign: 'right',
+                                fontVariantNumeric: 'tabular-nums',
+                              }}
+                            >
+                              {share}%
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                  </div>
+                </div>
+              </figure>
+            )}
+          </CardContent>
+        </Card>
+        <Card style={{ flex: '1 1 240px', minWidth: 0 }}>
+          <CardHeader>
+            <div>
+              <CardTitle>Today</CardTitle>
+              <CardDescription>
+                {metric === 'sessions' ? 'Sessions vs daily average' : 'Words vs daily average'} · {todaySummary}
+              </CardDescription>
+            </div>
+          </CardHeader>
+          <CardContent>
+            {todayRatio == null ? (
+              <div className="chart-empty">
+                No baseline yet. Press your hotkey to dictate.
+              </div>
+            ) : (
+              <figure style={{ margin: 0 }}>
+                {/* Single-scalar progress ring as plain SVG: a charting
+                    library's scales buy nothing for one value, and a static
+                    ring is reduced-motion compliant by construction (no
+                    animation props to gate). Track paint mirrors the hero
+                    grid treatment per theme. */}
+                {/* The visible caption below carries the numbers, so the SVG is
+                    hidden from assistive tech rather than repeating them. */}
+                <svg
+                  viewBox="0 0 120 120"
+                  aria-hidden="true"
+                  style={{ width: '100%', maxWidth: 180, height: 'auto', display: 'block', margin: '0 auto' }}
+                >
+                  <circle
+                    cx={60}
+                    cy={60}
+                    r={52}
+                    fill="none"
+                    stroke="var(--color-border-structural)"
+                    strokeWidth={12}
+                  />
+                  <circle
+                    cx={60}
+                    cy={60}
+                    r={52}
+                    fill="none"
+                    stroke={duo.b}
+                    strokeWidth={12}
+                    strokeLinecap="round"
+                    strokeDasharray={2 * Math.PI * 52}
+                    strokeDashoffset={2 * Math.PI * 52 * (1 - ringSweep)}
+                    transform="rotate(-90 60 60)"
+                  />
+                  <text
+                    x={60}
+                    y={60}
+                    textAnchor="middle"
+                    dominantBaseline="central"
+                    style={{ fill: 'var(--color-on-surface)' }}
+                    fontSize={22}
+                    fontWeight={600}
+                  >
+                    {todayRatio.toFixed(1)}×
+                  </text>
+                  <text
+                    x={60}
+                    y={80}
+                    textAnchor="middle"
+                    style={{ fill: 'var(--color-on-surface-variant)' }}
+                    fontSize={11}
+                  >
+                    of avg
+                  </text>
+                </svg>
+                <div
+                  style={{
+                    marginTop: 8,
+                    textAlign: 'center',
+                    fontSize: 12,
+                    color: 'var(--color-on-surface-variant)',
+                    fontVariantNumeric: 'tabular-nums',
+                  }}
+                >
+                  {todayValue.toLocaleString()} {weekdayUnit(todayValue)} today · {trailAvg.toFixed(1)} avg · last {trailDays}d
+                </div>
+              </figure>
+            )}
+          </CardContent>
+        </Card>
+        </div>
       </div>
     </section>
   );

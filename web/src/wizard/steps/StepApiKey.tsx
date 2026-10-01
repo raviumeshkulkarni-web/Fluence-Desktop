@@ -3,10 +3,12 @@ import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
@@ -167,22 +169,23 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.
       </p>
       <div className="step-content">
-        <Field label="Provider" htmlFor="wiz-provider-grid">
-          <div className="wizard-provider-grid" role="group" aria-label="Provider" id="wiz-provider-grid">
+        <Field label="Provider">
+          <RadioGroup
+            className="wizard-provider-grid"
+            id="wiz-provider-grid"
+            value={data.provider}
+            onValueChange={(provider) => onProvider(provider)}
+            aria-label="Provider"
+          >
             {PROVIDERS.map((p) => (
-              <button
-                key={p}
-                type="button"
-                data-provider={p}
-                aria-pressed={data.provider === p}
-                className={`provider-card${data.provider === p ? ' selected' : ''}`}
-                onClick={() => onProvider(p)}
-              >
-                <ProviderIcon preset={p} />
-                <span className="provider-name">{p === 'Local Offline' ? 'Local Offline' : p[0].toUpperCase() + p.slice(1)}</span>
-              </button>
+              <RadioGroupItem key={p} value={p} asChild>
+                <button type="button" data-provider={p} className="choice-surface provider-card">
+                  <ProviderIcon preset={p} />
+                  <span className="provider-name">{p === 'Local Offline' ? 'Local Offline' : p[0].toUpperCase() + p.slice(1)}</span>
+                </button>
+              </RadioGroupItem>
             ))}
-          </div>
+          </RadioGroup>
         </Field>
         {data.provider === 'custom' && (
           <Field label="API Endpoint" htmlFor="wiz-base-url">
@@ -223,11 +226,13 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {withCurrent(sttModels, data.model).map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {withCurrent(sttModels, data.model).map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Tooltip>
@@ -253,11 +258,13 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {withCurrent(llmModels, data.llmModel).map((m) => (
-                    <SelectItem key={m} value={m}>
-                      {m}
-                    </SelectItem>
-                  ))}
+                  <SelectGroup>
+                    {withCurrent(llmModels, data.llmModel).map((m) => (
+                      <SelectItem key={m} value={m}>
+                        {m}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
               <Tooltip>

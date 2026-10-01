@@ -1,18 +1,21 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import * as RadioGroupPrimitive from '@radix-ui/react-radio-group';
 import { Progress } from '@/components/ui/progress';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from '@/components/fluence/Toasts';
 import {
   CustomProviderIcon,
@@ -93,13 +96,6 @@ const STT_IDS: Record<string, string> = {
   'Local Offline': 'stt-offline',
 };
 
-const LLM_IDS: Record<string, string> = {
-  groq: 'llm-groq',
-  openai: 'llm-openai',
-  mistral: 'llm-mistral',
-  custom: 'llm-custom',
-};
-
 function SttIcon({ preset }: { preset: string }) {
   switch (preset) {
     case 'groq': return <GroqIcon />;
@@ -117,6 +113,138 @@ function LlmIcon({ preset }: { preset: string }) {
     case 'mistral': return <MistralIcon />;
     default: return <CustomProviderIcon />;
   }
+}
+
+interface LlmSectionProps {
+  kind: 'llm' | 'cleaner';
+  form: FormState;
+  status: ConnStatus;
+  fetching: boolean;
+  idPrefix: string;
+  title: string;
+  description: string;
+  onSelectCard: (kind: ProviderKind, preset: string) => void;
+  onSetForm: (kind: ProviderKind, next: FormState) => void;
+  onKeyInput: (kind: ProviderKind, value: string) => void;
+  onSaveKey: (kind: ProviderKind) => void;
+  onTest: (kind: ProviderKind) => void;
+  onFetchModels: (kind: ProviderKind, f: FormState, silent: boolean) => void;
+}
+
+// Language-model provider form shared by Agent Mode and AI cleaner: same
+// provider cards, endpoint/key/model rows, model fetch, and connection
+// test. Only the settings slot (llm_provider vs cleaner_provider) and the
+// DOM id prefix differ.
+function LlmProviderSection({
+  kind,
+  form,
+  status,
+  fetching,
+  idPrefix,
+  title,
+  description,
+  onSelectCard,
+  onSetForm,
+  onKeyInput,
+  onSaveKey,
+  onTest,
+  onFetchModels,
+}: LlmSectionProps) {
+  return (
+    <>
+      <SettingsSectionHeader title={title} description={description} />
+      <div className="settings-card provider-card-container">
+        <RadioGroup
+          className="provider-grid"
+          id={`${idPrefix}-provider-grid`}
+          value={form.preset}
+          onValueChange={(preset) => void onSelectCard(kind, preset)}
+          aria-label={title}
+        >
+          {LLM_ORDER.map((preset) => (
+            <RadioGroupItem key={preset} value={preset} asChild>
+              <button
+                type="button"
+                className={`choice-surface provider-card${form.preset === preset ? ' selected' : ''}`}
+                data-provider={preset}
+                id={`${idPrefix}-${preset}`}
+              >
+                <LlmIcon preset={preset} />
+                <span className="provider-name">{LLM_NAMES[preset]}</span>
+              </button>
+            </RadioGroupItem>
+          ))}
+        </RadioGroup>
+        <div className="provider-form-fields">
+          <Field label="API Endpoint" htmlFor={`${idPrefix}-base-url`}>
+            <Input
+              type="url"
+              id={`${idPrefix}-base-url`}
+              placeholder="https://api.groq.com/openai"
+              value={form.baseUrl}
+              onChange={(e) => onSetForm(kind, { ...form, baseUrl: e.target.value })}
+            />
+            {isCustomHttpsEndpoint(form.baseUrl) && (
+              <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
+            )}
+          </Field>
+          <Field label="API Key" htmlFor={`${idPrefix}-api-key`}>
+            <div className="input-with-btn">
+              <Input
+                type="password"
+                id={`${idPrefix}-api-key`}
+                placeholder="sk-•••••••••••••••"
+                autoComplete="off"
+                value={form.apiKey}
+                onChange={(e) => onKeyInput(kind, e.target.value)}
+              />
+              <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>Save Key</Button>
+            </div>
+          </Field>
+          <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
+            <div className="input-with-btn">
+              <Select
+                value={form.model}
+                onValueChange={(v) => onSetForm(kind, { ...form, model: v })}
+              >
+                <SelectTrigger id={`${idPrefix}-model-select`}>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {form.models.map((m) => (
+                      <SelectItem key={m} value={m}>{m}</SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button
+                    variant="ghost"
+                    id={`${idPrefix}-fetch-models-btn`}
+                    className={fetching ? 'animate-spin' : undefined}
+                    aria-label="Fetch language models from API"
+                    onClick={() => void onFetchModels(kind, form, false)}
+                  >
+                    <RefreshIcon />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Fetch models from API</TooltipContent>
+              </Tooltip>
+            </div>
+          </Field>
+          <div className="provider-test-row">
+            <Button variant="secondary" id={`${idPrefix}-test-btn`} onClick={() => void onTest(kind)}>Test Connection</Button>
+            <div className="connection-status" id={`${idPrefix}-status`} role="status">
+              <div className={status.dot}></div>
+              <span id={`${idPrefix}-status-text`}>{status.text}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </>
+  );
 }
 
 interface EngineCfg {
@@ -236,6 +364,27 @@ function formFromSettings(
   return { preset, baseUrl, model, models: [model], apiKey: '' };
 }
 
+// One tab per model job: dictation (STT), Agent Mode (LLM), AI cleaner
+// (dedicated polish provider split out of the LLM slot). Only the active
+// tab's section renders; all three persist through the same debounced
+// auto-apply pipe, same explicit Save Changes flush.
+type ProvidersTab = 'dictation' | 'agent' | 'cleaner';
+
+const TAB_STORAGE_KEY = 'fluence:providers-tab';
+
+function readInitialTab(): ProvidersTab {
+  try {
+    const v = window.sessionStorage.getItem(TAB_STORAGE_KEY);
+    if (v === 'agent' || v === 'cleaner' || v === 'dictation') {
+      window.sessionStorage.removeItem(TAB_STORAGE_KEY);
+      return v;
+    }
+  } catch {
+    // Storage is an enhancement; default tab still works without it.
+  }
+  return 'dictation';
+}
+
 // Faithful port of the vanilla Providers surface (#page-providers +
 // setupProviderCards/selectProviderCard/fetchModels/testConnection,
 // setupOfflineDownloader/updateOfflineStatus, collectProviderSettings,
@@ -243,6 +392,7 @@ function formFromSettings(
 // same toasts, same debounced auto-apply persistence of the full settings
 // object, same explicit Save Changes flush.
 export function ProvidersPage() {
+  const [tab, setTab] = useState<ProvidersTab>(readInitialTab);
   const [stt, setStt] = useState<FormState>(() => ({
     preset: 'groq',
     baseUrl: '',
@@ -257,10 +407,19 @@ export function ProvidersPage() {
     models: ['llama-3.3-70b-versatile'],
     apiKey: '',
   }));
+  const [cleaner, setCleaner] = useState<FormState>(() => ({
+    preset: 'groq',
+    baseUrl: '',
+    model: 'llama-3.3-70b-versatile',
+    models: ['llama-3.3-70b-versatile'],
+    apiKey: '',
+  }));
   const [sttStatus, setSttStatus] = useState<ConnStatus>(IDLE);
   const [llmStatus, setLlmStatus] = useState<ConnStatus>(IDLE);
+  const [cleanerStatus, setCleanerStatus] = useState<ConnStatus>(IDLE);
   const [sttFetching, setSttFetching] = useState(false);
   const [llmFetching, setLlmFetching] = useState(false);
+  const [cleanerFetching, setCleanerFetching] = useState(false);
   const [engine, setEngine] = useState('sensevoice');
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
   const [downloading, setDownloading] = useState<string | null>(null);
@@ -272,37 +431,50 @@ export function ProvidersPage() {
 
   const sttKeyTimer = useRef<number | null>(null);
   const llmKeyTimer = useRef<number | null>(null);
+  const cleanerKeyTimer = useRef<number | null>(null);
 
-  const forms = useRef({ stt, llm });
-  forms.current = { stt, llm };
+  const forms = useRef({ stt, llm, cleaner });
+  forms.current = { stt, llm, cleaner };
 
   // Never persist when the settings load failed: vanilla's flush is a
   // no-op while currentSettings is null, so a partial write must not
   // clobber the stored file.
-  const persistProviders = useCallback((nextStt: FormState, nextLlm: FormState) => {
-    if (!getCachedSettings()) return;
-    setSettingField('stt_provider', {
-      preset: nextStt.preset,
-      base_url: nextStt.baseUrl.trim(),
-      model: nextStt.model,
-      api_key_saved: true,
-    });
-    setSettingField('llm_provider', {
-      preset: nextLlm.preset,
-      base_url: nextLlm.baseUrl.trim(),
-      model: nextLlm.model,
-      api_key_saved: true,
-    });
-  }, []);
+  const persistProviders = useCallback(
+    (nextStt: FormState, nextLlm: FormState, nextCleaner: FormState) => {
+      if (!getCachedSettings()) return;
+      setSettingField('stt_provider', {
+        preset: nextStt.preset,
+        base_url: nextStt.baseUrl.trim(),
+        model: nextStt.model,
+        api_key_saved: true,
+      });
+      setSettingField('llm_provider', {
+        preset: nextLlm.preset,
+        base_url: nextLlm.baseUrl.trim(),
+        model: nextLlm.model,
+        api_key_saved: true,
+      });
+      setSettingField('cleaner_provider', {
+        preset: nextCleaner.preset,
+        base_url: nextCleaner.baseUrl.trim(),
+        model: nextCleaner.model,
+        api_key_saved: true,
+      });
+    },
+    [],
+  );
 
   const setForm = useCallback(
     (kind: ProviderKind, next: FormState) => {
       if (kind === 'stt') {
         setStt(next);
-        persistProviders(next, forms.current.llm);
-      } else {
+        persistProviders(next, forms.current.llm, forms.current.cleaner);
+      } else if (kind === 'llm') {
         setLlm(next);
-        persistProviders(forms.current.stt, next);
+        persistProviders(forms.current.stt, next, forms.current.cleaner);
+      } else {
+        setCleaner(next);
+        persistProviders(forms.current.stt, forms.current.llm, next);
       }
     },
     [persistProviders],
@@ -316,8 +488,10 @@ export function ProvidersPage() {
       const model = models.includes(current) ? current : models[0];
       if (kind === 'stt') {
         setStt((prev) => ({ ...prev, models, model }));
-      } else {
+      } else if (kind === 'llm') {
         setLlm((prev) => ({ ...prev, models, model }));
+      } else {
+        setCleaner((prev) => ({ ...prev, models, model }));
       }
     },
     [],
@@ -339,7 +513,8 @@ export function ProvidersPage() {
         return;
       }
       if (kind === 'stt') setSttFetching(true);
-      else setLlmFetching(true);
+      else if (kind === 'llm') setLlmFetching(true);
+      else setCleanerFetching(true);
       try {
         const current = f.model;
         if (kind === 'stt') {
@@ -371,7 +546,8 @@ export function ProvidersPage() {
         if (!silent) toast('Failed to fetch models: ' + String(err), 'error');
       } finally {
         if (kind === 'stt') setSttFetching(false);
-        else setLlmFetching(false);
+        else if (kind === 'llm') setLlmFetching(false);
+        else setCleanerFetching(false);
       }
     },
     [setModelList],
@@ -403,7 +579,7 @@ export function ProvidersPage() {
     const timer = window.setTimeout(() => {
       if (cancelled) return;
       (async () => {
-        for (const kind of ['stt', 'llm'] as ProviderKind[]) {
+        for (const kind of ['stt', 'llm', 'cleaner'] as ProviderKind[]) {
           const f = forms.current[kind];
           const key = await getApiKey(keyTarget(kind, f.preset)).catch(() => null);
           if (cancelled) return;
@@ -421,8 +597,13 @@ export function ProvidersPage() {
       const s = getCachedSettings();
       const sttProvider = s?.stt_provider as Record<string, unknown> | undefined;
       const llmProvider = s?.llm_provider as Record<string, unknown> | undefined;
+      const cleanerProvider = s?.cleaner_provider as Record<string, unknown> | undefined;
       setStt(formFromSettings(sttProvider, 'whisper-large-v3'));
       setLlm(formFromSettings(llmProvider, 'llama-3.3-70b-versatile'));
+      // Backend migrates old files (cleaner inherits the LLM provider), so
+      // by the time the cache lands this is either the user's pick or that
+      // inherited value — never a surprise reset.
+      setCleaner(formFromSettings(cleanerProvider, 'llama-3.3-70b-versatile'));
       const rawEngine =
         typeof s?.offline_engine === 'string' ? (s.offline_engine as string) : 'sensevoice';
       setEngine(
@@ -456,6 +637,19 @@ export function ProvidersPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Cross-page deep link (e.g. AI Post Processing → AI cleaner tab):
+  // pages dispatch `fluence:providers-tab` and/or stash the tab in
+  // session storage (read once in readInitialTab for the fresh-mount
+  // case, where this listener is not yet attached).
+  useEffect(() => {
+    const onTab = (e: Event) => {
+      const v = (e as CustomEvent<unknown>).detail;
+      if (v === 'dictation' || v === 'agent' || v === 'cleaner') setTab(v);
+    };
+    window.addEventListener('fluence:providers-tab', onTab);
+    return () => window.removeEventListener('fluence:providers-tab', onTab);
+  }, []);
+
   // Ctrl+S quiet save (vanilla saveProviders alias: flush, no toast).
   useEffect(() => {
     const onSave = () => {
@@ -471,6 +665,7 @@ export function ProvidersPage() {
     () => () => {
       if (sttKeyTimer.current !== null) window.clearTimeout(sttKeyTimer.current);
       if (llmKeyTimer.current !== null) window.clearTimeout(llmKeyTimer.current);
+      if (cleanerKeyTimer.current !== null) window.clearTimeout(cleanerKeyTimer.current);
     },
     [],
   );
@@ -525,7 +720,7 @@ export function ProvidersPage() {
   const onKeyInput = (kind: ProviderKind, value: string) => {
     const f = { ...forms.current[kind], apiKey: value };
     setForm(kind, f);
-    const timerRef = kind === 'stt' ? sttKeyTimer : llmKeyTimer;
+    const timerRef = kind === 'stt' ? sttKeyTimer : kind === 'llm' ? llmKeyTimer : cleanerKeyTimer;
     if (timerRef.current !== null) window.clearTimeout(timerRef.current);
     timerRef.current = window.setTimeout(() => void doFetchModels(kind, f, true), 800);
   };
@@ -550,7 +745,8 @@ export function ProvidersPage() {
     const f = forms.current[kind];
     const baseUrl = f.baseUrl.trim();
     const apiKey = await getApiKey(keyTarget(kind, f.preset)).catch(() => '');
-    const setStatus = kind === 'stt' ? setSttStatus : setLlmStatus;
+    const setStatus =
+      kind === 'stt' ? setSttStatus : kind === 'llm' ? setLlmStatus : setCleanerStatus;
     if (!isAllowedEndpointUrl(baseUrl)) {
       setStatus({ dot: 'dot dot-error', text: 'Use https:// (http only for localhost).' });
       return;
@@ -572,6 +768,7 @@ export function ProvidersPage() {
       await saveSettingsNow();
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
+      return;
     }
     toast('Provider settings saved', 'success');
   };
@@ -623,31 +820,45 @@ export function ProvidersPage() {
     <section className="page active" id="page-providers">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>Providers</h1>
-        <p className="page-subtitle">Configure speech-to-text and language model providers</p>
+        <p className="page-subtitle">Configure dictation, agent mode, and AI cleanup</p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Speech-to-Text (STT)</h2></div>
-        <div className="provider-grid" id="stt-provider-grid" role="group" aria-label="Speech-to-text provider">
-          {STT_ORDER.map((preset) => {
-            const selected = stt.preset === preset;
-            return (
+      <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as ProvidersTab)}>
+        <TabsList aria-label="Provider area">
+          <TabsTrigger value="dictation">Dictation</TabsTrigger>
+          <TabsTrigger value="agent">Agent mode</TabsTrigger>
+          <TabsTrigger value="cleaner">AI cleaner</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="dictation">
+      <SettingsSectionHeader
+        title="Speech-to-Text (STT)"
+        description="Choose the engine used to transcribe your live microphone input"
+      />
+      <div className="settings-card provider-card-container">
+        <RadioGroup
+          className="provider-grid"
+          id="stt-provider-grid"
+          value={stt.preset}
+          onValueChange={(preset) => void selectCard('stt', preset)}
+          aria-label="Speech-to-text provider"
+        >
+          {STT_ORDER.map((preset) => (
+            <RadioGroupItem key={preset} value={preset} asChild>
               <button
-                key={preset}
-                className={`provider-card${selected ? ' selected' : ''}`}
+                type="button"
+                className={`choice-surface provider-card${stt.preset === preset ? ' selected' : ''}`}
                 data-provider={preset}
                 id={STT_IDS[preset]}
-                aria-pressed={selected}
-                onClick={() => void selectCard('stt', preset)}
               >
                 <SttIcon preset={preset} />
                 <span className="provider-name">{STT_NAMES[preset]}</span>
               </button>
-            );
-          })}
-        </div>
-        <div style={{ padding: '0 var(--spacing-md) var(--spacing-md)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <div id="stt-credentials-wrapper" className={isOffline ? 'hidden' : undefined} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
+            </RadioGroupItem>
+          ))}
+        </RadioGroup>
+        <div className="provider-form-fields">
+          <div id="stt-credentials-wrapper" className={`provider-credentials${isOffline ? ' hidden' : ''}`}>
             <Field label="API Endpoint" htmlFor="stt-base-url">
               <Input
                 type="url"
@@ -670,7 +881,7 @@ export function ProvidersPage() {
                   value={stt.apiKey}
                   onChange={(e) => onKeyInput('stt', e.target.value)}
                 />
-                <Button variant="secondary" id="stt-save-key-btn" style={{ whiteSpace: 'nowrap' }} onClick={() => void onSaveKey('stt')}>Save Key</Button>
+                <Button variant="secondary" id="stt-save-key-btn" className="provider-save-key" onClick={() => void onSaveKey('stt')}>Save Key</Button>
               </div>
             </Field>
             <Field label="Model" htmlFor="stt-model-select">
@@ -683,9 +894,11 @@ export function ProvidersPage() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {stt.models.map((m) => (
-                      <SelectItem key={m} value={m}>{m}</SelectItem>
-                    ))}
+                    <SelectGroup>
+                      {stt.models.map((m) => (
+                        <SelectItem key={m} value={m}>{m}</SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
                 <Tooltip>
@@ -704,7 +917,7 @@ export function ProvidersPage() {
                 </Tooltip>
               </div>
             </Field>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
+            <div className="provider-test-row">
               <Button variant="secondary" id="stt-test-btn" onClick={() => void onTest('stt')}>Test Connection</Button>
               <div className="connection-status" id="stt-status" role="status">
                 <div className={sttStatus.dot}></div>
@@ -713,16 +926,16 @@ export function ProvidersPage() {
             </div>
           </div>
 
-          <div id="stt-offline-downloader" className={isOffline ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)', marginTop: 'var(--spacing-xs)', paddingTop: 'var(--spacing-sm)' }}>
-            <div style={{ fontWeight: 600, fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface)', display: 'flex', alignItems: 'center', gap: 'var(--spacing-6)' }}>
+          <div id="stt-offline-downloader" className={`offline-downloader${isOffline ? '' : ' hidden'}`}>
+            <div className="offline-downloader-title">
               <DownloadIcon />
               Offline Model Manager
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-xs)' }}>
-              <span className="text-body-md" style={{ fontWeight: 600 }}>Choose a model</span>
-              <span className="text-muted" style={{ fontSize: 'var(--text-label-sm)' }}>Pick the option that fits how you dictate. You can change this any time.</span>
+            <div className="offline-downloader-sub">
+              <span className="text-body-md offline-downloader-heading">Choose a model</span>
+              <span className="text-muted offline-downloader-hint">Pick the option that fits how you dictate. You can change this any time.</span>
             </div>
-            <RadioGroupPrimitive.Root
+            <RadioGroup
               value={engine}
               onValueChange={(v) => selectEngine(v)}
               className="offline-model-list"
@@ -733,82 +946,70 @@ export function ProvidersPage() {
                 const isInstalled = installed[cfg.engine] === true;
                 const isDownloading = downloading === cfg.engine;
                 return (
-                  <RadioGroupPrimitive.Item
-                    key={cfg.engine}
-                    asChild
-                    value={cfg.engine}
-                    onKeyDown={(e) => {
-                      if ((e.target as Element).closest('button')) return;
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault();
-                        selectEngine(cfg.engine);
-                      }
-                    }}
-                  >
                   <div
                     id={cfg.cardId}
                     data-engine={cfg.engine}
-                      className={`offline-model-card ui-focus-ring${selected ? ' selected' : ''}`}
+                    className={`choice-surface offline-model-card${selected ? ' selected' : ''}`}
                   >
-                    <div className="offline-model-card-top">
-                      <span className="offline-radio" aria-hidden="true"></span>
-                      <span className="text-body-md offline-model-title">{cfg.title}</span>
-                      {cfg.badge && <span className="offline-badge">{cfg.badge}</span>}
-                    </div>
-                    <span className="text-muted offline-model-desc">{cfg.desc}</span>
-                    <div className="offline-metrics">
-                      <span className="offline-metric" role="img" aria-label={`Speed ${cfg.speed} out of 5`}>
-                        <span className="offline-metric-label">Speed</span>
-                        <span className="offline-metric-segs">
-                          {[1, 2, 3, 4, 5].map((i) => (
-                            <i key={i} className={i <= cfg.speed ? 'on' : undefined}></i>
-                          ))}
+                    <RadioGroupItem value={cfg.engine} asChild>
+                      <button
+                        type="button"
+                        className="offline-model-select"
+                        aria-label={`Select ${cfg.title} model`}
+                      >
+                        <span className="offline-model-card-top">
+                          <span className="offline-radio" aria-hidden="true" />
+                          <span className="text-body-md offline-model-title">{cfg.title}</span>
+                          {cfg.badge && <span className="offline-badge">{cfg.badge}</span>}
                         </span>
-                      </span>
-                      <span className="offline-metric" role="img" aria-label={`Accuracy ${cfg.accuracy} out of 5`}>
-                        <span className="offline-metric-label">Accuracy</span>
-                        <span className="offline-metric-segs">
-                          {[1, 2, 3, 4, 5].map((i) => (
-                            <i key={i} className={i <= cfg.accuracy ? 'on' : undefined}></i>
-                          ))}
+                        <span className="text-muted offline-model-desc">{cfg.desc}</span>
+                        <span className="offline-metrics">
+                          <span className="offline-metric" role="img" aria-label={`Speed ${cfg.speed} out of 5`}>
+                            <span className="offline-metric-label">Speed</span>
+                            <span className="offline-metric-segs">
+                              {[1, 2, 3, 4, 5].map((i) => (
+                                <i key={i} className={i <= cfg.speed ? 'on' : undefined} />
+                              ))}
+                            </span>
+                          </span>
+                          <span className="offline-metric" role="img" aria-label={`Accuracy ${cfg.accuracy} out of 5`}>
+                            <span className="offline-metric-label">Accuracy</span>
+                            <span className="offline-metric-segs">
+                              {[1, 2, 3, 4, 5].map((i) => (
+                                <i key={i} className={i <= cfg.accuracy ? 'on' : undefined} />
+                              ))}
+                            </span>
+                          </span>
                         </span>
-                      </span>
-                    </div>
+                      </button>
+                    </RadioGroupItem>
                     <div className="offline-model-actions">
                       <Button
-                        variant="primary"
+                        variant="default"
                         id={cfg.downloadBtnId}
-                        style={{ minWidth: 140 }}
+                        className="offline-model-btn"
                         disabled={isInstalled || isDownloading}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          void onDownload(cfg);
-                        }}
+                        onClick={() => void onDownload(cfg)}
                       >
                         {isInstalled ? 'Installed' : isDownloading ? 'Connecting…' : 'Download Model'}
                       </Button>
                       <Button
-                        variant="danger"
+                        variant="destructive"
                         id={cfg.deleteBtnId}
-                        className={isInstalled ? undefined : 'hidden'}
-                        style={{ minWidth: 140 }}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setDeleteTarget(cfg);
-                        }}
+                        className={`offline-model-btn${isInstalled ? '' : ' hidden'}`}
+                        onClick={() => setDeleteTarget(cfg)}
                       >
                         Delete Model
                       </Button>
                     </div>
                   </div>
-                  </RadioGroupPrimitive.Item>
                 );
               })}
-            </RadioGroupPrimitive.Root>
-            <div id="offline-progress-wrapper" className={progressVisible ? undefined : 'hidden'} style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', background: 'var(--color-surface-secondary)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 'var(--text-label-sm)' }}>
-                <span id="offline-progress-status" style={{ fontWeight: 500 }}>{progressStatus}</span>
-                <span id="offline-progress-percentage" style={{ fontWeight: 600, color: 'var(--color-on-surface)' }}>{progressPct.toFixed(0)}%</span>
+            </RadioGroup>
+            <div id="offline-progress-wrapper" className={`offline-progress${progressVisible ? '' : ' hidden'}`}>
+              <div className="offline-progress-row">
+                <span id="offline-progress-status" className="offline-progress-status">{progressStatus}</span>
+                <span id="offline-progress-percentage" className="offline-progress-percentage">{progressPct.toFixed(0)}%</span>
               </div>
               <Progress
                 value={progressPct}
@@ -819,7 +1020,7 @@ export function ProvidersPage() {
                 id="offline-progress-track"
                 className="progress-meter"
               />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 'var(--text-label-xs)', color: 'var(--color-on-surface-variant)' }}>
+              <div className="offline-progress-foot">
                 <span id="offline-progress-bytes">{progressBytes}</span>
                 <Button variant="ghost" size="xs" id="offline-cancel-btn" onClick={() => void onCancelDownload()}>Cancel</Button>
               </div>
@@ -827,96 +1028,47 @@ export function ProvidersPage() {
           </div>
         </div>
       </div>
+      </TabsContent>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Language Model (Agent Mode)</h2></div>
-        <div className="provider-grid" id="llm-provider-grid" role="group" aria-label="Language model provider">
-          {LLM_ORDER.map((preset) => {
-            const selected = llm.preset === preset;
-            return (
-              <button
-                key={preset}
-                className={`provider-card${selected ? ' selected' : ''}`}
-                data-provider={preset}
-                id={LLM_IDS[preset]}
-                aria-pressed={selected}
-                onClick={() => void selectCard('llm', preset)}
-              >
-                <LlmIcon preset={preset} />
-                <span className="provider-name">{LLM_NAMES[preset]}</span>
-              </button>
-            );
-          })}
-        </div>
-        <div style={{ padding: '0 var(--spacing-md) var(--spacing-md)', display: 'flex', flexDirection: 'column', gap: 'var(--spacing-md)' }}>
-          <Field label="API Endpoint" htmlFor="llm-base-url">
-            <Input
-              type="url"
-              id="llm-base-url"
-              placeholder="https://api.groq.com/openai"
-              value={llm.baseUrl}
-              onChange={(e) => setForm('llm', { ...forms.current.llm, baseUrl: e.target.value })}
-            />
-            {isCustomHttpsEndpoint(llm.baseUrl) && (
-              <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
-            )}
-          </Field>
-          <Field label="API Key" htmlFor="llm-api-key">
-            <div className="input-with-btn">
-              <Input
-                type="password"
-                id="llm-api-key"
-                placeholder="sk-•••••••••••••••"
-                autoComplete="off"
-                value={llm.apiKey}
-                onChange={(e) => onKeyInput('llm', e.target.value)}
-              />
-              <Button variant="secondary" id="llm-save-key-btn" style={{ whiteSpace: 'nowrap' }} onClick={() => void onSaveKey('llm')}>Save Key</Button>
-            </div>
-          </Field>
-          <Field label="Model" htmlFor="llm-model-select">
-            <div className="input-with-btn">
-              <Select
-                value={llm.model}
-                onValueChange={(v) => setForm('llm', { ...forms.current.llm, model: v })}
-              >
-                <SelectTrigger id="llm-model-select">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {llm.models.map((m) => (
-                    <SelectItem key={m} value={m}>{m}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    id="llm-fetch-models-btn"
-                    className={llmFetching ? 'animate-spin' : undefined}
-                    aria-label="Fetch language models from API"
-                    onClick={() => void doFetchModels('llm', forms.current.llm, false)}
-                  >
-                    <RefreshIcon />
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent>Fetch models from API</TooltipContent>
-              </Tooltip>
-              </div>
-            </Field>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-md)' }}>
-            <Button variant="secondary" id="llm-test-btn" onClick={() => void onTest('llm')}>Test Connection</Button>
-            <div className="connection-status" id="llm-status" role="status">
-              <div className={llmStatus.dot}></div>
-              <span id="llm-status-text">{llmStatus.text}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+      <TabsContent value="agent">
+        <LlmProviderSection
+          kind="llm"
+          form={llm}
+          status={llmStatus}
+          fetching={llmFetching}
+          idPrefix="llm"
+          title="Language Model (Agent Mode)"
+          description="Choose the model that handles Agent Mode commands and text actions."
+          onSelectCard={selectCard}
+          onSetForm={setForm}
+          onKeyInput={onKeyInput}
+          onSaveKey={onSaveKey}
+          onTest={onTest}
+          onFetchModels={doFetchModels}
+        />
+      </TabsContent>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--spacing-md)' }}>
-        <Button variant="primary" id="save-providers-btn" style={{ minWidth: 120 }} onClick={() => void onSaveAll()}>Save Changes</Button>
+      <TabsContent value="cleaner">
+        <LlmProviderSection
+          kind="cleaner"
+          form={cleaner}
+          status={cleanerStatus}
+          fetching={cleanerFetching}
+          idPrefix="cleaner"
+          title="AI Cleaner"
+          description="Choose the model that cleans up your transcriptions after dictation."
+          onSelectCard={selectCard}
+          onSetForm={setForm}
+          onKeyInput={onKeyInput}
+          onSaveKey={onSaveKey}
+          onTest={onTest}
+          onFetchModels={doFetchModels}
+        />
+      </TabsContent>
+      </Tabs>
+
+      <div className="page-actions">
+        <Button variant="default" id="save-providers-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
       </div>
 
       <ConfirmDialog

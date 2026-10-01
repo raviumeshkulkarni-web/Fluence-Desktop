@@ -21,15 +21,339 @@
  * the kit trigger's own width:100% would otherwise lose its size context
  * (settings.css loads before ui.css, so bare .select-md loses the cascade).
  */
+.select-trigger.select-sm {
+  width: 150px;
+}
 .select-trigger.select-md {
   width: 180px; /* frozen .select-md */
 }
 .select-trigger.select-lg {
   width: 220px; /* frozen .select-lg */
 }
+.provider-grid {
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+}
+.provider-form-fields {
+  padding: var(--spacing-md);
+  border-top: 1px solid var(--color-border-structural);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.provider-credentials {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+.provider-save-key {
+  white-space: nowrap;
+}
+.provider-test-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+}
+.offline-downloader {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  margin-top: var(--spacing-xs);
+  padding-top: var(--spacing-sm);
+}
+.offline-downloader-title {
+  font-weight: 600;
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface);
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-6);
+}
+.offline-downloader-sub {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+.offline-downloader-heading {
+  font-weight: 600;
+}
+.offline-downloader-hint {
+  font-size: var(--text-label-sm);
+}
+.offline-model-btn {
+  min-width: 140px;
+}
+.offline-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  background: var(--color-surface-secondary);
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+}
+.offline-progress-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: var(--text-label-sm);
+}
+.offline-progress-status {
+  font-weight: 500;
+}
+.offline-progress-percentage {
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+.offline-progress-foot {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+}
+.offline-model-card {
+  gap: 0;
+  padding: 0;
+  cursor: default;
+}
+.offline-model-select {
+  display: flex;
+  width: 100%;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.offline-model-select:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.offline-model-actions {
+  padding: 0 16px 16px;
+  margin-top: 0;
+}
+.page > .settings-section + .settings-section {
+  margin-top: 0;
+}
+.sync-signin-error {
+  margin-top: var(--spacing-6);
+}
+/* Codex section & card architecture */
+.settings-section-header-outside {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  margin-top: 24px;
+  margin-bottom: 10px;
+}
+.settings-section-header-outside:first-child,
+.tab-content > .settings-section-header-outside:first-child,
+[data-slot='tabs-content'] > .settings-section-header-outside:first-child,
+[role='tabpanel'] > .settings-section-header-outside:first-child {
+  margin-top: 6px;
+}
+.settings-section-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--color-on-surface);
+  margin: 0;
+  text-transform: none;
+}
+.settings-section-desc {
+  font-family: var(--font-body);
+  font-size: 13px;
+  color: var(--color-on-surface-variant);
+  margin: 2px 0 0;
+  line-height: 1.45;
+}
+.settings-section-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+
+.settings-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+}
+.settings-card-content {
+  min-width: 0;
+  padding: 0;
+  gap: 0;
+  border-radius: inherit;
+}
+.settings-card-selected {
+  border-color: var(--color-border-focus);
+}
+
+.settings-card + .settings-section-header-outside {
+  margin-top: 24px;
+}
+.settings-card + .settings-card {
+  margin-top: 12px;
+}
+.settings-card .setting-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 14px 18px;
+  border-bottom: 1px solid var(--color-border-structural);
+  transition: background-color 0.12s var(--ease-standard);
+}
+.settings-card .setting-row:last-child {
+  border-bottom: none;
+}
+.settings-card .setting-row:hover {
+  background: var(--color-hover);
+}
+
+.settings-section--unboxed {
+  overflow: visible;
+  background: transparent;
+  border-color: transparent;
+  box-shadow: none;
+}
+.settings-section--unboxed .settings-section-header {
+  background: transparent;
+  border-bottom-color: var(--color-border-muted);
+}
+.settings-section--unboxed::after {
+  display: block;
+  height: 1px;
+  content: '';
+  background: var(--color-border-muted);
+}
+
+.dict-add-card,
+.snippet-add-card {
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+}
+
+/* Table card & high-contrast headers */
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.dict-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.dict-table th {
+  text-align: left;
+  padding: 11px 18px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border-structural);
+}
+.dict-table td {
+  padding: 12px 18px;
+  font-size: 13px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--color-border-structural);
+  color: var(--color-on-surface);
+}
+.dict-table tr:last-child td {
+  border-bottom: none;
+}
+.dict-table tr:hover td {
+  background: var(--color-hover);
+}
+.dict-table th.actions,
+.dict-table td.actions {
+  text-align: right !important;
+  white-space: nowrap !important;
+  padding-right: 24px !important;
+}
+#suggestions-table th.actions,
+#suggestions-table td.actions {
+  width: 200px !important;
+}
+#suggestions-table td.actions .suggestion-dismiss-btn {
+  margin-left: 8px;
+}
+#dict-table th.actions,
+#dict-table td.actions,
+.snippet-table th.actions,
+.snippet-table td.actions {
+  width: 140px !important;
+}
+.data-surface {
+  margin: 0 var(--spacing-md) var(--spacing-md);
+  overflow: hidden;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+}
 .input-with-btn .select-trigger {
   flex: 1 1 0%; /* frozen .input-with-btn select */
   min-width: 0;
+}
+.dict-header-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.dict-add-field {
+  flex: 1;
+}
+.dict-add-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+.dict-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+.dict-bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+}
+.snippet-lead-row {
+  padding-bottom: var(--spacing-lg);
+  border-bottom: 1px solid var(--color-outline-variant);
+}
+.snippet-add-form {
+  padding: var(--spacing-md);
+  display: flex;
+  gap: var(--spacing-md);
+  align-items: flex-end;
+}
+.snippet-add-field {
+  flex: 1;
+}
+.snippet-add-field-wide {
+  flex: 2;
+}
+.snippet-add-actions {
+  display: flex;
+  gap: var(--spacing-sm);
 }
 
 /* History context menu: Radix kit primitive wearing the dropdown tokens
@@ -111,9 +435,21 @@
 /* History multi-select (P1): accent edge + hover wash; toolbar pins under
  * the search chrome and only exists while the selection is non-empty.
  */
-.history-item.is-selected {
-  background: var(--color-hover);
-  box-shadow: inset 2px 0 0 var(--color-brand-cyan);
+.history-item {
+  border-radius: var(--radius-xs);
+}
+.history-item-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.history-item[data-state='selected'] {
+  background: var(--color-selected);
+}
+.history-item[data-state='selected']:hover,
+.history-item[data-state='selected']:active {
+  background: var(--color-selected);
 }
 .history-selection-bar {
   display: flex;
@@ -133,6 +469,67 @@
   white-space: nowrap;
 }
 
+/* History search row: search input on left, Clear All button on right.
+ * No bottom border: the search row and the filter bar below it are one
+ * chrome block, and the filter bar carries the header band (see
+ * .history-filter-bar), so a divider here only fragmented the two.
+ */
+.history-search-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 12px 18px;
+  /* Same header band as .history-filter-bar below (surface-secondary) with
+   * no divider between them: search + filters are one header block, closed
+   * by the single structural hairline the filter bar carries. */
+  background: var(--color-surface-secondary);
+}
+/* Shared search field (components/fluence/SearchField.tsx): the one search
+ * box in the app. The wrapper is a plain positioning context; the input keeps
+ * the global input base for surface/border/radius/focus, so a search field is
+ * indistinguishable from any other Input. Only the icon gutter and the
+ * label-size type are added here.
+ *
+ * The frozen vanilla layer owns `.search-wrapper` (settings.css) for the
+ * legacy markup and is left untouched; this class is the React-layer
+ * replacement, so the two never interact.
+ */
+.search-field {
+  position: relative;
+  display: flex;
+  min-width: 0;
+}
+.search-field > svg {
+  position: absolute;
+  left: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 15px;
+  height: 15px;
+  color: var(--color-ink-muted);
+  pointer-events: none;
+  z-index: 1;
+}
+/* Attribute selector keeps this beating the global element rule on equal
+ * specificity (later in cascade) without a !important. */
+.search-field input[type='search'] {
+  padding-left: 35px;
+  font-size: 13px;
+}
+/* Native clear affordance would sit under the icon gutter. */
+.search-field input[type='search']::-webkit-search-cancel-button {
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.history-search-row .history-search-input {
+  flex: 1;
+}
+.history-search-row #clear-history-btn {
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+
 /* History filter bar: single top row, never wraps. Date Tabs sit left;
  * sort + count pin right; provider/sort use compact triggers. The provider
  * control stays mounted and animates its width (not mount/unmount), so the
@@ -144,8 +541,11 @@
   align-items: center;
   gap: var(--spacing-12);
   padding: var(--spacing-10) var(--spacing-18);
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-surface);
+  /* Header band: identical paint to .fluence-table-head (surface-secondary +
+   * structural hairline), so this row reads as a header the same way every
+   * table header does — including the dashboard weekday table. */
+  background: var(--color-surface-secondary);
+  border-bottom: 1px solid var(--color-border-structural);
   min-width: 0;
 }
 .history-filter-controls {
@@ -192,16 +592,62 @@
     transition: none;
   }
 }
-.history-shown-count {
+.history-pager-count,
+.history-pager-label,
+.history-pager-page {
   font-family: var(--font-label);
   font-size: var(--text-label-xs);
-  color: var(--color-ink-muted);
+  color: var(--color-on-surface-variant);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
+.history-pager-size {
+  font-family: var(--font-label);
+  font-size: var(--text-label-xs);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.history-pager-controls {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+  margin-left: auto;
+}
+.history-pager-btn {
+  min-width: 28px;
+  min-height: 28px;
+  padding: 4px;
+}
+#page-history .history-item::before,
+#page-history .history-item::after {
+  display: none;
+}
+#page-history .history-item,
+#page-history .history-group-header {
+  padding-left: 18px;
+}
+#history-pager {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm) var(--spacing-md);
+  padding: var(--spacing-sm) var(--spacing-md);
+  border-top: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+.history-item-text mark,
+[data-theme="light"] .history-item-text mark {
+  color: var(--color-brand-cyan);
+}
 
 /* Collapsible day groups (P2): the sticky header is a button wearing the
- * frozen .history-group-header paint; only UA button defaults are reset.
+ * frozen .history-group-header layout (sticky, flex, padding); type paint
+ * mirrors .fluence-table-head exactly (body 12px/600, on-surface, structural
+ * hairline) instead of inheriting body text, so day bands read as headers
+ * the same way table headers do on every other screen.
  */
 button.history-group-header {
   width: 100%;
@@ -209,10 +655,13 @@ button.history-group-header {
   border-left: none;
   border-right: none;
   background: var(--color-surface-secondary);
-  font: inherit;
-  letter-spacing: inherit;
-  text-transform: inherit;
-  color: inherit;
+  border-bottom: 1px solid var(--color-border-structural);
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
   cursor: pointer;
   text-align: left;
 }
@@ -293,48 +742,20 @@ button.history-group-header {
  * real overlay stylesheet, Shadow-DOM isolated — see OverlayPreview.tsx).
  * Selected state mirrors provider/offline-model cards: elevated surface +
  * filled radio dot. */
-.bubble-option {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  padding: 14px 18px;
-  flex-wrap: wrap;
-  cursor: pointer;
-  color: var(--color-on-surface);
-  transition: background 150ms ease;
-}
-
-.bubble-option + .bubble-option {
-  border-top: 1px solid var(--color-border-muted);
-}
-
-.bubble-option:hover {
-  background: var(--color-hover);
-}
-
-.bubble-option:active {
-  background: var(--color-active);
-}
-
-.bubble-option:focus-visible {
-  outline: 1.5px solid var(--color-border-focus);
-  outline-offset: -1.5px;
-}
-
-.bubble-option[aria-checked="true"] {
-  background: var(--color-surface-elevated);
-}
-
-.bubble-option-text {
-  display: flex;
-  flex-direction: column;
+.bubble-option-list {
   gap: 0;
-  flex: 1 1 180px;
-  min-width: 0;
 }
 
-/* Live stage: transparent so the overlay's real glass (backdrop blur over
- * the page behind it) reads truthfully. Real-size tiers, never scaled. */
+.bubble-option {
+  height: 150px;
+  min-height: 150px;
+  border-radius: 0;
+}
+
+.bubble-option.selected {
+  background: var(--color-interactive-active);
+}
+
 .bubble-live-stage {
   margin-left: auto;
   flex: none;
@@ -345,34 +766,42 @@ button.history-group-header {
   padding: 10px 8px;
 }
 
-/* Live previews render the real overlay markup + stylesheet (see
- * components/fluence/OverlayPreview.tsx) — no miniature styles here. */
-
-.bubble-radio {
-  position: relative;
+.overlay-preview {
+  display: block;
   flex: none;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  border: 1.5px solid var(--color-on-surface-variant);
-  transition: border-color 0.15s ease;
 }
 
-.bubble-option[aria-checked="true"] .bubble-radio {
-  border-color: #FFFFFF;
+.overlay-preview-full {
+  --ovpv-scale: 0.75;
+  width: 240px;
+  height: 72px;
 }
 
-.bubble-option[aria-checked="true"] .bubble-radio::after {
-  content: "";
-  position: absolute;
-  inset: 3px;
-  border-radius: 50%;
-  background: #FFFFFF;
+.overlay-preview-compact {
+  width: 118px;
+  height: 36px;
+}
+
+.overlay-preview-bubble {
+  width: 44px;
+  height: 44px;
+}
+
+.overlay-preview-full.has-pill {
+  height: 107px;
+}
+
+.overlay-preview-compact.has-pill {
+  height: 82px;
+}
+
+.overlay-preview-bubble.has-pill {
+  height: 90px;
 }
 
 .bubble-preview-label {
   font-size: var(--text-body-md);
-  font-weight: 500;
+  font-weight: 600;
   color: var(--color-on-surface);
 }
 
@@ -413,14 +842,352 @@ button.history-group-header {
   background: var(--color-brand-cyan);
 }
 
-[data-theme="light"] .bubble-option[aria-checked="true"] {
-  border-color: rgba(0, 0, 0, 0.4);
+/* ── Agents board (Slice 5, Android AgentsScreen parity) ── */
+.agent-choice-group,
+.style-choice-group {
+  gap: 0;
 }
 
-[data-theme="light"] .bubble-option[aria-checked="true"] .bubble-radio {
-  border-color: #18181B;
+.selection-row {
+  display: flex;
+  min-height: 52px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: 12px 18px;
+  background: transparent;
+  border-bottom: 1px solid var(--color-border-structural);
+  border-radius: 0;
+  color: var(--color-on-surface-variant);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.selection-row:last-child {
+  border-bottom: 0;
+}
+.selection-row:hover {
+  background: var(--color-hover);
+}
+.selection-row:active {
+  background: var(--color-active);
+}
+.selection-row.selected {
+  background: var(--color-surface-menu);
+  color: var(--color-on-surface);
+}
+.selection-row-main {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex: 1;
+  min-width: 0;
+  padding: 0;
+  background: transparent;
+  border: 0;
+  border-radius: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.selection-row.has-actions .selection-row-main {
+  padding-bottom: 0;
+}
+.selection-row:not(.has-actions) .selection-row-main {
+  flex: 1;
+  align-items: center;
+}
+.selection-row-main:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.selection-row-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+.selection-row-heading {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.selection-row-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-on-surface);
+}
+.selection-row-description {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--color-on-surface-variant);
+}
+.selection-row-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding: 0;
+  flex-shrink: 0;
+}
+.selection-row-actions .btn-secondary,
+.selection-row-actions .btn-danger {
+  min-height: 30px;
+}
+.agent-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
 }
 
-[data-theme="light"] .bubble-option[aria-checked="true"] .bubble-radio::after {
-  background: #18181B;
+.agent-row + .agent-row {
+  border-top: 1px solid var(--color-border-muted);
+}
+
+.agent-row-main {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+  min-width: 0;
+  padding: 14px 18px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-on-surface);
+  text-align: left;
+  transition: background 150ms ease;
+}
+
+.agent-row-main:hover {
+  background: var(--choice-hover-bg);
+}
+
+.agent-row-main:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: -1.5px;
+}
+
+.agent-row-main[aria-checked="true"] {
+  background: var(--choice-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--choice-selected-border);
+}
+
+.agent-row-text {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.agent-row-title {
+  font-size: var(--text-body-md);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.agent-row-desc {
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.agent-default-badge {
+  align-self: center;
+  margin-top: 0;
+}
+
+.agent-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: none;
+  padding-right: 8px;
+}
+
+.agent-row-static {
+  cursor: default;
+}
+
+.agent-row-static:hover {
+  background: none;
+}
+
+.agent-delete-btn {
+  color: var(--color-error-text);
+}
+
+.agents-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 32px 18px;
+  text-align: center;
+}
+
+.agents-empty-icon {
+  width: 24px;
+  height: 24px;
+  color: var(--color-on-surface-variant);
+}
+
+.agents-empty-title {
+  font-size: var(--text-body-md);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.agents-empty-desc {
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+  max-width: 360px;
+}
+
+.settings-section-header-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+}
+.settings-section-header-actions.is-spaced {
+  margin-top: var(--spacing-lg);
+}
+
+/* ── Text Formatting page ── */
+.format-note {
+  padding: 8px 18px;
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+  line-height: 1.45;
+}
+
+.format-empty-note {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 18px;
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.format-row-actions {
+  display: flex;
+  gap: 4px;
+}
+
+/* ── App rules + picker (friendly names, real icons) ── */
+.format-applies {
+  margin-top: 6px;
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+}
+
+.app-rule-icon {
+  width: 20px;
+  height: 20px;
+  border-radius: 5px;
+  flex: none;
+}
+
+.app-rule-icon-fallback {
+  color: var(--color-on-surface-variant);
+}
+
+.app-rule-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+}
+
+.app-rule-info {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.app-rule-control {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-shrink: 0;
+}
+
+.app-rule-select {
+  min-width: 150px;
+}
+
+.app-picker-list {
+  max-height: 240px;
+  gap: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--color-border-muted);
+  border-radius: var(--radius-sm);
+}
+
+.app-pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 10px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-border-muted);
+  border-radius: var(--radius-xs);
+  cursor: pointer;
+  color: var(--color-on-surface);
+  text-align: left;
+  transition: background var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.app-pick-row:last-child {
+  border-bottom: none;
+}
+
+.app-pick-row:hover {
+  background: var(--color-hover);
+}
+.app-pick-row:active {
+  background: var(--color-active);
+}
+.app-pick-row:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.app-pick-row[aria-checked="true"] {
+  background: var(--choice-selected-bg);
+  box-shadow: inset 0 0 0 1px var(--choice-selected-border);
+}
+
+.app-pick-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--text-body-md);
+  font-weight: 600;
+}
+
+.app-pick-note {
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+  flex: none;
+}
+
+.app-pick-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }

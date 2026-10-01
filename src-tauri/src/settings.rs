@@ -68,6 +68,13 @@ pub struct AppSettings {
     pub stt_provider: ProviderConfig,
     #[serde(default = "default_llm_provider")]
     pub llm_provider: ProviderConfig,
+    /// Dedicated provider for AI post-processing cleanup. Split out of
+    /// `llm_provider` so Agent Mode and cleanup can use different keys /
+    /// models. Files saved before this field existed inherit the current
+    /// LLM provider on load (see migrate_missing_cleaner_provider), so
+    /// existing users keep the exact cleanup behavior they had.
+    #[serde(default = "default_llm_provider")]
+    pub cleaner_provider: ProviderConfig,
     #[serde(default = "default_false")]
     pub auto_start: bool,
     #[serde(default = "default_true")]
@@ -196,6 +203,7 @@ impl Default for AppSettings {
             audio_device_id: None,
             stt_provider: default_stt_provider(),
             llm_provider: default_llm_provider(),
+            cleaner_provider: default_llm_provider(),
             auto_start: default_false(),
             sound_on_complete: default_true(),
             theme: default_theme(),
@@ -240,6 +248,42 @@ fn migrate_retired_offline_engine(settings: &mut AppSettings) -> bool {
     false
 }
 
+/// One-time migration for the new dedicated AI-cleaner provider. Files
+/// saved before `cleaner_provider` existed have no such key: copy the
+/// current LLM provider over so cleanup keeps working exactly as before
+/// (same endpoint, same key slot family, same model) until the user picks
+/// something else in Providers > AI cleaner. Idempotent: returns true only
+/// when a migration was applied.
+fn migrate_missing_cleaner_provider(raw: &str, settings: &mut AppSettings) -> bool {
+    let has_key = serde_json::from_str::<serde_json::Value>(raw)
+        .ok()
+        .map(|v| v.get("cleaner_provider").is_some())
+        .unwrap_or(false);
+    if has_key {
+        return false;
+    }
+    settings.cleaner_provider = settings.llm_provider.clone();
+    true
+}
+
+/// Post-parse migrations applied on every settings load. Returns true
+/// when any migration changed the settings (the caller persists once).
+/// Pure over (raw_json, settings): unit-testable without touching the
+/// real settings file, so no test seam, env var, or cross-test locking
+/// is needed.
+fn apply_load_migrations(raw: &str, settings: &mut AppSettings) -> bool {
+    let mut migrated = false;
+    if migrate_retired_offline_engine(settings) {
+        log::info!("Migrated retired offline engine 'moonshine_base' to 'moonshine_v2_small'");
+        migrated = true;
+    }
+    if migrate_missing_cleaner_provider(raw, settings) {
+        log::info!("AI cleaner provider missing: inherited current LLM provider");
+        migrated = true;
+    }
+    migrated
+}
+
 pub fn load_settings() -> Result<AppSettings> {
     let path = settings_path();
     log::debug!("Loading settings from path: {:?}", path);
@@ -253,15 +297,12 @@ pub fn load_settings() -> Result<AppSettings> {
     match serde_json::from_str::<AppSettings>(&data) {
         Ok(mut settings) => {
             log::debug!("Successfully loaded settings");
-            if migrate_retired_offline_engine(&mut settings) {
-                log::info!(
-                    "Migrated retired offline engine 'moonshine_base' to 'moonshine_v2_small'"
-                );
+            if apply_load_migrations(&data, &mut settings) {
                 // Persist once so the mapping is not re-applied on every
                 // load. A failed write is harmless: the in-memory value is
                 // already migrated and the next load retries idempotently.
                 if let Err(e) = save_settings(&settings) {
-                    log::warn!("Failed to persist migrated offline engine: {:?}", e);
+                    log::warn!("Failed to persist migrated settings: {:?}", e);
                 }
             }
             Ok(settings)
@@ -397,6 +438,45 @@ mod tests {
         let old = r#"{"exp_omit_temperature": true, "exp_verbose_json_filter": true, "exp_agc_boost": true, "exp_silence_gate": true}"#;
         let settings: AppSettings = serde_json::from_str(old).unwrap();
         assert_eq!(settings.language, "en");
+    }
+
+    /// Files saved before `cleaner_provider` existed inherit the current
+    /// LLM provider (same endpoint/model/key family), so cleanup behavior
+    /// is unchanged; files that already carry the key pass through
+    /// untouched; the mapping is idempotent.
+    #[test]
+    fn missing_cleaner_provider_inherits_llm_provider() {
+        let raw = r#"{"llm_provider": {"preset": "openai", "base_url": "https://api.openai.com", "model": "gpt-4o", "api_key_saved": true}}"#;
+        let mut legacy: AppSettings = serde_json::from_str(raw).unwrap();
+        // Serde default fills the hardcoded default first...
+        assert_eq!(legacy.cleaner_provider.preset, "groq");
+        // ...then the migration copies the user's LLM provider over.
+        assert!(migrate_missing_cleaner_provider(raw, &mut legacy));
+        assert_eq!(legacy.cleaner_provider.preset, "openai");
+        assert_eq!(legacy.cleaner_provider.model, "gpt-4o");
+        // Second load is a no-op (key now present after persist).
+        let resaved = serde_json::to_string(&legacy).unwrap();
+        let mut again: AppSettings = serde_json::from_str(&resaved).unwrap();
+        assert!(!migrate_missing_cleaner_provider(&resaved, &mut again));
+        assert_eq!(again.cleaner_provider.preset, "openai");
+    }
+
+    /// Load-path wiring: the composed post-parse migration inherits the
+    /// LLM provider for keyless files (its true return drives the
+    /// caller's one-time persist) and is a no-op once the key exists.
+    /// Pure strings + structs: no settings file, no env, no cross-test
+    /// interference.
+    #[test]
+    fn load_migrations_inherit_cleaner_provider_for_legacy_files() {
+        let raw = r#"{"llm_provider": {"preset": "openai", "base_url": "https://api.openai.com", "model": "gpt-4o", "api_key_saved": true}}"#;
+        let mut legacy: AppSettings = serde_json::from_str(raw).unwrap();
+        assert!(apply_load_migrations(raw, &mut legacy));
+        assert_eq!(legacy.cleaner_provider.preset, "openai");
+        assert_eq!(legacy.cleaner_provider.model, "gpt-4o");
+        let resaved = serde_json::to_string(&legacy).unwrap();
+        let mut again: AppSettings = serde_json::from_str(&resaved).unwrap();
+        assert!(!apply_load_migrations(&resaved, &mut again));
+        assert_eq!(again.cleaner_provider.preset, "openai");
     }
 
     /// Retired Moonshine v1 batch engine: legacy saves migrate to the

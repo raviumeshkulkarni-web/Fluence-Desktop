@@ -3,25 +3,28 @@ import { Slot } from '@radix-ui/react-slot';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/cn';
 
-// shadcn-canonical Button shape, Fluence-themed: variants map 1:1 onto the
-// existing vanilla `.btn-*` classes (single source stays in src/css), so the
-// visual result is identical to the current UI. No Tailwind utilities used.
 const buttonVariants = cva('', {
   variants: {
     variant: {
+      default: 'btn-primary',
       primary: 'btn-primary',
       secondary: 'btn-secondary',
+      outline: 'btn-outline',
       ghost: 'btn-ghost',
+      destructive: 'btn-danger',
       danger: 'btn-danger',
+      link: 'btn-link',
     },
     size: {
       default: '',
       sm: 'btn-sm',
       xs: 'btn-xs',
+      lg: 'btn-lg',
+      icon: 'btn-icon',
     },
   },
   defaultVariants: {
-    variant: 'primary',
+    variant: 'default',
     size: 'default',
   },
 });
@@ -37,6 +40,9 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     const Comp = asChild ? Slot : 'button';
     return (
       <Comp
+        data-slot="button"
+        data-variant={variant ?? 'default'}
+        data-size={size ?? 'default'}
         className={cn(buttonVariants({ variant, size }), className)}
         ref={ref}
         {...props}

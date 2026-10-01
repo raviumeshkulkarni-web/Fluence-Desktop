@@ -25,7 +25,7 @@ export function AboutPage() {
         <p className="page-subtitle">Voice typing for Windows</p>
       </div>
 
-      <div className="settings-section">
+      <div className="settings-section settings-section--unboxed">
         <div style={{ padding: 'var(--spacing-xl)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-lg)', textAlign: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-12)' }}>
             <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">

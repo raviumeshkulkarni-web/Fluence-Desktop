@@ -12,8 +12,10 @@ const POSITIONS = [
   { value: 'bottom_right', cls: 'pos-right', label: 'Bottom Right' },
 ] as const;
 
-// Step 4: overlay position as radio items in the vanilla .position-option
-// chrome (preview dot + label, selected class follows the checked value).
+// Step 6: overlay position. Real buttons in a radiogroup — the previous
+// RadioGroupItem-as-card swallowed its children, so the previews and labels
+// never rendered and the step read as three ambiguous boxes. Each option now
+// shows a screen mock with the indicator dot plus a visible label.
 export function StepPosition({ data, onPatch }: StepPositionProps) {
   return (
     <>
@@ -25,24 +27,24 @@ export function StepPosition({ data, onPatch }: StepPositionProps) {
       </p>
       <div className="step-content">
         <RadioGroup
-          aria-label="Overlay position"
-          value={data.overlayPosition}
-          onValueChange={(v) => onPatch({ overlayPosition: v })}
           className="position-selector"
+          value={data.overlayPosition}
+          onValueChange={(overlayPosition) => onPatch({ overlayPosition })}
+          aria-label="Overlay position"
         >
           {POSITIONS.map((p) => (
-            <RadioGroupItem
-              key={p.value}
-              value={p.value}
-              data-pos={p.value}
-              className={`position-option ${p.cls}${
-                data.overlayPosition === p.value ? ' selected' : ''
-              }`}
-            >
-              <div className="position-preview" aria-hidden="true">
-                <div className="position-dot" />
-              </div>
-              <div className="position-label">{p.label}</div>
+            <RadioGroupItem key={p.value} value={p.value} asChild>
+              <button
+                type="button"
+                aria-label={p.label}
+                data-pos={p.value}
+                className={`choice-surface position-option ${p.cls}`}
+              >
+                <span className="position-preview" aria-hidden="true">
+                  <span className="position-dot" />
+                </span>
+                <span className="position-label">{p.label}</span>
+              </button>
             </RadioGroupItem>
           ))}
         </RadioGroup>

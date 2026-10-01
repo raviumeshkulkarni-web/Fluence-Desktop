@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Field } from '@/components/ui/field';
 import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import {
   getSyncStatus,
   setSyncEnabled,
@@ -160,8 +161,11 @@ export function SyncPage() {
         </p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Cloud Sync</h2></div>
+      <SettingsSectionHeader
+        title="Cloud Sync"
+        description="Configure automatic synchronization with your Google Drive"
+      />
+      <div className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label">Enable Background Sync</div>
@@ -180,14 +184,17 @@ export function SyncPage() {
         </div>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Account</h2></div>
+      <SettingsSectionHeader
+        title="Account"
+        description="Manage your connected cloud account and sync status"
+      />
+      <div className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label" id="sync-account-label">{accountBlock.label}</div>
             <div className="setting-desc" id="sync-account-desc">{accountBlock.desc}</div>
             {showSignInError && (
-              <div id="sync-signin-error" role="alert" style={{ color: 'var(--color-error)', fontSize: 'var(--text-label-sm)', lineHeight: 1.45, marginTop: 'var(--spacing-6)' }}>
+              <div id="sync-signin-error" role="alert" className="field-error sync-signin-error">
                 {syncErr(s.last_error)}
               </div>
             )}
@@ -195,7 +202,7 @@ export function SyncPage() {
           <div className="setting-control">
             {accountBlock.signInVisible && (
               <Button
-                variant="primary"
+                variant="default"
                 size="sm"
                 id="sync-sign-in-btn"
                 disabled={signingIn}
@@ -214,7 +221,7 @@ export function SyncPage() {
         <div className="setting-row">
           <div className="setting-info">
             <div className="setting-label">Sync Status</div>
-            <div className="setting-desc" id="sync-status-desc">{statusText}</div>
+            <div className="setting-desc" id="sync-status-desc" role="status" aria-live="polite">{statusText}</div>
           </div>
           <div className="setting-control">
             <Button

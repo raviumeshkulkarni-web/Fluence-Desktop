@@ -1,8 +1,8 @@
-import { Lock, Mic, Sparkles } from 'lucide-react';
-
-// Step 1: Welcome. Brand logo SVG copied verbatim from vanilla
-// src/wizard.html; feature glyphs are the lucide equivalents of the
-// vanilla stroke icons (mic / sparkle / lock, 18px, 2px stroke).
+// Step 1: Welcome. OOBE-minimal: brand mark, title, one-line promise, the
+// three things Fluence does, Get Started. The mark is the brand master
+// symbol (design/brand/master/fluence-symbol.svg) reproduced verbatim —
+// never redrawn. The feature rows use typographic numerals, not icon glyphs:
+// no lucide, no hand-rolled SVG, no emoji — just hairlines and type.
 export function StepWelcome() {
   return (
     <>
@@ -14,27 +14,19 @@ export function StepWelcome() {
           viewBox="0 0 32 32"
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
-          filter="url(#logo-glow)"
-          aria-hidden="true"
+          role="img"
+          aria-label="Fluence logo"
         >
-          <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-wiz)" strokeWidth="2.6" strokeDasharray="1.8 3" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-wiz)" strokeWidth="2.6" strokeDasharray="2 3" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-wiz)" strokeWidth="2.6" strokeDasharray="2 2" strokeLinecap="round" />
-          <circle cx="16" cy="16" r="2.2" fill="url(#logo-grad-wiz)" />
+          <circle cx="16" cy="16" r="13" stroke="url(#fluence-brand)" strokeWidth="1.8" strokeDasharray="1.5 3.5" strokeLinecap="round" />
+          <circle cx="16" cy="16" r="9" stroke="url(#fluence-brand)" strokeWidth="1.8" strokeDasharray="1.8 3.5" strokeLinecap="round" />
+          <circle cx="16" cy="16" r="5" stroke="url(#fluence-brand)" strokeWidth="1.8" strokeDasharray="2 3" strokeLinecap="round" />
+          <circle cx="16" cy="16" r="1.5" fill="url(#fluence-brand)" />
           <defs>
-            <linearGradient id="logo-grad-wiz" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+            <linearGradient id="fluence-brand" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
               <stop offset="0%" stopColor="#8B45D8" />
               <stop offset="50%" stopColor="#8B45D8" />
               <stop offset="100%" stopColor="#0BD6E3" />
             </linearGradient>
-            <filter id="logo-glow" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="1.2" result="blur1" />
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3.5" result="blur2" />
-              <feMerge>
-                <feMergeNode in="blur2" />
-                <feMergeNode in="blur1" />
-              </feMerge>
-            </filter>
           </defs>
         </svg>
       </div>
@@ -67,35 +59,6 @@ export function StepWelcome() {
         Your AI-powered voice typing assistant for Windows. Speak naturally, and
         Fluence transcribes your voice into any application, instantly.
       </p>
-      <div className="wizard-feature-list">
-        <div className="wizard-feature-card">
-          <div className="wizard-feature-icon" aria-hidden="true">
-            <Mic size={18} strokeWidth={2} />
-          </div>
-          <div className="wizard-feature-info">
-            <div className="wizard-feature-title">Universal Voice Typing</div>
-            <div className="wizard-feature-desc">Works in any app: VS Code, Chrome, Word</div>
-          </div>
-        </div>
-        <div className="wizard-feature-card">
-          <div className="wizard-feature-icon" aria-hidden="true">
-            <Sparkles size={18} strokeWidth={2} />
-          </div>
-          <div className="wizard-feature-info">
-            <div className="wizard-feature-title">AI Agent Mode</div>
-            <div className="wizard-feature-desc">Long press to edit, rewrite, or command</div>
-          </div>
-        </div>
-        <div className="wizard-feature-card">
-          <div className="wizard-feature-icon" aria-hidden="true">
-            <Lock size={18} strokeWidth={2} style={{ color: 'var(--color-success)' }} />
-          </div>
-          <div className="wizard-feature-info">
-            <div className="wizard-feature-title">Secure &amp; Private</div>
-            <div className="wizard-feature-desc">API keys stored in Windows Credential Manager</div>
-          </div>
-        </div>
-      </div>
     </>
   );
 }

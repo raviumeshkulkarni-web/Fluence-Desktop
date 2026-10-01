@@ -2,16 +2,19 @@ import { useCallback, useEffect, useState } from 'react';
 import { Titlebar } from '@/components/fluence/Titlebar';
 import { Sidebar } from '@/components/fluence/Sidebar';
 import { AboutPage } from '@/routes/AboutPage';
+import { AgentsPage } from '@/routes/AgentsPage';
 import { BubblePage } from '@/routes/BubblePage';
 import { DashboardPage } from '@/routes/DashboardPage';
 import { DictionaryPage } from '@/routes/DictionaryPage';
+import { FormattingPage } from '@/routes/FormattingPage';
 import { GeneralPage } from '@/routes/GeneralPage';
 import { HistoryPage } from '@/routes/HistoryPage';
 import { ProvidersPage } from '@/routes/ProvidersPage';
 import { SnippetsPage } from '@/routes/SnippetsPage';
 import { SyncPage } from '@/routes/SyncPage';
 import { Toaster } from '@/components/fluence/Toasts';
-import { TooltipProvider } from '@/components/ui/tooltip';
+import { TooltipProvider, TOOLTIP_DELAY_MS } from '@/components/ui/tooltip';
+import { SidebarProvider } from '@/components/ui/sidebar';
 import { CommandPalette } from '@/components/fluence/CommandPalette';
 import { updaterStore } from '@/ipc/updater';
 import { hideMainWindow } from '@/ipc/tauri';
@@ -25,6 +28,8 @@ export type Route =
   | 'general'
   | 'bubble'
   | 'providers'
+  | 'formatting'
+  | 'agents'
   | 'dictionary'
   | 'snippets'
   | 'sync'
@@ -38,6 +43,8 @@ const PAGE_ORDER: Route[] = [
   'general',
   'bubble',
   'providers',
+  'formatting',
+  'agents',
   'dictionary',
   'snippets',
   'sync',
@@ -61,7 +68,7 @@ export function App() {
   const [route, setRoute] = useState<Route>('dashboard');
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
-  const { theme, toggleTheme } = useTheme();
+  const { theme, choice: themeChoice, cycleTheme, toggleTheme } = useTheme();
 
   useEffect(() => {
     try {
@@ -182,41 +189,62 @@ export function App() {
     [route],
   );
 
+  const handleSidebarOpenChange = useCallback((open: boolean) => {
+    setSidebarCollapsed(!open);
+  }, []);
+
+  // Cross-page links (e.g. Formatting → Providers): pages dispatch
+  // `fluence:navigate` with the target route. Unknown targets ignored.
+  useEffect(() => {
+    const onNav = (e: Event) => {
+      const page = (e as CustomEvent<unknown>).detail;
+      if (typeof page === 'string' && (PAGE_ORDER as string[]).includes(page)) {
+        navigateTo(page as Route);
+      }
+    };
+    window.addEventListener('fluence:navigate', onNav);
+    return () => window.removeEventListener('fluence:navigate', onNav);
+  }, [navigateTo]);
+
   return (
     <>
-      <TooltipProvider>
+      <TooltipProvider delayDuration={TOOLTIP_DELAY_MS}>
         <Titlebar />
-        <div className="app-shell">
-          <Sidebar
-            route={route}
-            onNavigate={navigateTo}
-            collapsed={sidebarCollapsed}
-            onToggleCollapsed={() => setSidebarCollapsed((collapsed) => !collapsed)}
-            theme={theme}
-            onToggleTheme={toggleTheme}
-          />
-          <main className="content-area" role="main">
-            {route === 'about' ? (
-              <AboutPage />
-            ) : route === 'dashboard' ? (
-              <DashboardPage theme={theme} />
-            ) : route === 'sync' ? (
-              <SyncPage />
-            ) : route === 'dictionary' ? (
-              <DictionaryPage />
-            ) : route === 'general' ? (
-              <GeneralPage />
-            ) : route === 'bubble' ? (
-              <BubblePage />
-            ) : route === 'history' ? (
-              <HistoryPage />
-            ) : route === 'providers' ? (
-              <ProvidersPage />
-            ) : (
-              <SnippetsPage />
-            )}
-          </main>
-        </div>
+        <SidebarProvider open={!sidebarCollapsed} onOpenChange={handleSidebarOpenChange}>
+          <div className="app-shell">
+            <Sidebar
+              route={route}
+              onNavigate={navigateTo}
+              themeChoice={themeChoice}
+              onCycleTheme={cycleTheme}
+            />
+            <main className="content-area" role="main">
+              {route === 'about' ? (
+                <AboutPage />
+              ) : route === 'dashboard' ? (
+                <DashboardPage theme={theme} />
+              ) : route === 'sync' ? (
+                <SyncPage />
+              ) : route === 'dictionary' ? (
+                <DictionaryPage />
+              ) : route === 'general' ? (
+                <GeneralPage />
+              ) : route === 'bubble' ? (
+                <BubblePage />
+              ) : route === 'history' ? (
+                <HistoryPage />
+              ) : route === 'providers' ? (
+                <ProvidersPage />
+              ) : route === 'formatting' ? (
+                <FormattingPage />
+              ) : route === 'agents' ? (
+                <AgentsPage />
+              ) : (
+                <SnippetsPage />
+              )}
+            </main>
+          </div>
+        </SidebarProvider>
         <Toaster />
         <CommandPalette
           open={paletteOpen}

@@ -1,7 +1,7 @@
 import { closeWizard, minimizeWizard } from './ipc';
 
 // Wizard frameless controls: minimize + close only (no maximize on the
-// 680×540 fixed window). Same inline glyphs as vanilla src/wizard.html.
+// 680×620 fixed window). Same inline glyphs as vanilla src/wizard.html.
 export function WizardTitlebar() {
   return (
     <div data-tauri-drag-region className="titlebar">

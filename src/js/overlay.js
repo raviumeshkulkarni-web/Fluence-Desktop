@@ -28,6 +28,7 @@ let cachedSettings = null;
 let timerInterval = null;
 let recordingStartTime = 0;
 let retryTimer = null;
+let statusResetTimer = null;
 let nextSessionId = 0;
 let activeSessionId = 0;
 let chimeCtx = null;
@@ -35,6 +36,14 @@ let chimeCtx = null;
 let agentRequestSeq = 0;
 let agentRetryContext = null;
 let lastAgentStartAt = 0;
+// Agent Mode: id-only selection, resolved server-side. Null = built-in
+// default. Seeded from the persisted default chosen in Settings; this is the
+// only bridge between that setting and a turn. The STT flow never reads it.
+let activeAgentId = null;
+// Stable placement model: the floating bubble (overlay-root) is the anchor and
+// is pinned to the window edge the OS never moves, so the island's resting spot
+// is identical for every dock.
+let agentPickerPlacement = 'above'; // 'above' | 'below'
 const AGENT_LLM_WATCHDOG_MS = 25000;
 
 function beginSession(explicitId) {
@@ -63,6 +72,7 @@ function resetTransientUi() {
   hideRecHint();
   setStatusMessage('');
   hideAppPill();
+  activeAgentId = null;
   // A new recording invalidates any cached agent retry (A2).
   agentRetryContext = null;
 }
@@ -91,13 +101,20 @@ async function reconcileWithNativeState() {
       }
 
       resetTransientUi();
-      setState(isAgent ? 'agent' : 'recording');
+      setState(isAgent ? 'agent' : 'recording', false);
       setMode(isAgent ? 'agent' : 'stt');
 
       try {
         const prefs = await getRecordingPreferences();
         setOverlayCorner(prefs.overlayPosition);
         await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+        if (isAgent) {
+          await resolveDefaultAgentId();
+          setAgentPickerAnchor(
+            resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+            true,
+          );
+        }
         await invoke('show_overlay', { position: prefs.overlayPosition });
         updateRecHint();
         if (overlayRoot) overlayRoot.classList.add('active');
@@ -128,10 +145,12 @@ window.addEventListener('DOMContentLoaded', async () => {
     const prefs = await getRecordingPreferences();
     applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
   } catch {}
+  void resolveDefaultAgentId();
   await reconcileWithNativeState();
 });
 
 window.addEventListener('pageshow', () => {
+  void resolveDefaultAgentId();
   reconcileWithNativeState().catch(() => {});
 });
 
@@ -147,7 +166,7 @@ async function setupEventListeners() {
       : undefined;
     const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
-    setState('recording');
+    setState('recording', false);
     setMode('stt');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
@@ -164,6 +183,9 @@ async function setupEventListeners() {
       }
       setOverlayCorner(prefs.overlayPosition);
       await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+      // Transcription mode has no picker: drop the agent edge anchor so the
+      // bubble uses the standard layout.
+      setAgentPickerAnchor('above', false);
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -232,7 +254,7 @@ async function setupEventListeners() {
       : undefined;
     const sessionId = beginSession(incomingSessionId);
     resetTransientUi();
-    setState('agent');
+    setState('agent', false);
     setMode('agent');
     if (overlayRoot) overlayRoot.classList.remove('active');
     // Capture the foreground app while the overlay is still hidden so the
@@ -249,6 +271,16 @@ async function setupEventListeners() {
       }
       setOverlayCorner(prefs.overlayPosition);
       await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+      // Resolve the agent chosen in Settings before the overlay is shown, so
+      // the turn never runs against the built-in default by accident.
+      await resolveDefaultAgentId();
+      // Edge-anchor the whole agent session so the bubble's resting spot is
+      // identical for every dock and never moves during the turn.
+      setAgentPickerAnchor(
+        resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+        true,
+      );
+
       await invoke('show_overlay', { position: prefs.overlayPosition });
       if (!isSessionActive(sessionId)) {
         await invoke('stop_recording').catch(() => {});
@@ -357,6 +389,7 @@ function setMode(mode) {
 
 let appPollTimer = null;
 let appPollRequestId = 0;
+let appPillHideTimer = null;
 
 // Floating Bubble app-pill toggle: absence means ON, so pre-toggle settings
 // files keep today's behavior. Read fresh in loadAppIcon (summon path) so a
@@ -393,6 +426,8 @@ function applyAppInfo(info) {
     pillIcon.alt = `${info.name} icon`;
     pillName.textContent = info.name;
   }
+  // A pending fade-out must not hide a pill that just became visible again.
+  if (appPillHideTimer) { clearTimeout(appPillHideTimer); appPillHideTimer = null; }
   pill.hidden = false;
   // Apply synchronously - requestAnimationFrame can be dropped while the
   // overlay window is still hidden, which would leave the pill at opacity 0.
@@ -439,12 +474,104 @@ function stopAppPolling() {
 function hideAppPill() {
   stopAppPolling();
   const pill = document.getElementById('app-pill');
-  if (pill) {
-    pill.classList.remove('visible');
-    pill.hidden = true;
+  if (!pill) return;
+  // Fade out before display:none — an instant hide reads as a pop, which is
+  // what made agent-mode transitions feel rougher than transcription.
+  pill.classList.remove('visible');
+  if (appPillHideTimer) clearTimeout(appPillHideTimer);
+  appPillHideTimer = setTimeout(() => {
+    appPillHideTimer = null;
+    const current = document.getElementById('app-pill');
+    if (!current || current.classList.contains('visible')) return;
+    current.hidden = true;
     const pillName = document.getElementById('app-pill-name');
     if (pillName) pillName.textContent = '';
+  }, 200);
+}
+
+// ── Agent Mode agent resolution ───────────────────────────────────
+// Fail-closed: if the agent store cannot be read, activeAgentId stays null and
+// the backend falls back to the built-in agent. Only agent ids cross IPC;
+// prompt text stays server-side in agents.json.
+async function resolveDefaultAgentId() {
+  try {
+    const view = await invoke('get_agents');
+    const defaultId = (view && view.default_id) || 'builtin';
+    if (!activeAgentId) activeAgentId = defaultId;
+  } catch (err) {
+    console.warn('Failed to resolve default agent:', err);
   }
+}
+
+// Edge anchor for the whole agent session. The bubble is pinned to the docked
+// screen edge (the window edge the OS never moves) at a constant per-tier
+// offset, so no dock or session transition can reflow or shift it.
+function setAgentPickerAnchor(placement, active) {
+  const place = placement === 'below' ? 'below' : 'above';
+  const on = active !== false;
+  document.body.classList.toggle('agent-placement-above', on && place === 'above');
+  document.body.classList.toggle('agent-placement-below', on && place === 'below');
+  if (on) agentPickerPlacement = place;
+}
+
+// ── Agent placement model (single coherent function set) ────────
+// Anchor: the floating bubble (overlay-root). Placement is resolved from the
+// bubble's docked position hint plus, for unknown positions, the bubble's
+// actual rendered rect vs. viewport space — never from hardcoded per-corner
+// pixel coordinates. Pure + DOM-free so it is unit-testable in Node.
+function resolveAgentPickerPlacement(overlayPosition, anchorRect, viewport) {
+  const pos = typeof overlayPosition === 'string' ? overlayPosition.toLowerCase() : '';
+  const hasTop = pos.includes('top');
+  const hasBottom = pos.includes('bottom') || pos === 'center' || pos.includes('center_bottom') || pos.includes('bottom_center');
+  let hinted = '';
+  if (hasTop && !hasBottom) hinted = 'below'; // top dock → open downward, away from top edge
+  else if (hasBottom && !hasTop) hinted = 'above'; // bottom dock → open upward, away from bottom edge
+  else if (pos.includes('center_top')) hinted = 'below';
+  else if (pos.includes('center_bottom')) hinted = 'above';
+  // Unknown/ambiguous positions (e.g. a future center_left / center_right):
+  // pick the side with more measured space; default to above (current default dock).
+  // NOTE: The gap literal (8) is inlined so this function stays
+  // dependency-free and unit-testable in Node.
+  const rectOk = anchorRect && Number.isFinite(anchorRect.top) && Number.isFinite(anchorRect.bottom);
+  const vpOk = viewport && Number.isFinite(viewport.height) && viewport.height > 0;
+  if (!hinted) {
+    if (rectOk && vpOk) {
+      const spaceAbove = anchorRect.top - 8;
+      const spaceBelow = viewport.height - anchorRect.bottom - 8;
+      if (Number.isFinite(spaceAbove) && Number.isFinite(spaceBelow)) {
+        return spaceBelow > spaceAbove ? 'below' : 'above';
+      }
+    }
+    return 'above';
+  }
+  // A docked hint is authoritative for direction — never re-flip it. The OS
+  // window grows INWARD from the docked edge, so the hinted side is exactly
+  // the side that gains room when the picker's extra height lands, while the
+  // opposite side stays fixed. Re-measuring here would compare window-local
+  // coordinates (the bubble sits ~46px from the window top in every tier, and
+  // is still the 36px pre-`active` box at this point) against a threshold
+  // written as if it were screen space — which read "more room below" for
+  // EVERY bottom dock and inverted them to `below`, dropping the strip past
+  // the island. Direction comes from the dock; measurement only arbitrates
+  // positions that have no dock (branch above).
+  return hinted;
+}
+
+function readAgentPickerAnchor() {
+  try {
+    const root = document.getElementById('overlay-root');
+    if (!root) return null;
+    const r = root.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+  } catch { return null; }
+}
+
+function readAgentPickerViewport() {
+  try {
+    if (!Number.isFinite(window.innerWidth) || !Number.isFinite(window.innerHeight)) return null;
+    return { width: window.innerWidth, height: window.innerHeight };
+  } catch { return null; }
 }
 
 function setOverlayCorner(position) {
@@ -488,7 +615,7 @@ async function applyOverlayStyle(style, glowOn = true) {
 function setStatusMessage(text) {
   if (statusMsg) {
     statusMsg.textContent = text || '';
-    // Compact/bubble hide the text visually — keep it available as hover
+    // Compact/bubble hide the text visually - keep it available as hover
     // tooltip so minimal-tier users still get the failure reason.
     if (text) statusMsg.title = text;
     else statusMsg.removeAttribute('title');
@@ -498,7 +625,7 @@ function setStatusMessage(text) {
     if (text) overlayRoot.title = text;
     else overlayRoot.removeAttribute('title');
   }
-  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry — ${text}`);
+  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry - ${text}`);
   else if (statusRetry) statusRetry.removeAttribute('aria-label');
 }
 
@@ -517,7 +644,26 @@ let autoDismissPauseBound = false;
 let autoDismissHover = false;
 let autoDismissFocus = false;
 
+function clearStatusReset() {
+  if (statusResetTimer) {
+    clearTimeout(statusResetTimer);
+    statusResetTimer = null;
+  }
+}
+
+function scheduleStatusReset(message, delay) {
+  clearStatusReset();
+  const sessionId = activeSessionId;
+  statusResetTimer = setTimeout(() => {
+    statusResetTimer = null;
+    if (isSessionActive(sessionId) && (!statusMsg || statusMsg.textContent === message)) {
+      setStatusMessage('');
+    }
+  }, delay);
+}
+
 function clearAutoDismiss() {
+  clearStatusReset();
   if (retryTimer) {
     clearTimeout(retryTimer);
     retryTimer = null;
@@ -627,7 +773,7 @@ function setupRetryButton() {
         agentRetryContext = null;
         setState('agent_transcribing');
         if (recLabel) recLabel.textContent = 'PROCESSING';
-        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId);
+        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId, ctx.agentId);
         return;
       }
       setState('transcribing');
@@ -714,7 +860,7 @@ function setupDiscardButton() {
     // Bubble tier: the visible chip is a 20px badge with a 12px invisible
     // halo that belongs to the footer container, not the button. Clicks on
     // the halo/padding would otherwise hit the footer (no handler) or start
-    // a window drag — a dead close button. Forward those to the same path.
+    // a window drag - a dead close button. Forward those to the same path.
     // Guarded to bubble tier and non-button targets so full/compact tiers
     // and the button itself never double-fire.
     const badge = cardDiscard.parentElement;
@@ -758,6 +904,9 @@ async function fadeAndHide(sessionId = activeSessionId) {
   if (!isSessionActive(sessionId)) return;
   await invoke('hide_overlay');
   if (!isSessionActive(sessionId)) return;
+  // Window is hidden now: safe to drop the agent edge anchor without any
+  // visible shift. Geometry lives in CSS, so there is nothing to reset.
+  setAgentPickerAnchor(agentPickerPlacement, false);
   setState('idle');
   completeSession(sessionId);
 }
@@ -859,8 +1008,6 @@ async function runSttFlow(sessionId, retry = false) {
       await invoke('inject_text', { text: result.text, monitorAutoLearn: true });
       if (!isSessionActive(sessionId)) return;
       setState('success');
-      // Realtime was selected but batch served: say so instead of a plain
-      // "Inserted" so streaming silently downgrading stays visible.
       setStatusMessage(result.realtimeFallback ? 'Inserted (standard mode)' : 'Inserted');
       playCompletionChime();
       await new Promise(r => setTimeout(r, 1000));
@@ -879,6 +1026,24 @@ async function runSttFlow(sessionId, retry = false) {
     setStatusMessage('Transcription failed');
     showRetry();
     scheduleAutoDismiss(8000);
+  }
+}
+
+// Polish skip reason → user-facing status label (pure function - no DOM, so
+// it can be unit-tested in Node like mapAgentErrorToStatus; the agent flow
+// never calls it).
+function mapPolishReason(reason) {
+  switch (reason) {
+    case 'missing_key':
+      return 'no key set';
+    case 'rate_limited':
+      return 'rate limited';
+    case 'network_error':
+      return 'network error';
+    case 'rejected':
+      return 'AI output rejected';
+    default:
+      return 'AI error';
   }
 }
 
@@ -906,12 +1071,14 @@ function mapAgentErrorToStatus(err) {
   return { label: 'Agent failed', retryable: true };
 }
 
-async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId) {
+async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId, retryAgentId) {
   if (!isSessionActive(sessionId)) return;
   // Function scope (NOT inside try): the catch block below caches this for
   // Retry, and try-block `let`s are invisible to catch. Params are already
   // function-scoped, so only this one needs hoisting.
   let clipboardCtx = '';
+  // Per-turn agent: retry reuses the turn's pick, else the live picker value.
+  const turnAgentId = retryAgentId !== undefined ? retryAgentId : activeAgentId;
   try {
     // Credentials stay server-side: the secure command resolves the saved
     // LLM provider/key from settings + Credential Manager. No api_key in
@@ -941,6 +1108,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
         voice_command: voiceCommand,
         clipboard_context: clipboardCtx,
         request_id: agentRequestId,
+        agent_id: turnAgentId,
       }
     });
     // Watchdog (A3): the backend caps at 20s; if the IPC promise never
@@ -1032,7 +1200,7 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     const { label, retryable } = mapAgentErrorToStatus(err);
     setStatusMessage(label);
     if (retryable) {
-      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId };
+      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId, agentId: turnAgentId };
       showRetry();
     }
     scheduleAutoDismiss(8000);
@@ -1044,16 +1212,15 @@ async function setupHotkeyBusyFeedback() {
   await listen('hotkey-busy', (evt) => {
     console.warn('Hotkey busy:', evt.payload);
     if (currentState === 'recording' || currentState === 'agent' || currentState === 'transcribing' || currentState === 'agent_transcribing') {
-      // already busy recording - gentle hint, not error
       setStatusMessage('Recording busy');
-      scheduleAutoDismiss(1200);
+      scheduleStatusReset('Recording busy', 1200);
     }
   });
 }
 
 // ── State Management ────────────────────────────────────────────
 
-function setState(state) {
+function setState(state, updateVisibility = true) {
   currentState = state;
 
   if (aura) aura.setState(state);
@@ -1066,7 +1233,7 @@ function setState(state) {
     stopAppPolling();
   }
 
-  if (overlayRoot) {
+  if (overlayRoot && updateVisibility) {
     if (state !== 'idle') {
       overlayRoot.classList.add('active');
     } else {

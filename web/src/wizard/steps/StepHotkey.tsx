@@ -9,9 +9,23 @@ interface StepHotkeyProps {
   onRecordingChange: (recording: boolean) => void;
 }
 
-// Step 3: hotkey recorder plus recording-mode selector. The mode options
-// render as radio items in the vanilla .mode-option chrome (selected class
-// follows the checked value); keyboard moves with arrows, one tab stop.
+const MODES = [
+  {
+    value: 'push_to_toggle',
+    title: 'Push-to-Toggle',
+    desc: 'Press once to start, press again to stop',
+  },
+  {
+    value: 'hold_to_record',
+    title: 'Hold-to-Record',
+    desc: 'Hold key to record, release to transcribe',
+  },
+] as const;
+
+// Step 5: hotkey recorder plus recording-mode selector. The modes are real
+// buttons in a radiogroup (roving arrows, one tab stop) — the previous
+// RadioGroupItem-as-card swallowed its children, which is why the options
+// rendered as empty boxes.
 export function StepHotkey({
   data,
   onPatch,
@@ -34,32 +48,30 @@ export function StepHotkey({
           onRecordingChange={onRecordingChange}
         />
         <div className="form-row">
-          <label id="wiz-mode-label">Recording Mode</label>
+          <span id="wiz-mode-label" className="field-label">
+            Recording Mode
+          </span>
           <RadioGroup
-            aria-labelledby="wiz-mode-label"
+            className="seg-selector"
             value={data.recordingMode}
-            onValueChange={(v) => onPatch({ recordingMode: v })}
-            className="mode-selector"
+            onValueChange={(recordingMode) => onPatch({ recordingMode })}
+            aria-labelledby="wiz-mode-label"
           >
-            <RadioGroupItem
-              value="push_to_toggle"
-              data-mode="push_to_toggle"
-              className={`mode-option${data.recordingMode === 'push_to_toggle' ? ' selected' : ''}`}
-            >
-              <div className="mode-title">Push-to-Toggle</div>
-              <div className="mode-desc">Press once to start, press again to stop</div>
-            </RadioGroupItem>
-            <RadioGroupItem
-              value="hold_to_record"
-              data-mode="hold_to_record"
-              className={`mode-option${data.recordingMode === 'hold_to_record' ? ' selected' : ''}`}
-            >
-              <div className="mode-title">Hold-to-Record</div>
-              <div className="mode-desc">Hold key to record, release to transcribe</div>
-            </RadioGroupItem>
+            {MODES.map((m) => (
+              <RadioGroupItem key={m.value} value={m.value} asChild>
+                <button
+                  type="button"
+                  data-mode={m.value}
+                  className="choice-surface seg-option"
+                >
+                  <span className="seg-title">{m.title}</span>
+                  <span className="seg-desc">{m.desc}</span>
+                </button>
+              </RadioGroupItem>
+            ))}
           </RadioGroup>
         </div>
-        <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', marginTop: 4 }}>
+        <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', margin: 0 }}>
           <strong>Tip:</strong> Long press (&gt;800ms) activates Agent Mode for AI-powered editing commands
         </p>
       </div>

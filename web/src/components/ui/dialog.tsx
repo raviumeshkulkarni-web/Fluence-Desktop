@@ -8,6 +8,7 @@ import {
   AlertDialogHeader,
   AlertDialogFooter,
   AlertDialogTitle,
+  AlertDialogDescription,
   AlertDialogAction,
   AlertDialogCancel,
 } from './alert-dialog';
@@ -107,15 +108,15 @@ function ConfirmDialog({
       <AlertDialogContent>
         <AlertDialogHeader>
           <AlertDialogTitle>{title}</AlertDialogTitle>
+          <AlertDialogDescription className="dialog-body">{body}</AlertDialogDescription>
         </AlertDialogHeader>
-        <div className="dialog-body">{body}</div>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
             <Button variant="secondary">Cancel</Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
             <Button
-              variant={danger ? 'danger' : 'primary'}
+              variant={danger ? 'destructive' : 'default'}
               onClick={() => {
                 onConfirm();
                 onOpenChange(false);

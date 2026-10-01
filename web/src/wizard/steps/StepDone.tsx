@@ -8,16 +8,33 @@ interface StepDoneProps {
   data: WizardData;
 }
 
-// Step 6: summary + finish actions. saveWizardSettings reproduces the
+// Step 9: summary + finish actions. saveWizardSettings reproduces the
 // vanilla settings blob and hotkey registration verbatim.
 export function StepDone({ data }: StepDoneProps) {
   const save = async () => {
     try {
       const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
+      // The settings shell follows the stored choice live — 'auto' tracks
+      // the OS with no restart. The backend blob only speaks dark|light, so
+      // it records the currently-resolved value for consistency.
+      const storedTheme: string =
+        data.themeMode === 'light' || data.themeMode === 'auto' ? data.themeMode : 'dark';
+      const resolvedTheme =
+        storedTheme === 'light' ||
+        (storedTheme === 'auto' &&
+          window.matchMedia?.('(prefers-color-scheme: light)').matches)
+          ? 'light'
+          : 'dark';
+      try {
+        window.localStorage.setItem('fluence_theme', storedTheme);
+      } catch {
+        // Backend blob below still carries the resolved choice.
+      }
       const settings: WizardSettings = {
         hotkey: data.hotkey,
         recording_mode: data.recordingMode,
         overlay_position: data.overlayPosition,
+        overlay_style: data.overlayStyle || 'full',
         stt_provider: {
           preset: usingOffline ? 'Local Offline' : data.provider,
           base_url: usingOffline ? '' : data.baseUrl,
@@ -39,7 +56,7 @@ export function StepDone({ data }: StepDoneProps) {
         ai_polish_style: 'none',
         auto_grab_highlight: true,
         audio_device_id: null,
-        theme: 'dark',
+        theme: resolvedTheme,
         first_run: false,
       };
       await updateSettings(settings);

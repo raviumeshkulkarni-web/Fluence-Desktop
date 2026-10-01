@@ -79,6 +79,12 @@ jobs:
         working-directory: src-tauri
         run: cargo test --lib
 
+      - name: run frontend + security test suite
+        shell: pwsh
+        run: |
+          node --test "tests/*.test.mjs"
+          pwsh -File tests/verify-security.ps1
+
       - name: install frontend dependencies
         run: npm ci
 
@@ -101,29 +107,31 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Security Hardening & Offline-Model Fix
+            ## Fluence v__VERSION__ — Shared-scene dashboard analytics, History chrome unity, shared search field
 
-            This release hardens credential handling, renderer permissions, and input validation across the Windows app, and fixes Moonshine offline models failing on installed builds.
+            The dashboard gains two additive analytics cards beside the untouched Sessions area and Words bar charts, History's chrome speaks the same table-header language as every other screen, and both search boxes are now one shared component.
 
-            ### Security hardening
+            ### Dashboard analytics
 
-            - Per-window permissions: the recording overlay and setup wizard run with least privilege; credentials, sync, model management, and dictionary/history mutation are main-window only.
-            - API keys no longer cross into overlay IPC — agent mode resolves them server-side from Windows Credential Manager.
-            - Credential storage narrowed to known slots; sync tokens stay fully server-side.
-            - HTTPS-only custom endpoints (plaintext HTTP still allowed for localhost), with warnings for custom servers.
-            - Bounded inputs (dictionary, history, clipboard/injection, audio payloads) and truncated provider error bodies.
-            - XSS hardening across settings, history, dictionary, and suggestion rendering, plus stricter content-security policies.
+            - New **By weekday** card: a weekday-share donut (Monday-first, same synced ledger buckets as the hero chart) with hover-linked slice expansion, a centre readout, and a shadcn Table twin carrying every value as real text.
+            - New **Today** card: a today-vs-trailing-average momentum ring with an exact-value caption; a missing baseline renders an empty state, never a fabricated 0x.
+            - The hover dot now sits exactly on the stroke: axis domain and hover math share one scale, and recharts' own active marker is disabled so only the custom dot renders.
+            - KPI cards reserve the badge row's height, so the page no longer jumps when the trend pill appears or disappears.
 
-            ### Fixes
+            ### History
 
-            - Moonshine Fast (English) and Pro (English) offline models now start correctly on installed builds (sidecar runtime lookup).
-            - Custom provider presets with hyphens save and load keys correctly.
-            - Missing LLM key in agent mode reports a clear, non-retryable message instead of a raw system error.
+            - Search row and filter bar merged into one header band using the exact table-head recipe; the divider between them is gone.
+            - Day-group headers regain table-head typography that a button reset had wiped, so day bands read as headers again.
+
+            ### Search
+
+            - One shared `SearchField` (shared Input + magnifier) replaces the hand-rolled History wrapper and the bare app-picker input. Icon inset, type size, and focus behaviour are identical everywhere; the frozen vanilla `.search-wrapper` layer is untouched.
 
             ### Verification
 
-            - Full Rust suite green in CI (`cargo test --lib`); credential-parity and agent error-mapping suites green.
-            - Manually verified on the packaged installer: hotkey dictation, cloud transcription, SenseVoice and Moonshine offline transcription, history save/reload, and model download/install screens.
+            - Full Rust suite green (`cargo test --lib`, 443 tests).
+            - Frontend suite green (52 tests) and security suite green (54 assertions) — both required CI gates on every tag.
+            - Web typecheck and production build clean; no new dependencies, no sync/schema changes.
 
             ---
             ### Download & Install

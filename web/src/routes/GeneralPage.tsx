@@ -1,15 +1,19 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
 import { Field } from '@/components/ui/field';
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/fluence/Toasts';
+import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import {
   getCachedSettings,
   loadSettings,
@@ -49,7 +53,6 @@ export function GeneralPage() {
   const [recordingMode, setRecordingMode] = useState('push_to_toggle');
   const [agentRecordingMode, setAgentRecordingMode] = useState('push_to_toggle');
   const [language, setLanguage] = useState('en');
-  const [aiPolish, setAiPolish] = useState('none');
   const [audioDevice, setAudioDevice] = useState('');
   const [devices, setDevices] = useState<string[]>([]);
   const [autostart, setAutostart] = useState(false);
@@ -57,13 +60,18 @@ export function GeneralPage() {
   const [autoGrab, setAutoGrab] = useState(false);
   const [sound, setSound] = useState(false);
 
+  // One concern visible at a time (Providers pattern): shortcuts for the
+  // hotkeys, audio for input/language/feedback, system for OS behavior.
+  type GeneralTab = 'shortcuts' | 'audio' | 'system';
+  const [tab, setTab] = useState<GeneralTab>('shortcuts');
+
   const [recording, setRecording] = useState<HotkeyKey | null>(null);
   const [pendingText, setPendingText] = useState('Press your shortcut…');
   const recordingRef = useRef<HotkeyKey | null>(null);
   recordingRef.current = recording;
   const pendingKeys = useRef<Set<string>>(new Set());
   const pendingHotkey = useRef('');
-  const displays = useRef<Record<HotkeyKey, HTMLDivElement | null>>({
+  const displays = useRef<Record<HotkeyKey, HTMLButtonElement | null>>({
     hotkey: null,
     agent_hotkey: null,
   });
@@ -124,7 +132,6 @@ export function GeneralPage() {
         setLanguage(str(s.language, 'en'));
         setAutostart(s.auto_start === true);
         setDuck(s.duck_enabled === true);
-        setAiPolish(str(s.ai_polish_style, 'none'));
         setAutoGrab(s.auto_grab_highlight !== false);
         setSound((s.sound_on_complete as boolean) ?? true);
         const storedDevice =
@@ -247,6 +254,7 @@ export function GeneralPage() {
       await saveSettingsNow();
     } catch (err) {
       toast('Failed to save settings: ' + String(err), 'error');
+      return;
     }
     toast('Settings saved', 'success');
   };
@@ -258,337 +266,326 @@ export function GeneralPage() {
         <p className="page-subtitle">Hotkey, recording mode, audio, and system preferences</p>
       </div>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Global Shortcut</h2></div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label" id="hotkey-label">Recording Hotkey</div>
-            <div className="setting-desc">Press this key combination to start/stop voice recording from any app</div>
-          </div>
-          <div className="setting-control">
-            <div className="hotkey-recorder">
-              <div
-                ref={(el) => {
-                  displays.current.hotkey = el;
-                }}
-                className={`hotkey-display ui-focus-ring${recording === 'hotkey' ? ' recording' : ''}`}
-                id="hotkey-display"
-                tabIndex={0}
-                role="button"
-                aria-labelledby="hotkey-label hotkey-display-text"
-                onClick={() => startRecording('hotkey')}
-                onBlur={() => {
-                  if (recordingRef.current === 'hotkey') cancelRecording();
-                }}
-                onKeyDown={(e) => {
-                  if (recordingRef.current) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    startRecording('hotkey');
-                  }
-                }}
-              >
-                <span id="hotkey-display-text">
-                  {recording === 'hotkey' ? pendingText : hotkey}
-                </span>
+      <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as GeneralTab)}>
+        <TabsList aria-label="General settings area">
+          <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
+          <TabsTrigger value="audio">Audio</TabsTrigger>
+          <TabsTrigger value="system">System</TabsTrigger>
+        </TabsList>
+
+      <TabsContent value="shortcuts">
+        <SettingsSectionHeader title="Global Shortcut" description="Global hotkey to start and stop speech recording" />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label" id="hotkey-label">Recording Hotkey</div>
+              <div className="setting-desc">Press this key combination to start/stop voice recording from any app</div>
+            </div>
+            <div className="setting-control">
+              <div className="hotkey-recorder">
+                <button
+                  ref={(el) => {
+                    displays.current.hotkey = el;
+                  }}
+                  type="button"
+                  className={`hotkey-display ui-focus-ring${recording === 'hotkey' ? ' recording' : ''}`}
+                  id="hotkey-display"
+                  aria-pressed={recording === 'hotkey'}
+                  aria-labelledby="hotkey-label hotkey-display-text"
+                  onClick={() => startRecording('hotkey')}
+                  onBlur={() => {
+                    if (recordingRef.current === 'hotkey') cancelRecording();
+                  }}
+                >
+                  <span id="hotkey-display-text">
+                    {recording === 'hotkey' ? pendingText : hotkey}
+                  </span>
+                </button>
+                <Button
+                  ref={(el) => {
+                    clearBtns.current.hotkey = el;
+                  }}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  id="hotkey-clear-btn"
+                  onClick={() => onResetHotkey('hotkey', DEFAULT_HOTKEY)}
+                >
+                  Reset
+                </Button>
               </div>
-              <Button
-                ref={(el) => {
-                  clearBtns.current.hotkey = el;
-                }}
-                type="button"
-                variant="ghost"
-                size="sm"
-                id="hotkey-clear-btn"
-                onClick={() => onResetHotkey('hotkey', DEFAULT_HOTKEY)}
-              >
-                Reset
-              </Button>
             </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Transcription Mode Behavior</div>
-            <div className="setting-desc">How the hotkey controls recording</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={recordingMode}
-                onValueChange={bindSelect(setRecordingMode, 'recording_mode', 'hotkeys')}
-              >
-                <SelectTrigger
-                  id="recording-mode-select"
-                  className="select-md"
-                  aria-label="Transcription mode behavior"
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Transcription Mode Behavior</div>
+              <div className="setting-desc">How the hotkey controls recording</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select
+                  value={recordingMode}
+                  onValueChange={bindSelect(setRecordingMode, 'recording_mode', 'hotkeys')}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
-                  <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label" id="agent-hotkey-label">Agent Mode Hotkey</div>
-            <div className="setting-desc">Dedicated hotkey to activate AI Agent Mode from any app</div>
-          </div>
-          <div className="setting-control">
-            <div className="hotkey-recorder">
-              <div
-                ref={(el) => {
-                  displays.current.agent_hotkey = el;
-                }}
-                className={`hotkey-display ui-focus-ring${recording === 'agent_hotkey' ? ' recording' : ''}`}
-                id="agent-hotkey-display"
-                tabIndex={0}
-                role="button"
-                aria-labelledby="agent-hotkey-label agent-hotkey-display-text"
-                onClick={() => startRecording('agent_hotkey')}
-                onBlur={() => {
-                  if (recordingRef.current === 'agent_hotkey') cancelRecording();
-                }}
-                onKeyDown={(e) => {
-                  if (recordingRef.current) return;
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    startRecording('agent_hotkey');
-                  }
-                }}
-              >
-                <span id="agent-hotkey-display-text">
-                  {recording === 'agent_hotkey' ? pendingText : agentHotkey}
-                </span>
-              </div>
-              <Button
-                ref={(el) => {
-                  clearBtns.current.agent_hotkey = el;
-                }}
-                type="button"
-                variant="ghost"
-                size="sm"
-                id="agent-hotkey-clear-btn"
-                onClick={() => onResetHotkey('agent_hotkey', DEFAULT_AGENT_HOTKEY)}
-              >
-                Reset
-              </Button>
+                  <SelectTrigger
+                    id="recording-mode-select"
+                    className="select-md"
+                    aria-label="Transcription mode behavior"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
+                      <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
             </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Agent Mode Behavior</div>
-            <div className="setting-desc">How the agent hotkey controls recording</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={agentRecordingMode}
-                onValueChange={bindSelect(setAgentRecordingMode, 'agent_recording_mode', 'hotkeys')}
-              >
-                <SelectTrigger
-                  id="agent-recording-mode-select"
-                  className="select-md"
-                  aria-label="Agent mode behavior"
-                >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
-                  <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>Audio Input</h2></div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Microphone</div>
-            <div className="setting-desc">Select the audio input device for voice recording</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={audioDevice || SYSTEM_DEFAULT_DEVICE}
-                onValueChange={(v) =>
-                  bindSelect(setAudioDevice, 'audio_device_id')(
-                    v === SYSTEM_DEFAULT_DEVICE ? '' : v,
-                  )
-                }
-              >
-                <SelectTrigger
-                  id="audio-device-select"
-                  className="select-lg"
-                  aria-label="Microphone input device"
+        <SettingsSectionHeader title="Agent Mode Shortcut" description="Dedicated shortcut to activate AI Agent Mode" />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label" id="agent-hotkey-label">Agent Mode Hotkey</div>
+              <div className="setting-desc">Dedicated hotkey to activate AI Agent Mode from any app</div>
+            </div>
+            <div className="setting-control">
+              <div className="hotkey-recorder">
+                <button
+                  ref={(el) => {
+                    displays.current.agent_hotkey = el;
+                  }}
+                  type="button"
+                  className={`hotkey-display ui-focus-ring${recording === 'agent_hotkey' ? ' recording' : ''}`}
+                  id="agent-hotkey-display"
+                  aria-pressed={recording === 'agent_hotkey'}
+                  aria-labelledby="agent-hotkey-label agent-hotkey-display-text"
+                  onClick={() => startRecording('agent_hotkey')}
+                  onBlur={() => {
+                    if (recordingRef.current === 'agent_hotkey') cancelRecording();
+                  }}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value={SYSTEM_DEFAULT_DEVICE}>System Default</SelectItem>
-                  {devices.map((name) => (
-                    <SelectItem key={name} value={name}>{name}</SelectItem>
-                  ))}
-                  {audioDevice && !devices.includes(audioDevice) && (
-                    <SelectItem value={audioDevice}>{audioDevice}</SelectItem>
-                  )}
-                </SelectContent>
-              </Select>
-            </Field>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Transcription Language</div>
-            <div className="setting-desc">Hint to the STT model about the spoken language</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={language}
-                onValueChange={bindSelect(setLanguage, 'language')}
-              >
-                <SelectTrigger
-                  id="language-select"
-                  className="select-md"
-                  aria-label="Transcription language"
+                  <span id="agent-hotkey-display-text">
+                    {recording === 'agent_hotkey' ? pendingText : agentHotkey}
+                  </span>
+                </button>
+                <Button
+                  ref={(el) => {
+                    clearBtns.current.agent_hotkey = el;
+                  }}
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  id="agent-hotkey-clear-btn"
+                  onClick={() => onResetHotkey('agent_hotkey', DEFAULT_AGENT_HOTKEY)}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="auto">Auto-detect</SelectItem>
-                  <SelectItem value="es">Spanish</SelectItem>
-                  <SelectItem value="fr">French</SelectItem>
-                  <SelectItem value="de">German</SelectItem>
-                  <SelectItem value="zh">Chinese</SelectItem>
-                  <SelectItem value="ja">Japanese</SelectItem>
-                  <SelectItem value="hi">Hindi</SelectItem>
-                  <SelectItem value="ar">Arabic</SelectItem>
-                  <SelectItem value="pt">Portuguese</SelectItem>
-                  <SelectItem value="it">Italian</SelectItem>
-                  <SelectItem value="nl">Dutch</SelectItem>
-                  <SelectItem value="ko">Korean</SelectItem>
-                  <SelectItem value="ru">Russian</SelectItem>
-                  <SelectItem value="mr">Marathi</SelectItem>
-                  <SelectItem value="pa">Punjabi</SelectItem>
-                  <SelectItem value="hu">Hungarian</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
+                  Reset
+                </Button>
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">AI Polish Style</div>
-            <div className="setting-desc">Automatically rewrite or clean up text before pasting</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Select
-                value={aiPolish}
-                onValueChange={bindSelect(setAiPolish, 'ai_polish_style')}
-              >
-                <SelectTrigger
-                  id="ai-polish-select"
-                  className="select-md"
-                  aria-label="AI polish style"
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Agent Mode Behavior</div>
+              <div className="setting-desc">How the agent hotkey controls recording</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select
+                  value={agentRecordingMode}
+                  onValueChange={bindSelect(setAgentRecordingMode, 'agent_recording_mode', 'hotkeys')}
                 >
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">None (Raw)</SelectItem>
-                  <SelectItem value="clean">Clean Fillers &amp; Grammar</SelectItem>
-                  <SelectItem value="professional">Professional Tone</SelectItem>
-                  <SelectItem value="bullet_points">Bulleted List</SelectItem>
-                  <SelectItem value="translate_en">Translate to English</SelectItem>
-                </SelectContent>
-              </Select>
-            </Field>
+                  <SelectTrigger
+                    id="agent-recording-mode-select"
+                    className="select-md"
+                    aria-label="Agent mode behavior"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
+                      <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Play Completion Sound</div>
-            <div className="setting-desc">Play a short chime when a transcription finishes</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="sound-on-complete-cb"
-                aria-label="Play a sound when transcription completes"
-                checked={sound}
-                onCheckedChange={bindCheck(setSound, 'sound_on_complete')}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
 
-      <div className="settings-section">
-        <div className="settings-section-header"><h2>System</h2></div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Launch at Windows Startup</div>
-            <div className="setting-desc">Automatically start Fluence when you log in to Windows</div>
+      <TabsContent value="audio">
+        <SettingsSectionHeader title="Audio & Language" description="Select input hardware and speech recognition language" />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Microphone</div>
+              <div className="setting-desc">Select the audio input device for voice recording</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select
+                  value={audioDevice || SYSTEM_DEFAULT_DEVICE}
+                  onValueChange={(v) =>
+                    bindSelect(setAudioDevice, 'audio_device_id')(
+                      v === SYSTEM_DEFAULT_DEVICE ? '' : v,
+                    )
+                  }
+                >
+                  <SelectTrigger
+                    id="audio-device-select"
+                    className="select-lg"
+                    aria-label="Microphone input device"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={SYSTEM_DEFAULT_DEVICE}>System Default</SelectItem>
+                      {devices.map((name) => (
+                        <SelectItem key={name} value={name}>{name}</SelectItem>
+                      ))}
+                      {audioDevice && !devices.includes(audioDevice) && (
+                        <SelectItem value={audioDevice}>{audioDevice}</SelectItem>
+                      )}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
           </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="autostart-cb"
-                aria-label="Launch at Windows startup"
-                checked={autostart}
-                onCheckedChange={bindCheck(setAutostart, 'auto_start', 'autostart')}
-              />
-            </Field>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Transcription Language</div>
+              <div className="setting-desc">Hint to the STT model about the spoken language</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select
+                  value={language}
+                  onValueChange={bindSelect(setLanguage, 'language')}
+                >
+                  <SelectTrigger
+                    id="language-select"
+                    className="select-md"
+                    aria-label="Transcription language"
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value="en">English</SelectItem>
+                      <SelectItem value="auto">Auto-detect</SelectItem>
+                      <SelectItem value="es">Spanish</SelectItem>
+                      <SelectItem value="fr">French</SelectItem>
+                      <SelectItem value="de">German</SelectItem>
+                      <SelectItem value="zh">Chinese</SelectItem>
+                      <SelectItem value="ja">Japanese</SelectItem>
+                      <SelectItem value="hi">Hindi</SelectItem>
+                      <SelectItem value="ar">Arabic</SelectItem>
+                      <SelectItem value="pt">Portuguese</SelectItem>
+                      <SelectItem value="it">Italian</SelectItem>
+                      <SelectItem value="nl">Dutch</SelectItem>
+                      <SelectItem value="ko">Korean</SelectItem>
+                      <SelectItem value="ru">Russian</SelectItem>
+                      <SelectItem value="mr">Marathi</SelectItem>
+                      <SelectItem value="pa">Punjabi</SelectItem>
+                      <SelectItem value="hu">Hungarian</SelectItem>
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
           </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Mute Background Apps</div>
-            <div className="setting-desc">Silence music, videos, and calls while you dictate</div>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Play Completion Sound</div>
+              <div className="setting-desc">Play a short chime when a transcription finishes</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="sound-on-complete-cb"
+                  aria-label="Play a sound when transcription completes"
+                  checked={sound}
+                  onCheckedChange={bindCheck(setSound, 'sound_on_complete')}
+                />
+              </Field>
+            </div>
           </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="duck-cb"
-                aria-label="Mute background apps while dictating"
-                checked={duck}
-                onCheckedChange={bindCheck(setDuck, 'duck_enabled')}
-              />
-            </Field>
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Grab Highlighted Text</div>
-            <div className="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="auto-grab-cb"
-                aria-label="Grab highlighted text when entering Agent Mode"
-                checked={autoGrab}
-                onCheckedChange={bindCheck(setAutoGrab, 'auto_grab_highlight')}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
 
-      <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: 'var(--spacing-md)' }}>
-        <Button variant="primary" id="save-general-btn" style={{ minWidth: 120 }} onClick={() => void onSaveAll()}>Save Changes</Button>
+      <TabsContent value="system">
+        <SettingsSectionHeader title="System Preferences" description="Configure startup and background audio behavior" />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Launch at Windows Startup</div>
+              <div className="setting-desc">Automatically start Fluence when you log in to Windows</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="autostart-cb"
+                  aria-label="Launch at Windows startup"
+                  checked={autostart}
+                  onCheckedChange={bindCheck(setAutostart, 'auto_start', 'autostart')}
+                />
+              </Field>
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Mute Background Apps</div>
+              <div className="setting-desc">Silence music, videos, and calls while you dictate</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="duck-cb"
+                  aria-label="Mute background apps while dictating"
+                  checked={duck}
+                  onCheckedChange={bindCheck(setDuck, 'duck_enabled')}
+                />
+              </Field>
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">Grab Highlighted Text</div>
+              <div className="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Switch
+                  id="auto-grab-cb"
+                  aria-label="Grab highlighted text when entering Agent Mode"
+                  checked={autoGrab}
+                  onCheckedChange={bindCheck(setAutoGrab, 'auto_grab_highlight')}
+                />
+              </Field>
+            </div>
+          </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+      </Tabs>
+
+      <div className="page-actions">
+        <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
       </div>
     </section>
   );

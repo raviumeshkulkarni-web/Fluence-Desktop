@@ -45,6 +45,7 @@ fn validate_credential_target(target: &str) -> Result<()> {
     Err(anyhow!("Access denied: unknown credential target"))
 }
 
+#[cfg(target_os = "windows")]
 fn to_wide(s: &str) -> Vec<u16> {
     use std::os::windows::ffi::OsStrExt;
     std::ffi::OsStr::new(s)
@@ -124,18 +125,47 @@ pub fn delete_credential(target: &str) -> Result<()> {
     Ok(())
 }
 
+#[cfg(target_os = "linux")]
+pub fn store_credential(target: &str, _username: &str, secret: &str) -> Result<()> {
+    let entry =
+        keyring::Entry::new("Fluence", target).map_err(|e| anyhow!("keyring open failed: {e}"))?;
+    entry
+        .set_password(secret)
+        .map_err(|e| anyhow!("Secret Service store failed: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+pub fn read_credential(target: &str) -> Result<String> {
+    let entry =
+        keyring::Entry::new("Fluence", target).map_err(|e| anyhow!("keyring open failed: {e}"))?;
+    entry
+        .get_password()
+        .map_err(|e| anyhow!("Secret Service read failed for {target}: {e}"))
+}
+
+#[cfg(target_os = "linux")]
+pub fn delete_credential(target: &str) -> Result<()> {
+    let entry =
+        keyring::Entry::new("Fluence", target).map_err(|e| anyhow!("keyring open failed: {e}"))?;
+    match entry.delete_credential() {
+        Ok(()) => Ok(()),
+        Err(keyring::Error::NoEntry) => Ok(()),
+        Err(e) => Err(anyhow!("Secret Service delete failed for {target}: {e}")),
+    }
+}
+
 // Non-Windows stubs (for compilation on other platforms)
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn store_credential(_target: &str, _username: &str, _secret: &str) -> Result<()> {
     Err(anyhow!("Credential Manager not supported on this platform"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn read_credential(_target: &str) -> Result<String> {
     Err(anyhow!("Credential Manager not supported on this platform"))
 }
 
-#[cfg(not(target_os = "windows"))]
+#[cfg(not(any(target_os = "windows", target_os = "linux")))]
 pub fn delete_credential(_target: &str) -> Result<()> {
     Err(anyhow!("Credential Manager not supported on this platform"))
 }
@@ -305,6 +335,41 @@ mod tests {
         assert_eq!(t, "Fluence/STT_ApiKey/my_provider");
     }
 
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn secret_service_store_read_delete_roundtrip() {
+        let target = get_llm_target(&format!("test_rt_{}", std::process::id()));
+        validate_credential_target(&target).unwrap();
+
+        let open = || {
+            keyring::Entry::new("Fluence", &target).map_err(|e| format!("open: {e}"))
+        };
+        let Ok(entry) = open() else {
+            eprintln!("SKIP: no Secret Service daemon reachable");
+            return;
+        };
+        let probe = entry.set_password("probe");
+        if probe.is_err() {
+            eprintln!("SKIP: Secret Service not writable here ({})", probe.unwrap_err());
+            return;
+        }
+
+        let secret = "fluence-linux-test-secret-äöü";
+        struct Cleanup<'a> {
+            target: &'a str,
+        }
+        impl Drop for Cleanup<'_> {
+            fn drop(&mut self) {
+                let _ = delete_credential(self.target);
+            }
+        }
+        let _cleanup = Cleanup { target: &target };
+        store_credential(&target, "fluence", secret).expect("store must succeed");
+        let back = read_credential(&target).expect("read must succeed");
+        assert_eq!(back, secret);
+        delete_credential(&target).expect("delete must succeed");
+        assert!(read_credential(&target).is_err());
+    }
     // FIX-02: canonical slug matrix. Every generated target must pass the
     // strict validator (save/read/delete symmetry), and the frontend
     // `canonicalPresetSlug` must produce the identical slug (see

@@ -91,16 +91,18 @@ Rules:
 - Return ONLY valid JSON, no explanation, no markdown.
 "#;
 
-/// Slice 4b: resolve a per-turn agent id to its sanitized hint via
-/// agents.json. None for built-in/unknown/blank (fail-closed to the base
-/// contract). Best-effort: store load failures also yield None.
+/// Slice 4b: resolve a per-turn agent id to its sanitized hint via the
+/// ADMITTED snapshot (account + legacy gated by verification). None for
+/// built-in/unknown/blank/unadmitted (fail-closed to the base contract).
+/// Best-effort: store load failures also yield None.
 fn resolve_agent_hint(agent_id: Option<&str>) -> Option<String> {
     let id = agent_id.unwrap_or(crate::agents::ID_BUILT_IN).trim();
     if id.is_empty() || id == crate::agents::ID_BUILT_IN {
         return None;
     }
-    let store = crate::agents::load_store();
-    crate::agents::resolve_hint(&store, Some(id))
+    // Routed through admission: an unassigned legacy record must never supply
+    // an executable prompt under a signed-in identity.
+    crate::agents::resolve_active_agent_routed(Some(id)).hint
 }
 
 /// Slice 4b: base JSON action contract plus an optional custom style hint.

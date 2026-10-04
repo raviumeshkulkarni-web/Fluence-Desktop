@@ -16,6 +16,7 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 
+use crate::sync::clock::cmp_keyed_winner;
 use crate::sync::clock::cmp_winner;
 use crate::sync::domain::*;
 
@@ -26,12 +27,17 @@ pub struct MergeOutcome<T> {
 }
 
 /// Merge dictionary items: one winner per businessKey using pure LWW.
+///
+/// The comparison is a *total* order (`cmp_keyed_winner` falls back to
+/// `sync_id`), so the winner never depends on whether a record arrived as the
+/// local or the remote copy. Android's `Merge` applies the identical rule.
 fn merge_keyed<T, K>(
     local: &[T],
     remote: &[T],
     business_key: impl Fn(&T) -> K,
     mut updated_at: impl FnMut(&T) -> i64,
     mut device_id: impl FnMut(&T) -> &str,
+    mut sync_id: impl FnMut(&T) -> &str,
     mut sort_by: impl FnMut(&mut [T]),
 ) -> MergeOutcome<T>
 where
@@ -52,7 +58,16 @@ where
     for (bk, candidates) in grouped {
         let winner = candidates
             .into_iter()
-            .max_by(|a, b| cmp_winner(updated_at(a), device_id(a), updated_at(b), device_id(b)))
+            .max_by(|a, b| {
+                cmp_keyed_winner(
+                    updated_at(a),
+                    device_id(a),
+                    sync_id(a),
+                    updated_at(b),
+                    device_id(b),
+                    sync_id(b),
+                )
+            })
             .unwrap();
         match local_map.get(&bk) {
             Some(local_item) if local_item == &winner => {}
@@ -75,6 +90,7 @@ pub fn merge_dictionary(
         |i| i.business_key(),
         |i| i.updated_at,
         |i| i.device_id.as_str(),
+        |i| i.sync_id.as_str(),
         |v| v.sort_by(|a, b| a.business_key().cmp(&b.business_key())),
     )
 }
@@ -87,7 +103,53 @@ pub fn merge_snippets(local: &[SnippetItem], remote: &[SnippetItem]) -> MergeOut
         |i| i.business_key(),
         |i| i.updated_at,
         |i| i.device_id.as_str(),
+        |i| i.sync_id.as_str(),
         |v| v.sort_by(|a, b| a.business_key().cmp(&b.business_key())),
+    )
+}
+
+/// Merge agents: one winner per businessKey using pure LWW.
+///
+/// The business key is the record's own stable id (`agent:<uuid>`), validated
+/// at ingest but never recomputed — unlike dictionary/snippets, where the key
+/// derives from content. The sort is (businessKey, syncId), matching Android's
+/// canonical order byte-for-byte, so both sides serialize identical envelopes
+/// for identical winner sets.
+pub fn merge_agents(local: &[AgentItem], remote: &[AgentItem]) -> MergeOutcome<AgentItem> {
+    merge_keyed(
+        local,
+        remote,
+        |i| i.business_key.clone(),
+        |i| i.updated_at,
+        |i| i.device_id.as_str(),
+        |i| i.sync_id.as_str(),
+        |v| {
+            v.sort_by(|a, b| {
+                a.business_key
+                    .cmp(&b.business_key)
+                    .then_with(|| a.sync_id.cmp(&b.sync_id))
+            })
+        },
+    )
+}
+
+/// Merge styles: identical contract to [`merge_agents`] with the
+/// `custom:<uuid>` keyspace.
+pub fn merge_styles(local: &[StyleItem], remote: &[StyleItem]) -> MergeOutcome<StyleItem> {
+    merge_keyed(
+        local,
+        remote,
+        |i| i.business_key.clone(),
+        |i| i.updated_at,
+        |i| i.device_id.as_str(),
+        |i| i.sync_id.as_str(),
+        |v| {
+            v.sort_by(|a, b| {
+                a.business_key
+                    .cmp(&b.business_key)
+                    .then_with(|| a.sync_id.cmp(&b.sync_id))
+            })
+        },
     )
 }
 
@@ -97,6 +159,20 @@ pub fn merge_snippets(local: &[SnippetItem], remote: &[SnippetItem]) -> MergeOut
 /// deviceId instead of racing wall clocks, and the shared envelope carries
 /// timestamps both sides interpret identically.
 const SETTINGS_ADOPTION_EPOCH_MS: i64 = 1_700_000_000_000;
+
+/// The adoption sentinel is a first-observation marker written by
+/// `merge_settings` itself, not a real Nov-2023 timestamp. Map it back to the
+/// adoption class on the read/compare path, mirroring Android's
+/// `Merge.effectiveSettingsTime`. The stored record keeps its original
+/// timestamp; only the comparison uses the effective value. The output stamp
+/// further below is deliberately unchanged.
+fn effective_settings_time(updated_at: i64) -> i64 {
+    if updated_at == SETTINGS_ADOPTION_EPOCH_MS {
+        0
+    } else {
+        updated_at
+    }
+}
 
 /// Settings merge: per-key LWW over the allowed keys only.
 pub fn merge_settings(
@@ -114,24 +190,18 @@ pub fn merge_settings(
             }
             std::collections::hash_map::Entry::Occupied(mut e) => {
                 let existing = e.get();
-                let winner_is_item = if existing.updated_at == 0 && item.updated_at == 0 {
-                    cmp_winner(
-                        item.updated_at,
-                        &item.device_id,
-                        existing.updated_at,
-                        &existing.device_id,
-                    ) == std::cmp::Ordering::Greater
-                } else if existing.updated_at == 0 {
+                let existing_at = effective_settings_time(existing.updated_at);
+                let item_at = effective_settings_time(item.updated_at);
+                let winner_is_item = if existing_at == 0 && item_at == 0 {
+                    cmp_winner(item_at, &item.device_id, existing_at, &existing.device_id)
+                        == std::cmp::Ordering::Greater
+                } else if existing_at == 0 {
                     true
-                } else if item.updated_at == 0 {
+                } else if item_at == 0 {
                     false
                 } else {
-                    cmp_winner(
-                        item.updated_at,
-                        &item.device_id,
-                        existing.updated_at,
-                        &existing.device_id,
-                    ) == std::cmp::Ordering::Greater
+                    cmp_winner(item_at, &item.device_id, existing_at, &existing.device_id)
+                        == std::cmp::Ordering::Greater
                 };
                 if winner_is_item {
                     e.insert(item.clone());
@@ -441,7 +511,84 @@ mod tests {
         );
     }
 
+    // ── C1 differential ──────────────────────────────────────────────────
+    // merge_settings itself stamps 0 -> SETTINGS_ADOPTION_EPOCH_MS on output,
+    // so that value is a first-observation marker, not a real Nov-2023
+    // timestamp, and must be read back as the adoption class. These three
+    // cases pin the agreed Android semantics; identical inputs on both
+    // platforms must yield identical winners.
+
+    #[test]
+    fn c1_sentinel_vs_real_timestamp_remote_wins() {
+        let local = vec![setting("language", "en", SETTINGS_ADOPTION_EPOCH_MS, "d1")];
+        let remote = vec![setting("language", "de", 100, "d2")];
+        let outcome = merge_settings(&local, &remote);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(
+            outcome.merged[0].value, "de",
+            "a real timestamp must beat the adoption sentinel"
+        );
+        assert_eq!(outcome.merged[0].updated_at, 100);
+    }
+
+    #[test]
+    fn c1_zero_vs_zero_adversarial_device_ids() {
+        let local = vec![setting("language", "en", 0, "zzz-local")];
+        let remote = vec![setting("language", "de", 0, "aaa-remote")];
+        let outcome = merge_settings(&local, &remote);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(
+            outcome.merged[0].device_id, "zzz-local",
+            "greater deviceId breaks the adoption tie"
+        );
+        assert_eq!(outcome.merged[0].value, "en");
+        assert_eq!(
+            outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS,
+            "adoption class re-stamps on output"
+        );
+    }
+
+    #[test]
+    fn c1_sentinel_vs_sentinel_adversarial_device_ids() {
+        let local = vec![setting("language", "en", SETTINGS_ADOPTION_EPOCH_MS, "aaa-local")];
+        let remote = vec![setting("language", "de", SETTINGS_ADOPTION_EPOCH_MS, "zzz-remote")];
+        let outcome = merge_settings(&local, &remote);
+        assert_eq!(outcome.merged.len(), 1);
+        assert_eq!(
+            outcome.merged[0].device_id, "zzz-remote",
+            "greater deviceId breaks the sentinel tie"
+        );
+        assert_eq!(outcome.merged[0].value, "de");
+        assert_eq!(
+            outcome.merged[0].updated_at, SETTINGS_ADOPTION_EPOCH_MS,
+            "no re-stamp of an already-stamped value"
+        );
+    }
+
     // ── Stats ───────────────────────────────────────────────────────────
+
+    /// A full tie on (updatedAt, deviceId) must still resolve to the SAME
+    /// record on every device. If the last tiebreak is "local vs remote", two
+    /// devices that each hold a different payload for that key can each keep
+    /// their own copy forever and re-push to each other indefinitely.
+    ///
+    /// The order must be total, so the final tiebreak is syncId.
+    #[test]
+    fn tie_on_timestamp_and_device_resolves_by_sync_id_not_by_side() {
+        let mut local = dict("hello", "LOCAL", "correction", false, 100, "dev-a");
+        let mut remote = dict("hello", "REMOTE", "correction", false, 100, "dev-a");
+        // Fixed ids: local sorts last, so a syncId tiebreak must pick LOCAL.
+        local.sync_id = "ffffffff-ffff-4fff-8fff-ffffffffffff".to_string();
+        remote.sync_id = "00000000-0000-4000-8000-000000000001".to_string();
+
+        let out = merge_dictionary(&[local], &[remote]);
+        assert_eq!(out.merged.len(), 1);
+        assert_eq!(
+            out.merged[0].corrected, "LOCAL",
+            "a full (updatedAt, deviceId) tie must break deterministically by \
+             syncId, not by whether the record happened to be local or remote"
+        );
+    }
 
     fn stat(event_id: &str, day: &str, ts: i64) -> StatsItem {
         StatsItem {

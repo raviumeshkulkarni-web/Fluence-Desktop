@@ -6,6 +6,7 @@
 )]
 
 pub mod acl;
+pub mod account_scope;
 pub mod agent;
 pub mod agents;
 pub mod app_icon;

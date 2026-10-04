@@ -40,6 +40,38 @@ pub const STATS_FILE: &str = "stats.json";
 pub const SETTINGS_FILE: &str = "settings.json";
 pub const DOMAIN_FILES: [&str; 4] = [DICT_FILE, SNIPPETS_FILE, STATS_FILE, SETTINGS_FILE];
 
+// Phase 6 STAGE 3: additive, account-partitioned domains.
+//
+// These names are deliberately NOT added to `DOMAIN_FILES`. That array is the
+// allowlist an already-shipped client uses to decide what to read from `v1`,
+// so extending it would make an old client start reading files that are not
+// there and would change existing behaviour. Partitioned files live one level
+// deeper, under `fluence/v1/acct-<accountHash>/`, and are reached only via
+// `account_partition::relative_path` with a token-derived account hash.
+//
+// The shared path contract lives in `super::account_partition`; the constants
+// here are re-exports so the Drive layer has one obvious place to look.
+pub use super::account_partition::{AGENTS_FILE, STYLES_FILE};
+
+/// Every domain file name Fluence knows about, partitioned ones included.
+///
+/// Used only by *new* code that must reason about the full set. Existing
+/// v1 read paths must keep using [`DOMAIN_FILES`].
+pub const ALL_DOMAIN_FILES: [&str; 6] = [
+    DICT_FILE,
+    SNIPPETS_FILE,
+    STATS_FILE,
+    SETTINGS_FILE,
+    AGENTS_FILE,
+    STYLES_FILE,
+];
+
+/// Whether a domain file lives inside a per-account partition rather than
+/// directly in `v1`. Pure; delegates to the shared path contract.
+pub fn is_partitioned_domain_file(file_name: &str) -> bool {
+    super::account_partition::is_partitioned(file_name)
+}
+
 const FOLDER_MIME: &str = "application/vnd.google-apps.folder";
 const API_BASE: &str = "https://www.googleapis.com/drive/v3";
 /// Uploads (multipart create/update) must hit the upload host, not the
@@ -294,6 +326,10 @@ pub struct GoogleDriveStore {
     token_refresher: Option<TokenRefresher>,
     /// Cached appDataFolder/fluence/v1 folder id.
     v1_folder_id: Option<String>,
+    /// Per-account partition folder ids, keyed by folder name. Keyed (not a
+    /// single field) so an account switch cannot reuse the previous account's
+    /// folder id across the partition boundary.
+    partition_folder_ids: std::collections::HashMap<String, String>,
     /// Upload host for multipart writes.
     upload_base: String,
 }
@@ -314,9 +350,10 @@ impl GoogleDriveStore {
             access_token,
             token_refresher: None,
             v1_folder_id: None,
+            partition_folder_ids: std::collections::HashMap::new(),
             upload_base,
-        }
-    }
+            }
+            }
 
     /// Arm the one-silent-refresh-401-recovery for this pass.
     pub fn set_token_refresher(&mut self, refresher: TokenRefresher) {
@@ -579,6 +616,39 @@ pub trait DomainDriveStore {
         preferred_file_id: Option<&str>,
     ) -> Result<String, SyncError>;
     fn delete_domain_file(&mut self, file_id: &str) -> Result<(), SyncError>;
+
+    // ── Phase 6: account-partitioned domains (Agents/Styles) ─────────────
+    //
+    // These mirror the flat-domain operations above, scoped to a per-account
+    // subfolder `fluence/v1/acct-<segment>/`. The flat methods are frozen and
+    // untouched; partitioned domains never address `v1` directly.
+
+    /// Resolve (or create) the account partition folder inside `v1`.
+    ///
+    /// Fail-closed twice: `folder_name` must be a well-formed partition segment
+    /// (`acct-` + 64 lowercase hex, see `account_partition`), otherwise no
+    /// folder is created and no network call is made for it.
+    fn ensure_partition_folder(&mut self, folder_name: &str) -> Result<String, SyncError>;
+    /// List files inside a partition folder, with versions for CAS.
+    fn list_partition_files(&mut self, folder_id: &str) -> Result<Vec<DomainFileMeta>, SyncError>;
+    /// Upload a partitioned domain envelope. Same CAS contract as
+    /// [`DomainDriveStore::put_domain`], but the create parent is the partition
+    /// folder, so a create can never land in a pooled location.
+    fn put_partitioned_domain(
+        &mut self,
+        folder_id: &str,
+        name: &str,
+        content: &[u8],
+        expected_version: Option<&str>,
+        preferred_file_id: Option<&str>,
+    ) -> Result<String, SyncError>;
+
+    /// The email address Drive attributes the current access token to
+    /// (`about?fields=user`). `Ok(None)` means Drive answered without one.
+    ///
+    /// This is the token-bound identity the partition key MUST derive from. A
+    /// pass that cannot establish it must not address any partition.
+    fn drive_account_email(&mut self) -> Result<Option<String>, SyncError>;
 }
 
 /// Parse a domain listing page extracting `id`, `name` and `version`.
@@ -627,6 +697,17 @@ pub fn parse_domain_listing(
 /// Whether a domain file name is one of the 4 valid domain files.
 pub fn is_domain_file(name: &str) -> bool {
     DOMAIN_FILES.contains(&name)
+}
+
+/// Whether `name` is a well-formed account partition folder segment
+/// (`acct-` + 64 lowercase hex). The transport boundary re-checks this so that
+/// even a caller bypassing `account_partition::folder_name` cannot address an
+/// arbitrary folder through the partitioned path.
+pub fn is_partition_folder_name(name: &str) -> bool {
+    let Some(hash) = name.strip_prefix(super::account_partition::FOLDER_PREFIX) else {
+        return false;
+    };
+    crate::account_scope::valid_account_hash(hash)
 }
 
 impl GoogleDriveStore {
@@ -1010,6 +1091,143 @@ impl DomainDriveStore for GoogleDriveStore {
         // The body is only consumed for 403 above; the 429 branch of
         // classify_status_with_response reads the Retry-After header only.
         classify_status_with_response(&resp, status, "")
+    }
+
+    fn ensure_partition_folder(&mut self, folder_name: &str) -> Result<String, SyncError> {
+        // Defensive shape check at the transport boundary: even if a caller
+        // passes an unvalidated string, nothing outside `v1/acct-<64hex>/`
+        // can be addressed. The name carries no separators or dots by
+        // construction, so it cannot escape `v1`.
+        if !is_partition_folder_name(folder_name) {
+            return Err(SyncError::Rejected(format!(
+                "refusing to address non-partition folder {folder_name:?}"
+            )));
+        }
+        // Per-account cache, keyed by folder name: reusing one account's folder
+        // id for another account would cross the partition boundary.
+        if let Some(id) = self.partition_folder_ids.get(folder_name) {
+            return Ok(id.clone());
+        }
+        let v1_id = self.ensure_v1_folder()?;
+        let id = self.ensure_folder(folder_name, &v1_id)?;
+        self.partition_folder_ids
+            .insert(folder_name.to_string(), id.clone());
+        Ok(id)
+    }
+
+    fn list_partition_files(&mut self, folder_id: &str) -> Result<Vec<DomainFileMeta>, SyncError> {
+        if let Some(e) = maybe_inject_fault("list_partition_files") {
+            return Err(e);
+        }
+        let mut all = Vec::new();
+        let mut page_token: Option<String> = None;
+        loop {
+            let url = list_files_query(folder_id, page_token.as_deref(), APPDATA_FOLDER_ALIAS);
+            let resp = self.send(|client, token| {
+                client
+                    .request(reqwest::Method::GET, &url)
+                    .bearer_auth(token)
+            })?;
+            if resp.status().as_u16() == 404 {
+                return Ok(Vec::new());
+            }
+            let status = resp.status().as_u16();
+            let retry_after_ms = read_retry_after_ms(resp.headers());
+            let body = resp
+                .text()
+                .map_err(|e| SyncError::Retryable(e.to_string()))?;
+            classify_status_with_retry_after(status, retry_after_ms, &body)?;
+            let (files, next) = parse_domain_listing(&body)?;
+            all.extend(files);
+            match next {
+                Some(t) => page_token = Some(t),
+                None => break,
+            }
+        }
+        Ok(all)
+    }
+
+    fn put_partitioned_domain(
+        &mut self,
+        folder_id: &str,
+        name: &str,
+        content: &[u8],
+        expected_version: Option<&str>,
+        preferred_file_id: Option<&str>,
+    ) -> Result<String, SyncError> {
+        if let Some(e) = maybe_inject_fault("put_partitioned_domain") {
+            return Err(e);
+        }
+        if content.len() > MAX_DOMAIN_BYTES {
+            return Err(SyncError::Rejected(format!(
+                "refusing to upload {} byte domain payload",
+                content.len()
+            )));
+        }
+        let files = self.list_partition_files(folder_id)?;
+        let existing = preferred_file_id
+            .and_then(|id| files.iter().find(|f| f.file_id == id))
+            .or_else(|| files.iter().find(|f| f.name == name));
+        match existing {
+            Some(meta) => {
+                let live = meta.version.as_deref();
+                let fresh = match (expected_version, live) {
+                    (Some(exp), Some(cur)) => exp == cur,
+                    (Some(_), None) => false,
+                    (None, Some(_)) => false,
+                    (None, None) => true,
+                };
+                if !fresh {
+                    return Err(SyncError::StaleVersion(
+                        live.unwrap_or("<none>").to_string(),
+                    ));
+                }
+                self.multipart_write(
+                    reqwest::Method::PATCH,
+                    update_media_url(&self.upload_base, &meta.file_id),
+                    name,
+                    content,
+                    None,
+                )
+            }
+            None => {
+                // Create parented to the PARTITION folder: a create can never
+                // land in a pooled location.
+                self.multipart_write(
+                    reqwest::Method::POST,
+                    create_upload_url(&self.upload_base),
+                    name,
+                    content,
+                    Some(folder_id),
+                )
+            }
+        }
+    }
+
+    fn drive_account_email(&mut self) -> Result<Option<String>, SyncError> {
+        if let Some(e) = maybe_inject_fault("drive_account_email") {
+            return Err(e);
+        }
+        let url = format!("{API_BASE}/about?fields=user");
+        let resp = self.send(|client, token| {
+            client
+                .request(reqwest::Method::GET, &url)
+                .bearer_auth(token)
+        })?;
+        let status = resp.status().as_u16();
+        let retry_after_ms = read_retry_after_ms(resp.headers());
+        let body = resp
+            .text()
+            .map_err(|e| SyncError::Retryable(e.to_string()))?;
+        classify_status_with_retry_after(status, retry_after_ms, &body)?;
+        let value: serde_json::Value =
+            serde_json::from_str(&body).map_err(|_| SyncError::Rejected("corrupt about response".to_string()))?;
+        Ok(value
+            .get("user")
+            .and_then(|u| u.get("emailAddress"))
+            .and_then(|e| e.as_str())
+            .filter(|s| !s.is_empty())
+            .map(str::to_string))
     }
 }
 

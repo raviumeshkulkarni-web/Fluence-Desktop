@@ -1,7 +1,8 @@
 // Fluence sync - frozen v1.2 (dictionary, snippets, stats, settings).
 // Transcription history is platform-local and NEVER synchronizes.
-pub mod auth;
-pub mod clock;
+    pub mod account_partition;
+    pub mod auth;
+    pub mod clock;
 pub mod convergence;
 pub mod domain;
 pub mod drive;

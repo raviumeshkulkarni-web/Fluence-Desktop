@@ -26,7 +26,7 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 
 use crate::sync::auth::{self, AuthSession};
-use crate::sync::drive::{Backoff, GoogleDriveStore};
+use crate::sync::drive::{Backoff, DomainDriveStore, GoogleDriveStore};
 use crate::sync::error::SyncError;
 
 // ---------------------------------------------------------------------------
@@ -543,10 +543,7 @@ fn sync_config() -> auth::OAuthConfig {
 fn run_pass() -> Result<SyncOutcome, SyncError> {
     let settings = crate::settings::load_settings()
         .map_err(|e| SyncError::Fatal(format!("failed to load settings for sync: {e}")))?;
-    let account_email = settings.sync_account_key.clone();
-    let account_hash = account_email
-        .as_deref()
-        .map(crate::sync::metadata::account_hash_from_email);
+    let persisted_email = settings.sync_account_key.clone();
 
     let config = sync_config();
     let mut session = AuthSession::new(config);
@@ -570,29 +567,51 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
             refresh_access_token_silently(&mut session)
         }));
     }
+    // STAGE 8 — token-bound identity. The partition key derives from the email
+    // Drive attributes to THIS access token, never from the persisted setting
+    // alone. A pass that cannot establish the identity, or finds it differs
+    // from the persisted sign-in, aborts BEFORE any partition is addressed —
+    // so Windows can never upload into (or read from) a partition derived from
+    // a stale email. Mirrors Android `DriveIdentity.resolveAccountEmail`.
+    let Some(persisted) = persisted_email.as_deref() else {
+        return Err(SyncError::AuthRequired);
+    };
+    let verified_email = match drive.drive_account_email()? {
+        Some(e) => e,
+        None => {
+            return Err(SyncError::Retryable(
+                "drive identity unavailable; refusing to sync without it".to_string(),
+            ))
+        }
+    };
+    if persisted.trim().to_lowercase() != verified_email.trim().to_lowercase() {
+        return Err(SyncError::Retryable(
+            "token identity differs from the persisted sign-in; refusing to sync under a stale key"
+                .to_string(),
+        ));
+    }
+    let account_hash = crate::sync::metadata::account_hash_from_email(&verified_email);
     let mut metadata = crate::sync::metadata::SyncMetadata::load();
     // Account switch: update the active-account marker so per-account
     // bookkeeping (lastRev) partitions correctly.
-    if let Some(hash) = account_hash.clone() {
-        if metadata.last_account_hash.as_deref() != Some(&hash) {
-            metadata.last_account_hash = Some(hash.clone());
-            metadata.save();
-            // Same stale-cache class as dictionary.rs W1 - compiled caches
-            // keyed to the previous account must be dropped immediately.
-            crate::dictionary::invalidate_cache();
-            crate::snippets::invalidate_cache();
-        }
+    if metadata.last_account_hash.as_deref() != Some(&account_hash) {
+        metadata.last_account_hash = Some(account_hash.clone());
+        metadata.save();
+        // Same stale-cache class as dictionary.rs W1 - compiled caches
+        // keyed to the previous account must be dropped immediately.
+        crate::dictionary::invalidate_cache();
+        crate::snippets::invalidate_cache();
     }
-    let Some(hash) = account_hash else {
-        return Err(SyncError::AuthRequired);
-    };
+    let hash = account_hash;
 
     let mut dict_store = crate::sync::stores::DictionaryDirtyStore;
     let mut snippet_store = crate::sync::stores::SnippetDirtyStore;
     let mut settings_store = crate::sync::stores::SettingsDirtyStore;
     let mut stats_store = crate::sync::stores::StatsDirtyStore;
+    let mut agent_store = crate::sync::stores::AgentDirtyStore;
+    let mut style_store = crate::sync::stores::StyleDirtyStore;
 
-    let outcomes = crate::sync::frozen::sync_all_domains(
+    let result = crate::sync::frozen::sync_all_domains(
         &mut drive,
         &hash,
         &mut metadata,
@@ -600,16 +619,24 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         &mut snippet_store,
         &mut settings_store,
         &mut stats_store,
-    )?;
+        &mut agent_store,
+        &mut style_store,
+    );
 
     let mut outcome = SyncOutcome::default();
-    for o in outcomes {
+    for o in &result.outcomes {
         if o.pushed {
             outcome.created += 1;
         }
         if o.merged {
             outcome.imported += o.items_merged;
         }
+    }
+    // Partial success stays visible via `outcome`; the worst domain error (if
+    // any) still determines the pass result so the scheduler escalates on the
+    // most actionable signal.
+    if let Some(e) = result.error {
+        return Err(e);
     }
     Ok(outcome)
 }
@@ -854,6 +881,11 @@ pub async fn sync_sign_in(
     crate::dictionary::invalidate_cache();
     crate::snippets::invalidate_cache();
 
+    // Pair the persisted `sync_enabled = true` above with the running core:
+    // without this, a sign-in that follows a manual disable leaves
+    // settings=true but core.enabled=false (no automatic passes, toggle OFF)
+    // until the next restart. `SignedIn` deliberately does not touch `enabled`.
+    scheduler.command(SyncCommand::SetEnabled(true));
     scheduler.command(SyncCommand::SignedIn);
     scheduler.emit_status();
     let _ = app;

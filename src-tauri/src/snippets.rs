@@ -8,7 +8,6 @@
 // (see transcribe::build_vocabulary_hint).
 
 use anyhow::Result;
-use dirs::data_local_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -90,8 +89,10 @@ impl Default for SnippetStore {
 
 static STORE_CACHE: Mutex<Option<SnippetStore>> = Mutex::new(None);
 
+/// Uses the shared `sync::stores::base_data_dir()` so test builds can never
+/// write the real snippets file. Unset in production, so the path is unchanged.
 fn snippets_path() -> PathBuf {
-    let mut path = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+    let mut path = crate::sync::stores::base_data_dir();
     path.push("Fluence");
     path.push("snippets.json");
     path

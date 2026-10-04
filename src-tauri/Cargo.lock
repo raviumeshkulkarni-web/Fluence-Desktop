@@ -1420,6 +1420,7 @@ dependencies = [
  "hex",
  "image",
  "log",
+ "md-5",
  "once_cell",
  "regex",
  "reqwest 0.12.28",

@@ -241,6 +241,155 @@ pub fn resolve_hint(store: &AgentsStore, id: Option<&str>) -> Option<String> {
     resolve_active_agent(store, id).hint
 }
 
+// ── Phase 6: account-routed read/write paths ────────────────────────────────
+//
+// These mirror Android `AgentPreferences`. The legacy-store functions above
+// stay (they serve the signed-out path and their unit tests); every production
+// consumer — the Tauri commands below and `agent.rs::resolve_agent_hint` —
+// goes through the routed versions, so no consumer can bypass admission.
+
+/// The account whose namespace local reads, writes and deletes use: the
+/// durable persisted sign-in identity (NOT a volatile in-memory flag — Windows
+/// has no `tokenVerified` equivalent, and `active_account_hash` derives from
+/// settings refreshed on sign-in/out, so cold starts and sync-off users route
+/// correctly with no pass required). Uploads still demand live token
+/// verification independently in the sync engine.
+pub fn local_account_hash() -> Option<String> {
+    crate::account_scope::active_account_hash()
+}
+
+/// Read the union of the active account's agents and the legacy device-local
+/// ones, returning only what runtime consumers may execute. Tombstones are
+/// excluded (a deleted agent must be neither listed nor resolvable); sync
+/// never reads this function.
+pub fn load_custom_agents() -> Vec<CustomAgent> {
+    let hash = local_account_hash();
+    let snapshot = crate::account_scope::VisibleAgents::load(hash.as_deref());
+    snapshot
+        .admitted()
+        .into_iter()
+        .filter(|r| match r {
+            crate::account_scope::VisibleRecord::Legacy { .. } => true,
+            crate::account_scope::VisibleRecord::Account(a) => a.deleted_at.is_none(),
+        })
+        .map(|r| match r {
+            crate::account_scope::VisibleRecord::Legacy { id, name, hint } => {
+                CustomAgent { id, name, hint }
+            }
+            crate::account_scope::VisibleRecord::Account(a) => CustomAgent {
+                id: a.id,
+                name: a.name,
+                hint: a.hint,
+            },
+        })
+        .collect()
+}
+
+/// True for the builtin id and admitted custom agents. An unassigned legacy
+/// record is displayable but not known-executable.
+pub fn is_known_agent(agent_id: &str) -> bool {
+    if agent_id == ID_BUILT_IN {
+        return true;
+    }
+    load_custom_agents().iter().any(|a| a.id == agent_id)
+}
+
+/// Resolve an agent id for execution through the admitted snapshot. Unknown,
+/// deleted and unadmitted ids fall back to built-in (never stuck).
+pub fn resolve_active_agent_routed(id: Option<&str>) -> ResolvedAgent {
+    let hash = local_account_hash();
+    let snapshot = crate::account_scope::VisibleAgents::load(hash.as_deref());
+    snapshot.resolve(id)
+}
+
+/// Create or update an agent: account store when signed in (so it is Owned,
+/// runnable and syncable immediately), legacy store when signed out.
+pub fn save_custom_agent_routed(name: &str, hint: &str, id: Option<&str>) -> Option<CustomAgent> {
+    let clean_name = sanitize_name(name);
+    let clean_hint = sanitize_hint(hint);
+    if clean_name.is_empty() || clean_hint.is_empty() {
+        return None;
+    }
+    if validate_agent_name_routed(&clean_name, id).is_some() {
+        return None;
+    }
+    let agent_id = match id {
+        Some(existing) if existing.starts_with("agent:") => existing.to_string(),
+        _ => format!("agent:{}", uuid::Uuid::new_v4()),
+    };
+    match local_account_hash() {
+        Some(hash) => {
+            crate::account_scope::upsert_account_agent(&hash, &agent_id, &clean_name, &clean_hint);
+            Some(CustomAgent { id: agent_id, name: clean_name, hint: clean_hint })
+        }
+        None => {
+            let mut store = load_store();
+            let agent = CustomAgent { id: agent_id.clone(), name: clean_name, hint: clean_hint };
+            if let Some(pos) = store.custom_agents.iter().position(|a| a.id == agent_id) {
+                store.custom_agents[pos] = agent.clone();
+            } else {
+                store.custom_agents.push(agent.clone());
+            }
+            save_store(&store).ok()?;
+            Some(agent)
+        }
+    }
+}
+
+/// Validate a name against the ADMITTED set (not just the legacy file), so
+/// duplicates are caught across both stores.
+pub fn validate_agent_name_routed(name: &str, excluding_id: Option<&str>) -> Option<String> {
+    let clean = sanitize_name(name);
+    if clean.is_empty() {
+        return Some("Agent name is empty.".to_string());
+    }
+    if clean.to_lowercase() == ID_BUILT_IN {
+        return Some("That name is reserved.".to_string());
+    }
+    let dup = load_custom_agents().iter().any(|a| {
+        a.name.to_lowercase() == clean.to_lowercase() && Some(a.id.as_str()) != excluding_id
+    });
+    if dup {
+        return Some("An agent with that name already exists.".to_string());
+    }
+    None
+}
+
+/// Delete an agent: tombstone in the account store when signed in (so the
+/// delete propagates instead of resurrecting), legacy removal when signed
+/// out. A same-id legacy row is left alone when signed in. Returns true when
+/// something was deleted; also resets a deleted default to built-in.
+pub fn delete_custom_agent_routed(id: &str) -> bool {
+    if id == ID_BUILT_IN {
+        return false;
+    }
+    let removed = match local_account_hash() {
+        Some(hash) => {
+            let before = crate::account_scope::load_account_agents(&hash).custom_agents;
+            crate::account_scope::delete_account_agent(&hash, id);
+            before.iter().any(|a| a.id == id)
+        }
+        None => {
+            let mut store = load_store();
+            let before = store.custom_agents.len();
+            store.custom_agents.retain(|a| a.id != id);
+            let removed = store.custom_agents.len() != before;
+            if removed {
+                let _ = save_store(&store);
+            }
+            removed
+        }
+    };
+    if removed {
+        let mut store = load_store();
+        if store.default_id == id {
+            store.default_id = ID_BUILT_IN.to_string();
+            let _ = save_store(&store);
+        }
+    }
+    removed
+}
+
 // --- Tauri commands (registered in Slice 4b) ---
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -263,13 +412,12 @@ pub fn get_agents(window: tauri::Window) -> Result<AgentsView, String> {
         ],
     )?;
     let store = load_store();
-    Ok(AgentsView {
-        builtin_id: ID_BUILT_IN.to_string(),
-        builtin_name: NAME_BUILT_IN.to_string(),
-        builtin_description: "The all-rounder. Edits, rewrites, and answers questions.".to_string(),
-        default_id: store.default_id.clone(),
-        custom_agents: store.custom_agents.clone(),
-    })
+    // Read the union ONCE, then thread that same snapshot through the view.
+    // `default_id` stays device-local (D1c) and is passed through untouched.
+    let snapshot = crate::account_scope::VisibleAgents::load(
+        crate::account_scope::active_account_hash().as_deref(),
+    );
+    Ok(snapshot.into_view(store.default_id.clone()))
 }
 
 #[tauri::command]
@@ -280,15 +428,11 @@ pub fn save_agent(
     id: Option<String>,
 ) -> Result<CustomAgent, String> {
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
-    let mut store = load_store();
-    if let Some(err) = validate_agent_name(&store, &name, id.as_deref()) {
-        return Err(err);
-    }
-    match save_custom_agent(&mut store, &name, &hint, id.as_deref()) {
-        Some(agent) => {
-            save_store(&store)?;
-            Ok(agent)
-        }
+    // Routed: account store when signed in (Owned, runnable, syncable), legacy
+    // when signed out. Writing legacy while signed in would create an
+    // immediately-unrunnable, never-synced record.
+    match save_custom_agent_routed(&name, &hint, id.as_deref()) {
+        Some(agent) => Ok(agent),
         None => Err("Could not save. Try a shorter name and hint.".to_string()),
     }
 }
@@ -296,21 +440,25 @@ pub fn save_agent(
 #[tauri::command]
 pub fn delete_agent(window: tauri::Window, id: String) -> Result<(), String> {
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
-    let mut store = load_store();
-    if !delete_custom_agent(&mut store, &id) {
+    // Routed: tombstone in the account store when signed in (propagates),
+    // legacy removal when signed out.
+    if !delete_custom_agent_routed(&id) {
         return Err("Agent not found.".to_string());
     }
-    save_store(&store)?;
     Ok(())
 }
 
 #[tauri::command]
 pub fn set_default_agent(window: tauri::Window, id: String) -> Result<(), String> {
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
-    let mut store = load_store();
-    if !set_default_agent_id(&mut store, &id) {
+    // Gated on the admitted set: a default must never point at an
+    // inadmissible (unassigned/tombstoned) record. The id itself stays
+    // device-local (D1c).
+    if !is_known_agent(&id) {
         return Err("Unknown agent.".to_string());
     }
+    let mut store = load_store();
+    store.default_id = id;
     save_store(&store)?;
     Ok(())
 }

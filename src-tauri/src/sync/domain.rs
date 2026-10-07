@@ -1137,7 +1137,10 @@ mod agent_style_conformance_tests {
 
     #[test]
     fn agent_envelope_matches_the_cross_platform_fixture() {
-        let env = AgentEnvelope { v: 1, entries: vec![agent_fixture_item()] };
+        let env = AgentEnvelope {
+            v: 1,
+            entries: vec![agent_fixture_item()],
+        };
         assert_eq!(AGENT_FIXTURE.as_bytes(), env.to_bytes().as_slice());
         let parsed = AgentEnvelope::from_bytes(AGENT_FIXTURE.as_bytes()).expect("must parse");
         assert_eq!(vec![agent_fixture_item()], parsed.entries);
@@ -1145,7 +1148,10 @@ mod agent_style_conformance_tests {
 
     #[test]
     fn style_envelope_matches_the_cross_platform_fixture() {
-        let env = StyleEnvelope { v: 1, entries: vec![style_fixture_item()] };
+        let env = StyleEnvelope {
+            v: 1,
+            entries: vec![style_fixture_item()],
+        };
         assert_eq!(STYLE_FIXTURE.as_bytes(), env.to_bytes().as_slice());
         let parsed = StyleEnvelope::from_bytes(STYLE_FIXTURE.as_bytes()).expect("must parse");
         assert_eq!(vec![style_fixture_item()], parsed.entries);
@@ -1156,7 +1162,10 @@ mod agent_style_conformance_tests {
         let mut b = agent_fixture_item();
         b.business_key = "agent:223e4567-e89b-12d3-a456-426614174000".to_string();
         b.name = "Second".to_string();
-        let env = AgentEnvelope { v: 1, entries: vec![b, agent_fixture_item()] };
+        let env = AgentEnvelope {
+            v: 1,
+            entries: vec![b, agent_fixture_item()],
+        };
         let bytes = env.to_bytes();
         let s = String::from_utf8(bytes).unwrap();
         assert!(s.find("Translator").unwrap() < s.find("Second").unwrap());
@@ -1241,8 +1250,14 @@ mod agent_style_conformance_tests {
         plain.sync_id = "223e4567-e89b-12d3-a456-426614174000".to_string();
         plain.name = "zzz".to_string();
 
-        let forward = AgentEnvelope { v: 1, entries: vec![emoji.clone(), plain.clone()] };
-        let backward = AgentEnvelope { v: 1, entries: vec![plain, emoji] };
+        let forward = AgentEnvelope {
+            v: 1,
+            entries: vec![emoji.clone(), plain.clone()],
+        };
+        let backward = AgentEnvelope {
+            v: 1,
+            entries: vec![plain, emoji],
+        };
         assert_eq!(
             forward.to_bytes(),
             backward.to_bytes(),

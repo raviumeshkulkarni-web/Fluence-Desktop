@@ -133,8 +133,7 @@ mod tests {
     /// STAGE 1 cross-platform fixture, independently computed and asserted
     /// identically in `sync/metadata.rs` and on Android in `DriveIdentityTest`.
     const CANONICAL_EMAIL: &str = "test@example.com";
-    const CANONICAL_HASH: &str =
-        "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b";
+    const CANONICAL_HASH: &str = "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b";
     /// SHA-256("fluence/acct-path/v1\0" + CANONICAL_HASH). Independently
     /// computed and asserted identically on Android in `AccountPartitionTest`.
     const CANONICAL_SEGMENT: &str =
@@ -182,7 +181,10 @@ mod tests {
     #[test]
     fn the_path_segment_is_derived_from_the_tagged_input() {
         // Documented derivation: SHA-256("fluence/acct-path/v1\0" + accountHash)
-        assert_eq!(Some(CANONICAL_SEGMENT), path_segment(CANONICAL_HASH).as_deref());
+        assert_eq!(
+            Some(CANONICAL_SEGMENT),
+            path_segment(CANONICAL_HASH).as_deref()
+        );
         assert_eq!(
             Some(format!("acct-{}", CANONICAL_SEGMENT)),
             folder_name(CANONICAL_HASH)
@@ -235,7 +237,12 @@ mod tests {
         // under a partition folder, or existing installs lose their data.
         for name in crate::sync::drive::DOMAIN_FILES {
             let p = relative_path(name, CANONICAL_HASH).unwrap();
-            assert_eq!(2, p.matches('/').count(), "{} must stay directly inside v1", name);
+            assert_eq!(
+                2,
+                p.matches('/').count(),
+                "{} must stay directly inside v1",
+                name
+            );
         }
     }
 
@@ -278,12 +285,12 @@ mod tests {
         let bad = vec![
             String::new(),
             "   ".to_string(),
-            alice[..63].to_string(),       // 63 chars
-            format!("{}0", alice),          // 65 chars
-            alice[..16].to_string(),        // the legacy 16-hex form
-            alice.to_uppercase(),           // uppercase is not canonical
+            alice[..63].to_string(), // 63 chars
+            format!("{}0", alice),   // 65 chars
+            alice[..16].to_string(), // the legacy 16-hex form
+            alice.to_uppercase(),    // uppercase is not canonical
             "not-a-hash".to_string(),
-            format!("g{}", &alice[1..]),    // out-of-range hex char
+            format!("g{}", &alice[1..]), // out-of-range hex char
         ];
         for h in &bad {
             assert_eq!(None, folder_name(h), "must reject {:?}", h);
@@ -327,7 +334,12 @@ mod tests {
         ];
         for t in &traversal {
             assert_eq!(None, folder_name(t), "must not produce a folder: {}", t);
-            assert_eq!(None, relative_path(AGENTS_FILE, t), "must not produce a path: {}", t);
+            assert_eq!(
+                None,
+                relative_path(AGENTS_FILE, t),
+                "must not produce a path: {}",
+                t
+            );
         }
     }
 
@@ -348,7 +360,9 @@ mod tests {
         let folder = folder_name(CANONICAL_HASH).unwrap();
         let hash = folder.strip_prefix(FOLDER_PREFIX).unwrap();
         assert_eq!(64, hash.len());
-        assert!(hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
+        assert!(hash
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase()));
     }
 
     // -- old-client compatibility ------------------------------------------
@@ -369,7 +383,12 @@ mod tests {
     fn the_four_frozen_files_stay_reachable_by_an_old_client() {
         for name in crate::sync::drive::DOMAIN_FILES {
             let p = relative_path(name, CANONICAL_HASH).unwrap();
-            assert_eq!(2, p.matches('/').count(), "{} must remain directly inside v1", name);
+            assert_eq!(
+                2,
+                p.matches('/').count(),
+                "{} must remain directly inside v1",
+                name
+            );
         }
     }
 
@@ -392,7 +411,10 @@ mod tests {
         let derived = crate::sync::metadata::account_hash_from_email(CANONICAL_EMAIL);
         assert_eq!(CANONICAL_HASH, derived);
         assert_eq!(
-            Some(format!("fluence/v1/acct-{}/agents.json", path_segment(&derived).unwrap())),
+            Some(format!(
+                "fluence/v1/acct-{}/agents.json",
+                path_segment(&derived).unwrap()
+            )),
             relative_path(AGENTS_FILE, &derived)
         );
     }

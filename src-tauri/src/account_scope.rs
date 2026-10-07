@@ -68,6 +68,22 @@ fn prompts_base_dir() -> PathBuf {
     crate::sync::stores::base_data_dir()
 }
 
+/// `#[cfg(test)]` accessors for the private account-file path resolver.
+///
+/// The routed delete resolves the active account through the account file, so a
+/// durability-gate test must be able to make THAT file unwritable without
+/// reaching for a private helper. Read-only shims: they add no behaviour and are
+/// compiled out of release builds.
+#[cfg(test)]
+pub(crate) fn account_path_for_test(base: &Path, stem: &str, account_hash: &str) -> PathBuf {
+    account_path(base, stem, account_hash)
+}
+
+#[cfg(test)]
+pub(crate) fn prompts_base_dir_for_test() -> PathBuf {
+    prompts_base_dir()
+}
+
 /// Strictly the documented convention: the account hash is SHA-256 hex, so
 /// exactly 64 lowercase hex characters.
 ///
@@ -81,7 +97,10 @@ fn prompts_base_dir() -> PathBuf {
 /// accepted for a Drive path is by construction also accepted for local account
 /// storage. Two validators would be free to drift.
 pub(crate) fn valid_account_hash(hash: &str) -> bool {
-    hash.len() == 64 && hash.bytes().all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    hash.len() == 64
+        && hash
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
 }
 
 /// An account-owned custom agent. Legacy device-local agents keep the narrower
@@ -205,11 +224,17 @@ pub(crate) fn load_account_agents(account_hash: &str) -> AccountAgentsStore {
     read_json(&account_path(&agents_base_dir(), "agents", account_hash))
 }
 
-pub(crate) fn save_account_agents(account_hash: &str, store: &AccountAgentsStore) -> Result<(), String> {
+pub(crate) fn save_account_agents(
+    account_hash: &str,
+    store: &AccountAgentsStore,
+) -> Result<(), String> {
     if !valid_account_hash(account_hash) {
         return Err("invalid account hash".to_string());
     }
-    write_json(&account_path(&agents_base_dir(), "agents", account_hash), store)
+    write_json(
+        &account_path(&agents_base_dir(), "agents", account_hash),
+        store,
+    )
 }
 
 pub(crate) fn load_account_styles(account_hash: &str) -> AccountStylesStore {
@@ -219,7 +244,10 @@ pub(crate) fn load_account_styles(account_hash: &str) -> AccountStylesStore {
     read_json(&account_path(&prompts_base_dir(), "styles", account_hash))
 }
 
-pub(crate) fn save_account_styles(account_hash: &str, store: &AccountStylesStore) -> Result<(), String> {
+pub(crate) fn save_account_styles(
+    account_hash: &str,
+    store: &AccountStylesStore,
+) -> Result<(), String> {
     if !valid_account_hash(account_hash) {
         return Err("invalid account hash".to_string());
     }
@@ -265,17 +293,255 @@ pub(crate) fn upsert_account_agent(account_hash: &str, id: &str, name: &str, hin
 /// Soft-delete an agent in the account's own store: writes a tombstone so the
 /// delete propagates instead of being resurrected. A same-id legacy row is
 /// deliberately left alone. No-op for an invalid hash.
-pub(crate) fn delete_account_agent(account_hash: &str, id: &str) {
+///
+/// Returns true only when the tombstone was found AND durably persisted.
+/// Callers drop the same-id legacy shadow only on success: a failed tombstone
+/// write must preserve the legacy copy, or the record ends up in neither
+/// store with no tombstone to propagate the loss.
+pub(crate) fn delete_account_agent(account_hash: &str, id: &str) -> bool {
     if !valid_account_hash(account_hash) {
-        return;
+        return false;
     }
     let mut store = load_account_agents(account_hash);
     let Some(e) = store.custom_agents.iter_mut().find(|e| e.id == id) else {
-        return;
+        return false;
     };
     e.deleted_at = Some(chrono::Utc::now().timestamp_millis());
     e.dirty = true;
-    let _ = save_account_agents(account_hash, &store);
+    save_account_agents(account_hash, &store).is_ok()
+}
+
+/// Outcome of one explicit legacy claim.
+///
+/// `skipped_ids` are legacy records whose stable id ALREADY exists in the
+/// account store. They are left untouched on BOTH sides: the owned copy is
+/// authoritative and already synced, so overwriting it would destroy the user's
+/// data on every other device. The legacy copy stays put (and stays shadowed by
+/// the account copy) so nothing is silently discarded.
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClaimOutcome {
+    pub claimed_ids: Vec<String>,
+    pub skipped_ids: Vec<String>,
+    /// Deliberately NOT claimed, with the legacy copy deliberately left in place.
+    ///
+    /// Kept distinct from `skipped_ids` because the two mean opposite things to
+    /// the user: "skipped" means the record is already theirs, "refused" means
+    /// this record cannot be adopted and the app will say why. Reasons, all
+    /// deterministic:
+    ///
+    ///  - `builtin-id` — a reserved id that must never become an ownable record.
+    ///  - `tombstoned` — the account holds a DELETE for this id. A delete is
+    ///    never resurrected by an ownership transfer; see the tombstone policy
+    ///    on `claim_legacy_account_agents`.
+    ///  - `duplicate-legacy-id` — the legacy store holds this id more than once,
+    ///    so there is no single record to adopt and picking one would silently
+    ///    destroy the other. Refusing keeps both.
+    pub refused_ids: Vec<(String, &'static str)>,
+}
+
+impl ClaimOutcome {
+    pub fn is_empty(&self) -> bool {
+        self.claimed_ids.is_empty() && self.skipped_ids.is_empty() && self.refused_ids.is_empty()
+    }
+}
+
+/// Adopt legacy Agents into `account_hash` — ONE explicit user action.
+///
+/// This is an ownership transition and the ONLY path that performs it:
+///
+///  - it never runs on its own; nothing here is reachable from a read path or
+///    from sync, only from an explicit user action;
+///  - it never infers the target account. `account_hash` is supplied by the
+///    caller from the currently authenticated identity, and an absent or invalid
+///    hash claims NOTHING — so signing out, or an unverifiable identity, cannot
+///    adopt anything;
+///  - it never overwrites an owned record; a legacy id that already exists is
+///    skipped and reported.
+///
+/// Claimed rows are written exactly as [`upsert_account_agent`] writes one:
+/// `sync_id`/`updated_at` null and `dirty` true, so the ordinary pass stamps and
+/// uploads them. No new sync path, envelope, or ownership mechanism is
+/// introduced, and the legacy store is only ever READ here.
+///
+/// The claim COPIES, it never MOVES: the caller removes NOTHING. The legacy row
+/// is deliberately left on disk because the account store is a whole-document
+/// read-modify-write and writers that do not share this function's critical
+/// section — the sync pass notably loads the document, performs a Drive round
+/// trip, and only then writes a payload built from that pre-network snapshot —
+/// can discard a committed claim. Deleting the legacy copy would turn that
+/// outcome into permanent loss (the record in NEITHER store); keeping it degrades
+/// it to a re-claimable shadow instead.
+///
+/// Legacy removal happens on exactly one path, and it is NOT here: the delete
+/// routes drop the same-id shadow only after the account tombstone is confirmed
+/// durable (`delete_custom_agent_routed` / `delete_custom_style_routed`).
+pub(crate) fn claim_legacy_account_agents(
+    account_hash: Option<&str>,
+    legacy: &[crate::agents::CustomAgent],
+    only_ids: Option<&std::collections::HashSet<String>>,
+) -> ClaimOutcome {
+    let Some(hash) = account_hash.filter(|h| valid_account_hash(h)) else {
+        return ClaimOutcome::default();
+    };
+    // CLAIM-SPECIFIC CRITICAL SECTION.
+    //
+    // The account store is a whole-document read-modify-write, so "one load and
+    // one save" is itself an RMW cycle — batching does not avoid that. This is
+    // NOT the general account-store concurrency fix (B2/R1 remains open); it is
+    // the minimum needed to keep this operation from LOSING A RECORD, because it
+    // is the only writer whose success is followed by a destructive delete of
+    // the other copy.
+    //
+    // Without it: `AgentDirtyStore::stamp_account` (stores.rs) holds this same
+    // lock, loads, stamps, and saves. An unguarded claim could append + save,
+    // report the id claimed, delete the legacy copy — and then the stamper
+    // would save its own older snapshot, discarding the claim. The record would
+    // exist in NEITHER store.
+    //
+    // Reentrant (see io_lock.rs), so nesting is safe, and it is dropped before
+    // any caller touches the legacy store — no lock is ever held across the
+    // legacy cleanup or any network/Drive work.
+    let _io = crate::sync::io_lock::io_lock_guard();
+
+    let mut outcome = ClaimOutcome::default();
+    if legacy.is_empty() {
+        return outcome;
+    }
+    let mut store = load_account_agents(hash);
+    // Each id is DECIDED once, so a duplicated legacy id yields exactly one
+    // refusal rather than one per row.
+    let mut decided = std::collections::HashSet::new();
+    for rec in legacy {
+        if let Some(only) = only_ids {
+            if !only.contains(&rec.id) {
+                continue;
+            }
+        }
+        if !decided.insert(rec.id.clone()) {
+            continue;
+        }
+        // A reserved id must never become an ownable, syncable custom record.
+        if rec.id == crate::agents::ID_BUILT_IN {
+            outcome.refused_ids.push((rec.id.clone(), "builtin-id"));
+            continue;
+        }
+        // Duplicate ids in the legacy store: refuse rather than pick one. The
+        // cleanup step deletes by id, so claiming would delete BOTH copies while
+        // reporting one as adopted — silent destruction of a record nobody chose.
+        if legacy.iter().filter(|o| o.id == rec.id).count() > 1 {
+            outcome
+                .refused_ids
+                .push((rec.id.clone(), "duplicate-legacy-id"));
+            continue;
+        }
+        // TOMBSTONE POLICY (deterministic, stated once): a DELETE wins. An
+        // explicit claim does NOT resurrect a deleted record, because reviving it
+        // would make an ownership transfer undo a deletion the user performed on
+        // another device, and would change tombstone semantics. The legacy copy
+        // is left untouched and the refusal is REPORTED, so this is never the
+        // silent side effect of an `ownedIds` set.
+        if let Some(existing) = store.custom_agents.iter().find(|a| a.id == rec.id) {
+            if existing.deleted_at.is_some() {
+                outcome.refused_ids.push((rec.id.clone(), "tombstoned"));
+            } else {
+                outcome.skipped_ids.push(rec.id.clone());
+            }
+            continue;
+        }
+        store.custom_agents.push(AccountAgent {
+            id: rec.id.clone(),
+            name: rec.name.clone(),
+            hint: rec.hint.clone(),
+            sync_id: None,
+            updated_at: None,
+            device_id: None,
+            deleted_at: None,
+            dirty: true,
+        });
+        outcome.claimed_ids.push(rec.id.clone());
+    }
+    if !outcome.claimed_ids.is_empty() {
+        // Ownership MUST be durable before the caller is allowed to drop the
+        // legacy copy. If this write fails the record still exists in the legacy
+        // store and nowhere else, so reporting it as claimed would let the caller
+        // delete the only copy — a silent data loss. Report nothing claimed and
+        // let the legacy row stand; the user can retry.
+        if save_account_agents(hash, &store).is_err() {
+            outcome.claimed_ids.clear();
+        }
+    }
+    outcome
+}
+
+/// Style counterpart of [`claim_legacy_account_agents`], with identical rules.
+pub(crate) fn claim_legacy_account_styles(
+    account_hash: Option<&str>,
+    legacy: &[crate::prompts::CustomStyle],
+    only_ids: Option<&std::collections::HashSet<String>>,
+) -> ClaimOutcome {
+    let Some(hash) = account_hash.filter(|h| valid_account_hash(h)) else {
+        return ClaimOutcome::default();
+    };
+    // Same claim-specific critical section as the agent path, contending with the
+    // already-locked `StyleDirtyStore::stamp_account`. Still not B2/R1.
+    let _io = crate::sync::io_lock::io_lock_guard();
+
+    let mut outcome = ClaimOutcome::default();
+    if legacy.is_empty() {
+        return outcome;
+    }
+    let mut store = load_account_styles(hash);
+    // Each id decided once — see the agent counterpart.
+    let mut decided = std::collections::HashSet::new();
+    for rec in legacy {
+        if let Some(only) = only_ids {
+            if !only.contains(&rec.id) {
+                continue;
+            }
+        }
+        if !decided.insert(rec.id.clone()) {
+            continue;
+        }
+        if crate::prompts::is_builtin_style(&rec.id) {
+            outcome.refused_ids.push((rec.id.clone(), "builtin-id"));
+            continue;
+        }
+        if legacy.iter().filter(|o| o.id == rec.id).count() > 1 {
+            outcome
+                .refused_ids
+                .push((rec.id.clone(), "duplicate-legacy-id"));
+            continue;
+        }
+        // DELETE wins over an ownership transfer — see the agent path.
+        if let Some(existing) = store.custom_styles.iter().find(|s| s.id == rec.id) {
+            if existing.deleted_at.is_some() {
+                outcome.refused_ids.push((rec.id.clone(), "tombstoned"));
+            } else {
+                outcome.skipped_ids.push(rec.id.clone());
+            }
+            continue;
+        }
+        store.custom_styles.push(AccountStyle {
+            id: rec.id.clone(),
+            name: rec.name.clone(),
+            hint: rec.hint.clone(),
+            sync_id: None,
+            updated_at: None,
+            device_id: None,
+            deleted_at: None,
+            dirty: true,
+        });
+        outcome.claimed_ids.push(rec.id.clone());
+    }
+    if !outcome.claimed_ids.is_empty() {
+        // Same fail-safe as agents: ownership must be durable before the caller
+        // drops the legacy copy, or a failed write loses the only copy.
+        if save_account_styles(hash, &store).is_err() {
+            outcome.claimed_ids.clear();
+        }
+    }
+    outcome
 }
 
 /// Style counterpart of [`upsert_account_agent`].
@@ -304,17 +570,20 @@ pub(crate) fn upsert_account_style(account_hash: &str, id: &str, name: &str, hin
 }
 
 /// Style counterpart of [`delete_account_agent`]: tombstone, never removal.
-pub(crate) fn delete_account_style(account_hash: &str, id: &str) {
+///
+/// Same durability contract: true only when the tombstone persisted, so the
+/// caller keeps the legacy shadow on any failure.
+pub(crate) fn delete_account_style(account_hash: &str, id: &str) -> bool {
     if !valid_account_hash(account_hash) {
-        return;
+        return false;
     }
     let mut store = load_account_styles(account_hash);
     let Some(e) = store.custom_styles.iter_mut().find(|e| e.id == id) else {
-        return;
+        return false;
     };
     e.deleted_at = Some(chrono::Utc::now().timestamp_millis());
     e.dirty = true;
-    let _ = save_account_styles(account_hash, &store);
+    save_account_styles(account_hash, &store).is_ok()
 }
 
 /// A record visible to the user, tagged with where it came from.
@@ -322,7 +591,11 @@ pub(crate) fn delete_account_style(account_hash: &str, id: &str) {
 pub enum VisibleRecord {
     /// Device-local record from the legacy `agents.json` / `prompts.json`.
     /// Never adopted, never attributed to an account (D1a).
-    Legacy { id: String, name: String, hint: String },
+    Legacy {
+        id: String,
+        name: String,
+        hint: String,
+    },
     /// Record owned by the active account.
     Account(AccountAgent),
 }
@@ -413,10 +686,7 @@ pub fn admit_style(record: &VisibleStyle, account_hash: Option<&str>) -> Admissi
 /// The single admission gate for agents: raw union in, admitted records out.
 /// Every runtime consumer must read through this (or a snapshot built from
 /// it) rather than walking the union directly.
-pub fn admitted_agents(
-    union: &[VisibleRecord],
-    account_hash: Option<&str>,
-) -> Vec<VisibleRecord> {
+pub fn admitted_agents(union: &[VisibleRecord], account_hash: Option<&str>) -> Vec<VisibleRecord> {
     union
         .iter()
         .filter(|r| admit_agent(r, account_hash).is_admissible())
@@ -425,10 +695,7 @@ pub fn admitted_agents(
 }
 
 /// Style counterpart of [`admitted_agents`].
-pub fn admitted_styles(
-    union: &[VisibleStyle],
-    account_hash: Option<&str>,
-) -> Vec<VisibleStyle> {
+pub fn admitted_styles(union: &[VisibleStyle], account_hash: Option<&str>) -> Vec<VisibleStyle> {
     union
         .iter()
         .filter(|r| admit_style(r, account_hash).is_admissible())
@@ -479,7 +746,11 @@ pub fn union_agents(
 /// Style counterpart of [`union_agents`], with identical precedence rules.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum VisibleStyle {
-    Legacy { id: String, name: String, hint: String },
+    Legacy {
+        id: String,
+        name: String,
+        hint: String,
+    },
     Account(AccountStyle),
 }
 
@@ -538,14 +809,20 @@ impl VisibleAgents {
     /// Build a snapshot from an already-loaded union (tests, and callers that
     /// already hold one).
     pub fn from_union(union: Vec<VisibleRecord>) -> Self {
-        Self { union, account_hash: None }
+        Self {
+            union,
+            account_hash: None,
+        }
     }
 
     /// Build a snapshot from an already-loaded union with a known account.
     /// Production snapshots always carry the verified hash; a `None` hash
     /// withholds account records (see `has_verified_account`).
     pub fn from_union_with_account(union: Vec<VisibleRecord>, account_hash: Option<&str>) -> Self {
-        Self { union, account_hash: account_hash.map(str::to_string) }
+        Self {
+            union,
+            account_hash: account_hash.map(str::to_string),
+        }
     }
 
     /// An account record only means something with a valid account hash. The
@@ -666,6 +943,19 @@ impl VisibleAgents {
         }
     }
 
+    /// True when this listed record is an unclaimed pre-account record the user
+    /// may explicitly adopt into the signed-in account.
+    ///
+    /// Derived from the SAME admission gate as `is_runnable` rather than a second
+    /// sign-in check, so the affordance can never disagree with the policy: a
+    /// record is claimable exactly when it is a device-local legacy row that the
+    /// active account reports as `Unassigned` — i.e. signed in (signed out, the
+    /// same row is `DeviceLocal`, fully usable, and there is nothing to adopt).
+    pub fn is_claimable(&self, record: &VisibleRecord) -> bool {
+        matches!(record, VisibleRecord::Legacy { .. })
+            && self.admission_of(record) == Admission::Unassigned
+    }
+
     /// Project onto the existing `AgentsView` shape so the IPC contract and the
     /// frontend are unchanged. Union order is preserved, so the account-wins
     /// collision outcome is what the user sees.
@@ -675,24 +965,30 @@ impl VisibleAgents {
     /// surface. Hints are sanitized exactly as the legacy projection did, so an
     /// account-sourced hint can never bypass `sanitize_hint` on its way to the UI.
     pub fn into_view(self, default_id: String) -> crate::agents::AgentsView {
+        // `claimable` is computed here from `is_claimable`, the same admission gate
+        // the policy uses, so the affordance can never disagree with the rule.
+        let snapshot = &self;
         let custom_agents = self
             .union
             .iter()
             .filter_map(|r| match r {
-                VisibleRecord::Legacy { id, name, hint } => Some(crate::agents::CustomAgent {
+                VisibleRecord::Legacy { id, name, hint } => Some(crate::agents::CustomAgentView {
                     id: id.clone(),
                     name: name.clone(),
                     hint: crate::agents::sanitize_hint(hint),
+                    claimable: snapshot.is_claimable(r),
                 }),
                 VisibleRecord::Account(a) => {
                     // Deleted agents are never listed as selectable.
                     if a.deleted_at.is_some() {
                         return None;
                     }
-                    Some(crate::agents::CustomAgent {
+                    Some(crate::agents::CustomAgentView {
                         id: a.id.clone(),
                         name: a.name.clone(),
                         hint: crate::agents::sanitize_hint(&a.hint),
+                        // An owned record is never claimable: it is already owned.
+                        claimable: false,
                     })
                 }
             })
@@ -751,11 +1047,11 @@ impl VisibleStyles {
     }
 
     /// Build from an already-loaded union with a known account.
-    pub fn from_union_with_account(
-        union: Vec<VisibleStyle>,
-        account_hash: Option<&str>,
-    ) -> Self {
-        Self { union, account_hash: account_hash.map(str::to_string) }
+    pub fn from_union_with_account(union: Vec<VisibleStyle>, account_hash: Option<&str>) -> Self {
+        Self {
+            union,
+            account_hash: account_hash.map(str::to_string),
+        }
     }
 
     fn has_verified_account(&self) -> bool {
@@ -783,10 +1079,11 @@ impl VisibleStyles {
     /// True for builtin ids and admitted custom styles. An unassigned legacy
     /// style is displayable but not known-executable.
     pub fn is_known(&self, style_id: &str) -> bool {
-        crate::prompts::is_builtin_style(style_id) || self
-            .admitted()
-            .iter()
-            .any(|r| visible_style_id(r) == style_id)
+        crate::prompts::is_builtin_style(style_id)
+            || self
+                .admitted()
+                .iter()
+                .any(|r| visible_style_id(r) == style_id)
     }
 
     /// Resolve a custom style id to its hint for execution. Tombstoned and
@@ -830,6 +1127,55 @@ impl VisibleStyles {
             VisibleStyle::Account(s) => s.deleted_at.is_none(),
         }
     }
+
+    /// Style counterpart of [`VisibleAgents::is_claimable`], off the same gate.
+    pub fn is_claimable(&self, record: &VisibleStyle) -> bool {
+        matches!(record, VisibleStyle::Legacy { .. })
+            && self.admission_of(record) == Admission::Unassigned
+    }
+
+    /// Project the union onto the prompts-board view shape, with per-row
+    /// claimability. Style counterpart of [`VisibleAgents::into_view`].
+    ///
+    /// Walks `union` under `is_displayable`, NOT `admitted`. `admitted` is the
+    /// EXECUTION gate and, by design, withholds `Unassigned` rows while an
+    /// account is signed in — correct for runtime, wrong for a board: a listing
+    /// built from it hides pre-account data the moment the user signs in, which
+    /// is exactly the "it vanished" perception `is_displayable` was written to
+    /// prevent, and it leaves nothing to offer a claim action on. This mirrors
+    /// `VisibleAgents::into_view`, which already lists agents that way, so the
+    /// two boards no longer disagree.
+    ///
+    /// Claims are still impossible for a displayed-but-unclaimed row: it stays
+    /// inadmissible for execution, unowned for sync, and `claimable` only when an
+    /// account is signed in.
+    pub fn into_view_list(&self) -> Vec<crate::prompts::CustomStyleView> {
+        self.union
+            .iter()
+            .filter(|r| self.admission_of(r).is_displayable())
+            .filter_map(|r| match r {
+                VisibleStyle::Legacy { id, name, hint } => Some(crate::prompts::CustomStyleView {
+                    id: id.clone(),
+                    name: name.clone(),
+                    // Not sanitised here: `load_custom_styles_for` never did, and
+                    // the board must keep rendering stored text verbatim.
+                    hint: hint.clone(),
+                    claimable: self.is_claimable(r),
+                }),
+                VisibleStyle::Account(s) => {
+                    if s.deleted_at.is_some() {
+                        return None;
+                    }
+                    Some(crate::prompts::CustomStyleView {
+                        id: s.id.clone(),
+                        name: s.name.clone(),
+                        hint: s.hint.clone(),
+                        claimable: false,
+                    })
+                }
+            })
+            .collect()
+    }
 }
 
 /// The active account's hash, or `None` when signed out.
@@ -868,7 +1214,10 @@ pub fn is_known_in(union: &[VisibleRecord], agent_id: &str) -> bool {
 /// falling through to a shadowed legacy record and resurrecting a delete.
 ///
 /// Production counterpart of the Android `AccountScope.resolveAgentIn`.
-pub fn resolve_in<'a>(union: &'a [VisibleRecord], agent_id: Option<&str>) -> Option<&'a VisibleRecord> {
+pub fn resolve_in<'a>(
+    union: &'a [VisibleRecord],
+    agent_id: Option<&str>,
+) -> Option<&'a VisibleRecord> {
     let requested = agent_id?;
     if requested == crate::agents::ID_BUILT_IN {
         return None;
@@ -881,7 +1230,6 @@ mod tests {
     use super::*;
 
     // ---- resolution over the union (is_known_id / resolve_active_agent) ----
-
 
     #[test]
     fn is_known_id_over_union_legacy_only() {
@@ -980,10 +1328,7 @@ mod tests {
         legacy: Vec<crate::agents::CustomAgent>,
         account: Vec<AccountAgent>,
     ) -> VisibleAgents {
-        VisibleAgents::from_union_with_account(
-            union_agents(&legacy, &account),
-            Some(TEST_HASH),
-        )
+        VisibleAgents::from_union_with_account(union_agents(&legacy, &account), Some(TEST_HASH))
     }
 
     /// Condition 2: null must preserve builtin behaviour, never an error.
@@ -1011,9 +1356,15 @@ mod tests {
     fn resolve_visible_record_returns_its_hint() {
         // STAGE 6: a legacy record of unknown provenance does not resolve while
         // signed in. Only the owned record supplies a hint.
-        let s = snap_signed_in(vec![legacy_agent("agent:1", "L1")], vec![a("agent:2", "A2")]);
+        let s = snap_signed_in(
+            vec![legacy_agent("agent:1", "L1")],
+            vec![a("agent:2", "A2")],
+        );
         let r = s.resolve(Some("agent:1"));
-        assert!(r.is_builtin, "unassigned legacy must not resolve while signed in");
+        assert!(
+            r.is_builtin,
+            "unassigned legacy must not resolve while signed in"
+        );
         assert!(r.hint.is_none());
         let r2 = s.resolve(Some("agent:2"));
         assert_eq!("agent:2", r2.id);
@@ -1023,7 +1374,10 @@ mod tests {
     /// Condition 3: a tombstoned record must never yield a usable hint.
     #[test]
     fn tombstoned_record_never_yields_a_usable_hint() {
-        let dead = AccountAgent { deleted_at: Some(1_700_000_000_000), ..a("agent:2", "gone") };
+        let dead = AccountAgent {
+            deleted_at: Some(1_700_000_000_000),
+            ..a("agent:2", "gone")
+        };
         let s = snap_signed_in(vec![legacy_agent("agent:1", "L1")], vec![dead]);
         let r = s.resolve(Some("agent:2"));
         assert!(r.is_builtin, "a deleted agent must not resolve as custom");
@@ -1035,7 +1389,10 @@ mod tests {
     fn tombstone_does_not_fall_through_to_shadowed_legacy() {
         // The tombstone wins the id, so a legacy record of the same id must NOT
         // become the resolved agent — that would resurrect a deleted agent.
-        let dead = AccountAgent { deleted_at: Some(42), ..a("agent:X", "deleted") };
+        let dead = AccountAgent {
+            deleted_at: Some(42),
+            ..a("agent:X", "deleted")
+        };
         let s = snap_signed_in(vec![legacy_agent("agent:X", "Legacy Agent")], vec![dead]);
         let r = s.resolve(Some("agent:X"));
         assert!(r.is_builtin);
@@ -1052,7 +1409,10 @@ mod tests {
     /// every listed id being executable.
     #[test]
     fn one_snapshot_serves_listing_and_resolution() {
-        let s = snap_signed_in(vec![legacy_agent("agent:1", "L1")], vec![a("agent:2", "A2")]);
+        let s = snap_signed_in(
+            vec![legacy_agent("agent:1", "L1")],
+            vec![a("agent:2", "A2")],
+        );
         let listed: Vec<&str> = s.records().iter().map(|r| visible_id(r)).collect();
         assert_eq!(vec!["agent:2", "agent:1"], listed);
         for id in listed {
@@ -1063,8 +1423,18 @@ mod tests {
                 "runnability must agree for {id}",
             );
         }
-        assert!(s.is_runnable(&s.records().iter().find(|r| visible_id(r) == "agent:2").unwrap()));
-        assert!(!s.is_runnable(&s.records().iter().find(|r| visible_id(r) == "agent:1").unwrap()));
+        assert!(s.is_runnable(
+            &s.records()
+                .iter()
+                .find(|r| visible_id(r) == "agent:2")
+                .unwrap()
+        ));
+        assert!(!s.is_runnable(
+            &s.records()
+                .iter()
+                .find(|r| visible_id(r) == "agent:1")
+                .unwrap()
+        ));
     }
 
     #[test]
@@ -1072,9 +1442,15 @@ mod tests {
         // STAGE 6: a legacy record is displayable but not executable, so it
         // must not be reported as known. Were it "known", a saved default
         // pointing at it could cause an unknown-provenance prompt to run.
-        let s = snap_signed_in(vec![legacy_agent("agent:1", "L1")], vec![a("agent:2", "A2")]);
+        let s = snap_signed_in(
+            vec![legacy_agent("agent:1", "L1")],
+            vec![a("agent:2", "A2")],
+        );
         assert!(s.is_known(crate::agents::ID_BUILT_IN));
-        assert!(!s.is_known("agent:1"), "unassigned legacy must not be executable");
+        assert!(
+            !s.is_known("agent:1"),
+            "unassigned legacy must not be executable"
+        );
         assert!(s.is_known("agent:2"));
         assert!(!s.is_known("agent:other"));
     }
@@ -1130,7 +1506,10 @@ mod tests {
     /// Production path: the IPC view keeps its existing shape and D1c holds.
     #[test]
     fn into_view_preserves_shape_and_device_local_default_id() {
-        let s = snap(vec![legacy_agent("agent:1", "L1")], vec![a("agent:2", "A2")]);
+        let s = snap(
+            vec![legacy_agent("agent:1", "L1")],
+            vec![a("agent:2", "A2")],
+        );
         let view = s.into_view("builtin".to_string());
         assert_eq!(crate::agents::ID_BUILT_IN, view.builtin_id);
         assert_eq!(crate::agents::NAME_BUILT_IN, view.builtin_name);
@@ -1172,13 +1551,23 @@ mod tests {
     }
 
     fn legacy_record(id: &str) -> VisibleRecord {
-        VisibleRecord::Legacy { id: id.to_string(), name: "L".to_string(), hint: "h".to_string() }
+        VisibleRecord::Legacy {
+            id: id.to_string(),
+            name: "L".to_string(),
+            hint: "h".to_string(),
+        }
     }
 
     #[test]
     fn admission_classifies_by_storage_location() {
-        assert_eq!(Admission::Owned, admit_agent(&owned_record("x1"), Some(TEST_HASH)));
-        assert_eq!(Admission::Unassigned, admit_agent(&legacy_record("l1"), Some(TEST_HASH)));
+        assert_eq!(
+            Admission::Owned,
+            admit_agent(&owned_record("x1"), Some(TEST_HASH))
+        );
+        assert_eq!(
+            Admission::Unassigned,
+            admit_agent(&legacy_record("l1"), Some(TEST_HASH))
+        );
     }
 
     #[test]
@@ -1186,7 +1575,10 @@ mod tests {
         let hash_b = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
         for h in [TEST_HASH, hash_b] {
             assert_eq!(Admission::Owned, admit_agent(&owned_record("x1"), Some(h)));
-            assert_eq!(Admission::Unassigned, admit_agent(&legacy_record("l1"), Some(h)));
+            assert_eq!(
+                Admission::Unassigned,
+                admit_agent(&legacy_record("l1"), Some(h))
+            );
         }
     }
 
@@ -1227,7 +1619,10 @@ mod tests {
     fn malformed_hash_still_admits_records_from_an_account_store() {
         // Fail-closed must not over-reach: a record already inside a
         // hash-partitioned account file was written under a validated hash.
-        for h in ["not-a-hash", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"] {
+        for h in [
+            "not-a-hash",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+        ] {
             assert_eq!(Admission::Owned, admit_agent(&owned_record("x1"), Some(h)));
         }
     }
@@ -1235,8 +1630,14 @@ mod tests {
     #[test]
     fn only_owned_is_syncable() {
         assert!(Admission::Owned.is_syncable());
-        assert!(!Admission::DeviceLocal.is_syncable(), "device-local must never auto-upload");
-        assert!(!Admission::Unassigned.is_syncable(), "unassigned must never upload");
+        assert!(
+            !Admission::DeviceLocal.is_syncable(),
+            "device-local must never auto-upload"
+        );
+        assert!(
+            !Admission::Unassigned.is_syncable(),
+            "unassigned must never upload"
+        );
     }
 
     #[test]
@@ -1263,7 +1664,10 @@ mod tests {
             vec![legacy_agent("agent:1", "L1")],
             vec![
                 a("agent:2", "A2"),
-                AccountAgent { deleted_at: Some(42), ..a("agent:3", "gone") },
+                AccountAgent {
+                    deleted_at: Some(42),
+                    ..a("agent:3", "gone")
+                },
             ],
         );
         let view = s.into_view("builtin".to_string());
@@ -1278,7 +1682,10 @@ mod tests {
         // legacy one, so it cannot bypass the legacy projection's guarantees.
         let s = snap(
             vec![],
-            vec![AccountAgent { hint: "  spaced hint  ".to_string(), ..a("agent:1", "A") }],
+            vec![AccountAgent {
+                hint: "  spaced hint  ".to_string(),
+                ..a("agent:1", "A")
+            }],
         );
         let view = s.into_view("builtin".to_string());
         assert_eq!("spaced hint", view.custom_agents[0].hint);
@@ -1290,7 +1697,10 @@ mod tests {
         // view, so the shadowed device-local record does NOT reappear.
         let s = snap(
             vec![legacy_agent("agent:X", "Legacy Agent")],
-            vec![AccountAgent { deleted_at: Some(9), ..a("agent:X", "deleted") }],
+            vec![AccountAgent {
+                deleted_at: Some(9),
+                ..a("agent:X", "deleted")
+            }],
         );
         let view = s.into_view("builtin".to_string());
         assert!(
@@ -1356,7 +1766,11 @@ mod tests {
         );
         assert_eq!(vec!["Account Agent"], names(&out));
         assert!(matches!(out[0], VisibleRecord::Account(_)));
-        assert_eq!(1, out.len(), "the shadowed legacy record must not duplicate");
+        assert_eq!(
+            1,
+            out.len(),
+            "the shadowed legacy record must not duplicate"
+        );
     }
 
     #[test]
@@ -1381,7 +1795,10 @@ mod tests {
 
     #[test]
     fn union_multiple_account_records() {
-        let out = union_agents(&[], &[a("agent:1", "A1"), a("agent:2", "A2"), a("agent:3", "A3")]);
+        let out = union_agents(
+            &[],
+            &[a("agent:1", "A1"), a("agent:2", "A2"), a("agent:3", "A3")],
+        );
         assert_eq!(vec!["A1", "A2", "A3"], names(&out));
     }
 
@@ -1401,7 +1818,10 @@ mod tests {
     fn union_preserves_tombstones() {
         // A tombstoned account record still appears, so a future merge sees the
         // delete instead of resurrecting it.
-        let dead = AccountAgent { deleted_at: Some(1_700_000_000_000), ..a("agent:2", "gone") };
+        let dead = AccountAgent {
+            deleted_at: Some(1_700_000_000_000),
+            ..a("agent:2", "gone")
+        };
         let out = union_agents(&[legacy_agent("agent:1", "L1")], &[dead]);
         assert_eq!(2, out.len());
         match &out[0] {
@@ -1414,7 +1834,10 @@ mod tests {
     fn union_tombstone_shadows_legacy_even_when_deleted() {
         // The account's delete wins the id, so the legacy record does not
         // reappear for this account — but stays intact for a signed-out read.
-        let dead = AccountAgent { deleted_at: Some(42), ..a("agent:X", "deleted") };
+        let dead = AccountAgent {
+            deleted_at: Some(42),
+            ..a("agent:X", "deleted")
+        };
         let legacy = vec![legacy_agent("agent:X", "Legacy Agent")];
         let out = union_agents(&legacy, &[dead]);
         assert_eq!(1, out.len());
@@ -1473,12 +1896,18 @@ mod tests {
         let out = union_styles(&[legacy_style("custom:1", "L1")], &[s("custom:2", "A2")]);
         assert_eq!(2, out.len());
         assert!(union_styles(&[], &[]).is_empty());
-        assert_eq!(1, union_styles(&[legacy_style("custom:1", "L1")], &[]).len());
+        assert_eq!(
+            1,
+            union_styles(&[legacy_style("custom:1", "L1")], &[]).len()
+        );
     }
 
     #[test]
     fn style_union_preserves_tombstone() {
-        let dead = AccountStyle { deleted_at: Some(7), ..s("custom:1", "gone") };
+        let dead = AccountStyle {
+            deleted_at: Some(7),
+            ..s("custom:1", "gone")
+        };
         let out = union_styles(&[], &[dead]);
         assert!(matches!(&out[0], VisibleStyle::Account(x) if x.deleted_at == Some(7)));
     }
@@ -1558,7 +1987,10 @@ mod tests {
     #[test]
     fn traversal_attempt_yields_default_and_cannot_write() {
         // Read is inert, write is refused: a hostile hash cannot reach the FS.
-        assert_eq!(load_account_agents("../evil"), AccountAgentsStore::default());
+        assert_eq!(
+            load_account_agents("../evil"),
+            AccountAgentsStore::default()
+        );
         assert!(save_account_agents("../evil", &AccountAgentsStore::default()).is_err());
     }
 
@@ -1590,10 +2022,13 @@ mod tests {
     #[test]
     fn style_tombstone_round_trips() {
         let store = AccountStylesStore {
-            custom_styles: vec![s("custom:1", "one"), AccountStyle {
-                deleted_at: Some(42),
-                ..s("custom:2", "two")
-            }],
+            custom_styles: vec![
+                s("custom:1", "one"),
+                AccountStyle {
+                    deleted_at: Some(42),
+                    ..s("custom:2", "two")
+                },
+            ],
         };
         let json = serde_json::to_string(&store).unwrap();
         let back: AccountStylesStore = serde_json::from_str(&json).unwrap();
@@ -1661,7 +2096,9 @@ mod tests {
         let account_file = dir.join(format!("agents.account-{}.json", "aaaa"));
 
         // Account data written first.
-        let account_store = AccountAgentsStore { custom_agents: vec![a("agent:1", "A-owned")] };
+        let account_store = AccountAgentsStore {
+            custom_agents: vec![a("agent:1", "A-owned")],
+        };
         write_json(&account_file, &account_store).unwrap();
 
         // Legacy file, as an old build would have it: no account key at all.
@@ -1687,8 +2124,7 @@ mod tests {
         write_json(&legacy_path, &mutated).unwrap();
 
         // Account data survived, byte-identical.
-        let after: AccountAgentsStore =
-            read_json(&account_file);
+        let after: AccountAgentsStore = read_json(&account_file);
         assert_eq!(after, account_store, "old build destroyed account data");
         assert_eq!(after.custom_agents[0].name, "A-owned");
 
@@ -1696,7 +2132,9 @@ mod tests {
         let legacy_after: crate::agents::AgentsStore =
             serde_json::from_str(&std::fs::read_to_string(&legacy_path).unwrap()).unwrap();
         assert_eq!(legacy_after.custom_agents.len(), 2);
-        assert!(!std::fs::read_to_string(&legacy_path).unwrap().contains("account-"));
+        assert!(!std::fs::read_to_string(&legacy_path)
+            .unwrap()
+            .contains("account-"));
 
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -1721,13 +2159,997 @@ mod tests {
         assert!(loaded.custom_agents.is_empty());
         // `backup_corrupt_account` RENAMES the bad file aside, so the original
         // path is intentionally gone and a `.corrupt` sibling exists instead.
-        assert!(!account_file.exists(), "corrupt file should be rotated aside");
-        assert!(std::fs::read_dir(&dir).unwrap().any(|e| {
-            e.unwrap().file_name().to_string_lossy().contains("corrupt")
-        }));
+        assert!(
+            !account_file.exists(),
+            "corrupt file should be rotated aside"
+        );
+        assert!(std::fs::read_dir(&dir)
+            .unwrap()
+            .any(|e| { e.unwrap().file_name().to_string_lossy().contains("corrupt") }));
         assert_eq!(std::fs::read_to_string(&legacy_path).unwrap(), legacy_body);
 
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
 
+#[cfg(test)]
+mod legacy_claim_tests {
+    use super::*;
+    use std::collections::HashSet;
+
+    // ── helpers ────────────────────────────────────────────────────────────
+    //
+    // Every test derives its OWN account hash from a unique label, so tests
+    // running in parallel never share an account file, and each resets that file
+    // first so repeated runs start from a known state.
+    //
+    // The legacy side is always passed in as a SLICE and never read from disk:
+    // the legacy store resolves to the real %LOCALAPPDATA%\Fluence (agents_path
+    // and prompts_path have NO cfg(test) redirect), so a test that touched it
+    // would read — or worse, overwrite — the developer's actual data.
+
+    fn hash_for(label: &str) -> String {
+        // FNV-1a then four avalanche rounds: exactly 64 lowercase hex chars, so
+        // it always satisfies valid_account_hash, and distinct per label.
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for b in label.as_bytes() {
+            h ^= *b as u64;
+            h = h.wrapping_mul(0x1000_0000_01b3);
+        }
+        let mut out = String::with_capacity(64);
+        for _ in 0..4 {
+            h ^= h >> 33;
+            h = h.wrapping_mul(0xff51_afd7_ed55_8ccd);
+            out.push_str(&format!("{h:016x}"));
+        }
+        out
+    }
+
+    fn fresh_agents(label: &str) -> String {
+        let h = hash_for(label);
+        save_account_agents(&h, &AccountAgentsStore::default()).unwrap();
+        h
+    }
+
+    fn fresh_styles(label: &str) -> String {
+        let h = hash_for(label);
+        save_account_styles(&h, &AccountStylesStore::default()).unwrap();
+        h
+    }
+
+    fn la(id: &str, name: &str) -> crate::agents::CustomAgent {
+        crate::agents::CustomAgent {
+            id: id.into(),
+            name: name.into(),
+            hint: format!("h-{name}"),
+        }
+    }
+
+    fn ls(id: &str, name: &str) -> crate::prompts::CustomStyle {
+        crate::prompts::CustomStyle {
+            id: id.into(),
+            name: name.into(),
+            hint: format!("h-{name}"),
+        }
+    }
+
+    fn ca(id: &str, name: &str) -> AccountAgent {
+        AccountAgent {
+            id: id.into(),
+            name: name.into(),
+            hint: format!("hint-{name}"),
+            sync_id: None,
+            updated_at: None,
+            device_id: None,
+            deleted_at: None,
+            dirty: false,
+        }
+    }
+
+    fn cs(id: &str, name: &str) -> AccountStyle {
+        AccountStyle {
+            id: id.into(),
+            name: name.into(),
+            hint: format!("hint-{name}"),
+            sync_id: None,
+            updated_at: None,
+            device_id: None,
+            deleted_at: None,
+            dirty: false,
+        }
+    }
+
+    fn only(ids: &[&str]) -> HashSet<String> {
+        ids.iter().map(|s| s.to_string()).collect()
+    }
+
+    fn name_of(r: &VisibleRecord) -> &str {
+        match r {
+            VisibleRecord::Legacy { name, .. }
+            | VisibleRecord::Account(AccountAgent { name, .. }) => name,
+        }
+    }
+
+    /// Snapshot an account exactly as the production read path does: the union of
+    /// the legacy slice with whatever the account store holds.
+    fn snap_for(hash: &str, legacy: &[crate::agents::CustomAgent]) -> VisibleAgents {
+        VisibleAgents::from_union_with_account(
+            union_agents(legacy, &load_account_agents(hash).custom_agents),
+            Some(hash),
+        )
+    }
+
+    fn styles_snap_for(hash: &str, legacy: &[crate::prompts::CustomStyle]) -> VisibleStyles {
+        VisibleStyles::from_union_with_account(
+            union_styles(legacy, &load_account_styles(hash).custom_styles),
+            Some(hash),
+        )
+    }
+
+    // ── 1. no automatic ownership ──────────────────────────────────────────
+
+    #[test]
+    fn unclaimed_record_is_not_owned_runnable_or_syncable_merely_because_signed_in() {
+        let h = fresh_agents("lc_no_auto");
+        let legacy = vec![la("agent:1", "Legacy")];
+        let snap = snap_for(&h, &legacy);
+        let rec = &snap.union[0];
+
+        assert_eq!(snap.admission_of(rec), Admission::Unassigned);
+        assert!(
+            !snap.is_runnable(rec),
+            "an unclaimed record must never execute"
+        );
+        assert!(
+            !snap.admission_of(rec).is_syncable(),
+            "must never be uploaded"
+        );
+        assert!(!snap.is_known("agent:1"), "must not be known-executable");
+        // Displayed, though: hiding it would read as data loss.
+        assert!(snap.admission_of(rec).is_displayable());
+        assert!(
+            load_account_agents(&h).custom_agents.is_empty(),
+            "signing in must not write ownership"
+        );
+    }
+
+    #[test]
+    fn claimability_follows_sign_in_state_not_record_shape() {
+        let h = fresh_agents("lc_claimable_gate");
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        let signed_in = snap_for(&h, &legacy);
+        assert!(signed_in.is_claimable(&signed_in.union[0]));
+
+        // Signed out the same row is DeviceLocal and already usable, so there is
+        // nothing to adopt and the affordance must disappear.
+        let signed_out = VisibleAgents::from_union(union_agents(&legacy, &[]));
+        assert!(!signed_out.is_claimable(&signed_out.union[0]));
+        assert!(signed_out.is_runnable(&signed_out.union[0]));
+    }
+
+    #[test]
+    fn owned_record_is_never_claimable() {
+        let h = fresh_agents("lc_owned_not_claimable");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:1", "Owned")],
+            },
+        )
+        .unwrap();
+        let snap = snap_for(&h, &[]);
+        assert!(!snap.is_claimable(&snap.union[0]));
+    }
+
+    // ── 2. explicit claim → owned, runnable, known, syncable ───────────────
+
+    #[test]
+    fn explicit_claim_transfers_ownership_into_the_ordinary_lifecycle() {
+        let h = fresh_agents("lc_claim_owned");
+        let legacy = vec![la("agent:1", "Legacy")];
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(out.claimed_ids, vec!["agent:1".to_string()]);
+        assert!(out.skipped_ids.is_empty());
+
+        let row = &load_account_agents(&h).custom_agents[0];
+        assert_eq!(row.name, "Legacy");
+        // Written exactly as upsert_account_agent writes: unstamped and dirty, so
+        // the ORDINARY pass stamps and uploads it. No new sync path.
+        assert!(row.dirty);
+        assert!(row.sync_id.is_none() && row.updated_at.is_none());
+        assert!(row.device_id.is_none() && row.deleted_at.is_none());
+    }
+
+    #[test]
+    fn claimed_record_becomes_runnable_known_and_syncable() {
+        let h = fresh_agents("lc_claim_capabilities");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+
+        let snap = snap_for(&h, &legacy);
+        let rec = &snap.union[0];
+        assert!(matches!(rec, VisibleRecord::Account(_)));
+        assert_eq!(snap.admission_of(rec), Admission::Owned);
+        assert!(snap.is_runnable(rec));
+        assert!(snap.is_known("agent:1"));
+        assert!(snap.admission_of(rec).is_syncable());
+        assert!(!snap.is_claimable(rec), "owned means no longer claimable");
+    }
+
+    #[test]
+    fn claimed_record_resolves_a_hint_for_execution() {
+        let h = fresh_agents("lc_claim_hint");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        let snap = snap_for(&h, &legacy);
+        assert_eq!(
+            snap.resolve(Some("agent:1")).hint.as_deref(),
+            Some("h-Legacy")
+        );
+    }
+
+    #[test]
+    fn claimed_record_becomes_deletable_and_delete_writes_a_tombstone() {
+        let h = fresh_agents("lc_claim_delete");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+
+        delete_account_agent(&h, "agent:1");
+        let row = &load_account_agents(&h).custom_agents[0];
+        assert!(
+            row.deleted_at.is_some(),
+            "delete must tombstone, not drop the row"
+        );
+        assert!(row.dirty);
+        // A tombstoned owned record is neither listed nor runnable…
+        let snap = snap_for(&h, &legacy);
+        assert!(!snap.is_runnable(&snap.union[0]));
+        // …and it must NOT let the shadowed legacy row resurrect.
+        let view = snap.into_view(crate::agents::ID_BUILT_IN.to_string());
+        assert!(view.custom_agents.is_empty());
+    }
+
+    #[test]
+    fn ownership_survives_a_restart() {
+        let h = fresh_agents("lc_claim_restart");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+
+        // A cold start re-reads from disk; the claim must still be there.
+        let reloaded = load_account_agents(&h);
+        assert_eq!(reloaded.custom_agents.len(), 1);
+        assert_eq!(reloaded.custom_agents[0].id, "agent:1");
+        assert!(reloaded.custom_agents[0].dirty);
+    }
+
+    // ── 3. account safety ──────────────────────────────────────────────────
+
+    #[test]
+    fn signed_out_claim_is_refused_and_writes_nothing() {
+        let legacy = vec![la("agent:1", "Legacy")];
+        assert!(claim_legacy_account_agents(None, &legacy, None).is_empty());
+        assert!(claim_legacy_account_agents(Some(""), &legacy, None).is_empty());
+    }
+
+    #[test]
+    fn unverifiable_identity_is_refused() {
+        let legacy = vec![la("agent:1", "Legacy")];
+        // A non-blank value that is not a valid hash is an UNVERIFIABLE identity,
+        // not an absent one: fail closed rather than adopt.
+        for bad in ["not-a-hash", "ZZZ", &"A".repeat(64), &"a".repeat(63)] {
+            let out = claim_legacy_account_agents(Some(bad), &legacy, None);
+            assert!(
+                out.is_empty(),
+                "invalid identity {bad:?} must claim nothing"
+            );
+        }
+    }
+
+    #[test]
+    fn switching_accounts_before_claiming_transfers_nothing() {
+        let a_hash = fresh_agents("lc_switch_a");
+        let b_hash = fresh_agents("lc_switch_b");
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        // Never claimed by anyone, then a different account looks at it.
+        let b_sees = snap_for(&b_hash, &legacy);
+        assert_eq!(b_sees.admission_of(&b_sees.union[0]), Admission::Unassigned);
+        assert!(load_account_agents(&b_hash).custom_agents.is_empty());
+
+        // B claims it: ownership lands in B, and nowhere else.
+        claim_legacy_account_agents(Some(&b_hash), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(load_account_agents(&b_hash).custom_agents.len(), 1);
+        assert!(load_account_agents(&a_hash).custom_agents.is_empty());
+    }
+
+    #[test]
+    fn a_record_claimed_by_one_account_is_not_visible_as_owned_by_another() {
+        let a_hash = fresh_agents("lc_iso_a");
+        let b_hash = fresh_agents("lc_iso_b");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&a_hash), &legacy, Some(&only(&["agent:1"])));
+
+        let b = snap_for(&b_hash, &legacy);
+        assert_eq!(b.union.len(), 1);
+        assert!(
+            matches!(b.union[0], VisibleRecord::Legacy { .. }),
+            "the other account must still see it as unclaimed legacy, never as owned"
+        );
+        assert!(!b.is_runnable(&b.union[0]));
+    }
+
+    // ── 4. collision: skip, never overwrite ────────────────────────────────
+
+    #[test]
+    fn same_id_collision_is_skipped_and_never_overwritten() {
+        let h = fresh_agents("lc_collision");
+        // The account already owns this id with DIFFERENT content, as it would
+        // after the same agent synced down from another device.
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:1", "Account version")],
+            },
+        )
+        .unwrap();
+        let legacy = vec![la("agent:1", "Legacy version")];
+
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(out.skipped_ids, vec!["agent:1".to_string()]);
+        assert!(out.claimed_ids.is_empty());
+
+        let row = &load_account_agents(&h).custom_agents[0];
+        assert_eq!(
+            row.name, "Account version",
+            "the owned copy must win untouched"
+        );
+        assert_eq!(row.hint, "hint-Account version");
+    }
+
+    #[test]
+    fn a_shadowed_legacy_copy_resolves_to_the_owned_record() {
+        let h = fresh_agents("lc_shadow");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:1", "Owned")],
+            },
+        )
+        .unwrap();
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        let snap = snap_for(&h, &legacy);
+        assert_eq!(snap.union.len(), 1, "one id, one row");
+        assert_eq!(name_of(&snap.union[0]), "Owned", "account wins the id");
+
+        // The legacy copy is NOT removed by a claim, so the shadow persists and the
+        // owned row keeps winning the id. That redundancy is the point: if a sync
+        // pass later overwrites the account row with a pre-claim snapshot, the
+        // legacy row is still there to be claimed again rather than the record
+        // being lost outright.
+        let snap_after = snap_for(&h, &legacy);
+        assert_eq!(name_of(&snap_after.union[0]), "Owned");
+        assert!(
+            !snap_after.is_claimable(&snap_after.union[0]),
+            "an owned row must not be offered for claiming"
+        );
+        assert_eq!(load_account_agents(&h).custom_agents[0].name, "Owned");
+    }
+
+    /// The self-healing property that replaces the destructive cleanup: a sync
+    /// pass that writes a PRE-CLAIM snapshot (omitting the claimed row) leaves the
+    /// record recoverable, because the legacy copy was never deleted.
+    ///
+    /// This is the regression test for the residual merge race: writers such as
+    /// `frozen.rs::save_merged` and `applyMergedAndClearDirty` build their payload
+    /// from a snapshot taken before the Drive round trip and do not share the
+    /// claim's lock. No claim-side locking can close that, so the guarantee is
+    /// provided by keeping the legacy row instead.
+    #[test]
+    fn a_stale_merge_that_drops_the_claim_leaves_the_record_recoverable() {
+        let h = fresh_agents("lc_stale_merge");
+        let legacy = vec![la("agent:1", "Legacy")];
+        let claim = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(claim.claimed_ids, vec!["agent:1".to_string()]);
+
+        // The sync pass now writes the snapshot it captured BEFORE the claim: no
+        // lock is taken by such a writer, and its payload predates the claim.
+        save_account_agents(&h, &AccountAgentsStore::default()).unwrap();
+        assert!(
+            !load_account_agents(&h)
+                .custom_agents
+                .iter()
+                .any(|a| a.id == "agent:1"),
+            "precondition: the stale write discarded the claimed row"
+        );
+
+        // The record is NOT lost: it still exists in the legacy store, is visible
+        // again, and is claimable once more.
+        let snap = snap_for(&h, &legacy);
+        assert_eq!(snap.union.len(), 1);
+        assert!(matches!(snap.union[0], VisibleRecord::Legacy { .. }));
+        assert!(
+            snap.is_claimable(&snap.union[0]),
+            "and can be claimed again"
+        );
+    }
+
+    // ── 5. idempotency and no-ops ──────────────────────────────────────────
+
+    #[test]
+    fn repeated_claim_never_duplicates_and_stays_safe() {
+        let h = fresh_agents("lc_idempotent");
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        let first = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(first.claimed_ids.len(), 1);
+
+        // The user taps again. Either the legacy row is gone (empty no-op) or it
+        // is still there and now collides (skipped). Both are safe; neither may
+        // create a second row or rewrite the first.
+        let second = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert!(
+            second.claimed_ids.is_empty(),
+            "a second claim must not re-add"
+        );
+        assert_eq!(load_account_agents(&h).custom_agents.len(), 1);
+        assert_eq!(load_account_agents(&h).custom_agents[0].name, "Legacy");
+    }
+
+    #[test]
+    fn empty_and_unmatched_claims_are_no_ops() {
+        let h = fresh_agents("lc_noop");
+        assert!(claim_legacy_account_agents(Some(&h), &[], None).is_empty());
+        let legacy = vec![la("agent:1", "Legacy")];
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:absent"])));
+        assert!(out.is_empty());
+        assert!(load_account_agents(&h).custom_agents.is_empty());
+    }
+
+    #[test]
+    fn claiming_one_id_never_moves_the_others() {
+        let h = fresh_agents("lc_single");
+        let legacy = vec![
+            la("agent:1", "One"),
+            la("agent:2", "Two"),
+            la("agent:3", "Three"),
+        ];
+
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:2"])));
+        assert_eq!(out.claimed_ids, vec!["agent:2".to_string()]);
+        let owned = load_account_agents(&h).custom_agents;
+        assert_eq!(owned.len(), 1);
+        assert_eq!(owned[0].id, "agent:2");
+    }
+
+    #[test]
+    fn claiming_several_ids_reports_them_deterministically() {
+        let h = fresh_agents("lc_multi");
+        let legacy = vec![la("agent:1", "One"), la("agent:2", "Two")];
+        let out =
+            claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1", "agent:2"])));
+        let mut got = out.claimed_ids.clone();
+        got.sort();
+        assert_eq!(got, vec!["agent:1".to_string(), "agent:2".to_string()]);
+        assert_eq!(load_account_agents(&h).custom_agents.len(), 2);
+    }
+
+    // ── 6. fail-safe: never lose the only copy ─────────────────────────────
+
+    #[test]
+    fn a_failed_ownership_write_reports_nothing_claimed() {
+        let h = hash_for("lc_write_fail");
+        let path = account_path(&agents_base_dir(), "agents", &h);
+        let _ = std::fs::remove_file(&path);
+        // A directory where the account file belongs: the write cannot land.
+        std::fs::create_dir_all(&path).unwrap();
+
+        let legacy = vec![la("agent:only", "Only")];
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:only"])));
+
+        assert!(
+            out.claimed_ids.is_empty(),
+            "must not report a claim whose write never landed, or the caller would \
+             delete the legacy copy and lose the record entirely"
+        );
+        assert!(out.skipped_ids.is_empty());
+        // Prove the ownership write really did not land by re-reading the account
+        // store: no row for that id exists. THAT is what forces the caller to keep
+        // the legacy copy.
+        //
+        // Deliberately NOT asserting on the input `legacy` slice: it is an
+        // immutable local that nothing can mutate, so such an assertion could
+        // never fail under any implementation and would prove nothing.
+        let reloaded = load_account_agents(&h);
+        assert!(
+            reloaded.custom_agents.iter().all(|a| a.id != "agent:only"),
+            "a failed ownership write must leave no account row behind"
+        );
+
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    // ── 6b. delete durability: the tombstone report gates the shadow ────────
+    //
+    // Delete-time legacy removal runs only when the tombstone provably
+    // persisted. These pin the boolean that gate reads.
+
+    #[test]
+    fn delete_account_agent_reports_true_only_when_the_tombstone_persists() {
+        let h = fresh_agents("lc_delete_ok");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:1", "Owned")],
+            },
+        )
+        .unwrap();
+        assert!(delete_account_agent(&h, "agent:1"));
+        assert!(load_account_agents(&h).custom_agents[0]
+            .deleted_at
+            .is_some());
+        // Unknown id: nothing tombstoned, nothing reported.
+        assert!(!delete_account_agent(&h, "agent:absent"));
+        let _ = std::fs::remove_file(account_path(&agents_base_dir(), "agents", &h));
+    }
+
+    // The fault injection below relies on Windows semantics: making a file
+    // read-only blocks `std::fs::rename` from replacing it, which is exactly how
+    // the durable write fails. On Unix the read-only bit only blocks writing TO
+    // the file, not replacing the directory entry, so the write would succeed and
+    // the assertion would fail for the wrong reason.
+    #[test]
+    #[cfg(windows)]
+    fn delete_account_agent_reports_false_when_the_tombstone_cannot_persist() {
+        let h = fresh_agents("lc_delete_fail");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:1", "Owned")],
+            },
+        )
+        .unwrap();
+        let path = account_path(&agents_base_dir(), "agents", &h);
+        let tmp = path.with_extension("json.tmp");
+        // Read-only account file: the load succeeds (the row is there) but the
+        // tombstone write cannot land. Windows-only semantics: renaming onto a
+        // read-only file fails, which is exactly the failure under test.
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&path, perms).unwrap();
+
+        let ok = delete_account_agent(&h, "agent:1");
+        let tombstoned = load_account_agents(&h).custom_agents[0].deleted_at;
+
+        // Restore FIRST so no read-only state leaks even if an assert fails.
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(false);
+        std::fs::set_permissions(&path, perms).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            !ok,
+            "a tombstone that never landed must not report success: callers \
+             drop the legacy shadow on success, which would lose the record"
+        );
+        assert!(
+            tombstoned.is_none(),
+            "no tombstone may be present without a persisted write"
+        );
+    }
+
+    #[test]
+    fn delete_account_style_reports_true_only_when_the_tombstone_persists() {
+        let h = fresh_styles("lc_style_delete_ok");
+        save_account_styles(
+            &h,
+            &AccountStylesStore {
+                custom_styles: vec![cs("style:1", "Owned")],
+            },
+        )
+        .unwrap();
+        assert!(delete_account_style(&h, "style:1"));
+        assert!(load_account_styles(&h).custom_styles[0]
+            .deleted_at
+            .is_some());
+        assert!(!delete_account_style(&h, "style:absent"));
+        let _ = std::fs::remove_file(account_path(&prompts_base_dir(), "styles", &h));
+    }
+
+    // Same Windows-only fault injection as the agent counterpart.
+    #[test]
+    #[cfg(windows)]
+    fn delete_account_style_reports_false_when_the_tombstone_cannot_persist() {
+        let h = fresh_styles("lc_style_delete_fail");
+        save_account_styles(
+            &h,
+            &AccountStylesStore {
+                custom_styles: vec![cs("style:1", "Owned")],
+            },
+        )
+        .unwrap();
+        let path = account_path(&prompts_base_dir(), "styles", &h);
+        let tmp = path.with_extension("json.tmp");
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&path, perms).unwrap();
+
+        let ok = delete_account_style(&h, "style:1");
+        let tombstoned = load_account_styles(&h).custom_styles[0].deleted_at;
+
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(false);
+        std::fs::set_permissions(&path, perms).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(&path);
+
+        assert!(
+            !ok,
+            "a tombstone that never landed must not report success"
+        );
+        assert!(
+            tombstoned.is_none(),
+            "no tombstone may be present without a persisted write"
+        );
+    }
+
+    // ── 7. Styles parity ───────────────────────────────────────────────────
+
+    #[test]
+    fn style_claim_grants_the_same_capabilities_as_agents() {
+        let h = fresh_styles("lc_style_claim");
+        let legacy = vec![ls("style:1", "Legacy")];
+
+        let before = styles_snap_for(&h, &legacy);
+        assert_eq!(before.admission_of(&before.union[0]), Admission::Unassigned);
+        assert!(!before.is_runnable(&before.union[0]));
+        assert!(!before.admission_of(&before.union[0]).is_syncable());
+
+        let out = claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+        assert_eq!(out.claimed_ids, vec!["style:1".to_string()]);
+
+        let after = styles_snap_for(&h, &legacy);
+        let rec = &after.union[0];
+        assert_eq!(after.admission_of(rec), Admission::Owned);
+        assert!(after.is_runnable(rec));
+        assert!(after.is_known("style:1"));
+        assert!(after.admission_of(rec).is_syncable());
+        assert_eq!(after.resolve_hint("style:1").as_deref(), Some("h-Legacy"));
+
+        let row = &load_account_styles(&h).custom_styles[0];
+        assert!(row.dirty && row.sync_id.is_none() && row.updated_at.is_none());
+    }
+
+    #[test]
+    fn style_claim_refuses_signed_out_and_collision_and_stays_idempotent() {
+        let h = fresh_styles("lc_style_safety");
+        let legacy = vec![ls("style:1", "Legacy")];
+
+        assert!(claim_legacy_account_styles(None, &legacy, None).is_empty());
+
+        claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+        let again = claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+        assert!(again.claimed_ids.is_empty());
+        assert_eq!(load_account_styles(&h).custom_styles.len(), 1);
+
+        save_account_styles(
+            &h,
+            &AccountStylesStore {
+                custom_styles: vec![cs("style:1", "Owned")],
+            },
+        )
+        .unwrap();
+        let skip = claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+        assert_eq!(skip.skipped_ids, vec!["style:1".to_string()]);
+        assert_eq!(load_account_styles(&h).custom_styles[0].name, "Owned");
+    }
+
+    #[test]
+    fn style_delete_after_claim_tombstones() {
+        let h = fresh_styles("lc_style_delete");
+        let legacy = vec![ls("style:1", "Legacy")];
+        claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+        delete_account_style(&h, "style:1");
+        assert!(load_account_styles(&h).custom_styles[0]
+            .deleted_at
+            .is_some());
+    }
+
+    // ── 9. delete still deletes (Windows counterpart of the Android test) ──
+
+    /// The claim COPIES rather than moves, so the legacy row is deliberately left
+    /// behind. If the DELETE path did not then remove that shadow, deleting a
+    /// claimed agent would leave a device-local row that becomes visible and
+    /// RUNNABLE again on sign-out — the user deletes an agent, signs out, and it
+    /// is back.
+    ///
+    /// Mirrors Android's `deleting_a_claimed_agent_does_not_resurrect_it_on_sign_out`.
+    /// The claim itself is exercised here so the test needs no Tauri `Window`; the
+    /// removal under test is the same `retain` the routed delete performs right
+    /// after writing the tombstone.
+    #[test]
+    fn deleting_a_claimed_agent_does_not_resurrect_it_on_sign_out() {
+        let h = fresh_agents("lc_delete_resurrect");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+
+        // Tombstone in the account store (what the routed delete writes first).
+        delete_account_agent(&h, "agent:1");
+        assert!(
+            load_account_agents(&h).custom_agents[0]
+                .deleted_at
+                .is_some(),
+            "precondition: the tombstone must be written"
+        );
+
+        // Then the shadow removal the delete path performs.
+        let mut store = crate::agents::AgentsStore::default();
+        store.custom_agents = legacy.clone();
+        store.custom_agents.retain(|a| a.id != "agent:1");
+
+        // Signed out: nothing may be runnable for that id, because the only place
+        // it could have survived is the legacy store — and it is gone.
+        assert!(store.custom_agents.is_empty(), "the shadow must be removed");
+        let signed_out = VisibleAgents::from_union(union_agents(&store.custom_agents, &[]));
+        assert!(
+            !signed_out.is_known("agent:1"),
+            "a deleted agent must not reappear once signed out"
+        );
+        assert!(signed_out.resolve(Some("agent:1")).is_builtin);
+    }
+
+    // ── 10. the board projection advertises exactly what can be claimed ────
+
+    #[test]
+    fn agents_view_marks_only_signed_in_unclaimed_rows_claimable() {
+        let h = fresh_agents("lc_view");
+        let legacy = vec![la("agent:1", "Legacy")];
+        claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![ca("agent:2", "Owned")],
+            },
+        )
+        .unwrap();
+
+        let view = snap_for(&h, &legacy).into_view(crate::agents::ID_BUILT_IN.to_string());
+        let flags: Vec<(&str, bool)> = view
+            .custom_agents
+            .iter()
+            .map(|v| (v.id.as_str(), v.claimable))
+            .collect();
+        assert_eq!(
+            flags,
+            vec![("agent:2", false), ("agent:1", true)],
+            "owned row not claimable; unclaimed row claimable"
+        );
+    }
+
+    #[test]
+    fn styles_view_lists_unclaimed_rows_so_a_claim_is_possible() {
+        let h = fresh_styles("lc_style_view");
+        let legacy = vec![ls("style:1", "Legacy")];
+        claim_legacy_account_styles(Some(&h), &legacy, Some(&only(&["style:1"])));
+
+        let view = styles_snap_for(&h, &legacy).into_view_list();
+        assert_eq!(view.len(), 1);
+        assert!(!view[0].claimable, "already claimed");
+
+        // Unclaimed and signed in: listed AND claimable.
+        let h2 = fresh_styles("lc_style_view2");
+        let v2 = styles_snap_for(&h2, &legacy).into_view_list();
+        assert_eq!(v2.len(), 1);
+        assert!(v2[0].claimable);
+
+        // Signed out: still listed (never looks deleted) but not claimable.
+        let signed_out = VisibleStyles::from_union_with_account(union_styles(&legacy, &[]), None);
+        let v3 = signed_out.into_view_list();
+        assert_eq!(v3.len(), 1);
+        assert!(!v3[0].claimable);
+    }
+
+    // ── 9. adversarial: the claim-vs-writer race ────────────────────────────
+    //
+    // The hand-rolled stand-in that lived here proved only that the claim takes
+    // a lock — deleting the production stamper's lock left it green. The real
+    // coverage now drives production writers and lives in `sync::stores` (which
+    // alone can take `store_test_guard`):
+    // `claim_survives_concurrent_real_stamp_writes`,
+    // `style_claim_survives_concurrent_real_stamp_writes`,
+    // `the_real_account_merge_writer_contends_for_the_claim_lock`,
+    // `a_stale_real_merge_that_drops_a_claim_leaves_it_recoverable`.
+
+    /// The invariant in one assertion: after a claim attempt, the record exists
+    /// in the account store OR the legacy store — never neither.
+    #[test]
+    fn a_record_is_never_absent_from_both_stores() {
+        let h = fresh_agents("lc_never_neither");
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        // Normal claim: owned.
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert_eq!(out.claimed_ids, vec!["agent:1".to_string()]);
+        assert!(load_account_agents(&h)
+            .custom_agents
+            .iter()
+            .any(|a| a.id == "agent:1"));
+
+        // Failed ownership write: not owned, and the caller therefore keeps the
+        // legacy copy, so the record still exists.
+        let h2 = fresh_agents("lc_never_neither2");
+        let path = account_path(&agents_base_dir(), "agents", &h2);
+        let _ = std::fs::remove_file(&path);
+        std::fs::create_dir_all(&path).unwrap();
+        let out2 = claim_legacy_account_agents(Some(&h2), &legacy, Some(&only(&["agent:1"])));
+        assert!(out2.claimed_ids.is_empty());
+        let in_account2 = load_account_agents(&h2)
+            .custom_agents
+            .iter()
+            .any(|a| a.id == "agent:1");
+        let in_legacy2 = legacy.iter().any(|l| l.id == "agent:1");
+        assert!(
+            in_account2 || in_legacy2,
+            "record vanished from both stores"
+        );
+        let _ = std::fs::remove_dir_all(&path);
+    }
+
+    // ── 10. tombstone policy: DELETE wins, deterministically ──────────────
+
+    #[test]
+    fn a_tombstoned_account_record_refuses_the_claim_and_reports_it() {
+        let h = fresh_agents("lc_tombstone");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![AccountAgent {
+                    deleted_at: Some(1_700_000_000_000),
+                    ..ca("agent:1", "Deleted")
+                }],
+            },
+        )
+        .unwrap();
+        let legacy = vec![la("agent:1", "Legacy")];
+
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert!(
+            out.claimed_ids.is_empty(),
+            "a delete must never be resurrected"
+        );
+        assert!(
+            out.refused_ids
+                .iter()
+                .any(|(id, why)| id == "agent:1" && *why == "tombstoned"),
+            "the refusal must be explicit and reported, got {:?}",
+            out.refused_ids
+        );
+        // Not reported as "already yours" — that would be a different lie.
+        assert!(out.skipped_ids.is_empty());
+        // The account row keeps its tombstone: wire semantics untouched.
+        assert!(load_account_agents(&h).custom_agents[0]
+            .deleted_at
+            .is_some());
+    }
+
+    #[test]
+    fn style_tombstone_refuses_the_claim_too() {
+        let h = fresh_styles("lc_style_tombstone");
+        save_account_styles(
+            &h,
+            &AccountStylesStore {
+                custom_styles: vec![AccountStyle {
+                    deleted_at: Some(1_700_000_000_000),
+                    ..cs("style:1", "Deleted")
+                }],
+            },
+        )
+        .unwrap();
+        let out = claim_legacy_account_styles(
+            Some(&h),
+            &[ls("style:1", "Legacy")],
+            Some(&only(&["style:1"])),
+        );
+        assert!(out.claimed_ids.is_empty());
+        assert!(out
+            .refused_ids
+            .iter()
+            .any(|(id, why)| id == "style:1" && *why == "tombstoned"));
+    }
+
+    // ── 11. duplicate legacy ids: refuse, never destroy ───────────────────
+
+    #[test]
+    fn duplicate_legacy_ids_are_refused_rather_than_one_silently_destroyed() {
+        let h = fresh_agents("lc_dupe");
+        // Two rows, same id, DIFFERENT content — only reachable via a hand-edited
+        // file. Cleanup deletes by id, so claiming would delete both while
+        // reporting one adopted.
+        let legacy = vec![la("agent:1", "Version A"), la("agent:1", "Version B")];
+
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:1"])));
+        assert!(out.claimed_ids.is_empty());
+        assert_eq!(
+            out.refused_ids,
+            vec![("agent:1".to_string(), "duplicate-legacy-id")],
+            "exactly one refusal per id, even though two rows share it"
+        );
+        assert!(load_account_agents(&h).custom_agents.is_empty());
+        // Both legacy rows are still there — nothing destroyed.
+        assert_eq!(legacy.iter().filter(|l| l.id == "agent:1").count(), 2);
+    }
+
+    #[test]
+    fn duplicate_legacy_ids_do_not_block_a_different_id() {
+        let h = fresh_agents("lc_dupe_other");
+        let legacy = vec![
+            la("agent:1", "Version A"),
+            la("agent:1", "Version B"),
+            la("agent:2", "Fine"),
+        ];
+        let out = claim_legacy_account_agents(Some(&h), &legacy, Some(&only(&["agent:2"])));
+        assert_eq!(out.claimed_ids, vec!["agent:2".to_string()]);
+        assert!(out.refused_ids.is_empty());
+    }
+
+    // ── 12. builtin ids: refused on every path ────────────────────────────
+
+    #[test]
+    fn builtin_ids_are_refused_on_the_agent_and_style_paths() {
+        let h = fresh_agents("lc_builtin_agent");
+        let out = claim_legacy_account_agents(
+            Some(&h),
+            &[la(crate::agents::ID_BUILT_IN, "Builtin")],
+            Some(&only(&[crate::agents::ID_BUILT_IN])),
+        );
+        assert!(
+            out.claimed_ids.is_empty(),
+            "a reserved id must never be ownable"
+        );
+        assert!(out
+            .refused_ids
+            .iter()
+            .any(|(id, why)| id == crate::agents::ID_BUILT_IN && *why == "builtin-id"));
+        assert!(load_account_agents(&h).custom_agents.is_empty());
+
+        let hs = fresh_styles("lc_builtin_style");
+        let bid = crate::prompts::ID_PROOFREAD;
+        let outs =
+            claim_legacy_account_styles(Some(&hs), &[ls(bid, "Proofread")], Some(&only(&[bid])));
+        assert!(outs.claimed_ids.is_empty());
+        assert!(outs
+            .refused_ids
+            .iter()
+            .any(|(id, why)| id == bid && *why == "builtin-id"));
+        assert!(load_account_styles(&hs).custom_styles.is_empty());
+    }
+
+    #[test]
+    fn is_empty_accounts_for_every_refusal_reason() {
+        // The UI relies on `is_empty` to distinguish "nothing happened" from a
+        // real outcome, so a refusal must count as a non-empty result.
+        let h = fresh_agents("lc_empty_reason");
+        save_account_agents(
+            &h,
+            &AccountAgentsStore {
+                custom_agents: vec![AccountAgent {
+                    deleted_at: Some(1),
+                    ..ca("agent:1", "Gone")
+                }],
+            },
+        )
+        .unwrap();
+        let out = claim_legacy_account_agents(
+            Some(&h),
+            &[
+                la("agent:1", "Legacy"),
+                la(crate::agents::ID_BUILT_IN, "Builtin"),
+            ],
+            None,
+        );
+        assert!(!out.is_empty());
+        assert!(out.claimed_ids.is_empty());
+    }
+}

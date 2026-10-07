@@ -320,11 +320,19 @@ pub fn save_custom_agent_routed(name: &str, hint: &str, id: Option<&str>) -> Opt
     match local_account_hash() {
         Some(hash) => {
             crate::account_scope::upsert_account_agent(&hash, &agent_id, &clean_name, &clean_hint);
-            Some(CustomAgent { id: agent_id, name: clean_name, hint: clean_hint })
+            Some(CustomAgent {
+                id: agent_id,
+                name: clean_name,
+                hint: clean_hint,
+            })
         }
         None => {
             let mut store = load_store();
-            let agent = CustomAgent { id: agent_id.clone(), name: clean_name, hint: clean_hint };
+            let agent = CustomAgent {
+                id: agent_id.clone(),
+                name: clean_name,
+                hint: clean_hint,
+            };
             if let Some(pos) = store.custom_agents.iter().position(|a| a.id == agent_id) {
                 store.custom_agents[pos] = agent.clone();
             } else {
@@ -357,17 +365,57 @@ pub fn validate_agent_name_routed(name: &str, excluding_id: Option<&str>) -> Opt
 
 /// Delete an agent: tombstone in the account store when signed in (so the
 /// delete propagates instead of resurrecting), legacy removal when signed
-/// out. A same-id legacy row is left alone when signed in. Returns true when
-/// something was deleted; also resets a deleted default to built-in.
+/// out. Once the tombstone is durable, the same-id legacy shadow is removed
+/// so a delete still deletes after sign-out.
+///
+/// Returns whether the delete became DURABLE — true only when the account
+/// tombstone was actually persisted (or, signed out, the legacy row was
+/// actually removed). Existence alone is deliberately NOT success: a delete
+/// that could not be written has not happened, and reporting otherwise tells
+/// the user their agent is gone while it is still there after a restart.
+/// Also resets a deleted default to built-in, on success only.
 pub fn delete_custom_agent_routed(id: &str) -> bool {
     if id == ID_BUILT_IN {
         return false;
     }
-    let removed = match local_account_hash() {
+    let durable = match local_account_hash() {
         Some(hash) => {
             let before = crate::account_scope::load_account_agents(&hash).custom_agents;
-            crate::account_scope::delete_account_agent(&hash, id);
-            before.iter().any(|a| a.id == id)
+            let existed = before.iter().any(|a| a.id == id);
+            // The tombstone MUST be durable before the legacy shadow is
+            // touched: on a failed write the legacy copy is the only copy
+            // left, and removing it would lose the record entirely.
+            let persisted = crate::account_scope::delete_account_agent(&hash, id);
+            if existed && persisted {
+                // Drop the same-id legacy shadow, mirroring Android.
+                //
+                // The claim COPIES rather than moves, so it leaves the legacy row in
+                // place on purpose. Without this, deleting a claimed agent would
+                // leave that row as a device-local record — visible and RUNNABLE
+                // again the moment the user signed out. Deleting must still delete.
+                //
+                // Only safe here: the tombstone was just written, so the account store
+                // provably held the record and any same-id legacy row is a shadow the
+                // claim created. Idempotent, and it runs only AFTER the tombstone.
+                let mut legacy = load_store();
+                let before_legacy = legacy.custom_agents.len();
+                legacy.custom_agents.retain(|a| a.id != id);
+                if legacy.custom_agents.len() != before_legacy {
+                    if let Err(e) = save_store(&legacy) {
+                        // Tombstone IS durable, so the account copy survives and
+                        // shadows this row: recoverable, not data loss. It only
+                        // means the shadow can resurface as a device-local row
+                        // after sign-out. Logged rather than silently dropped.
+                        log::warn!(
+                            "Deleted agent {} but could not drop its legacy shadow: {e}",
+                            id
+                        );
+                    }
+                }
+            }
+            // `existed && persisted`, not `persisted` alone: a delete aimed at an id
+            // that was not there is not a durable delete either.
+            existed && persisted
         }
         None => {
             let mut store = load_store();
@@ -380,14 +428,14 @@ pub fn delete_custom_agent_routed(id: &str) -> bool {
             removed
         }
     };
-    if removed {
+    if durable {
         let mut store = load_store();
         if store.default_id == id {
             store.default_id = ID_BUILT_IN.to_string();
             let _ = save_store(&store);
         }
     }
-    removed
+    durable
 }
 
 // --- Tauri commands (registered in Slice 4b) ---
@@ -398,7 +446,29 @@ pub struct AgentsView {
     pub builtin_name: String,
     pub builtin_description: String,
     pub default_id: String,
-    pub custom_agents: Vec<CustomAgent>,
+    pub custom_agents: Vec<CustomAgentView>,
+}
+
+/// One row of the agents board.
+///
+/// Deliberately a VIEW type, not an extra field on [`CustomAgent`]: `CustomAgent`
+/// IS the on-disk legacy shape, so a claimability flag there would persist a
+/// policy decision into `agents.json` and let a hand-edited legacy file assert
+/// its own eligibility. `account_scope` computes the flag from the admission gate
+/// and hands it in, so the frontend can never influence it.
+///
+/// Field names match `CustomAgent`, so existing consumers keep reading
+/// `id`/`name`/`hint` unchanged; `claimable` is purely additive.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct CustomAgentView {
+    pub id: String,
+    pub name: String,
+    pub hint: String,
+    /// True only for an unclaimed pre-account record while an account is signed
+    /// in. False for signed-out rows (already usable, nothing to adopt) and for
+    /// records already owned.
+    #[serde(default)]
+    pub claimable: bool,
 }
 
 #[tauri::command]
@@ -442,10 +512,76 @@ pub fn delete_agent(window: tauri::Window, id: String) -> Result<(), String> {
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     // Routed: tombstone in the account store when signed in (propagates),
     // legacy removal when signed out.
-    if !delete_custom_agent_routed(&id) {
+    //
+    // Existence is checked FIRST so the two failures stay distinguishable: a
+    // missing id is "not found", while an id that exists but whose tombstone
+    // could not be written is a real failure the user must be told about —
+    // the record is untouched, and claiming success would leave it silently
+    // reappearing after a restart.
+    if id == ID_BUILT_IN || !is_known_agent(&id) {
         return Err("Agent not found.".to_string());
     }
+    if !delete_custom_agent_routed(&id) {
+        return Err("Could not save the delete. Nothing was lost — please try again.".to_string());
+    }
     Ok(())
+}
+
+/// Adopt ONE unclaimed pre-account agent into the account signed in right now.
+///
+/// The destination account is resolved HERE from the durable session — it is
+/// deliberately NOT a parameter. No caller and no frontend payload can name the
+/// account to claim into, so the only reachable outcome is adoption into the
+/// user's own current account, which is the only legitimate one. `only_ids` is
+/// pinned to this single id: a per-row action must never move records the user
+/// did not choose.
+///
+/// Fail-safe ordering, mirroring Android:
+///  1. ownership is written to the account store, and reported only if that write
+///     succeeded;
+///  2. only then is the legacy copy dropped.
+///
+/// If step 1 fails, nothing is reported claimed and the legacy row is left
+/// untouched — the record therefore always exists in at least one store, and a
+/// failed cleanup instead leaves a shadow the union already dedupes away in
+/// favour of the owned copy.
+#[tauri::command]
+pub fn claim_legacy_agent(
+    window: tauri::Window,
+    id: String,
+) -> Result<crate::account_scope::ClaimOutcome, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    if id == ID_BUILT_IN {
+        return Err("That agent is built in.".to_string());
+    }
+    let Some(hash) = local_account_hash() else {
+        // Refuse rather than guess. Defence in depth: the core also claims nothing
+        // without a valid hash, so there is no path that adopts while signed out.
+        return Err("Sign in to add this agent to your account.".to_string());
+    };
+    let legacy = load_store().custom_agents;
+    let only = std::collections::HashSet::from([id.clone()]);
+    // NO legacy cleanup, by decision. The claim COPIES the record into the account;
+    // it never MOVES it, so the pre-account row stays on disk.
+    //
+    // The account store is a whole-document read-modify-write and not every writer
+    // shares the claim's `io_lock` — the sync pass notably loads the document,
+    // performs a Drive round trip, and only then writes a `merged` payload built
+    // from that pre-network snapshot (see `frozen.rs`). A claim landing in that
+    // window is discarded by the pass. Had the claim also DELETED the legacy copy,
+    // the record would then exist in NEITHER store: permanent loss. Leaving it
+    // makes that outcome degrade instead — the row resurfaces as unassigned and
+    // can simply be claimed again.
+    //
+    // Consistent with existing policy: a `skipped` (already owned) or `refused` id
+    // already keeps its legacy row. Accepted cost, stated plainly: signing out
+    // re-exposes the row as device-local and runnable, which is the user's own
+    // pre-existing data and is already true today for skipped and refused rows.
+    Ok(crate::account_scope::claim_legacy_account_agents(
+        Some(&hash),
+        &legacy,
+        Some(&only),
+    ))
 }
 
 #[tauri::command]
@@ -527,4 +663,6 @@ mod tests {
         assert_eq!(sanitize_hint(&long).chars().count(), MAX_AGENT_HINT_LENGTH);
         assert_eq!(sanitize_name("  Hello\nWorld  "), "Hello World");
     }
+
+    // ---- one-tap legacy claim: legacy-store cleanup ----
 }

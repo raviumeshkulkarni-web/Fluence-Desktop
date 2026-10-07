@@ -38,11 +38,13 @@ import { toast } from '@/components/fluence/Toasts';
 import {
   deleteAgent,
   getAgents,
+  claimLegacyAgent,
   saveAgent,
   setDefaultAgent,
   type AgentsView,
   type CustomAgent,
 } from '@/ipc/agents';
+import { describeClaimOutcome } from '@/lib/claim';
 
 // Agents board. Same visual language as Android AgentsScreen: one card
 // container, BUILT IN + CUSTOM AGENTS sections, plain rows with dividers.
@@ -58,6 +60,7 @@ export function AgentsPage() {
   const [hint, setHint] = useState('');
   const [saving, setSaving] = useState(false);
   const [pendingDelete, setPendingDelete] = useState<CustomAgent | null>(null);
+  const [claimingId, setClaimingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -145,6 +148,27 @@ export function AgentsPage() {
     }
   };
 
+  // Adopt one unclaimed pre-account agent into the account signed in right now.
+  //
+  // The button sends only the id — the backend resolves the destination account
+  // itself — and it claims exactly this record, never the whole unclaimed set.
+  // The message comes from the backend's outcome via the shared pure helper, so
+  // a refusal (deleted / duplicated / built-in) explains itself instead of
+  // collapsing into a misleading "nothing to add".
+  const onClaim = async (agent: CustomAgent) => {
+    setClaimingId(agent.id);
+    try {
+      const outcome = await claimLegacyAgent(agent.id);
+      await load();
+      const message = describeClaimOutcome(outcome, 'agent');
+      toast(message.text, message.kind);
+    } catch (err) {
+      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+    } finally {
+      setClaimingId(null);
+    }
+  };
+
   if (loading) {
     return (
       <section className="page active" id="page-agents">
@@ -217,6 +241,9 @@ export function AgentsPage() {
               description={view.builtin_description}
               isDefault={view.default_id === view.builtin_id}
               selected={view.default_id === view.builtin_id}
+              claimable={false}
+              claiming={false}
+              onClaim={() => {}}
               onSelect={() => void onSelectDefault(view.builtin_id)}
             />
           </RadioGroup>
@@ -275,6 +302,9 @@ export function AgentsPage() {
                 description={agent.hint}
                 isDefault={view.default_id === agent.id}
                 selected={view.default_id === agent.id}
+                claimable={Boolean(agent.claimable)}
+                claiming={claimingId === agent.id}
+                onClaim={() => void onClaim(agent)}
                 onSelect={() => void onSelectDefault(agent.id)}
                 onEdit={() => openEdit(agent)}
                 onDelete={() => setPendingDelete(agent)}
@@ -376,7 +406,10 @@ function AgentRow({
   description,
   isDefault,
   selected,
+  claimable,
+  claiming,
   onSelect,
+  onClaim,
   onEdit,
   onDelete,
 }: {
@@ -385,57 +418,96 @@ function AgentRow({
   description: string;
   isDefault: boolean;
   selected: boolean;
+  claimable: boolean;
+  claiming: boolean;
   onSelect: () => void;
+  onClaim: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
 }) {
   const isCustom = Boolean(onEdit || onDelete);
-  const hasActions = !selected || isCustom;
+  // An unclaimed record is not owned: it cannot be made the default, edited or
+  // deleted, because all three act on the account store where it does not exist
+  // yet. The only action offered is the explicit claim.
+  const hasActions = claimable || !selected || isCustom;
 
   return (
     <div
-      className={`selection-row agent-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}`}
+      className={`selection-row agent-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}${claimable ? ' agent-card-unclaimed' : ''}`}
     >
-      <RadioGroupItem value={value} asChild>
-        <button
-          type="button"
-          className="selection-row-main"
-          aria-label={`Set ${title} as default agent`}
-        >
+      {claimable ? (
+        // Not a RadioGroupItem: an unclaimed agent must never enter the default
+        // selection, so it is not offered as a selectable option at all.
+        <div className="selection-row-main selection-row-inert">
           <span className="selection-radio" aria-hidden="true" />
           <span className="selection-row-copy">
             <span className="selection-row-heading">
               <span className="selection-row-title">{title}</span>
-              {isDefault && (
-                 <Badge variant="secondary" className="agent-default-badge">
-                    DEFAULT
-                 </Badge>
-              )}
+              <Badge variant="secondary" className="agent-unclaimed-badge">
+                On this device
+              </Badge>
             </span>
             <span className="selection-row-description agent-row-desc">{description}</span>
+            <span className="selection-row-description agent-unclaimed-note">
+              Saved on this device before it was linked to an account.
+            </span>
           </span>
-        </button>
-      </RadioGroupItem>
+        </div>
+      ) : (
+        <RadioGroupItem value={value} asChild>
+          <button
+            type="button"
+            className="selection-row-main"
+            aria-label={`Set ${title} as default agent`}
+          >
+            <span className="selection-radio" aria-hidden="true" />
+            <span className="selection-row-copy">
+              <span className="selection-row-heading">
+                <span className="selection-row-title">{title}</span>
+                {isDefault && (
+                  <Badge variant="secondary" className="agent-default-badge">
+                    DEFAULT
+                  </Badge>
+                )}
+              </span>
+              <span className="selection-row-description agent-row-desc">{description}</span>
+            </span>
+          </button>
+        </RadioGroupItem>
+      )}
       {hasActions && (
         <div className="selection-row-actions">
-          {!selected && (
-            <Button variant="secondary" size="xs" onClick={onSelect}>
-              Set as default
-            </Button>
-          )}
-          {onEdit && (
-            <Button variant="secondary" size="xs" onClick={onEdit}>
-              Edit
-            </Button>
-          )}
-          {onDelete && (
+          {claimable ? (
             <Button
-              variant="destructive"
+              variant="secondary"
               size="xs"
-              onClick={onDelete}
+              onClick={onClaim}
+              disabled={claiming}
             >
-              Delete
+              {claiming ? 'Adding…' : 'Add to my account'}
             </Button>
+          ) : (
+            <>
+              {!selected && (
+                <Button variant="secondary" size="xs" onClick={onSelect}>
+                  Set as default
+                </Button>
+              )}
+              {onEdit && (
+                <Button variant="secondary" size="xs" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  variant="destructive"
+                  size="xs"
+                  onClick={onDelete}
+                >
+                  Delete
+                </Button>
+              )}
+            </>
           )}
         </div>
       )}

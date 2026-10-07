@@ -54,11 +54,24 @@ pub enum PromptSelection {
     Custom(String),
 }
 
+/// TEST-ONLY redirect: under `cfg(test)` this resolves inside the per-process
+/// temp data dir, so a test can never read or overwrite the developer's real
+/// prompts.json. Production below is byte-identical to the original and does NOT
+/// go through `stores::base_data_dir()` — that helper honours FLUENCE_DATA_DIR
+/// outside `cfg(test)`, which a release build must keep doing for every OTHER
+/// domain but never did for this file.
 pub fn prompts_path() -> PathBuf {
-    let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("Fluence");
-    path.push("prompts.json");
-    path
+    #[cfg(test)]
+    {
+        return crate::sync::stores::data_dir().join("prompts.json");
+    }
+    #[cfg(not(test))]
+    {
+        let mut path = dirs::data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("Fluence");
+        path.push("prompts.json");
+        path
+    }
 }
 
 pub fn load_store() -> PromptsStore {
@@ -208,7 +221,13 @@ fn lookup_override<'a>(store: &'a PromptsStore, exe: &str) -> Option<&'a String>
 /// intact) used when AI Post Processing is on with no style selected.
 pub const ID_DEFAULT: &str = "default";
 
-/// Built-in style ids. Mirrors Android `AiCleanupPreferences.BUILT_IN_IDS`.
+/// Built-in style ids.
+///
+/// The three named styles mirror Android `AiCleanupPreferences.BUILT_IN_IDS`
+/// one-for-one. `ID_DEFAULT` is a Windows-only legacy sentinel with no Android
+/// counterpart; it is retained so an old `prompts.json` that still names it is
+/// recognised as built-in rather than treated as a claimable custom row. Custom
+/// rows are `custom:<uuid>`, so no custom record can collide with it either way.
 pub const BUILT_IN_IDS: [&str; 4] = [ID_DEFAULT, ID_PROOFREAD, ID_NATURAL, ID_PROFESSIONAL];
 
 /// True for built-in style ids (never custom records).
@@ -231,32 +250,32 @@ pub fn local_account_hash() -> Option<String> {
 /// Read the union of the active account's styles and legacy device-local ones,
 /// returning only what may execute. Tombstones excluded; sync never reads this.
 pub fn load_custom_styles() -> Vec<CustomStyle> {
-  load_custom_styles_for(local_account_hash().as_deref())
+    load_custom_styles_for(local_account_hash().as_deref())
 }
 
 /// Hash-injectable form of [`load_custom_styles`], mirroring
 /// `VisibleAgents::load`, so the projection can be exercised for a specific
 /// account without standing up a signed-in session.
 pub fn load_custom_styles_for(account_hash: Option<&str>) -> Vec<CustomStyle> {
-  let snapshot = crate::account_scope::VisibleStyles::load(account_hash);
-  snapshot
-    .admitted()
-    .into_iter()
-    .filter(|r| match r {
-    crate::account_scope::VisibleStyle::Legacy { .. } => true,
-    crate::account_scope::VisibleStyle::Account(s) => s.deleted_at.is_none(),
-  })
-    .map(|r| match r {
-    crate::account_scope::VisibleStyle::Legacy { id, name, hint } => {
-    CustomStyle { id, name, hint }
-    }
-    crate::account_scope::VisibleStyle::Account(s) => CustomStyle {
-    id: s.id,
-    name: s.name,
-    hint: s.hint,
-    },
-  })
-  .collect()
+    let snapshot = crate::account_scope::VisibleStyles::load(account_hash);
+    snapshot
+        .admitted()
+        .into_iter()
+        .filter(|r| match r {
+            crate::account_scope::VisibleStyle::Legacy { .. } => true,
+            crate::account_scope::VisibleStyle::Account(s) => s.deleted_at.is_none(),
+        })
+        .map(|r| match r {
+            crate::account_scope::VisibleStyle::Legacy { id, name, hint } => {
+                CustomStyle { id, name, hint }
+            }
+            crate::account_scope::VisibleStyle::Account(s) => CustomStyle {
+                id: s.id,
+                name: s.name,
+                hint: s.hint,
+            },
+        })
+        .collect()
 }
 
 /// True for builtin ids and admitted custom styles. Guards selection,
@@ -292,11 +311,19 @@ pub fn save_custom_style_routed(name: &str, hint: &str, id: Option<&str>) -> Opt
     match local_account_hash() {
         Some(hash) => {
             crate::account_scope::upsert_account_style(&hash, &style_id, &clean_name, &clean_hint);
-            Some(CustomStyle { id: style_id, name: clean_name, hint: clean_hint })
+            Some(CustomStyle {
+                id: style_id,
+                name: clean_name,
+                hint: clean_hint,
+            })
         }
         None => {
             let mut store = load_store();
-            let style = CustomStyle { id: style_id.clone(), name: clean_name, hint: clean_hint };
+            let style = CustomStyle {
+                id: style_id.clone(),
+                name: clean_name,
+                hint: clean_hint,
+            };
             if let Some(pos) = store.custom_styles.iter().position(|s| s.id == style_id) {
                 store.custom_styles[pos] = style.clone();
             } else {
@@ -309,9 +336,15 @@ pub fn save_custom_style_routed(name: &str, hint: &str, id: Option<&str>) -> Opt
 }
 
 /// Delete a style: tombstone in the account store when signed in (propagates),
-/// legacy removal when signed out. Returns the override exes reset to global.
-/// Overrides stay device-local (D1c).
-pub fn delete_custom_style_routed(id: &str) -> Vec<String> {
+/// legacy removal when signed out. Once the tombstone is durable, the same-id
+/// legacy shadow is removed so a delete still deletes after sign-out.
+/// Returns the override exes reset to global. Overrides stay device-local (D1c).
+///
+/// `Err` means the delete did NOT become durable (the tombstone could not be
+/// written). The account copy and any legacy shadow are both untouched in that
+/// case, so nothing is lost — but the delete did not happen, and the caller must
+/// say so rather than reporting success.
+pub fn delete_custom_style_routed(id: &str) -> Result<Vec<String>, String> {
     let mut store = load_store();
     let affected: Vec<String> = store
         .package_overrides
@@ -319,22 +352,66 @@ pub fn delete_custom_style_routed(id: &str) -> Vec<String> {
         .filter(|(_, v)| *v == id)
         .map(|(k, _)| k.clone())
         .collect();
-    for exe in &affected {
-        store.package_overrides.remove(exe);
-    }
-    if !affected.is_empty() {
-        let _ = save_store(&store);
-    }
     match local_account_hash() {
         Some(hash) => {
-            crate::account_scope::delete_account_style(&hash, id);
+            let before = crate::account_scope::load_account_styles(&hash).custom_styles;
+            let existed = before.iter().any(|s| s.id == id);
+            // The tombstone MUST be durable before the legacy shadow is
+            // touched: on a failed write the legacy copy is the only copy
+            // left. Mirrors delete_custom_agent_routed.
+            let persisted = crate::account_scope::delete_account_style(&hash, id);
+            if existed && !persisted {
+                // NOTHING has been mutated yet. The style is still live and still
+                // assigned, so its `package_overrides` bindings are still valid:
+                // return the error with them intact rather than silently sending
+                // the user's apps back to Auto for a delete that did not happen.
+                return Err(
+                    "Could not save the delete. Nothing was lost — please try again.".to_string(),
+                );
+            }
+            // Durable (or nothing was there to delete): now the apps pointing at
+            // this style really do fall back to Auto. Mirrors the `durable` gate on
+            // `delete_custom_agent_routed` and on Android's delete paths.
+            if !affected.is_empty() {
+                for exe in &affected {
+                    store.package_overrides.remove(exe);
+                }
+                let _ = save_store(&store);
+            }
+            if existed && persisted {
+                // Drop the same-id legacy shadow. The claim COPIES rather than
+                // moves, so without this a deleted style would return as a
+                // device-local record — visible and applicable — the moment the
+                // user signed out. Deleting must still delete.
+                let mut legacy = load_store();
+                let before_legacy = legacy.custom_styles.len();
+                legacy.custom_styles.retain(|s| s.id != id);
+                if legacy.custom_styles.len() != before_legacy {
+                    if let Err(e) = save_store(&legacy) {
+                        // The tombstone IS durable, so the account copy survives and
+                        // shadows this row: recoverable, not data loss. Logged rather
+                        // than silently dropped.
+                        log::warn!(
+                            "Deleted style {} but could not drop its legacy shadow: {e}",
+                            id
+                        );
+                    }
+                }
+            }
         }
         None => {
+            // Signed out: the style lives only in the legacy store, so there is no
+            // tombstone and no durability gate — the row goes when the write lands.
+            if !affected.is_empty() {
+                for exe in &affected {
+                    store.package_overrides.remove(exe);
+                }
+            }
             store.custom_styles.retain(|s| s.id != id);
             let _ = save_store(&store);
         }
     }
-    affected
+    Ok(affected)
 }
 
 /// Build the admission snapshot for style resolution: the caller-supplied
@@ -541,8 +618,25 @@ pub fn truncate_input(text: &str) -> String {
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PromptsView {
     pub builtin_styles: Vec<BuiltinStyleView>,
-    pub custom_styles: Vec<CustomStyle>,
+    pub custom_styles: Vec<CustomStyleView>,
     pub overrides: HashMap<String, String>,
+}
+
+/// One custom-style row of the prompts board.
+///
+/// A VIEW type, kept separate from [`CustomStyle`] for the same reason as
+/// `CustomAgentView`: `CustomStyle` is the on-disk legacy shape, and a
+/// claimability flag stored there would let a hand-edited `prompts.json` assert
+/// its own eligibility. Field names match `CustomStyle`, so existing consumers
+/// keep reading `id`/`name`/`hint` unchanged.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
+pub struct CustomStyleView {
+    pub id: String,
+    pub name: String,
+    pub hint: String,
+    /// True only for an unclaimed pre-account style while an account is signed in.
+    #[serde(default)]
+    pub claimable: bool,
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -582,7 +676,7 @@ fn build_prompts_view(store: PromptsStore, account_hash: Option<&str>) -> Prompt
                 description: "Polite, clear work tone.".to_string(),
             },
         ],
-        custom_styles: load_custom_styles_for(account_hash),
+        custom_styles: crate::account_scope::VisibleStyles::load(account_hash).into_view_list(),
         overrides: store.package_overrides.clone(),
     }
 }
@@ -597,7 +691,10 @@ pub fn get_prompts(window: tauri::Window) -> Result<PromptsView, String> {
             crate::acl::WIZARD_WINDOW,
         ],
     )?;
-    Ok(build_prompts_view(load_store(), local_account_hash().as_deref()))
+    Ok(build_prompts_view(
+        load_store(),
+        local_account_hash().as_deref(),
+    ))
 }
 
 #[tauri::command]
@@ -616,6 +713,39 @@ pub fn save_prompt_style(
     }
 }
 
+/// Adopt ONE unclaimed pre-account style into the account signed in right now.
+///
+/// The destination account is resolved HERE from the durable session — never a
+/// parameter — so no frontend payload can choose which account receives the
+/// record. `only_ids` is pinned to this single id so a per-row action cannot move
+/// records the user did not choose.
+///
+/// Fail-safe ordering, mirroring Android and `claim_legacy_agent`: ownership is
+/// written (and reported only if durable) before the legacy copy is dropped, so
+/// a failure on either side leaves the record in at least one store.
+#[tauri::command]
+pub fn claim_legacy_prompt_style(
+    window: tauri::Window,
+    id: String,
+) -> Result<crate::account_scope::ClaimOutcome, String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    let Some(hash) = local_account_hash() else {
+        return Err("Sign in to add this style to your account.".to_string());
+    };
+    if is_builtin_style(&id) {
+        return Err("That style is built in.".to_string());
+    }
+    let legacy = load_store().custom_styles;
+    let only = std::collections::HashSet::from([id.clone()]);
+    // NO legacy cleanup — the claim COPIES, never MOVES. See `claim_legacy_agent`
+    // for the full rationale; it applies identically here.
+    Ok(crate::account_scope::claim_legacy_account_styles(
+        Some(&hash),
+        &legacy,
+        Some(&only),
+    ))
+}
+
 #[tauri::command]
 pub fn delete_prompt_style(window: tauri::Window, id: String) -> Result<Vec<String>, String> {
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
@@ -624,7 +754,9 @@ pub fn delete_prompt_style(window: tauri::Window, id: String) -> Result<Vec<Stri
     if is_builtin_style(&id) || !is_known_style(&id) {
         return Err("Style not found.".to_string());
     }
-    Ok(delete_custom_style_routed(&id))
+    // Propagates Err when the tombstone could not be persisted, so a failed
+    // delete is never reported as a success.
+    delete_custom_style_routed(&id)
 }
 
 #[tauri::command]
@@ -895,7 +1027,9 @@ mod admitted_projection {
 
         let view = build_prompts_view(store, Some(hash.as_str()));
         assert!(
-            view.custom_styles.iter().any(|s| s.id == id && s.name == "Synced Style"),
+            view.custom_styles
+                .iter()
+                .any(|s| s.id == id && s.name == "Synced Style"),
             "an account-owned style must appear in the view; got {:?}",
             view.custom_styles.iter().map(|s| &s.id).collect::<Vec<_>>()
         );
@@ -943,6 +1077,80 @@ mod admitted_projection {
         assert_eq!(
             view.overrides.get("notepad.exe").map(String::as_str),
             Some(ID_NATURAL)
+        );
+    }
+
+    // ---- durable delete: a failed tombstone must not also strip overrides ----
+
+    /// THE regression test for the durable-delete gate.
+    ///
+    /// When the account tombstone cannot be written, the style is still live and
+    /// still assigned to apps. Clearing `package_overrides` anyway would send the
+    /// user's apps back to Auto in exchange for a delete that never happened —
+    /// and would do so while reporting failure.
+    ///
+    /// Fault injection is Windows-specific: making the account file read-only
+    /// blocks `std::fs::rename` from replacing it. On Unix the read-only bit
+    /// only blocks writing TO the file, so the write would succeed and the test
+    /// would fail for the wrong reason.
+    #[test]
+    #[cfg(windows)]
+    fn a_failed_tombstone_does_not_strip_package_overrides() {
+        let hash = qa_account("durability-gate");
+        let id = "custom:qa-durability-0001";
+        let exe = "qa-durability-app.exe";
+        crate::account_scope::upsert_account_style(&hash, id, "Owned", "owned hint");
+
+        // Sign in so the routed delete takes the ACCOUNT branch.
+        let mut settings = crate::settings::load_settings().unwrap_or_default();
+        let previous_key = settings.sync_account_key.clone();
+        settings.sync_account_key = Some("qa-prompts-durability-gate@runtime.test".to_string());
+        crate::settings::save_settings(&settings).unwrap();
+
+        // An app bound to that style.
+        let mut store = load_store();
+        store
+            .package_overrides
+            .insert(exe.to_string(), id.to_string());
+        save_store(&store).unwrap();
+        assert_eq!(
+            load_store().package_overrides.get(exe).map(String::as_str),
+            Some(id),
+            "precondition: the app is bound to the style"
+        );
+
+        // Make the account file unwritable so the tombstone cannot land.
+        let path = crate::account_scope::account_path_for_test(
+            &crate::account_scope::prompts_base_dir_for_test(),
+            "styles",
+            &hash,
+        );
+        let tmp = path.with_extension("json.tmp");
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(true);
+        std::fs::set_permissions(&path, perms).unwrap();
+
+        let result = delete_custom_style_routed(id);
+
+        // Restore FIRST, so no read-only state leaks even if an assert fails.
+        let mut perms = std::fs::metadata(&path).unwrap().permissions();
+        perms.set_readonly(false);
+        std::fs::set_permissions(&path, perms).unwrap();
+        let _ = std::fs::remove_file(&tmp);
+
+        let overrides_after = load_store().package_overrides;
+        let mut settings = crate::settings::load_settings().unwrap_or_default();
+        settings.sync_account_key = previous_key;
+        let _ = crate::settings::save_settings(&settings);
+
+        assert!(
+            result.is_err(),
+            "a delete whose tombstone never landed must report failure, not success"
+        );
+        assert_eq!(
+            overrides_after.get(exe).map(String::as_str),
+            Some(id),
+            "the style is still live, so its app bindings must survive a failed delete"
         );
     }
 }

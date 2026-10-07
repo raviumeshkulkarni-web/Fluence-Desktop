@@ -1410,7 +1410,7 @@ impl DirtyStore for AgentDirtyStore {
         // Fold the never-pushed tombstone purge into the same write.
         // A tombstone created locally and never uploaded carries no information
         // any other device could need; retaining it would resurrect nothing and
-        // accumulate dead rows. (Tombstones that HAVE been pushed survive —
+        // accumulate dead rows. (Tombstones that HAVE been pushed survive -
         // they are what stop the delete from being undone by a stale copy.)
         rows.retain(|e| {
             !(e.deleted_at.is_some()
@@ -2748,5 +2748,243 @@ mod dirty_lifecycle {
             !store.has_dirty(&hash),
             "a merged peer winner must leave the row clean, or it would re-upload forever"
         );
+    }
+
+    // ---------------------------------------------------------------------
+    // One-tap legacy claim: pinning the REAL account-store writer
+    // ---------------------------------------------------------------------
+    //
+    // The claim takes `io_lock`, but `save_merged` can still be handed a payload
+    // built from a document read BEFORE the Drive round trip, so it can discard a
+    // committed claim. Two properties must therefore hold, asserted here against
+    // the real writer rather than a stand-in:
+    //
+    //  1. the real merge writer contends for the same critical section as the
+    //     claim, so a claim in progress cannot be half-applied around a save;
+    //  2. a stale merge that DOES discard the claim leaves the record recoverable,
+    //     because the claim copied rather than moved it.
+    //
+    // These live in `stores` because they need `store_test_guard()` (the account
+    // stores are shared files on disk) and the real `AgentDirtyStore`.
+
+    /// Pins that `AgentDirtyStore::save_merged` takes `io_lock`.
+    ///
+    /// Fails if that lock is removed: the writer would then run to completion while
+    /// the critical section is held.
+    ///
+    /// The assertion is ORDER-based, never a timeout. A timeout version of this test
+    /// proved flaky under full-suite load, where the machine can schedule the
+    /// writer faster than a fixed window expects. Here the writer records whether
+    /// it had finished by the time the holder released, so a slow machine can only
+    /// make the test slower — it cannot make it fail spuriously.
+    #[test]
+    fn the_real_account_merge_writer_contends_for_the_claim_lock() {
+        let _guard = super::tests::store_test_guard();
+        let hash = qa_account("claim-lock-contention");
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::{mpsc, Arc};
+
+        let released = Arc::new(AtomicBool::new(false));
+        let (held_tx, held_rx) = mpsc::channel::<()>();
+        let (go_tx, go_rx) = mpsc::channel::<()>();
+
+        // Stands in for a claim in progress: holds the critical section.
+        let holder = {
+            let released = Arc::clone(&released);
+            std::thread::spawn(move || {
+                let _io = crate::sync::io_lock::io_lock_guard();
+                // Sent only AFTER the guard is held, so the lock really is held.
+                held_tx.send(()).unwrap();
+                go_rx.recv().unwrap();
+                released.store(true, Ordering::SeqCst);
+            })
+        };
+        held_rx.recv().unwrap();
+
+        let (done_tx, done_rx) = mpsc::channel();
+        let finished_early = Arc::new(AtomicBool::new(false));
+        let writer = {
+            let released = Arc::clone(&released);
+            let finished_early = Arc::clone(&finished_early);
+            let hash = hash.clone();
+            std::thread::spawn(move || {
+                let mut store = AgentDirtyStore;
+                let _ = store.save_merged(&hash, Vec::new());
+                finished_early.store(!released.load(Ordering::SeqCst), Ordering::SeqCst);
+                done_tx.send(()).unwrap();
+            })
+        };
+
+        // A grace window for the writer to START. Without the lock it finishes in
+        // here and sets the flag; with the lock held it cannot finish at all.
+        // A slow machine merely makes this sleep elapse with the writer still
+        // blocked, which is the passing outcome anyway.
+        std::thread::sleep(std::time::Duration::from_millis(150));
+        go_tx.send(()).unwrap();
+
+        done_rx.recv().unwrap();
+        holder.join().unwrap();
+        writer.join().unwrap();
+
+        assert!(
+            !finished_early.load(Ordering::SeqCst),
+            "the real merge writer ran to completion while the account-store lock \
+             was held; if save_merged does not take that lock, a claim and a merge \
+             can interleave and discard the claim"
+        );
+    }
+
+    /// A claim racing the REAL stamper loses nothing.
+    ///
+    /// Thread A drives production `AgentDirtyStore::stamp_account` in a loop
+    /// while thread B performs a real claim. Either side dropping `io_lock`
+    /// lets the stale snapshot win and the final assertions fail. This replaces
+    /// the earlier hand-rolled stand-in, which proved only that the claim takes
+    /// a lock — not that the production stamper shares it.
+    #[test]
+    fn claim_survives_concurrent_real_stamp_writes() {
+        let _guard = super::tests::store_test_guard();
+        let h = uuid::Uuid::new_v4().simple().to_string();
+        // A valid account hash (64 lowercase hex): the claim filters anything
+        // else, which would make this test vacuously green.
+        let hash = format!("{h}{h}");
+        // One dirty row, so every stamp pass actually rewrites the document and
+        // the contention is real rather than early-returned away.
+        crate::account_scope::upsert_account_agent(&hash, "agent:qa-race-old", "Old", "hint");
+        let legacy = vec![crate::agents::CustomAgent {
+            id: "agent:qa-race-new".into(),
+            name: "New".into(),
+            hint: "h".into(),
+        }];
+        let only = std::collections::HashSet::from(["agent:qa-race-new".to_string()]);
+
+        let hammer_hash = hash.clone();
+        let stamper = std::thread::spawn(move || {
+            let mut store = AgentDirtyStore;
+            for _ in 0..200 {
+                let _ = store.stamp_account(&hammer_hash);
+            }
+        });
+        let out = crate::account_scope::claim_legacy_account_agents(
+            Some(&hash),
+            &legacy,
+            Some(&only),
+        );
+        stamper.join().unwrap();
+
+        assert_eq!(out.claimed_ids, vec!["agent:qa-race-new".to_string()]);
+        let final_store = crate::account_scope::load_account_agents(&hash);
+        assert!(
+            final_store
+                .custom_agents
+                .iter()
+                .any(|a| a.id == "agent:qa-race-new"),
+            "the claim must survive 200 real stamp passes"
+        );
+        assert!(
+            final_store
+                .custom_agents
+                .iter()
+                .any(|a| a.id == "agent:qa-race-old"),
+            "the pre-existing row must survive too"
+        );
+    }
+
+    /// Style counterpart: a claim racing the REAL style stamper loses nothing.
+    #[test]
+    fn style_claim_survives_concurrent_real_stamp_writes() {
+        let _guard = super::tests::store_test_guard();
+        let h = uuid::Uuid::new_v4().simple().to_string();
+        let hash = format!("{h}{h}");
+        crate::account_scope::upsert_account_style(&hash, "custom:qa-race-old", "Old", "hint");
+        let legacy = vec![crate::prompts::CustomStyle {
+            id: "custom:qa-race-new".into(),
+            name: "New".into(),
+            hint: "h".into(),
+        }];
+        let only = std::collections::HashSet::from(["custom:qa-race-new".to_string()]);
+
+        let hammer_hash = hash.clone();
+        let stamper = std::thread::spawn(move || {
+            let mut store = StyleDirtyStore;
+            for _ in 0..200 {
+                let _ = store.stamp_account(&hammer_hash);
+            }
+        });
+        let out = crate::account_scope::claim_legacy_account_styles(
+            Some(&hash),
+            &legacy,
+            Some(&only),
+        );
+        stamper.join().unwrap();
+
+        assert_eq!(out.claimed_ids, vec!["custom:qa-race-new".to_string()]);
+        let final_store = crate::account_scope::load_account_styles(&hash);
+        assert!(
+            final_store
+                .custom_styles
+                .iter()
+                .any(|s| s.id == "custom:qa-race-new"),
+            "the style claim must survive 200 real stamp passes"
+        );
+        assert!(
+            final_store
+                .custom_styles
+                .iter()
+                .any(|s| s.id == "custom:qa-race-old"),
+            "the pre-existing style must survive too"
+        );
+    }
+
+    /// A stale merge driven through the REAL writer discards the claimed row — and
+    /// the record is still recoverable, because the claim never removed the legacy
+    /// copy. This is what makes the residual race safe without general B2/R1.
+    #[test]
+    fn a_stale_real_merge_that_drops_a_claim_leaves_it_recoverable() {
+        let _guard = super::tests::store_test_guard();
+        let hash = qa_account("claim-stale-merge");
+        let id = "agent:qa-stale-merge-0001";
+        let legacy = vec![crate::agents::CustomAgent {
+            id: id.to_string(),
+            name: "Legacy".into(),
+            hint: "h".into(),
+        }];
+        let only = std::collections::HashSet::from([id.to_string()]);
+
+        let claimed =
+            crate::account_scope::claim_legacy_account_agents(Some(&hash), &legacy, Some(&only));
+        assert_eq!(claimed.claimed_ids, vec![id.to_string()]);
+        assert!(crate::account_scope::load_account_agents(&hash)
+            .custom_agents
+            .iter()
+            .any(|a| a.id == id));
+
+        // The pass writes the payload it read BEFORE the claim. Real writer.
+        let mut store = AgentDirtyStore;
+        store.save_merged(&hash, Vec::new()).unwrap();
+        assert!(
+            crate::account_scope::load_account_agents(&hash)
+                .custom_agents
+                .iter()
+                .all(|a| a.id != id),
+            "precondition: the stale merge discarded the claimed row"
+        );
+
+        // Not lost: visible again as claimable, via the PUBLIC projection the board
+        // renders (never by reaching into the snapshot's private union).
+        let view = crate::account_scope::VisibleAgents::from_union_with_account(
+            crate::account_scope::union_agents(&legacy, &[]),
+            Some(&hash),
+        )
+        .into_view(crate::agents::ID_BUILT_IN.to_string());
+        assert_eq!(view.custom_agents.len(), 1);
+        assert!(
+            view.custom_agents[0].claimable,
+            "the row is visible again and claimable"
+        );
+
+        let retry =
+            crate::account_scope::claim_legacy_account_agents(Some(&hash), &legacy, Some(&only));
+        assert_eq!(retry.claimed_ids, vec![id.to_string()], "re-claim succeeds");
     }
 }

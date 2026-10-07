@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, Check, RefreshCw } from 'lucide-react';
+import { describeClaimOutcome } from '@/lib/claim';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -53,6 +54,7 @@ import {
 } from '@/ipc/settings';
 import {
   clearPromptOverride,
+  claimLegacyPromptStyle,
   deletePromptStyle,
   listInstalledApps,
   getPrompts,
@@ -107,6 +109,9 @@ function StyleChoiceCard({
   onSetDefault,
   onEdit,
   onDelete,
+  claimable,
+  claiming,
+  onClaim,
 }: {
   value: string;
   title: string;
@@ -115,53 +120,90 @@ function StyleChoiceCard({
   onSetDefault: () => void;
   onEdit?: () => void;
   onDelete?: () => void;
+  claimable: boolean;
+  claiming: boolean;
+  onClaim: () => void;
 }) {
-  const hasActions = !selected || Boolean(onEdit || onDelete);
+  const hasActions = claimable || !selected || Boolean(onEdit || onDelete);
 
   return (
     <div
-      className={`choice-surface selection-row style-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}`}
+      className={`choice-surface selection-row style-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}${claimable ? ' style-card-unclaimed' : ''}`}
     >
-      <RadioGroupItem value={value} asChild>
-        <button
-          type="button"
-          className="selection-row-main"
-          aria-label={`Set ${title} as default style`}
-        >
+      {claimable ? (
+        // Not selectable: an unclaimed style cannot be made the default or bound
+        // to an app, because those act on the account store where it does not
+        // exist yet. The explicit claim is the only action offered.
+        <div className="selection-row-main selection-row-inert">
           <span className="selection-radio" aria-hidden="true" />
           <span className="selection-row-copy">
             <span className="selection-row-heading">
               <span className="selection-row-title">{title}</span>
-              {selected && (
-                <Badge variant="secondary" className="style-default-badge">
-                  Default
-                </Badge>
-              )}
+              <Badge variant="secondary" className="style-unclaimed-badge">
+                On this device
+              </Badge>
             </span>
             <span className="selection-row-description">{description}</span>
+            <span className="selection-row-description style-unclaimed-note">
+              Saved on this device before it was linked to an account.
+            </span>
           </span>
-        </button>
-      </RadioGroupItem>
+        </div>
+      ) : (
+        <RadioGroupItem value={value} asChild>
+          <button
+            type="button"
+            className="selection-row-main"
+            aria-label={`Set ${title} as default style`}
+          >
+            <span className="selection-radio" aria-hidden="true" />
+            <span className="selection-row-copy">
+              <span className="selection-row-heading">
+                <span className="selection-row-title">{title}</span>
+                {selected && (
+                  <Badge variant="secondary" className="style-default-badge">
+                    Default
+                  </Badge>
+                )}
+              </span>
+              <span className="selection-row-description">{description}</span>
+            </span>
+          </button>
+        </RadioGroupItem>
+      )}
       {hasActions && (
         <div className="selection-row-actions">
-          {!selected && (
-            <Button variant="secondary" size="xs" onClick={onSetDefault}>
-              Set as default
-            </Button>
-          )}
-          {onEdit && (
-            <Button variant="secondary" size="xs" onClick={onEdit}>
-              Edit
-            </Button>
-          )}
-          {onDelete && (
+          {claimable ? (
             <Button
-              variant="destructive"
+              variant="secondary"
               size="xs"
-              onClick={onDelete}
+              onClick={onClaim}
+              disabled={claiming}
             >
-              Delete
+              {claiming ? 'Adding…' : 'Add to my account'}
             </Button>
+          ) : (
+            <>
+              {!selected && (
+                <Button variant="secondary" size="xs" onClick={onSetDefault}>
+                  Set as default
+                </Button>
+              )}
+              {onEdit && (
+                <Button variant="secondary" size="xs" onClick={onEdit}>
+                  Edit
+                </Button>
+              )}
+              {onDelete && (
+                <Button
+                  variant="destructive"
+                  size="xs"
+                  onClick={onDelete}
+                >
+                  Delete
+                </Button>
+              )}
+            </>
           )}
         </div>
       )}
@@ -192,6 +234,7 @@ export function FormattingPage() {
   const [styleName, setStyleName] = useState('');
   const [styleHint, setStyleHint] = useState('');
   const [saving, setSaving] = useState(false);
+  const [claimingStyleId, setClaimingStyleId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<CustomPromptStyle | null>(
     null,
   );
@@ -279,6 +322,13 @@ export function FormattingPage() {
   };
 
   const customs = prompts?.custom_styles ?? [];
+  // Unclaimed styles stay visible on the board with an explicit "Add to my
+  // account", but must NOT be offered as a default or an app binding: the backend
+  // rejects both ("Unknown style."), so listing them would only ever produce a
+  // confusing error toast. `claimable` is a display hint from the same admission
+  // gate the backend enforces.
+  const assignableStyles = (list: CustomPromptStyle[]) =>
+    list.filter((s) => !s.claimable);
   const builtins: BuiltinPromptStyle[] = prompts?.builtin_styles ?? [];
 
   const installedByExe = useMemo(() => {
@@ -416,6 +466,24 @@ export function FormattingPage() {
     }
   };
 
+// Adopt one unclaimed pre-account style into the account signed in right now.
+// Only the id crosses the boundary — the backend resolves the destination
+// account — and the outcome is rendered through the shared pure helper so a
+// refusal explains itself instead of reading as a silent no-op.
+const onClaimStyle = async (style: CustomPromptStyle) => {
+    setClaimingStyleId(style.id);
+    try {
+      const outcome = await claimLegacyPromptStyle(style.id);
+      await loadPrompts();
+      const message = describeClaimOutcome(outcome, 'style');
+      toast(message.text, message.kind);
+    } catch (err) {
+      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+    } finally {
+      setClaimingStyleId(null);
+    }
+  };
+
   const onDeleteStyle = async () => {
     if (!pendingDelete) return;
     const deletedId = pendingDelete.id;
@@ -518,8 +586,11 @@ export function FormattingPage() {
             value="default"
             title="Default cleanup"
             description="Filler words removed, grammar fixed, your words kept."
-            selected={effectiveDefault === 'default'}
+selected={effectiveDefault === 'default'}
             onSetDefault={() => setDefaultStyle('default')}
+            claimable={false}
+            claiming={false}
+            onClaim={() => {}}
           />
           {customs.map((style) => (
             <StyleChoiceCard
@@ -528,6 +599,9 @@ export function FormattingPage() {
               title={style.name}
               description={style.hint}
               selected={effectiveDefault === style.id}
+              claimable={Boolean(style.claimable)}
+              claiming={claimingStyleId === style.id}
+              onClaim={() => void onClaimStyle(style)}
               onSetDefault={() => setDefaultStyle(style.id)}
               onEdit={() => openEditStyle(style)}
               onDelete={() => setPendingDelete(style)}
@@ -582,10 +656,16 @@ export function FormattingPage() {
             const styleId = prompts?.overrides[key] ?? '';
             const normalizedStyleId =
               styleId === 'proofread' ? 'default' : styleId;
+// Must use the SAME predicate as the Select's options below. If this stayed on
+            // the unfiltered list, an override pointing at a style that is now
+            // unclaimed would match neither the options nor the `!isKnown`
+            // fallback item, and the Select would render a blank value instead of
+            // the style's name. Keeping the predicate in one place is what stops
+            // the two drifting apart again.
             const isKnown =
               normalizedStyleId === 'default' ||
               builtins.some((b) => b.id === normalizedStyleId) ||
-              customs.some((c) => c.id === normalizedStyleId);
+              assignableStyles(customs).some((c) => c.id === normalizedStyleId);
 
             return (
               <div key={key.toLowerCase()} className="setting-row app-rule-row">
@@ -616,7 +696,11 @@ export function FormattingPage() {
                               {b.title}
                             </SelectItem>
                           ))}
-                        {customs.map((c) => (
+{/* Unclaimed styles are excluded: binding one to an app is
+                            rejected backend-side ("Unknown style."), so offering it
+                            would only ever produce a confusing error toast. They
+                            remain visible on the board above with an explicit claim. */}
+                        {assignableStyles(customs).map((c) => (
                           <SelectItem key={c.id} value={c.id}>
                             {c.name}
                           </SelectItem>
@@ -733,7 +817,7 @@ export function FormattingPage() {
                           {b.title}
                         </SelectItem>
                       ))}
-                    {customs.map((c) => (
+{assignableStyles(customs).map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}
                       </SelectItem>

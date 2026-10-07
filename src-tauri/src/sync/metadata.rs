@@ -186,44 +186,46 @@ pub fn belongs_to_account(row_account: Option<&str>, active_account: Option<&str
 use sha2::Digest;
 
 #[cfg(test)]
-    mod tests {
-        use super::*;
+mod tests {
+    use super::*;
 
-        /// STAGE 1 cross-platform hash fixture.
-        ///
-        /// These literals are asserted IDENTICALLY in the Android test
-        /// `DriveIdentityTest.account_hash_matches_the_windows_reference_vector`.
-        /// The account hash becomes a Drive path segment in Stage 3, so any
-        /// divergence between the two platforms — including a reintroduced
-        /// 16-character truncation — must fail a test rather than silently
-        /// split every account partition on every device.
-        #[test]
-        fn account_hash_matches_the_android_reference_vectors() {
-            assert_eq!(
-                "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b",
-                account_hash_from_email("test@example.com"),
-            );
-            assert_eq!(
-                "7b8a6e03ce872608896365b0d9de0e8a3bf4c400c409d5620af6d710fb8ebb00",
-                account_hash_from_email("user+tag@Example.co.uk"),
-            );
-        }
+    /// STAGE 1 cross-platform hash fixture.
+    ///
+    /// These literals are asserted IDENTICALLY in the Android test
+    /// `DriveIdentityTest.account_hash_matches_the_windows_reference_vector`.
+    /// The account hash becomes a Drive path segment in Stage 3, so any
+    /// divergence between the two platforms — including a reintroduced
+    /// 16-character truncation — must fail a test rather than silently
+    /// split every account partition on every device.
+    #[test]
+    fn account_hash_matches_the_android_reference_vectors() {
+        assert_eq!(
+            "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b",
+            account_hash_from_email("test@example.com"),
+        );
+        assert_eq!(
+            "7b8a6e03ce872608896365b0d9de0e8a3bf4c400c409d5620af6d710fb8ebb00",
+            account_hash_from_email("user+tag@Example.co.uk"),
+        );
+    }
 
-        #[test]
-        fn account_hash_is_exactly_64_lowercase_hex_chars() {
-            let hash = account_hash_from_email("someone@example.com");
-            assert_eq!(64, hash.len());
-            assert!(hash.chars().all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
-        }
+    #[test]
+    fn account_hash_is_exactly_64_lowercase_hex_chars() {
+        let hash = account_hash_from_email("someone@example.com");
+        assert_eq!(64, hash.len());
+        assert!(hash
+            .chars()
+            .all(|c| c.is_ascii_hexdigit() && !c.is_ascii_uppercase()));
+    }
 
-        #[test]
-        fn account_hash_is_not_truncated_to_16_chars() {
-            let hash = account_hash_from_email("test@example.com");
-            assert_ne!(&hash[..16], hash.as_str());
-        }
+    #[test]
+    fn account_hash_is_not_truncated_to_16_chars() {
+        let hash = account_hash_from_email("test@example.com");
+        assert_ne!(&hash[..16], hash.as_str());
+    }
 
-        #[test]
-        fn account_rows_are_scoped_without_hiding_legacy_rows() {
+    #[test]
+    fn account_rows_are_scoped_without_hiding_legacy_rows() {
         assert!(belongs_to_account(None, Some("account-a")));
         assert!(belongs_to_account(Some("account-a"), Some("account-a")));
         assert!(!belongs_to_account(Some("account-b"), Some("account-a")));

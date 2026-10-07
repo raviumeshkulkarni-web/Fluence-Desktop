@@ -1240,3 +1240,32 @@ button.history-group-header {
   height: 16px;
   flex: none;
 }
+
+/* ---- Unclaimed (pre-account) Agents / Styles --------------------------
+   A record that lives on this device but is not yet owned by the signed-in
+   account. It is listed so intact data never looks deleted, and deliberately
+   not selectable: Set as default / Edit / Delete all act on the account
+   store, where this record does not exist yet. The only action offered is the
+   explicit claim. Mirrors Android LEGACY_UNAVAILABLE_REASON. */
+.selection-row-inert {
+  cursor: default;
+}
+
+.agent-card-unclaimed .selection-row-title,
+.style-card-unclaimed .selection-row-title {
+  color: var(--color-on-surface-variant);
+}
+
+.agent-unclaimed-note,
+.style-unclaimed-note {
+  margin-top: 2px;
+  font-style: italic;
+}
+
+.agent-unclaimed-badge,
+.style-unclaimed-badge {
+  align-self: center;
+  margin-top: 0;
+  text-transform: none;
+  letter-spacing: 0.02em;
+}

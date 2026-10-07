@@ -352,8 +352,8 @@ impl GoogleDriveStore {
             v1_folder_id: None,
             partition_folder_ids: std::collections::HashMap::new(),
             upload_base,
-            }
-            }
+        }
+    }
 
     /// Arm the one-silent-refresh-401-recovery for this pass.
     pub fn set_token_refresher(&mut self, refresher: TokenRefresher) {
@@ -1220,8 +1220,8 @@ impl DomainDriveStore for GoogleDriveStore {
             .text()
             .map_err(|e| SyncError::Retryable(e.to_string()))?;
         classify_status_with_retry_after(status, retry_after_ms, &body)?;
-        let value: serde_json::Value =
-            serde_json::from_str(&body).map_err(|_| SyncError::Rejected("corrupt about response".to_string()))?;
+        let value: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|_| SyncError::Rejected("corrupt about response".to_string()))?;
         Ok(value
             .get("user")
             .and_then(|u| u.get("emailAddress"))

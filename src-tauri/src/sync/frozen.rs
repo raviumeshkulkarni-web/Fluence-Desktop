@@ -549,9 +549,15 @@ pub fn sync_agents_domain(
     let Some(folder_id) = partition_folder_id(drive, account_hash)? else {
         // No usable identity: the domain is absent, not failed. Nothing is
         // read, nothing is written, and the outcome records no merge.
-        return Ok(DomainSyncOutcome { pushed: false, merged: false, items_merged: 0 });
+        return Ok(DomainSyncOutcome {
+            pushed: false,
+            merged: false,
+            items_merged: 0,
+        });
     };
-    let scope = DomainScope::Partition { folder_id: &folder_id };
+    let scope = DomainScope::Partition {
+        folder_id: &folder_id,
+    };
     sync_domain(
         drive,
         scope,
@@ -586,9 +592,15 @@ pub fn sync_styles_domain(
     store: &mut dyn DirtyStore<Item = StyleItem>,
 ) -> Result<DomainSyncOutcome, SyncError> {
     let Some(folder_id) = partition_folder_id(drive, account_hash)? else {
-        return Ok(DomainSyncOutcome { pushed: false, merged: false, items_merged: 0 });
+        return Ok(DomainSyncOutcome {
+            pushed: false,
+            merged: false,
+            items_merged: 0,
+        });
     };
-    let scope = DomainScope::Partition { folder_id: &folder_id };
+    let scope = DomainScope::Partition {
+        folder_id: &folder_id,
+    };
     sync_domain(
         drive,
         scope,
@@ -703,7 +715,10 @@ pub fn sync_all_domains(
             }
         }
     }
-    AllDomainsResult { outcomes, error: worst_error }
+    AllDomainsResult {
+        outcomes,
+        error: worst_error,
+    }
 }
 
 #[cfg(test)]
@@ -793,8 +808,15 @@ mod tests {
             }
             Ok(format!("folder:{folder_name}"))
         }
-        fn list_partition_files(&mut self, folder_id: &str) -> Result<Vec<DomainFileMeta>, SyncError> {
-            Ok(self.partition_files.get(folder_id).cloned().unwrap_or_default())
+        fn list_partition_files(
+            &mut self,
+            folder_id: &str,
+        ) -> Result<Vec<DomainFileMeta>, SyncError> {
+            Ok(self
+                .partition_files
+                .get(folder_id)
+                .cloned()
+                .unwrap_or_default())
         }
         fn put_partitioned_domain(
             &mut self,
@@ -948,8 +970,7 @@ mod tests {
     // hand-built equivalent.
 
     /// The canonical account hash for `test@example.com` (STAGE 1 fixture).
-    const CROSS_HASH: &str =
-        "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b";
+    const CROSS_HASH: &str = "973dfe463ec85785f5f95af5ba3906eedb2d931c24e69824a89ea65dba4e813b";
 
     /// Byte-for-byte the Android agent fixture.
     const ANDROID_AGENT_BYTES: &str = "{\"v\":1,\"entries\":[{\"syncId\":\"123e4567-e89b-12d3-a456-426614174000\",\"businessKey\":\"agent:123e4567-e89b-12d3-a456-426614174001\",\"name\":\"Translator\",\"hint\":\"Be concise\",\"updatedAt\":1700000000000,\"deletedAt\":null,\"deviceId\":\"dev-a\"}]}\n";
@@ -978,9 +999,10 @@ mod tests {
                 version: Some("7".to_string()),
             }],
         );
-        drive
-            .contents
-            .insert("android-file".to_string(), ANDROID_AGENT_BYTES.as_bytes().to_vec());
+        drive.contents.insert(
+            "android-file".to_string(),
+            ANDROID_AGENT_BYTES.as_bytes().to_vec(),
+        );
 
         let mut meta = SyncMetadata::default();
         let mut store = MemStore::<AgentItem>::new(vec![]);
@@ -991,7 +1013,10 @@ mod tests {
         let got = &store.items[0];
         assert_eq!("Translator", got.name);
         assert_eq!("Be concise", got.hint);
-        assert_eq!("agent:123e4567-e89b-12d3-a456-426614174001", got.business_key);
+        assert_eq!(
+            "agent:123e4567-e89b-12d3-a456-426614174001",
+            got.business_key
+        );
         assert_eq!(1700000000000, got.updated_at);
         assert!(!out.pushed, "a converged pull must not rewrite the remote");
         assert_eq!(0, drive.partition_put_count);
@@ -1116,9 +1141,10 @@ mod tests {
                 version: Some("1".to_string()),
             }],
         );
-        drive
-            .contents
-            .insert("a-file".to_string(), ANDROID_AGENT_BYTES.as_bytes().to_vec());
+        drive.contents.insert(
+            "a-file".to_string(),
+            ANDROID_AGENT_BYTES.as_bytes().to_vec(),
+        );
 
         let hash_b = crate::sync::metadata::account_hash_from_email("bob@example.com");
         let mut meta = SyncMetadata::default();
@@ -1293,7 +1319,10 @@ mod tests {
             }
             Ok(format!("folder:{folder_name}"))
         }
-        fn list_partition_files(&mut self, _folder_id: &str) -> Result<Vec<DomainFileMeta>, SyncError> {
+        fn list_partition_files(
+            &mut self,
+            _folder_id: &str,
+        ) -> Result<Vec<DomainFileMeta>, SyncError> {
             Ok(Vec::new())
         }
         fn put_partitioned_domain(
@@ -1546,7 +1575,10 @@ mod tests {
                 }
                 Ok(format!("folder:{folder_name}"))
             }
-            fn list_partition_files(&mut self, _folder_id: &str) -> Result<Vec<DomainFileMeta>, SyncError> {
+            fn list_partition_files(
+                &mut self,
+                _folder_id: &str,
+            ) -> Result<Vec<DomainFileMeta>, SyncError> {
                 Ok(Vec::new())
             }
             fn put_partitioned_domain(

@@ -550,8 +550,18 @@ mod tests {
 
     #[test]
     fn c1_sentinel_vs_sentinel_adversarial_device_ids() {
-        let local = vec![setting("language", "en", SETTINGS_ADOPTION_EPOCH_MS, "aaa-local")];
-        let remote = vec![setting("language", "de", SETTINGS_ADOPTION_EPOCH_MS, "zzz-remote")];
+        let local = vec![setting(
+            "language",
+            "en",
+            SETTINGS_ADOPTION_EPOCH_MS,
+            "aaa-local",
+        )];
+        let remote = vec![setting(
+            "language",
+            "de",
+            SETTINGS_ADOPTION_EPOCH_MS,
+            "zzz-remote",
+        )];
         let outcome = merge_settings(&local, &remote);
         assert_eq!(outcome.merged.len(), 1);
         assert_eq!(

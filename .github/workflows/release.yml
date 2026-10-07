@@ -107,33 +107,45 @@ jobs:
           tagName: v__VERSION__
           releaseName: 'Fluence v__VERSION__'
           releaseBody: |
-            ## Fluence v__VERSION__ — Shared-scene dashboard analytics, History chrome unity, shared search field
+            ## Take your Agents and Styles with you
 
-            The dashboard gains two additive analytics cards beside the untouched Sessions area and Words bar charts, History's chrome speaks the same table-header language as every other screen, and both search boxes are now one shared component.
+            If you created custom Agents or AI cleanup Styles **before** you had a Fluence account, they were locked away: greyed out, unusable, and unable to sync. They were never lost - they just couldn't be attached to an account.
 
-            ### Dashboard analytics
+            Now you can add them yourself, one tap at a time.
 
-            - New **By weekday** card: a weekday-share donut (Monday-first, same synced ledger buckets as the hero chart) with hover-linked slice expansion, a centre readout, and a shadcn Table twin carrying every value as real text.
-            - New **Today** card: a today-vs-trailing-average momentum ring with an exact-value caption; a missing baseline renders an empty state, never a fabricated 0x.
-            - The hover dot now sits exactly on the stroke: axis domain and hover math share one scale, and recharts' own active marker is disabled so only the custom dot renders.
-            - KPI cards reserve the badge row's height, so the page no longer jumps when the trend pill appears or disappears.
+            ### What's new
 
-            ### History
+            **"Add to my account" on your old Agents and Styles**
 
-            - Search row and filter bar merged into one header band using the exact table-head recipe; the divider between them is gone.
-            - Day-group headers regain table-head typography that a button reset had wiped, so day bands read as headers again.
+            Any pre-account Agent or Style you see now has an **Add to my account** button. Tap it and it becomes a normal part of your account:
 
-            ### Search
+            - you can edit it like any other
+            - you can delete it
+            - it becomes available to Agent Mode and AI cleanup
+            - it syncs to your other devices
 
-            - One shared `SearchField` (shared Input + magnifier) replaces the hand-rolled History wrapper and the bare app-picker input. Icon inset, type size, and focus behaviour are identical everywhere; the frozen vanilla `.search-wrapper` layer is untouched.
+            Nothing is moved or deleted behind your back. Until you tap, your old records stay exactly where they are, and if anything goes wrong they're still there to try again.
+
+            ### Fixes
+
+            - **Deleting an Agent or Style now really deletes it.** Previously a deleted item could reappear as a device-only entry after you signed out. This now works for Styles the same way it already did for Agents.
+            - **Honest delete confirmations.** If a delete can't be saved to your account, we now tell you instead of reporting success - and your data is left untouched.
+            - **Your choices are protected.** If a delete doesn't go through, your default Agent and any app-specific Style assignments stay exactly as they were.
+
+            ### For the technical minded
+
+            Nothing about how your data syncs has changed - same format, same folders, same conflict rules. A claimed item is stored exactly like an item you created inside the app, so it uploads and merges through the normal path. The app can only ever add to the account you are signed in to at the moment you tap; there is no way for any part of the app to aim a claim at a different account.
+
+            Both sign-in states remain supported: signed out, your old items still work as before; signed in, you choose what to add.
 
             ### Verification
 
-            - Full Rust suite green (`cargo test --lib`, 443 tests).
-            - Frontend suite green (52 tests) and security suite green (54 assertions) — both required CI gates on every tag.
+            - Full Rust suite green (`cargo test --lib`, 614 tests).
+            - Web claim suite green (17 tests), including a boundary test asserting the claim command carries only a record id.
             - Web typecheck and production build clean; no new dependencies, no sync/schema changes.
 
             ---
+
             ### Download & Install
 
             Download the installer (`.exe`) below to install or update Fluence on Windows.

@@ -23,5 +23,7 @@
     },
     "types": ["vite/client"]
   },
-  "include": ["src"]
+  "include": ["src"],
+  "//": "Tests are run by Node's built-in runner (node --test), not bundled. They are typechecked separately by tsconfig.test.json so the app config keeps DOM-only types.",
+  "exclude": ["src/**/*.test.ts"]
 }

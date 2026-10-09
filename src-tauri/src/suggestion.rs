@@ -167,7 +167,7 @@ pub fn upsert_suggestions(candidates: Vec<crate::auto_learn::Candidate>) -> Resu
     let mut database = load_from_disk().map_err(|e| e.to_string())?;
     let now = now_iso8601();
 
-    let dictionary_keys: HashSet<String> = crate::auto_learn::learner::get_current_dictionary()
+    let dictionary_keys: HashSet<String> = crate::auto_learn::get_current_dictionary()
         .into_iter()
         .collect();
 

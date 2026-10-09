@@ -5,12 +5,16 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
+#[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
+/// Hide the sidecar console window on Windows. No equivalent needed on
+/// Linux (no console window is created for spawned processes).
+#[cfg(target_os = "windows")]
 const CREATE_NO_WINDOW: u32 = 0x08000000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -118,13 +122,20 @@ fn start_idle_monitor() {
     });
 }
 
-/// Target triple suffix used for the Tauri externalBin staging name
-/// (`binaries/moonshine-v2-server-<triple>.exe`). The app ships Windows
-/// x86_64 only; anything else resolves to a sentinel that matches nothing.
 #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
 const V2_SIDECAR_TRIPLE: &str = "x86_64-pc-windows-msvc";
-#[cfg(not(all(target_os = "windows", target_arch = "x86_64")))]
+#[cfg(all(target_os = "linux", target_arch = "x86_64"))]
+const V2_SIDECAR_TRIPLE: &str = "x86_64-unknown-linux-gnu";
+#[cfg(not(any(
+    all(target_os = "windows", target_arch = "x86_64"),
+    all(target_os = "linux", target_arch = "x86_64")
+)))]
 const V2_SIDECAR_TRIPLE: &str = "unknown-target";
+
+#[cfg(target_os = "windows")]
+const V2_SIDECAR_BIN_SUFFIX: &str = ".exe";
+#[cfg(not(target_os = "windows"))]
+const V2_SIDECAR_BIN_SUFFIX: &str = "";
 
 /// Ordered candidate locations for the bundled Moonshine v2 sidecar exe,
 /// given the app-exe directory, the crate (src-tauri) directory, and the
@@ -154,7 +165,7 @@ fn v2_sidecar_candidates(
         );
     }
     out.push(manifest_dir.join(format!(
-        "binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}.exe"
+        "binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}{V2_SIDECAR_BIN_SUFFIX}"
     )));
     out
 }
@@ -291,7 +302,11 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         None => (offline_dir.join(exe_name), offline_dir.clone()),
     };
 
-    if !exe_path.exists() || !runtime_dir.join("onnxruntime.dll").exists() {
+    if !exe_path.exists()
+        || !runtime_dir
+            .join(crate::offline_downloader::MOONSHINE_V2_ORT_DLL)
+            .exists()
+    {
         return Err(anyhow!(
             "Offline transcription engine is not installed. Please download it in Settings."
         ));
@@ -381,6 +396,7 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
 
     let mut cmd = Command::new(&exe_path);
     cmd.current_dir(&offline_dir);
+    #[cfg(target_os = "windows")]
     cmd.creation_flags(CREATE_NO_WINDOW);
 
     match engine {
@@ -612,13 +628,16 @@ mod tests {
             .iter()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
             .collect();
+        let exe = crate::offline_downloader::MOONSHINE_V2_SERVER_EXE;
         assert_eq!(
             names,
             vec![
-                "C:/install/moonshine-v2-server.exe".to_string(),
-                "D:/repo/src-tauri/target/release/moonshine-v2-server.exe".to_string(),
-                "D:/repo/src-tauri/target/debug/moonshine-v2-server.exe".to_string(),
-                format!("D:/repo/src-tauri/binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}.exe"),
+                format!("C:/install/{exe}"),
+                format!("D:/repo/src-tauri/target/release/{exe}"),
+                format!("D:/repo/src-tauri/target/debug/{exe}"),
+                format!(
+                    "D:/repo/src-tauri/binaries/moonshine-v2-server-{V2_SIDECAR_TRIPLE}{V2_SIDECAR_BIN_SUFFIX}"
+                ),
             ]
         );
     }
@@ -636,7 +655,10 @@ mod tests {
     #[test]
     fn v2_sidecar_dll_candidates_cover_install_and_dev_layouts() {
         use std::path::PathBuf;
-        let exe = PathBuf::from("C:/install/moonshine-v2-server.exe");
+        let exe = PathBuf::from(format!(
+            "C:/install/{}",
+            crate::offline_downloader::MOONSHINE_V2_SERVER_EXE
+        ));
         let names: Vec<String> = v2_sidecar_dll_candidates(&exe)
             .iter()
             .map(|p| p.to_string_lossy().replace('\\', "/"))
@@ -644,11 +666,12 @@ mod tests {
         // Production NSIS layout splits the pair (exe at root, dll under
         // binaries/), so both spots must be accepted or every installed
         // build fails resolution with a "sibling missing" error.
+        let dll = crate::offline_downloader::MOONSHINE_V2_ORT_DLL;
         assert_eq!(
             names,
             vec![
-                "C:/install/onnxruntime.dll".to_string(),
-                "C:/install/binaries/onnxruntime.dll".to_string(),
+                format!("C:/install/{dll}"),
+                format!("C:/install/binaries/{dll}"),
             ]
         );
     }

@@ -80,7 +80,7 @@
     },
     "publisher": "Fluence",
     "copyright": "Copyright © 2025 Fluence",
-    "shortDescription": "AI-powered voice typing for Windows"
+    "shortDescription": "AI-powered voice typing for Windows and Linux"
   },
   "plugins": {
     "updater": {

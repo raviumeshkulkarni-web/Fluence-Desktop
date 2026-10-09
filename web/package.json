@@ -1,6 +1,6 @@
 {
   "name": "fluence-web",
-  "version": "1.25.0",
+  "version": "1.25.1",
   "description": "Fluence Windows main-window UI — React + TypeScript + Vite migration (incremental, vanilla preserved in ../src)",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -9,7 +9,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "watch": "vite build --watch",
-    "typecheck": "tsc --noEmit -p tsconfig.app.json"
+    "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.test.json",
+    "test": "node --import ./test-setup.mjs --test \"src/lib/claim.test.ts\" \"src/ipc/claim-boundary.test.ts\" \"src/test-manifest.test.ts\""
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.23",

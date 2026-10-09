@@ -1,9 +1,12 @@
 import { invokeCmd } from '@/ipc/tauri';
+import type { ClaimOutcome } from '@/lib/claim';
 
 export interface CustomPromptStyle {
   id: string;
   name: string;
   hint: string;
+  /** True only for an unclaimed pre-account style while an account is signed in. Backend-computed; see CustomAgent.claimable. */
+  claimable?: boolean;
 }
 
 export interface BuiltinPromptStyle {
@@ -36,6 +39,12 @@ export const savePromptStyle = (name: string, hint: string, id?: string) =>
 
 export const deletePromptStyle = (id: string) =>
   invokeCmd<string[]>('delete_prompt_style', { id });
+
+// Adopt ONE unclaimed pre-account style into the account signed in right now.
+// Only `id` crosses the boundary — the destination account is resolved backend-side
+// and is never a parameter. See `claimLegacyAgent` for the full rationale.
+export const claimLegacyPromptStyle = (id: string) =>
+  invokeCmd<ClaimOutcome>('claim_legacy_prompt_style', { id });
 
 export const setPromptOverride = (exe: string, styleId: string) =>
   // Tauri v2 expects command args in camelCase: the runtime rejects

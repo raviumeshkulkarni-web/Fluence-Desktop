@@ -821,7 +821,11 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
             ))}
       </div>
 
-      <div style={{ marginTop: 'var(--spacing-md)', display: 'flex', flexDirection: 'column', flex: '1 0 auto' }}>
+      {/* No marginTop here: .content-area already contributes gap: 24px
+          between the KPI row and this block. An extra marginTop stacked on
+          top of that gap produced a 40px hole and broke the 24/24/24
+          vertical rhythm. */}
+      <div style={{ display: 'flex', flexDirection: 'column', flex: '1 0 auto' }}>
         <Card className="chart-fill">
           <CardHeader>
             <div>
@@ -989,7 +993,7 @@ export function DashboardPage({ theme = 'dark' }: { theme?: Theme }) {
         </Card>
         <div
           style={{
-            marginTop: 'var(--spacing-md)',
+            marginTop: 'var(--spacing-lg)',
             display: 'flex',
             gap: 'var(--spacing-md)',
             flexWrap: 'wrap',

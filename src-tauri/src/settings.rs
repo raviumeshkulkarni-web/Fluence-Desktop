@@ -2,6 +2,9 @@
 // Manages persistent configuration in a JSON file in the app data directory.
 
 use anyhow::Result;
+// Only the production branch of `settings_path` resolves the real Windows known
+// folder, so the import is test-excluded there too.
+#[cfg(not(test))]
 use dirs::data_local_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -228,10 +231,27 @@ impl Default for AppSettings {
 }
 
 pub fn settings_path() -> PathBuf {
-    let mut path = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
-    path.push("Fluence");
-    path.push("settings.json");
-    path
+    // TEST-ONLY redirect. Under `cfg(test)` this resolves inside the per-process
+    // temp data dir, so no test can read or overwrite the real settings.json —
+    // which the delete paths would otherwise do, since they resolve the active
+    // account through this file.
+    //
+    // PRODUCTION below is byte-identical to the original and deliberately does
+    // NOT go through `stores::base_data_dir()`: that helper honours
+    // FLUENCE_DATA_DIR outside `cfg(test)`, so routing this through it would
+    // have made a release build start respecting that variable for settings,
+    // which it never did before.
+    #[cfg(test)]
+    {
+        return crate::sync::stores::data_dir().join("settings.json");
+    }
+    #[cfg(not(test))]
+    {
+        let mut path = data_local_dir().unwrap_or_else(|| PathBuf::from("."));
+        path.push("Fluence");
+        path.push("settings.json");
+        path
+    }
 }
 
 /// One-time migration for the retired Moonshine v1 batch engine (removed

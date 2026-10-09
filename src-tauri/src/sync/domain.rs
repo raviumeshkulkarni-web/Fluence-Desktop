@@ -18,6 +18,24 @@ use unicode_normalization::UnicodeNormalization;
 
 pub const ENVELOPE_V1: i32 = 1;
 
+/// Envelope version declared by `bytes`, or `None` when the payload is not a
+/// readable JSON object with an integer `v`.
+///
+/// This is what separates "a future client owns this file, do not touch it"
+/// from "this file is corrupt, repair it". `from_bytes` returns `None` for
+/// either cause, and repairing a future envelope destroys the newer client's
+/// data.
+pub fn declared_envelope_version(bytes: &[u8]) -> Option<i32> {
+    let value: serde_json::Value = serde_json::from_slice(bytes).ok()?;
+    value.get("v")?.as_i64().map(|v| v as i32)
+}
+
+/// True when `bytes` is a readable envelope declaring a version newer than
+/// [ENVELOPE_V1]. Mirrors Android's `DomainSerializer.isFutureEnvelope`.
+pub fn is_future_envelope(bytes: &[u8]) -> bool {
+    declared_envelope_version(bytes).is_some_and(|v| v > ENVELOPE_V1)
+}
+
 /// Maximum records accepted in one envelope. Legitimate accounts hold tens to
 /// hundreds of dictionary words / snippets and thousands of stat events;
 /// anything beyond this bound is corruption or abuse.
@@ -464,6 +482,251 @@ impl StatsEnvelope {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Phase 6 — Agents / Styles (additive v1 domains, account-partitioned).
+//
+// Wire contract (byte-identical with Android `DomainSerializer`):
+//   envelope: {"v":1,"entries":[...]} + trailing "\n"
+//   entries sorted by (businessKey, syncId) at serialize time
+//   record: {"syncId","businessKey","name","hint","updatedAt","deletedAt","deviceId"}
+//   deletedAt is explicit null when absent (serde default for Option)
+//   businessKey "agent:<uuid>" / "custom:<uuid>", UUID-validated, never derived
+//
+// Unlike dictionary/snippets, the business key here is NOT content-derived:
+// it is the record's own stable id, assigned once at creation. Two devices
+// that independently create agents cannot collide, and renaming never forks.
+// The key is validated but never recomputed and never trusted blindly.
+// ---------------------------------------------------------------------------
+
+/// Field order is the wire order. Do not reorder: serde emits declaration
+/// order, and byte parity with Android depends on it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentItem {
+    pub sync_id: String,
+    pub business_key: String,
+    pub name: String,
+    #[serde(default)]
+    pub hint: String,
+    pub updated_at: i64,
+    pub deleted_at: Option<i64>,
+    pub device_id: String,
+}
+
+impl AgentItem {
+    pub const PREFIX: &'static str = "agent:";
+
+    pub fn is_valid_business_key(k: &str) -> bool {
+        k.len() > Self::PREFIX.len()
+            && k.starts_with(Self::PREFIX)
+            && uuid::Uuid::parse_str(&k[Self::PREFIX.len()..]).is_ok()
+    }
+
+    /// Stable sync id for a record that has none, byte-identical with Android
+    /// `stableSyncId`: `UUID.nameUUIDFromBytes("fluence-agent:" + id)`, i.e.
+    /// MD5 of the raw UTF-8 bytes with UUIDv3 version/variant bits and NO
+    /// namespace. (`uuid::new_v3` always prepends a namespace and would give a
+    /// different value, so the digest is constructed manually.)
+    ///
+    /// Only fills ABSENT ids. A record stamped by either platform keeps its id,
+    /// so this runs solely for legacy records that predate sync on a device.
+    pub fn stable_sync_id(id: &str) -> String {
+        use md5::{Digest, Md5};
+        let mut hasher = Md5::new();
+        hasher.update(format!("fluence-agent:{}", id).as_bytes());
+        let mut bytes: [u8; 16] = hasher.finalize().into();
+        bytes[6] = (bytes[6] & 0x0f) | 0x30;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        uuid::Uuid::from_bytes(bytes).to_string()
+    }
+
+    /// Per-record validation, mirroring Android `AgentRecord.isValid`.
+    /// Invalid records are skipped at ingest. A tombstone (`deleted_at`
+    /// present) is still a valid record: dropping it would resurrect the
+    /// deleted agent on the next merge.
+    pub fn validate(&self) -> bool {
+        if uuid::Uuid::parse_str(&self.sync_id).is_err() {
+            return false;
+        }
+        if !Self::is_valid_business_key(&self.business_key) {
+            return false;
+        }
+        if self.device_id.is_empty() {
+            return false;
+        }
+        if self.updated_at <= 0 {
+            return false;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
+            return false;
+        }
+        if let Some(d) = self.deleted_at {
+            if d < 0 {
+                return false;
+            }
+        }
+        if self.name.trim().is_empty() {
+            return false;
+        }
+        // Android counts Unicode code points, not bytes or UTF-16 units.
+        if self.name.chars().count() > 1024 || self.hint.chars().count() > 8192 {
+            return false;
+        }
+        true
+    }
+}
+
+/// Field order is the wire order (see [`AgentItem`]).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct StyleItem {
+    pub sync_id: String,
+    pub business_key: String,
+    pub name: String,
+    #[serde(default)]
+    pub hint: String,
+    pub updated_at: i64,
+    pub deleted_at: Option<i64>,
+    pub device_id: String,
+}
+
+impl StyleItem {
+    pub const PREFIX: &'static str = "custom:";
+
+    pub fn is_valid_business_key(k: &str) -> bool {
+        k.len() > Self::PREFIX.len()
+            && k.starts_with(Self::PREFIX)
+            && uuid::Uuid::parse_str(&k[Self::PREFIX.len()..]).is_ok()
+    }
+
+    /// Stable sync id, byte-identical with Android (`"fluence-style:"` tag).
+    /// See [`AgentItem::stable_sync_id`] for the construction and the reason
+    /// it must not use `uuid::new_v3`.
+    pub fn stable_sync_id(id: &str) -> String {
+        use md5::{Digest, Md5};
+        let mut hasher = Md5::new();
+        hasher.update(format!("fluence-style:{}", id).as_bytes());
+        let mut bytes: [u8; 16] = hasher.finalize().into();
+        bytes[6] = (bytes[6] & 0x0f) | 0x30;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        uuid::Uuid::from_bytes(bytes).to_string()
+    }
+
+    /// Identical rules to [`AgentItem::validate`].
+    pub fn validate(&self) -> bool {
+        if uuid::Uuid::parse_str(&self.sync_id).is_err() {
+            return false;
+        }
+        if !Self::is_valid_business_key(&self.business_key) {
+            return false;
+        }
+        if self.device_id.is_empty() {
+            return false;
+        }
+        if self.updated_at <= 0 {
+            return false;
+        }
+        let now = chrono::Utc::now().timestamp_millis();
+        if self.updated_at > now + CLOCK_SKEW_TOLERANCE_MS {
+            return false;
+        }
+        if let Some(d) = self.deleted_at {
+            if d < 0 {
+                return false;
+            }
+        }
+        if self.name.trim().is_empty() {
+            return false;
+        }
+        if self.name.chars().count() > 1024 || self.hint.chars().count() > 8192 {
+            return false;
+        }
+        true
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct AgentEnvelope {
+    pub v: i32,
+    #[serde(default)]
+    pub entries: Vec<AgentItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct StyleEnvelope {
+    pub v: i32,
+    #[serde(default)]
+    pub entries: Vec<StyleItem>,
+}
+
+fn sort_agent_entries(entries: &mut [AgentItem]) {
+    entries.sort_by(|a, b| {
+        a.business_key
+            .cmp(&b.business_key)
+            .then_with(|| a.sync_id.cmp(&b.sync_id))
+    });
+}
+
+fn sort_style_entries(entries: &mut [StyleItem]) {
+    entries.sort_by(|a, b| {
+        a.business_key
+            .cmp(&b.business_key)
+            .then_with(|| a.sync_id.cmp(&b.sync_id))
+    });
+}
+
+impl AgentEnvelope {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut sorted = self.clone();
+        sort_agent_entries(&mut sorted.entries);
+        let mut bytes = serde_json::to_vec(&sorted).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
+    }
+
+    /// Lenient ingest: unknown fields ignored, invalid ITEMS skipped, only a
+    /// wrong version or oversized item count poisons the whole envelope.
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() > crate::sync::drive::MAX_DOMAIN_BYTES {
+            return None;
+        }
+        let env: Self = serde_json::from_slice(bytes).ok()?;
+        if env.v != ENVELOPE_V1 || env.entries.len() > MAX_ENVELOPE_ITEMS {
+            return None;
+        }
+        Some(Self {
+            v: env.v,
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
+        })
+    }
+}
+
+impl StyleEnvelope {
+    pub fn to_bytes(&self) -> Vec<u8> {
+        let mut sorted = self.clone();
+        sort_style_entries(&mut sorted.entries);
+        let mut bytes = serde_json::to_vec(&sorted).unwrap_or_default();
+        bytes.push(b'\n');
+        bytes
+    }
+
+    /// Lenient ingest (see [`AgentEnvelope::from_bytes`]).
+    pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
+        if bytes.len() > crate::sync::drive::MAX_DOMAIN_BYTES {
+            return None;
+        }
+        let env: Self = serde_json::from_slice(bytes).ok()?;
+        if env.v != ENVELOPE_V1 || env.entries.len() > MAX_ENVELOPE_ITEMS {
+            return None;
+        }
+        Some(Self {
+            v: env.v,
+            entries: env.entries.into_iter().filter(|i| i.validate()).collect(),
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -831,6 +1094,174 @@ mod tests {
             parsed_stats.entries.len(),
             2,
             "future stats skipped, valid+None kept"
+        );
+    }
+}
+
+#[cfg(test)]
+mod agent_style_conformance_tests {
+    use super::*;
+
+    /// Byte-identical wire vector shared with Android
+    /// (`AgentStyleDomainSyncTest.agent_envelope_matches_the_cross_platform_fixture`
+    /// asserts the same literal). Any divergence in field order, escaping,
+    /// sorting, the trailing newline, or null-vs-absent encoding fails here
+    /// rather than surfacing as cross-device data loss.
+    const AGENT_FIXTURE: &str = "{\"v\":1,\"entries\":[{\"syncId\":\"123e4567-e89b-12d3-a456-426614174000\",\"businessKey\":\"agent:123e4567-e89b-12d3-a456-426614174001\",\"name\":\"Translator\",\"hint\":\"Be concise\",\"updatedAt\":1700000000000,\"deletedAt\":null,\"deviceId\":\"dev-a\"}]}\n";
+
+    const STYLE_FIXTURE: &str = "{\"v\":1,\"entries\":[{\"syncId\":\"123e4567-e89b-12d3-a456-426614174000\",\"businessKey\":\"custom:123e4567-e89b-12d3-a456-426614174001\",\"name\":\"Formal\",\"hint\":\"Be formal\",\"updatedAt\":1700000000000,\"deletedAt\":null,\"deviceId\":\"dev-a\"}]}\n";
+
+    fn agent_fixture_item() -> AgentItem {
+        AgentItem {
+            sync_id: "123e4567-e89b-12d3-a456-426614174000".to_string(),
+            business_key: "agent:123e4567-e89b-12d3-a456-426614174001".to_string(),
+            name: "Translator".to_string(),
+            hint: "Be concise".to_string(),
+            updated_at: 1700000000000,
+            deleted_at: None,
+            device_id: "dev-a".to_string(),
+        }
+    }
+
+    fn style_fixture_item() -> StyleItem {
+        StyleItem {
+            sync_id: "123e4567-e89b-12d3-a456-426614174000".to_string(),
+            business_key: "custom:123e4567-e89b-12d3-a456-426614174001".to_string(),
+            name: "Formal".to_string(),
+            hint: "Be formal".to_string(),
+            updated_at: 1700000000000,
+            deleted_at: None,
+            device_id: "dev-a".to_string(),
+        }
+    }
+
+    #[test]
+    fn agent_envelope_matches_the_cross_platform_fixture() {
+        let env = AgentEnvelope {
+            v: 1,
+            entries: vec![agent_fixture_item()],
+        };
+        assert_eq!(AGENT_FIXTURE.as_bytes(), env.to_bytes().as_slice());
+        let parsed = AgentEnvelope::from_bytes(AGENT_FIXTURE.as_bytes()).expect("must parse");
+        assert_eq!(vec![agent_fixture_item()], parsed.entries);
+    }
+
+    #[test]
+    fn style_envelope_matches_the_cross_platform_fixture() {
+        let env = StyleEnvelope {
+            v: 1,
+            entries: vec![style_fixture_item()],
+        };
+        assert_eq!(STYLE_FIXTURE.as_bytes(), env.to_bytes().as_slice());
+        let parsed = StyleEnvelope::from_bytes(STYLE_FIXTURE.as_bytes()).expect("must parse");
+        assert_eq!(vec![style_fixture_item()], parsed.entries);
+    }
+
+    #[test]
+    fn agent_entries_serialize_sorted_by_business_key_then_sync_id() {
+        let mut b = agent_fixture_item();
+        b.business_key = "agent:223e4567-e89b-12d3-a456-426614174000".to_string();
+        b.name = "Second".to_string();
+        let env = AgentEnvelope {
+            v: 1,
+            entries: vec![b, agent_fixture_item()],
+        };
+        let bytes = env.to_bytes();
+        let s = String::from_utf8(bytes).unwrap();
+        assert!(s.find("Translator").unwrap() < s.find("Second").unwrap());
+    }
+
+    #[test]
+    fn agent_validation_rejects_bad_keys_and_accepts_tombstones() {
+        assert!(agent_fixture_item().validate());
+        let mut bad_prefix = agent_fixture_item();
+        bad_prefix.business_key = "dictionary:hello".to_string();
+        assert!(!bad_prefix.validate());
+        let mut bad_uuid = agent_fixture_item();
+        bad_uuid.business_key = "agent:not-a-uuid".to_string();
+        assert!(!bad_uuid.validate());
+        let mut tomb = agent_fixture_item();
+        tomb.deleted_at = Some(1700000000001);
+        assert!(tomb.validate(), "tombstones must survive ingest");
+        let mut neg_del = agent_fixture_item();
+        neg_del.deleted_at = Some(-1);
+        assert!(!neg_del.validate());
+    }
+
+    #[test]
+    fn style_validation_mirrors_agent_validation() {
+        assert!(style_fixture_item().validate());
+        let mut bad = style_fixture_item();
+        bad.business_key = "agent:123e4567-e89b-12d3-a456-426614174001".to_string();
+        assert!(!bad.validate(), "agent keys must not pass as styles");
+    }
+
+    #[test]
+    fn corrupt_and_future_envelopes_are_rejected_wholesale() {
+        assert!(AgentEnvelope::from_bytes(b"not json").is_none());
+        assert!(AgentEnvelope::from_bytes(b"{\"v\":2,\"entries\":[]}").is_none());
+        assert!(StyleEnvelope::from_bytes(b"{\"v\":99,\"entries\":[]}").is_none());
+    }
+
+    #[test]
+    fn stable_sync_ids_match_the_cross_platform_fixtures() {
+        // Independently computed (MD5 + UUIDv3 bits, no namespace) and asserted
+        // identically on Android. A mismatch here splits LWW tie-breaks across
+        // platforms for legacy records stamped independently on each side.
+        assert_eq!(
+            "c8e4002e-0a78-3e24-9c34-143a05e25777",
+            AgentItem::stable_sync_id("agent:123e4567-e89b-12d3-a456-426614174001")
+        );
+        assert_eq!(
+            "d7848828-627e-3a3e-b1c4-45d605f06e44",
+            StyleItem::stable_sync_id("custom:123e4567-e89b-12d3-a456-426614174001")
+        );
+    }
+
+    /// Cross-platform ordering invariant.
+    ///
+    /// Kotlin `String.compareTo` is UTF-16 code-unit order; Rust `str::cmp` is
+    /// UTF-8 byte order. The two coincide for ASCII and DIVERGE for
+    /// supplementary-plane characters (surrogate pairs vs 4-byte sequences).
+    /// The canonical sort keys — `businessKey` = prefix + UUID, `syncId` = UUID
+    /// — are ASCII by construction, and this test pins that constraint so a
+    /// future move to name-derived identity cannot silently break
+    /// cross-platform convergence.
+    #[test]
+    fn canonical_sort_keys_are_ascii_so_platform_ordering_coincides() {
+        let a = agent_fixture_item();
+        assert!(a.business_key.is_ascii(), "businessKey must stay ASCII");
+        assert!(a.sync_id.is_ascii(), "syncId must stay ASCII");
+        let s = style_fixture_item();
+        assert!(s.business_key.is_ascii(), "businessKey must stay ASCII");
+        assert!(s.sync_id.is_ascii(), "syncId must stay ASCII");
+        // The generated stable id is a UUID: ASCII hex and dashes.
+        assert!(AgentItem::stable_sync_id("agent:whatever").is_ascii());
+    }
+
+    /// Names are free text and are NEVER sort keys, so a non-ASCII (emoji) name
+    /// must not affect ordering or output bytes for a given key set.
+    #[test]
+    fn non_ascii_names_do_not_influence_ordering() {
+        let mut emoji = agent_fixture_item();
+        emoji.name = "\u{1F389} agent".to_string();
+        let mut plain = agent_fixture_item();
+        plain.business_key = "agent:323e4567-e89b-12d3-a456-426614174000".to_string();
+        plain.sync_id = "223e4567-e89b-12d3-a456-426614174000".to_string();
+        plain.name = "zzz".to_string();
+
+        let forward = AgentEnvelope {
+            v: 1,
+            entries: vec![emoji.clone(), plain.clone()],
+        };
+        let backward = AgentEnvelope {
+            v: 1,
+            entries: vec![plain, emoji],
+        };
+        assert_eq!(
+            forward.to_bytes(),
+            backward.to_bytes(),
+            "input order and name content must not change canonical output"
         );
     }
 }

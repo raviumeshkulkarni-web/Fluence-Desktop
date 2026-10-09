@@ -72,6 +72,14 @@
   border: 1px solid transparent;
   white-space: nowrap;
   transition: var(--transition-fast);
+  /* The frozen layer (global.css .badge) also sets these two. They are
+   * restated here so the rendered badge no longer depends on which
+   * stylesheet loads last: previously the mono family and the 11px size
+   * came from this layer while uppercase and the 0.04em tracking were
+   * inherited from the frozen layer, so neither author produced the
+   * result. Values are exactly what the cascade was already yielding. */
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
 }
 .badge-default {
   background: var(--color-surface-elevated);
@@ -365,13 +373,24 @@
   box-shadow: none;
   box-sizing: border-box;
   flex-shrink: 0;
+  position: relative;
+}
+/* 24px effective target - 14px visual unchanged (WCAG 2.5.8).
+ * Radix Checkbox renders a <button>, so the vanilla
+ * `input[type="checkbox"]::after` hit-area rule in global.css cannot match
+ * it. Without this the settings checkbox is a literal 14x14px (196px^2)
+ * target against a 576px^2 floor. */
+.checkbox::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
 }
 .checkbox:hover {
   background: var(--color-surface-secondary);
   border-color: var(--color-outline);
 }
 .checkbox:focus-visible {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-focus-ring);
   box-shadow: 0 0 0 3px var(--color-border-focus-glow);
 }
 .checkbox[data-state='checked'],
@@ -459,7 +478,7 @@
   outline: none;
 }
 .switch:focus-visible .switch-track {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 2px;
 }
 .switch[data-disabled] {
@@ -492,7 +511,7 @@
 .select-trigger:focus,
 .select-trigger:focus-visible {
   background-color: var(--color-surface-menu);
-  border-color: var(--color-border-focus);
+  border-color: var(--color-focus-ring);
   box-shadow: 0 0 0 3px var(--color-border-focus-glow);
   outline: none;
 }
@@ -731,18 +750,32 @@
   letter-spacing: 0.01em;
   text-transform: none;
   color: var(--color-on-surface);
+  /* The tinted band is its own separator: no rule under it, so nothing
+   * spans edge to edge and no stub floats under the wash. */
   background: var(--color-surface-secondary);
-  border-bottom: 1px solid var(--color-border-structural);
+  border-bottom: none;
 }
 .fluence-table-cell {
   padding: 12px 18px;
   font-size: 13px;
   vertical-align: middle;
-  border-bottom: 1px solid var(--color-border-structural);
+  border-bottom: none;
   color: var(--color-on-surface);
 }
-.fluence-table-row:last-child .fluence-table-cell {
-  border-bottom: none;
+/* Inset row dividers: an 18px-inset 1px gradient on the row itself, because
+ * collapsed table borders cannot inset. Hover/selected cell washes paint
+ * above it, so an active row reads as one solid block. */
+.fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / calc(100% - 36px) 1px no-repeat;
+}
+/* Dashboard "By weekday" table: tabular data beside a chart, not a settings
+ * list, so its row rules run end to end and the block reads as one ledger.
+ * This also matches the real geometry — that table sets its own 10px cell
+ * padding inline, so the 18px settings inset would not line up with the text
+ * column and would drop 36px out of a card only ~220px wide. Scoped by page
+ * id so the Dictionary and Snippets settings tables keep the inset language. */
+#page-dashboard .fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / 100% 1px no-repeat;
 }
 .fluence-table-body .fluence-table-row:hover .fluence-table-cell {
   background: var(--color-hover);
@@ -803,7 +836,7 @@
   border-radius: var(--radius-xs);
 }
 .progress-track.progress-meter .progress-fill {
-  background: var(--color-border-focus);
+  background: var(--color-brand-cyan);
   box-shadow: none;
   transition: transform 0.2s ease;
 }
@@ -841,13 +874,22 @@
   box-shadow: none;
   box-sizing: border-box;
   flex-shrink: 0;
+  position: relative;
+}
+/* 24px effective target - 14px visual unchanged (WCAG 2.5.8). Same reason
+ * as .checkbox::after above: Radix renders a <button>, so the vanilla
+ * element-selector hit area does not apply. */
+.radio-item::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
 }
 .radio-item:hover {
   background: var(--color-surface-secondary);
   border-color: var(--color-outline);
 }
 .radio-item:focus-visible {
-  border-color: var(--color-border-focus);
+  border-color: var(--color-focus-ring);
   box-shadow: 0 0 0 3px var(--color-border-focus-glow);
 }
 .radio-item[data-state='checked'] {
@@ -874,11 +916,13 @@
   width: 100%;
   min-width: 0;
 }
-/* Dashboard chart absorbs leftover viewport space (floor keeps it
-   usable in short windows, where the page scrolls instead). */
-#page-dashboard {
-  min-height: 100%;
-}
+/* Dashboard chart: min-height is a floor so the plot stays readable in short
+   windows, where the page scrolls. It deliberately does NOT stretch to fill
+   the scrollport — `min-height: 100%` on the page root was unique to the
+   dashboard and pushed the last card row onto the container's content-box
+   edge, so .content-area's 28px bottom padding was pushed below the fold and
+   the row sat flush with the window. Every other page (AI Cleanup and the
+   rest) simply ends its content, which is what keeps their bottom margin. */
 #page-dashboard .chart-fill {
   flex: 1 0 auto;
   display: flex;
@@ -910,7 +954,7 @@
 .chart-tooltip .chart-tooltip-value {
   font-family: var(--font-display);
   font-weight: 600;
-  color: var(--color-on-primary);
+  color: var(--color-on-surface-emphasis);
 }
 .chart-tooltip .chart-tooltip-label {
   color: var(--color-on-surface-variant);
@@ -980,7 +1024,7 @@
  * `.ui-focus-ring` is the shared helper for Phase 2/3 call sites.
  */
 .ui-focus-ring:focus-visible {
-  outline: 2px solid var(--color-border-focus);
+  outline: 2px solid var(--color-focus-ring);
   outline-offset: 1px;
 }
 
@@ -999,7 +1043,7 @@
   font-family: var(--font-display);
   font-size: 28px;
   font-weight: 600;
-  color: var(--color-on-primary);
+  color: var(--color-on-surface-emphasis);
   letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
   line-height: 1.15;
@@ -1338,7 +1382,12 @@
   margin-left: 4px;
   color: var(--color-on-surface-variant);
   font-family: 'Allura', cursive;
-  font-size: 19px;
+  /* Brand lockup ratio: the product name is ~91% of the wordmark size
+   * (Brand.kt FluenceProductLockup; the legacy shell uses 22px/20px =
+   * 90.9%). The wordmark is 1.15rem (18.4px) at settings.css:74, so 91%
+   * is 1.047rem. This was previously 19px = 103%, which rendered the
+   * product name larger than the logotype on Windows only. */
+  font-size: 1.047rem;
   font-weight: 400;
   line-height: 1;
 }
@@ -1545,10 +1594,8 @@
    Light theme overrides — settings shell only.
    Additive: dark rules above are untouched.
    ==================================================== */
-[data-theme="light"] .kpi-value,
 [data-theme="light"] .command-item[data-selected='true'],
-[data-theme="light"] .command-item[aria-selected='true'],
-[data-theme="light"] .chart-tooltip .chart-tooltip-value {
+[data-theme="light"] .command-item[aria-selected='true'] {
   color: #18181B;
 }
 [data-theme="light"] .command-item[data-selected='true'],

@@ -30,7 +30,13 @@
 
 :root {
   /* Surface Hierarchy (Design System v2.1 Canonical) */
-  --color-canvas:                #121212;
+  /* App background / page plane. #0D0D0D is the value the system already
+   * declares as the Windows app background (--color-surface-sunken, and the
+   * Android AppBackground "spec/Windows app background"). At #121212 the page
+   * sat only 3/255 above the #141414 card, a 0.13-stop step that read as one
+   * flat plane; on #0D0D0D the card separation is 0.73 stops. Light mode was
+   * already correct (#FFFFFF card on #EFF0F3) and is unchanged below. */
+  --color-canvas:                #0D0D0D;
   --color-surface:               #141414;
   --color-surface-secondary:     #1E1E1E;
   --color-surface-elevated:      #262626;
@@ -59,8 +65,20 @@
   --color-divider:               #2A2A2A;
   --color-border-structural:     #2A2A2A;
   --color-border-muted:          rgba(255, 255, 255, 0.03);
+  /* --color-border-focus is the HOVER/emphasis border, not the focus
+   * indicator: it is consumed by .switch:hover, .switch[data-state=checked],
+   * .select-trigger:hover and .btn-outline:hover. Do not repoint it at the
+   * accent or hover states turn brand-coloured.
+   * --color-focus-ring below is the FOCUS-ONLY indicator and is the DS's
+   * closed-list accent use #1 ("Focus rings"). */
   --color-border-focus:          rgba(255, 255, 255, 0.20);
   --color-border-focus-glow:     rgba(11, 214, 227, 0.25);
+  /* Focus indicator. WCAG 1.4.11 requires 3:1 against the adjacent colour.
+   * The previous 20%-white ring measured 1.79-1.91:1 on every dark surface
+   * and 1.34:1 focus-vs-unfocused on the kit checkbox/radio. Solid
+   * --color-brand-cyan measures 10.47:1 on --color-canvas and is the
+   * accent's sanctioned use. Paired with the existing cyan halo below. */
+  --color-focus-ring:            var(--color-brand-cyan);
 
   /* Backward compat */
   --color-outline:               #808080;
@@ -78,6 +96,13 @@
   --color-on-surface-variant:    var(--color-text-secondary);
   --color-on-background:         var(--color-text-primary);
   --color-on-primary:            #FFFFFF;
+  /* Emphasis text that sits on a SURFACE, not on a primary fill. The KPI
+   * figure and the chart tooltip readout used --color-on-primary, which is
+   * #FFFFFF in both modes and therefore 1.00:1 on the five light surfaces
+   * that are themselves #FFFFFF. Previously rescued by an ad-hoc
+   * light-mode override; this token removes the double duty so
+   * the two values can never drift apart again. */
+  --color-on-surface-emphasis:   #FFFFFF;
   --color-ink-muted:             var(--color-text-tertiary);
   --color-ink-disabled:          var(--color-text-disabled);
 
@@ -133,6 +158,17 @@
   --color-interactive-hover:     rgba(255, 255, 255, 0.12);
   --color-interactive-active:    rgba(255, 255, 255, 0.16);
   --color-placeholder:           rgba(160, 160, 160, 0.85);
+
+  /* Button state fills. Promoted from raw literals in global.css so the
+   * light theme can re-point them: .btn-primary:hover was painting #FFFFFF
+   * on a #FFFFFF card (1.00:1) and .btn-link:hover was painting #FFFFFF
+   * text on a #EFF0F3 canvas (1.14:1) because the light block overrode
+   * border-color and color but never background. Dark values are the
+   * previous literals verbatim, so dark rendering is unchanged. */
+  --color-btn-primary-hover-bg:     #FFFFFF;
+  --color-btn-primary-hover-fg:     #000000;
+  --color-btn-primary-active-bg:    #E4E4E7;
+  --color-btn-hover-fg:             #FFFFFF;
 
   /* Typography Scale */
   --font-display:  'Sora', system-ui, sans-serif;
@@ -243,6 +279,9 @@
   --color-border-muted:          rgba(0, 0, 0, 0.04);
   --color-border-focus:          rgba(14, 116, 144, 0.55);
   --color-border-focus-glow:     rgba(14, 116, 144, 0.16);
+  /* Light focus indicator: the light functional cyan (#0E7490), which
+   * measures 4.70:1 on --color-canvas #EFF0F3 and 5.36:1 on white. */
+  --color-focus-ring:            var(--color-brand-cyan);
 
   /* Backward compat */
   --color-outline:               #A1A1AA;
@@ -254,6 +293,9 @@
   --color-text-tertiary:         #71717A;
   --color-text-disabled:         #A1A1AA;
   --color-text-link:             #6D28D9;
+  /* Emphasis text on a light surface. Was #FFFFFF (invisible) before the
+   * [data-theme="light"] rescue; the rescue now comes from this token. */
+  --color-on-surface-emphasis:   #18181B;
 
   /* Semantic */
   --color-error:                 #DC2626;
@@ -292,6 +334,16 @@
    * black (owner direction). Toggles, checkboxes, and text stay as they
    * are; strictly buttons use charcoal. */
   --color-charcoal:              #3F3F46;
+
+  /* Button state fills — light re-point. Hover darkens toward the ink
+   * value (#18181B) and active returns to the charcoal base, so the
+   * pressed state is never lighter than the rest state on a white card.
+   * Link/secondary hover text moves to --color-text-link (#6D28D9,
+   * 6.23:1 on white) instead of #FFFFFF. */
+  --color-btn-primary-hover-bg:     #18181B;
+  --color-btn-primary-hover-fg:     #FFFFFF;
+  --color-btn-primary-active-bg:    #3F3F46;
+  --color-btn-hover-fg:             #6D28D9;
 
   /* Elevation / Shadow — soft, no glow stacking */
   --shadow-sm:  0 1px 2px rgba(16, 24, 40, 0.06);

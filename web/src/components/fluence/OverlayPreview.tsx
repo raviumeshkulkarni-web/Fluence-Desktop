@@ -31,9 +31,8 @@ const OVERLAY_CSS = overlayCssRaw.replace(/^@import[^;]+;/m, '');
 // would otherwise bleed its `[data-theme="light"]` tokens through the
 // shadow boundary via inheritance, washing the preview out. This restores
 // the exact overlay-window environment: dark tokens, both themes.
-const DARK_TOKENS_CSS = tokensCssRaw
-  .slice(tokensCssRaw.indexOf(':root'), tokensCssRaw.indexOf('[data-theme="light"]'))
-  .replace(/:root/, '.ovpv-frame');
+const rootBlock = tokensCssRaw.match(/:root\s*\{[\s\S]*?\n\}/)?.[0] ?? '';
+const DARK_TOKENS_CSS = rootBlock.replace(/:root/, '.ovpv-frame');
 
 // Preview-frame rules only (layout the shadow stage, never the overlay):
 // - `.ovpv-frame` replaces overlay.html `body` (flex centering, no 46px

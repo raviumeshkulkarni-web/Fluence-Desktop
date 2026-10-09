@@ -9,6 +9,7 @@
     clippy::too_many_arguments
 )]
 
+mod account_scope;
 mod acl;
 mod agent;
 mod agents;
@@ -211,10 +212,13 @@ pub fn run() {
             agents::save_agent,
             agents::delete_agent,
             agents::set_default_agent,
+            // One-tap legacy Agent/Style claim (explicit ownership transfer only)
+            agents::claim_legacy_agent,
             // Custom AI cleanup prompts (Slice 4b, additive)
             prompts::get_prompts,
             prompts::save_prompt_style,
             prompts::delete_prompt_style,
+            prompts::claim_legacy_prompt_style,
             prompts::set_prompt_override,
             prompts::clear_prompt_override,
             // Clipboard

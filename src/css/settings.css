@@ -249,11 +249,11 @@ body.is-maximized {
   color: #09090B;
   font-weight: 600;
   border-color: var(--color-success);
-  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+  box-shadow: 0 2px 8px rgba(34, 197, 94, 0.25);
 }
 
 .sidebar-update-btn.btn-ready:hover {
-  box-shadow: 0 3px 12px rgba(16, 185, 129, 0.35);
+  box-shadow: 0 3px 12px rgba(34, 197, 94, 0.35);
   transform: translateY(-1px);
 }
 
@@ -396,7 +396,7 @@ body.is-maximized {
   padding: 7px 14px;
   background: var(--color-surface-secondary);
   border: 1px solid var(--color-border-structural);
-  border-bottom: 2px solid #222228;
+  border-bottom: 2px solid #222222;
   border-radius: var(--radius-sm);
   font-family: var(--font-label);
   font-size: 12px;
@@ -592,9 +592,9 @@ body.is-maximized {
   line-height: 1;
   padding: 4px 8px;
   border-radius: var(--radius-full);
-  background: rgba(0, 229, 255, 0.14);
+  background: rgba(11, 214, 227, 0.14);
   color: var(--color-brand-cyan);
-  border: 1px solid rgba(0, 229, 255, 0.3);
+  border: 1px solid rgba(11, 214, 227, 0.3);
   letter-spacing: 0.04em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1485,9 +1485,11 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 }
 
 .dict-table .actions .suggestion-accept-btn:hover {
-  color: #4ADE80;
-  border-color: rgba(74, 222, 128, 0.25);
-  background: rgba(74, 222, 128, 0.08);
+  /* Was #4ADE80 / rgba(74,222,128,·) - a fourth green, matching neither
+   * --color-success dark (#22C55E) nor light (#15803D). */
+  color: var(--color-success);
+  border-color: var(--color-success-container);
+  background: var(--color-success-container);
 }
 
 .dict-table .actions .suggestion-dismiss-btn:hover,
@@ -1606,16 +1608,16 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   position: relative;
 }
 
-/* Update Progress Bar Pulse */
+/* Update Progress Bar.
+ * Was: linear-gradient(90deg, --color-brand-cyan, rgba(0,229,255,0.4),
+ * --color-brand-cyan) on an infinite background-position pulse. That
+ * violated design-tokens.css:101 on two counts - a gradient on a progress
+ * fill is explicitly banned, and the mid stop was #00E5FF, a cyan that is
+ * not in the token set, so the sweep shifted hue mid-animation. Progress
+ * fills are flat --color-brand-cyan; the pulse animated nothing and is
+ * removed. */
 .update-card.downloading #update-progress-fill {
-  background: linear-gradient(90deg, var(--color-brand-cyan), rgba(0, 229, 255, 0.4), var(--color-brand-cyan));
-  background-size: 200% 100%;
-  animation: progress-pulse 1.5s ease-in-out infinite;
-}
-
-@keyframes progress-pulse {
-  0%   { background-position: 0% 0; }
-  100% { background-position: 200% 0; }
+  background: var(--color-brand-cyan);
 }
 
 /* Release Notes */

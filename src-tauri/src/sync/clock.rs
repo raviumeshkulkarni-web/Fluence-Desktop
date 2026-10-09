@@ -52,6 +52,28 @@ pub fn cmp_winner(
         .then_with(|| a_device_id.cmp(b_device_id))
 }
 
+/// LWW for keyed domains (dictionary, snippets) with a final `sync_id`
+/// tiebreak, making the order *total*.
+///
+/// `cmp_winner` alone is not a total order: two records can share both
+/// `updated_at` and `device_id` while differing in payload. A partial order
+/// makes the merge outcome depend on which side a record arrived from, so two
+/// devices holding different payloads for the same key each keep their own copy
+/// and re-push to each other indefinitely. `sync_id` is stable, present on every
+/// record, and identical on both platforms and both sides of the wire, so it is
+/// a safe final discriminator.
+pub fn cmp_keyed_winner(
+    a_updated_at: i64,
+    a_device_id: &str,
+    a_sync_id: &str,
+    b_updated_at: i64,
+    b_device_id: &str,
+    b_sync_id: &str,
+) -> Ordering {
+    cmp_winner(a_updated_at, a_device_id, b_updated_at, b_device_id)
+        .then_with(|| a_sync_id.cmp(b_sync_id))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -81,7 +81,56 @@ Before implementing a large feature, please open an issue first so we can discus
 
 - Latest stable [Rust](https://www.rust-lang.org/tools/install) toolchain
 - [Node.js](https://nodejs.org/) (v18+)
-- Windows 10/11 x64
+- Windows 10/11 x64 **or** Linux x86_64 (Ubuntu 22.04+/Debian 12+/Fedora 40+)
+
+On Linux, install the Tauri system dependencies first:
+
+```bash
+# Ubuntu / Debian
+sudo apt-get install libwebkit2gtk-4.1-dev build-essential curl wget file \
+  libssl-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+  patchelf libasound2-dev libdbus-1-dev
+
+# Fedora
+sudo dnf install webkit2gtk4.1-devel gtk3-devel libappindicator-gtk3-devel \
+  librsvg2-devel patchelf alsa-lib-devel dbus-devel openssl-devel curl wget file
+```
+
+You also need a running Secret Service provider (GNOME Keyring or KWallet)
+for API-key storage, and an X11 session for full voice-typing injection
+(on Wayland, injection may fail - the text stays in the clipboard, paste it
+with Ctrl+V).
+
+### One-time sidecar setup (Windows and Linux)
+
+`cargo check` and every build require the staged sidecar files in
+`src-tauri/binaries/` (the Tauri bundler validates them before compiling).
+Provision the prebuilt vendor bundle once per machine, then build + stage:
+
+```bash
+# Linux: fetch + verify the vendor bundle (digest pinned in
+# src-tauri/moonshine-v2-server/VENDOR.linux.json)
+mkdir -p .vendor/moonshine
+curl -L "$(python3 -c "import json;print(json.load(open('src-tauri/moonshine-v2-server/VENDOR.linux.json'))['url'])")" \
+  -o .vendor/moonshine/moonshine-voice-linux-x86_64.tar.gz
+tar -xzf .vendor/moonshine/moonshine-voice-linux-x86_64.tar.gz -C .vendor/moonshine
+
+# Build the sidecar (its build.rs stages the .so files into target/)
+cargo build --manifest-path src-tauri/Cargo.toml -p moonshine-v2-server
+
+# Mirror into the Tauri staging dir (same names CI uses)
+TRIPLE=$(rustc --print host-tuple)
+mkdir -p src-tauri/binaries
+cp src-tauri/target/debug/moonshine-v2-server \
+  "src-tauri/binaries/moonshine-v2-server-$TRIPLE"
+cp src-tauri/target/debug/libonnxruntime.so.1 \
+  src-tauri/binaries/libonnxruntime.so.1
+cp src-tauri/target/debug/libmoonshine.so \
+  src-tauri/binaries/libmoonshine.so
+```
+
+Windows contributors follow the same flow with `VENDOR.json` (see the
+`fetch moonshine v2 vendor bundle` step in `.github/workflows/release.yml`).
 
 ### Getting Started
 
@@ -93,19 +142,27 @@ cd Fluence-Desktop
 # Install dependencies
 npm install
 
-# Start development mode
+# Start development mode (Windows)
 npm run dev
+
+# Start development mode (Linux)
+npm run dev:linux
 ```
 
 ### Useful Commands
 
 | Command | Description |
 |---|---|
-| `npm run dev` | Start the app in development mode |
-| `npm run build` | Build production installers |
+| `npm run dev` | Start the app in development mode (Windows) |
+| `npm run dev:linux` | Start the app in development mode (Linux) |
+| `npm run build` | Build production installers (Windows: NSIS) |
+| `npm run build:linux` | Build production bundles (Linux: deb + AppImage) |
 | `npm run check` | Run Rust type checking |
 | `npm run clippy` | Run Rust lints |
 | `cargo fmt` | Format Rust code (run inside `src-tauri/`) |
+
+For a Linux `.rpm` (Fedora), run the same build with `--bundles rpm` and
+the same `--config` override as `build:linux` (see `package.json`).
 
 ---
 

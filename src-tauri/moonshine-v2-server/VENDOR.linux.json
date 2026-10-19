@@ -1,0 +1,9 @@
+{
+  "release": "moonshine-ai/moonshine v0.1.5",
+  "asset": "moonshine-voice-linux-x86_64.tar.gz",
+  "url": "https://github.com/moonshine-ai/moonshine/releases/download/v0.1.5/moonshine-voice-linux-x86_64.tar.gz",
+  "sha256": "9c3a87fea93ff2ad957938868f95a0a366dce9ff8ad86bde6cdcf5a4cadb51df",
+  "size_bytes": 14576999,
+  "extract_subdir": "moonshine-voice-linux-x86_64",
+  "notes": "Official prebuilt Moonshine v2 C++ core + ONNX Runtime for Linux x86_64. Linux counterpart to VENDOR.json (Windows). Extract under .vendor/moonshine/ (gitignored). CI fetches and verifies this digest before building the sidecar; the digest here is the single reviewed source of truth (mirrors the GitHub release API digest)."
+}

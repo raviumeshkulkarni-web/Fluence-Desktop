@@ -2520,11 +2520,17 @@ async function dismissSelectedSuggestions() {
   }
 }
 
-window.acceptSuggestion = async (id, spoken, corrected) => {
-  const detail = spoken && corrected
+// Accept-confirmation copy. The React app single-sources this message in
+// web/src/ipc/dictionary.ts (buildConfirmDetail); the vanilla settings
+// window is a separate build target and cannot import it, so the copy is
+// kept in sync manually here — change both together.
+const ACCEPT_CONFIRM_DETAIL = (spoken, corrected) =>
+  spoken && corrected
     ? `Add "${spoken}" → "${corrected}" to the dictionary? This will automatically rewrite future dictations.`
     : 'Add this suggestion to the dictionary? This will automatically rewrite future dictations.';
-  if (!window.confirm(detail)) return;
+
+window.acceptSuggestion = async (id, spoken, corrected) => {
+  if (!window.confirm(ACCEPT_CONFIRM_DETAIL(spoken, corrected))) return;
   try {
     await invoke('accept_suggestion_command', { id });
     showToast('Added to dictionary ✓', 'success');

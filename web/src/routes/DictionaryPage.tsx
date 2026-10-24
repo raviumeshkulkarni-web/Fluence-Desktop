@@ -30,6 +30,7 @@ import { toast } from '@/components/fluence/Toasts';
 import {
   acceptSuggestion,
   addDictionaryEntry,
+  buildConfirmDetail,
   deleteDictionaryEntry,
   dismissSuggestion,
   downloadDictionaryJson,
@@ -237,9 +238,7 @@ export function DictionaryPage() {
     const s = suggestions.find((x) => x.id === id);
     setConfirmAccept({
       id,
-      detail: s
-        ? `Add "${s.spoken}" → "${s.corrected}" to the dictionary? This will automatically rewrite future dictations.`
-        : 'Add this suggestion to the dictionary? This will automatically rewrite future dictations.',
+      detail: buildConfirmDetail(s?.spoken, s?.corrected),
     });
   };
 

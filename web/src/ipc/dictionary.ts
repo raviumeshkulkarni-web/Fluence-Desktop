@@ -43,6 +43,15 @@ export const getSuggestions = () =>
 export const getLearningSuggestions = () =>
   invokeCmd<Suggestion[]>('get_learning_suggestions');
 
+/** Confirmation prompt detail for accepting a suggestion into the dictionary.
+ *  Single-sourced here so every accept surface (Dictionary, History) shows
+ *  identical copy. */
+export function buildConfirmDetail(spoken?: string, corrected?: string): string {
+  return spoken && corrected
+    ? `Add "${spoken}" → "${corrected}" to the dictionary? This will automatically rewrite future dictations.`
+    : 'Add this suggestion to the dictionary? This will automatically rewrite future dictations.';
+}
+
 export const acceptSuggestion = (id: string) =>
   invokeCmd<void>('accept_suggestion_command', { id });
 

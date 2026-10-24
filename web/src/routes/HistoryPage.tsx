@@ -47,7 +47,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { SearchField } from '@/components/fluence/SearchField';
-import { acceptSuggestion } from '@/ipc/dictionary';
+import { acceptSuggestion, buildConfirmDetail } from '@/ipc/dictionary';
 import { cn } from '@/lib/cn';
 import {
   clearHistory,
@@ -782,9 +782,7 @@ export function HistoryPage() {
     setConfirmAcceptMark({
       id,
       detail:
-        spoken && corrected
-          ? `Add "${spoken}" → "${corrected}" to the dictionary? This will automatically rewrite future dictations.`
-          : 'Add this suggestion to the dictionary? This will automatically rewrite future dictations.',
+        buildConfirmDetail(spoken, corrected),
     });
   }, []);
 

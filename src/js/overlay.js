@@ -11,6 +11,14 @@
 const { invoke } = window.__TAURI__.core;
 const { listen } = window.__TAURI__.event;
 
+const I18N = window.OverlayI18n;
+function t(key, params) {
+  return I18N ? I18N.t(key, params) : key;
+}
+function tr(text) {
+  return I18N ? I18N.tr(text) : text;
+}
+
 // Session-level tracking: superseded sessions whose in-flight transcription
 // result should be preserved in history, sessions the user explicitly
 // discarded (their late results are dropped), the foreground HWND captured
@@ -434,7 +442,7 @@ function updateTimerDisplay() {
 
 function setMode(mode) {
   if (modeBadge) {
-    modeBadge.textContent = mode === 'agent' ? 'Agent Mode' : 'Transcribe';
+    modeBadge.textContent = t(mode === 'agent' ? 'Agent Mode' : 'Transcribe');
   }
 }
 
@@ -597,7 +605,7 @@ function renderAgentPickerOptions() {
     if (agent.id === defaultAgentId) {
       const badge = document.createElement('span');
       badge.className = 'agent-option-default';
-      badge.textContent = 'Default';
+      badge.textContent = t('Default');
       option.appendChild(badge);
     }
 
@@ -877,23 +885,27 @@ function setStatusMessage(text, opts = {}) {
   // the DOM for aria-live and hover tooltips but is hidden visually
   // (.status-text-hidden in overlay.css). A plain call without markOnly
   // clears the class, so unrelated notices go back to text.
+  const localized = text ? tr(text) : '';
   if (overlayRoot) {
     overlayRoot.classList.toggle('status-text-hidden', opts.markOnly === true);
   }
   if (statusMsg) {
-    statusMsg.textContent = text || '';
+    statusMsg.textContent = localized;
     // Compact/bubble hide the text visually - keep it available as hover
     // tooltip so minimal-tier users still get the failure reason.
-    if (text) statusMsg.title = text;
+    if (localized) statusMsg.title = localized;
     else statusMsg.removeAttribute('title');
   }
   // Screen-reader + tooltip path for tiers that hide .status-msg.
   if (overlayRoot) {
-    if (text) overlayRoot.title = text;
+    if (localized) overlayRoot.title = localized;
     else overlayRoot.removeAttribute('title');
   }
-  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry - ${text}`);
-  else if (statusRetry) statusRetry.removeAttribute('aria-label');
+  if (statusRetry && localized) {
+    statusRetry.setAttribute('aria-label', t('Retry - {text}', { text: localized }));
+  } else if (statusRetry) {
+    statusRetry.removeAttribute('aria-label');
+  }
 }
 
 function showRetry() {
@@ -1045,12 +1057,12 @@ function setupRetryButton() {
         const ctx = agentRetryContext;
         agentRetryContext = null;
         setState('agent_transcribing');
-        if (recLabel) recLabel.textContent = 'PROCESSING';
+        if (recLabel) recLabel.textContent = t('PROCESSING');
         await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId, ctx.agentId);
         return;
       }
       setState('transcribing');
-      if (recLabel) recLabel.textContent = 'PROCESSING';
+      if (recLabel) recLabel.textContent = t('PROCESSING');
        await runSttFlow(sessionId, true);
     });
   }
@@ -1096,15 +1108,19 @@ function describeInjectError(err) {
 
   if (raw.includes('PASTE_FAILED')) {
     const m = raw.match(/delivered (\d+) of 4/);
-    return m ? `Keys blocked (${m[1]}/4)` : 'Keys blocked';
+    return m
+      ? t('Keys blocked ({delivered} of {total})', { delivered: m[1], total: 4 })
+      : t('Keys blocked');
   }
   if (raw.includes('KEYBOARD_ACTION_FAILED')) {
     const m = raw.match(/delivered (\d+) of (\d+)/);
-    return m ? `Keys blocked (${m[1]}/${m[2]})` : 'Keys blocked';
+    return m
+      ? t('Keys blocked ({delivered} of {total})', { delivered: m[1], total: m[2] })
+      : t('Keys blocked');
   }
-  if (raw.includes('Not allowed from this window')) return 'Blocked by permissions';
+  if (raw.includes('Not allowed from this window')) return t('Blocked by permissions');
   const trimmed = raw.trim();
-  if (!trimmed) return 'Insert failed';
+  if (!trimmed) return t('Insert failed');
   return trimmed.length > 42 ? `${trimmed.slice(0, 42)}...` : trimmed;
 }
 
@@ -1182,7 +1198,7 @@ function updateRecHint() {
   const isHoldToRecord =
     (currentState === 'recording' && cachedSettings?.recording_mode === 'hold_to_record') ||
     (currentState === 'agent' && cachedSettings?.agent_recording_mode === 'hold_to_record');
-  recHint.textContent = isHoldToRecord ? 'RELEASE TO STOP' : '';
+  recHint.textContent = isHoldToRecord ? t('RELEASE TO STOP') : '';
   recHint.hidden = !isHoldToRecord;
 }
 
@@ -1276,6 +1292,7 @@ function setupDiscardButton() {
 async function getRecordingPreferences() {
     try {
       cachedSettings = await invoke('get_settings');
+      if (I18N) I18N.init(cachedSettings.ui_language);
       // One hook covers every caller of getRecordingPreferences (session
       // starts, reconcile, DOMContentLoaded): the pick rides the existing
       // settings fetch, unknown values normalize inside setStyle.
@@ -1333,7 +1350,7 @@ async function stopAndTranscribe(agentMode, sessionId) {
   setState(agentMode ? 'agent_transcribing' : 'transcribing');
 
   // Update label for transcribing state
-  if (recLabel) recLabel.textContent = 'PROCESSING';
+  if (recLabel) recLabel.textContent = t('PROCESSING');
 
   let startTs = Date.now();
 
@@ -1781,11 +1798,11 @@ function setState(state, updateVisibility = true) {
     switch (state) {
       case 'recording':
       case 'agent':
-        recLabel.textContent = 'LISTENING';
+        recLabel.textContent = t('LISTENING');
         break;
       case 'transcribing':
       case 'agent_transcribing':
-        recLabel.textContent = 'PROCESSING';
+        recLabel.textContent = t('PROCESSING');
         break;
       case 'no-speech':
         // Quiet neutral state - the status notice carries the message
@@ -1793,10 +1810,10 @@ function setState(state, updateVisibility = true) {
         break;
       case 'success':
         // Terminal states must never keep announcing LISTENING.
-        recLabel.textContent = 'DONE';
+        recLabel.textContent = t('DONE');
         break;
       case 'error':
-        recLabel.textContent = 'ERROR';
+        recLabel.textContent = t('ERROR');
         break;
       case 'idle':
       default:

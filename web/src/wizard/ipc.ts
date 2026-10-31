@@ -69,6 +69,7 @@ export interface AppSettings {
   theme: string;
   first_run: boolean;
   copy_transcript_to_clipboard: boolean;
+  ui_language?: string;
   [key: string]: unknown;
 }
 
@@ -76,6 +77,11 @@ export const getSettings = () => invokeCmd<AppSettings>('get_settings');
 
 export const updateSettings = (settings: AppSettings) =>
   invokeCmd<void>('update_settings', { settings });
+
+export async function setUiLanguage(uiLanguage: string): Promise<void> {
+  const current = await invokeCmd<AppSettings>('get_settings');
+  await updateSettings({ ...current, ui_language: uiLanguage });
+}
 
 export const updateHotkeys = (args: {
   transcriptionShortcut: string;

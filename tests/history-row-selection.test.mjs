@@ -18,7 +18,7 @@ test('history rows expose checkbox selection with the shadcn selected data state
 
 test('history footer shows a static rows-per-page label instead of selection totals', () => {
   const history = readFileSync(historyPath, 'utf8');
-  assert.match(history, /Rows per page: \{HISTORY_PAGE_SIZE\}/);
+  assert.match(history, /\{t\('Rows per page:'\)\} \{HISTORY_PAGE_SIZE\}/);
   assert.doesNotMatch(history, /row\(s\) selected/);
   assert.match(history, /history-selection-count[\s\S]*selectedIds\.size/);
 });

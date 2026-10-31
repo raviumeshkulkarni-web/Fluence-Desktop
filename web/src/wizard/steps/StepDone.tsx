@@ -6,6 +6,8 @@ import type { WizardData } from '../Wizard';
 import type { AppSettings } from '../ipc';
 import { closeWizard, getSettings, showMainWindow, updateHotkeys, updateSettings } from '../ipc';
 import { displayHotkey } from '../hotkey';
+import { t } from '@/i18n';
+import { formatShortcut } from '@/lib/shortcut';
 
 interface StepDoneProps {
   data: WizardData;
@@ -99,7 +101,10 @@ export function StepDone({ data }: StepDoneProps) {
       // Restore the saved pair before surfacing the failure.
       await updateHotkeys(previousHotkeys).catch(() => undefined);
       throw new SetupError(
-        `The shortcut "${displayHotkey(data.hotkey)}" could not be registered. ${describeError(err)}`,
+        t('The shortcut "{hotkey}" could not be registered. {error}', {
+          hotkey: displayHotkey(data.hotkey),
+          error: describeError(err),
+        }),
       );
     }
 
@@ -109,7 +114,7 @@ export function StepDone({ data }: StepDoneProps) {
       // Roll the global shortcut back to the last saved one: settings were not
       // written, so leaving the new shortcut active would only last until quit.
       await updateHotkeys(previousHotkeys).catch(() => undefined);
-      throw new SetupError(`Your setup could not be saved. ${describeError(err)}`);
+      throw new SetupError(t('Your setup could not be saved. {error}', { error: describeError(err) }));
     }
   };
 
@@ -123,7 +128,7 @@ export function StepDone({ data }: StepDoneProps) {
       setError(
         err instanceof SetupError
           ? err.message
-          : `Setup could not be completed. ${describeError(err)}`,
+          : t('Setup could not be completed. {error}', { error: describeError(err) }),
       );
       setSaving(false);
       return;
@@ -134,7 +139,11 @@ export function StepDone({ data }: StepDoneProps) {
       if (openSettings) await showMainWindow();
       await closeWizard();
     } catch (err) {
-      setError(`Your setup was saved, but Fluence could not finish opening. ${describeError(err)}`);
+      setError(
+        t('Your setup was saved, but Fluence could not finish opening. {error}', {
+          error: describeError(err),
+        }),
+      );
     } finally {
       setSaving(false);
     }
@@ -146,11 +155,11 @@ export function StepDone({ data }: StepDoneProps) {
         <Check size={40} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       </div>
       <h1 className="step-title" tabIndex={-1}>
-        Finish Setup
+        {t('Finish Setup')}
       </h1>
       <p className="step-desc">
-        Your choices are ready. Finishing saves them and keeps{' '}
-        <span className="done-hotkey-chip">{displayHotkey(data.hotkey)}</span> available anywhere.
+        {t('Your choices are ready. Finishing saves them and keeps')}{' '}
+        <span className="done-hotkey-chip">{formatShortcut(displayHotkey(data.hotkey))}</span> {t('available anywhere.')}
       </p>
       {error && (
         <div className="wizard-save-error" role="alert">
@@ -163,7 +172,7 @@ export function StepDone({ data }: StepDoneProps) {
           disabled={saving}
           onClick={() => void finish(true)}
         >
-          {saving ? 'Saving…' : 'Save and Open Settings'}
+          {saving ? t('Saving…') : t('Save and Open Settings')}
         </Button>
         <Button
           variant="ghost"
@@ -171,7 +180,7 @@ export function StepDone({ data }: StepDoneProps) {
           disabled={saving}
           onClick={() => void finish(false)}
         >
-          Save and Close
+          {t('Save and Close')}
         </Button>
       </div>
     </>

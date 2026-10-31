@@ -1,4 +1,5 @@
 import { closeWizard, minimizeWizard } from './ipc';
+import { t } from '@/i18n';
 
 interface WizardTitlebarProps {
   onRequestClose?: () => void;
@@ -10,14 +11,14 @@ export function WizardTitlebar({ onRequestClose }: WizardTitlebarProps) {
   return (
     <div data-tauri-drag-region className="titlebar">
       <div className="titlebar-title" data-tauri-drag-region>
-        Welcome to Fluence
+        {t('Welcome to Fluence')}
       </div>
       <div className="titlebar-controls">
         <button
           type="button"
           className="titlebar-button"
           id="titlebar-minimize"
-          aria-label="Minimize window"
+          aria-label={t('Minimize window')}
           onClick={() => void minimizeWizard().catch(() => undefined)}
         >
           <svg width="11" height="1" viewBox="0 0 11 1" aria-hidden="true">
@@ -28,7 +29,7 @@ export function WizardTitlebar({ onRequestClose }: WizardTitlebarProps) {
           type="button"
           className="titlebar-button titlebar-close"
           id="titlebar-close"
-          aria-label="Close window"
+          aria-label={t('Close window')}
           onClick={() => {
             if (onRequestClose) onRequestClose();
             else void closeWizard().catch(() => undefined);

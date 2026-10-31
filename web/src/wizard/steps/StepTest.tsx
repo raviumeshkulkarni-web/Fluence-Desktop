@@ -5,6 +5,7 @@ import { describeError } from '@/lib/errors';
 import type { WizardData } from '../Wizard';
 import { startRecording, stopRecording, transcribeAudio } from '../ipc';
 import { displayHotkey } from '../hotkey';
+import { t } from '@/i18n';
 
 interface StepTestProps {
   data: WizardData;
@@ -19,27 +20,33 @@ type Phase = 'idle' | 'recording' | 'transcribing';
 export function StepTest({ data }: StepTestProps) {
   const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
   const [phase, setPhase] = useState<Phase>('idle');
-  const [label, setLabel] = useState('Start Recording');
-  const [result, setResult] = useState({ text: 'Your transcription will appear here…', placeholder: true });
+  const [label, setLabel] = useState(() => t('Start Recording'));
+  const [result, setResult] = useState(() => ({
+    text: t('Your transcription will appear here…'),
+    placeholder: true,
+  }));
   const [busy, setBusy] = useState(false);
 
   const onRecord = async () => {
     if (phase === 'idle') {
       setPhase('recording');
-      setLabel('Stop Recording');
-      setResult({ text: 'Recording… speak now', placeholder: false });
+      setLabel(t('Stop Recording'));
+      setResult({ text: t('Recording… speak now'), placeholder: false });
       try {
         await startRecording(null);
       } catch (err) {
         setPhase('idle');
-        setLabel('Start Recording');
-        setResult({ text: 'Could not start recording. ' + describeError(err), placeholder: false });
+        setLabel(t('Start Recording'));
+        setResult({
+          text: t('Failed to start: {error}', { error: describeError(err) }),
+          placeholder: false,
+        });
       }
       return;
     }
     if (phase === 'recording') {
       setPhase('transcribing');
-      setLabel('Transcribing…');
+      setLabel(t('Transcribing…'));
       setBusy(true);
       try {
         const wavB64 = await stopRecording();
@@ -50,12 +57,18 @@ export function StepTest({ data }: StepTestProps) {
           wav_b64: wavB64,
           language: 'en',
         });
-        setResult({ text: text || '(empty transcription)', placeholder: false });
+        setResult({
+          text: text || t('(empty transcription)'),
+          placeholder: false,
+        });
       } catch (err) {
-        setResult({ text: describeError(err, 'The test transcription failed. Please try again.'), placeholder: false });
+        setResult({
+          text: describeError(err, t('The test transcription failed. Please try again.')),
+          placeholder: false,
+        });
       } finally {
         setPhase('idle');
-        setLabel('Try Again');
+        setLabel(t('Try Again'));
         setBusy(false);
       }
     }
@@ -64,18 +77,17 @@ export function StepTest({ data }: StepTestProps) {
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Test Your Setup
+        {t('Test Your Setup')}
       </h1>
       <p className="step-desc">
         {usingOffline
-          ? 'Offline transcription is ready. The local model runs on this PC, so there is nothing to test online.'
-          : "Let's make sure everything is working. Click the button and say something."}
+          ? t('Offline transcription is ready. The local model runs on this PC, so there is nothing to test online.')
+          : t("Let's make sure everything is working. Click the button and say something.")}
       </p>
       {usingOffline ? (
         <div className="wizard-offline-note" role="status">
-          <strong>No online test needed.</strong> Finish setup, then press{' '}
-          <span className="done-hotkey-chip">{displayHotkey(data.hotkey)}</span> in any app to
-          try the local model.
+          <strong>{t('No online test needed.')}</strong>{' '}
+          {t('Finish setup, then press {hotkey} in any app to try the local model.', { hotkey: displayHotkey(data.hotkey) })}
         </div>
       ) : (
       <div className="test-area">

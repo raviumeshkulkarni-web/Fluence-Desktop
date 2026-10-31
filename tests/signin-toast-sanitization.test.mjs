@@ -12,12 +12,17 @@
 // Run: node --test tests/signin-toast-sanitization.test.mjs
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { register } from 'node:module';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { extractFunction, evalFunctions } from './extract-js-function.mjs';
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
+
+// The live module now resolves its user-facing copy through `@/i18n`, so the
+// Vite alias has to resolve here too.
+register(pathToFileURL(path.join(ROOT, 'web/test-resolver.mjs')).href);
 const settingsPath = path.join(ROOT, 'src/js/settings.js');
 const { describeSignInError } = evalFunctions(
   [extractFunction(settingsPath, 'describeSignInError')],

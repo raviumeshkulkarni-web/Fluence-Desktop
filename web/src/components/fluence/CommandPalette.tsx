@@ -41,12 +41,14 @@ import { Kbd } from '@/components/ui/kbd';
 import { hideMainWindow, minimizeMainWindow } from '@/ipc/tauri';
 import { updaterStore } from '@/ipc/updater';
 import { requestHistorySearchFocus } from '@/ipc/history';
+import { t, type TranslationKey } from '@/i18n';
+import { formatShortcut } from '@/lib/shortcut';
 import type { Theme } from '@/lib/theme';
 import type { Route } from '@/App';
 
 export interface PaletteAction {
   id: string;
-  label: string;
+  label: TranslationKey;
   icon: React.ReactNode;
   shortcut?: string;
   onSelect: () => void;
@@ -63,7 +65,7 @@ interface CommandPaletteProps {
   onToggleTheme: () => void;
 }
 
-const PAGE_META: Record<Route, { label: string; icon: React.ReactNode }> = {
+const PAGE_META: Record<Route, { label: TranslationKey; icon: React.ReactNode }> = {
   dashboard: { label: 'Dashboard', icon: <LayoutDashboard className="command-item-icon" /> },
   history: { label: 'History', icon: <History className="command-item-icon" /> },
   general: { label: 'General', icon: <Settings2 className="command-item-icon" /> },
@@ -129,7 +131,7 @@ export function CommandPalette({
       icon: sidebarCollapsed
         ? <PanelLeftOpen className="command-item-icon" />
         : <PanelLeftClose className="command-item-icon" />,
-      shortcut: 'Ctrl B',
+      shortcut: 'Ctrl+B',
       onSelect: () => {
         onToggleSidebar();
         close();
@@ -141,7 +143,7 @@ export function CommandPalette({
       icon: theme === 'dark'
         ? <Sun className="command-item-icon" />
         : <Moon className="command-item-icon" />,
-      shortcut: 'Ctrl Shift L',
+      shortcut: 'Ctrl+Shift+L',
       onSelect: () => {
         onToggleTheme();
         close();
@@ -151,7 +153,7 @@ export function CommandPalette({
       id: 'focus-history-search',
       label: 'Focus history search',
       icon: <Search className="command-item-icon" />,
-      shortcut: 'Ctrl F',
+      shortcut: 'Ctrl+F',
       onSelect: () => {
         navigate('history');
         window.setTimeout(() => requestHistorySearchFocus(), 50);
@@ -189,7 +191,7 @@ export function CommandPalette({
 
   const pages = (Object.keys(PAGE_META) as Route[]).map((page) => ({
     id: page,
-    label: PAGE_META[page].label,
+    label: t(PAGE_META[page].label),
     icon: PAGE_META[page].icon,
     onSelect: () => navigate(page),
   }));
@@ -197,28 +199,31 @@ export function CommandPalette({
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
       <CommandInput
-        placeholder="Type a command or search…"
+        placeholder={t('Type a command or search…')}
         autoFocus
         value={search}
         onValueChange={setSearch}
       />
       <CommandList>
-        <CommandEmpty>No matching command found.</CommandEmpty>
-        <CommandGroup heading="Actions">
-          {actions.map((a) => (
-            <CommandItem key={a.id} value={`${a.id} ${a.label}`} onSelect={a.onSelect}>
-              {a.icon}
-              <span>{highlightMatch(a.label, search)}</span>
-              {a.shortcut ? (
-                <CommandShortcut>
-                  <Kbd>{a.shortcut}</Kbd>
-                </CommandShortcut>
-              ) : null}
-            </CommandItem>
-          ))}
+        <CommandEmpty>{t('No matching command found.')}</CommandEmpty>
+        <CommandGroup heading={t('Actions')}>
+          {actions.map((a) => {
+            const label = t(a.label);
+            return (
+              <CommandItem key={a.id} value={`${a.id} ${label}`} onSelect={a.onSelect}>
+                {a.icon}
+                <span>{highlightMatch(label, search)}</span>
+                {a.shortcut ? (
+                  <CommandShortcut>
+                    <Kbd>{formatShortcut(a.shortcut)}</Kbd>
+                  </CommandShortcut>
+                ) : null}
+              </CommandItem>
+            );
+          })}
         </CommandGroup>
         <CommandSeparator />
-        <CommandGroup heading="Go to">
+        <CommandGroup heading={t('Go to')}>
           {pages.map((p) => (
             <CommandItem
               key={p.id}
@@ -230,7 +235,7 @@ export function CommandPalette({
               <span>{highlightMatch(p.label, search)}</span>
               {p.id === currentRoute ? (
                 <CommandShortcut>
-                  <span className="command-current">Current</span>
+                  <span className="command-current">{t('Current')}</span>
                 </CommandShortcut>
               ) : null}
             </CommandItem>
@@ -240,10 +245,10 @@ export function CommandPalette({
       <DialogFooter className="command-footer">
         <span className="command-hint">
           <CommandIcon className="command-hint-icon" />
-          <Kbd>Ctrl K</Kbd>
+          <Kbd>{formatShortcut('Ctrl+K')}</Kbd>
         </span>
         <DialogClose asChild>
-          <Button variant="ghost" size="xs">Close</Button>
+          <Button variant="ghost" size="xs">{t('Close')}</Button>
         </DialogClose>
       </DialogFooter>
     </CommandDialog>

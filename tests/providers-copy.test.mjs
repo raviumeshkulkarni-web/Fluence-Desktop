@@ -9,8 +9,8 @@ const providers = readFileSync(path.join(ROOT, 'web/src/routes/ProvidersPage.tsx
 const sidebar = readFileSync(path.join(ROOT, 'web/src/components/fluence/Sidebar.tsx'), 'utf8');
 
 test('provider tabs explain what each model does in simple language', () => {
-  assert.match(providers, /description="Choose the model that handles Agent Mode commands and text actions\."/);
-  assert.match(providers, /description="Choose the model that cleans up your transcriptions after dictation\."/);
+  assert.match(providers, /description=\{t\('Choose the model that handles Agent Mode commands and text actions\.'\)\}/);
+  assert.match(providers, /description=\{t\('Choose the model that cleans up your transcriptions after dictation\.'\)\}/);
 });
 
 test('sidebar uses the simpler AI Cleanup label', () => {

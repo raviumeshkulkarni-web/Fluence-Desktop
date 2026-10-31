@@ -6,6 +6,7 @@ import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { t, tr } from '@/i18n';
 import {
   Select,
   SelectContent,
@@ -32,6 +33,14 @@ const PROVIDER_PRESETS: Record<string, { url: string; model: string; llmModel: s
 
 const PROVIDERS = ['groq', 'openai', 'mistral', 'custom', 'Local Offline'] as const;
 
+const PROVIDER_LABELS: Record<string, string> = {
+  groq: 'Groq',
+  openai: 'OpenAI',
+  mistral: 'Mistral',
+  custom: 'Custom',
+  'Local Offline': 'Local Offline',
+};
+
 function withCurrent(list: string[], cur: string): string[] {
   if (!cur) return list;
   return list.includes(cur) ? list : [...list, cur];
@@ -57,7 +66,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
   const [fetching, setFetching] = useState(false);
   const [test, setTest] = useState<{ kind: 'idle' | 'testing' | 'ok' | 'err'; text: string }>({
     kind: 'idle',
-    text: 'Not tested',
+    text: t('Not tested'),
   });
   const dataRef = useRef(data);
   dataRef.current = data;
@@ -100,7 +109,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
   }, []);
 
   useEffect(() => {
-    const t = window.setTimeout(async () => {
+    const timer = window.setTimeout(async () => {
       if (dataRef.current.skipApiKey || dataRef.current.provider === 'Local Offline') return;
       const key = await getApiKey('Fluence/STT_ApiKey').catch(() => null);
       if (key) {
@@ -108,7 +117,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         void doFetchModels(dataRef.current.baseUrl, key);
       }
     }, 500);
-    return () => window.clearTimeout(t);
+    return () => window.clearTimeout(timer);
   }, [doFetchModels]);
 
   const fetchTimer = useRef(0);
@@ -144,14 +153,14 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         u.protocol === 'http:' &&
         ['localhost', '127.0.0.1', '::1'].includes(u.hostname.toLowerCase().replace(/^\[|\]$/g, ''));
       if (u.protocol !== 'https:' && !loopback) {
-        setTest({ kind: 'err', text: 'Use https:// (http only for localhost).' });
+        setTest({ kind: 'err', text: t('Use https:// (http only for localhost).') });
         return;
       }
     } catch {
-      setTest({ kind: 'err', text: 'Use https:// (http only for localhost).' });
+      setTest({ kind: 'err', text: t('Use https:// (http only for localhost).') });
       return;
     }
-    setTest({ kind: 'testing', text: 'Testing…' });
+    setTest({ kind: 'testing', text: t('Testing…') });
     try {
       const msg = await testSttConnection(baseUrl, apiKey);
       setTest({ kind: 'ok', text: msg });
@@ -169,34 +178,36 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Connect Your API Key
+        {t('Connect Your API Key')}
       </h1>
       <p className="step-desc">
         {usingOffline
-          ? 'Offline transcription runs on this PC. No API key or account is needed.'
-          : 'Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.'}
+          ? t('Offline transcription runs on this PC. No API key or account is needed.')
+          : t('Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.')}
       </p>
       <div className="step-content">
-        <Field label="Provider">
+        <Field label={t('Provider')}>
           <RadioGroup
             className="wizard-provider-grid"
             id="wiz-provider-grid"
             value={data.provider}
             onValueChange={(provider) => onProvider(provider)}
-            aria-label="Provider"
+            aria-label={t('Provider')}
           >
             {PROVIDERS.map((p) => (
               <RadioGroupItem key={p} value={p} asChild>
                 <button type="button" data-provider={p} className="choice-surface provider-card">
                   <ProviderIcon preset={p} />
-                  <span className="provider-name">{p === 'Local Offline' ? 'Local Offline' : p[0].toUpperCase() + p.slice(1)}</span>
+                  <span className="provider-name">
+                    {tr(PROVIDER_LABELS[p] ?? p)}
+                  </span>
                 </button>
               </RadioGroupItem>
             ))}
           </RadioGroup>
         </Field>
         {data.provider === 'custom' && (
-          <Field label="API Endpoint" htmlFor="wiz-base-url">
+          <Field label={t('API Endpoint')} htmlFor="wiz-base-url">
             <Input
               id="wiz-base-url"
               type="url"
@@ -208,13 +219,12 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         )}
         {usingOffline ? (
           <div className="wizard-offline-note" role="status">
-            <strong>No API key needed.</strong> Fluence will use the local
-            SenseVoice engine. You can download more engines or switch to a
-            cloud provider later in Settings → Providers.
+            <strong>{t('No API key needed.')}</strong>{' '}
+            {t('Fluence will use the local SenseVoice engine. You can download more engines or switch to a cloud provider later in Settings → Providers.')}
           </div>
         ) : (
         <>
-        <Field label="API Key" htmlFor="wiz-api-key" error={error ?? undefined}>
+        <Field label={t('API Key')} htmlFor="wiz-api-key" error={error ? tr(error) : undefined}>
           <div className="input-with-btn">
             <Input
               id="wiz-api-key"
@@ -241,14 +251,14 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             onCheckedChange={(v) => onPatch({ useKeyForAgent: v === true })}
           />
           <span>
-            <span className="wizard-check-title">Also use this key for AI Cleanup and Agent Mode</span>
+            <span className="wizard-check-title">{t('Also use this key for AI Cleanup and Agent Mode')}</span>
             <span className="wizard-check-hint">
-              Uncheck to keep your current AI provider and key.
+              {t('Uncheck to keep your current AI provider and key.')}
             </span>
           </span>
         </label>
         <div className="wizard-two-col">
-          <Field label="Transcription Model" htmlFor="wiz-model-select">
+          <Field label={t('Transcription Model')} htmlFor="wiz-model-select">
             <div className="input-with-btn">
               <Select value={data.model} onValueChange={(v) => onPatch({ model: v })}>
                 <SelectTrigger id="wiz-model-select">
@@ -268,7 +278,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    aria-label="Fetch transcription models from API"
+                    aria-label={t('Fetch transcription models from API')}
                     style={{ flexShrink: 0 }}
                     className={fetching ? 'animate-spin' : undefined}
                     onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
@@ -276,11 +286,11 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                     <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Fetch models</TooltipContent>
+                <TooltipContent>{t('Fetch models')}</TooltipContent>
               </Tooltip>
             </div>
           </Field>
-          <Field label="Agent Mode Model" htmlFor="wiz-llm-model-select">
+          <Field label={t('Agent Mode Model')} htmlFor="wiz-llm-model-select">
             <div className="input-with-btn">
               <Select value={data.llmModel} onValueChange={(v) => onPatch({ llmModel: v })}>
                 <SelectTrigger id="wiz-llm-model-select">
@@ -300,7 +310,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                 <TooltipTrigger asChild>
                   <Button
                     variant="ghost"
-                    aria-label="Fetch language models from API"
+                    aria-label={t('Fetch language models from API')}
                     style={{ flexShrink: 0 }}
                     className={fetching ? 'animate-spin' : undefined}
                     onClick={() => void doFetchModels(dataRef.current.baseUrl, dataRef.current.apiKey)}
@@ -308,25 +318,25 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                     <RefreshCw size={16} strokeWidth={2} aria-hidden="true" />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Fetch LLM models</TooltipContent>
+                <TooltipContent>{t('Fetch LLM models')}</TooltipContent>
               </Tooltip>
             </div>
           </Field>
         </div>
         <div className="wizard-test-row">
           <Button variant="secondary" style={{ padding: '8px 16px' }} onClick={() => void onTest()}>
-            Test Connection
+            {t('Test Connection')}
           </Button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} role="status">
             <div className={`dot dot-${test.kind === 'testing' ? 'idle' : test.kind === 'ok' ? 'success' : test.kind === 'err' ? 'error' : 'idle'}`} />
             <span style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)' }}>
-              {test.text}
+              {tr(test.text)}
             </span>
           </div>
         </div>
         <div style={{ marginTop: -4 }}>
           <button type="button" className="skip-offline" onClick={onSkip}>
-            Continue without a key: use offline transcription
+            {t('Continue without a key: use offline transcription')}
           </button>
         </div>
         </>

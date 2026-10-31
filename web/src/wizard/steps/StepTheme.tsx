@@ -1,5 +1,6 @@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { WizardData } from '../Wizard';
+import { t, type TranslationKey } from '@/i18n';
 
 interface StepThemeProps {
   data: WizardData;
@@ -8,7 +9,7 @@ interface StepThemeProps {
 
 export type ThemeMode = 'dark' | 'light' | 'auto';
 
-const THEMES: { value: ThemeMode; label: string; desc: string }[] = [
+const THEMES: { value: ThemeMode; label: TranslationKey; desc: TranslationKey }[] = [
   { value: 'dark', label: 'Dark', desc: 'Easy on the eyes, day and night' },
   { value: 'light', label: 'Light', desc: 'Bright and crisp for daylight' },
   { value: 'auto', label: 'System', desc: 'Follow Windows, switches automatically' },
@@ -22,26 +23,26 @@ export function StepTheme({ data, onPatch }: StepThemeProps) {
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Choose Your Theme
+        {t('Choose Your Theme')}
       </h1>
       <p className="step-desc">
-        Pick how the Fluence settings window looks. You can change this later from the sidebar.
+        {t('Pick how the Fluence settings window looks. You can change this later from the sidebar.')}
       </p>
       <div className="step-content">
         <RadioGroup
           className="theme-selector"
           value={data.themeMode}
           onValueChange={(themeMode) => onPatch({ themeMode: themeMode as ThemeMode })}
-          aria-label="Color theme"
+          aria-label={t('Color theme')}
         >
-          {THEMES.map((t) => (
-            <RadioGroupItem key={t.value} value={t.value} asChild>
+          {THEMES.map((theme) => (
+            <RadioGroupItem key={theme.value} value={theme.value} asChild>
               <button
                 type="button"
-                aria-label={`${t.label}: ${t.desc}`}
+                aria-label={`${t(theme.label)}: ${t(theme.desc)}`}
                 className="choice-surface theme-option"
               >
-                <span className={`theme-mock theme-mock-${t.value}`} aria-hidden="true">
+                <span className={`theme-mock theme-mock-${theme.value}`} aria-hidden="true">
                   <span className="theme-mock-side" />
                   <span className="theme-mock-main">
                     <i />
@@ -49,8 +50,8 @@ export function StepTheme({ data, onPatch }: StepThemeProps) {
                     <i />
                   </span>
                 </span>
-                <span className="theme-label">{t.label}</span>
-                <span className="theme-desc">{t.desc}</span>
+                <span className="theme-label">{t(theme.label)}</span>
+                <span className="theme-desc">{t(theme.desc)}</span>
               </button>
             </RadioGroupItem>
           ))}

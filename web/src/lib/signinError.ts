@@ -26,6 +26,7 @@
 // routing that toast through this mapper keeps the same no-raw-string
 // guarantee while still saying the truthful thing ("Sync failed", not
 // "Sign-in failed", for a button that was never about signing in).
+import { t } from '@/i18n';
 
 /** Which user action produced the failure; only affects the fallback prefixes. */
 export type FailedAction = 'Sign-in' | 'Sign-out' | 'Sync';
@@ -42,7 +43,7 @@ export function describeSignInError(
   raw: unknown,
   action?: FailedAction,
 ): string {
-  const label: string = action || 'Sign-in';
+  const label: string = action ? t(action) : t('Sign-in');
   const text = String(raw ?? '').replace(/^Error:\s*/, '');
   // The actionable no-refresh-token message is user-facing by design.
   // Matched on its stable prefix so future copy edits that keep the prefix
@@ -51,22 +52,23 @@ export function describeSignInError(
   const lower = text.toLowerCase();
   // Browser could not be opened: an OS condition, never a provider string.
   if (/failed to open the browser/i.test(text))
-    return 'Could not open the browser for sign-in. Please open it manually and try again.';
+    return t('Could not open the browser for sign-in. Please open it manually and try again.');
   // Identity lookup and token-exchange failures carry endpoint URLs and
   // provider bodies. Map them; never render them.
   if (/account lookup failed/i.test(text))
-    return 'Could not confirm the Google account. Check your connection and try again.';
+    return t('Could not confirm the Google account. Check your connection and try again.');
   if (/token endpoint|token exchange|authorization code/i.test(text))
-    return 'Google sign-in did not complete. Please try again.';
+    return t('Google sign-in did not complete. Please try again.');
   if (/timeout|network|connection|dns|offline/i.test(lower))
-    return 'Connection issue. Check your connection and try signing in again.';
+    return t('Connection issue. Check your connection and try signing in again.');
   if (/access denied|forbidden|401|403/i.test(text))
-    return 'Google refused the sign-in request. Please try again.';
+    return t('Google refused the sign-in request. Please try again.');
   // Anything with a URL or markup is a provider string by construction.
-  if (/https?:\/\/|<[^>]+>/.test(text)) return label + ' failed. Please try again.';
+  if (/https?:\/\/|<[^>]+>/.test(text))
+    return t('{action} failed. Please try again.', { action: label });
   // Unknown but short plain text without URLs is safe to show; anything long
   // is a diagnostic dump, not a message.
   if (text.length > 0 && text.length <= 160 && !/[{}\[\]"]/.test(text))
-    return label + ' failed: ' + text;
-  return label + ' failed. Please try again.';
+    return t('{action} failed: {error}', { action: label, error: text });
+  return t('{action} failed. Please try again.', { action: label });
 }

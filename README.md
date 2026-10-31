@@ -73,10 +73,15 @@ Fluence is built for users who prioritize privacy and local data security:
 
 ## 🚀 Quick Start & Installation
 
-1. Download the latest installer (`.exe` or `.msi`) from the [Releases](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases) tab.
-2. Run the installer and open **Fluence**.
-3. The onboarding setup wizard will guide you to configure your **Groq API Key**.
-4. Press `Ctrl+Shift+Space` in any app, or set your favorite custom shortcut, speak, and press it again to watch your voice convert to text instantly!
+**Windows:** download the latest installer (`.exe` or `.msi`) from the [Releases](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases) tab.
+
+**Linux (Ubuntu / Debian / Fedora):** download the `.deb` (Ubuntu/Debian: `sudo apt install ./fluence_*_amd64.deb`) or the `.AppImage` (`chmod +x`, then run - works on most distros) from the [Releases](https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases) tab.
+
+1. Run the installer and open **Fluence**.
+2. The onboarding setup wizard will guide you to configure your **Groq API Key** (stored in Windows Credential Manager, or Secret Service / GNOME Keyring / KWallet on Linux).
+3. Press `Ctrl+Shift+Space` in any app, or set your favorite custom shortcut, speak, and press it again to watch your voice convert to text instantly!
+
+> **Linux notes:** voice-typing injection works on X11. On Wayland, synthetic input needs compositor cooperation - if injection fails, the text stays in your clipboard, paste it with Ctrl+V. Autostart uses an XDG desktop entry (`~/.config/autostart/fluence.desktop`). The SenseVoice offline engine is Windows-only; on Linux use Moonshine v2 Small/Medium or online STT.
 
 ---
 
@@ -91,11 +96,13 @@ To run or build the application from source, you need **Rust** and **Node.js** i
    ```
 3. Run the development environment:
    ```bash
-   npm run dev
+   npm run dev          # Windows
+   npm run dev:linux    # Linux (Ubuntu / Fedora / Debian)
    ```
-4. Build the production installers (Wix MSI and NSIS EXE):
+4. Build the production installers (Windows: Wix MSI and NSIS EXE; Linux: deb and AppImage):
    ```bash
-   npm run build
+   npm run build          # Windows
+   npm run build:linux    # Linux
    ```
    *The installers will be generated inside `src-tauri/target/release/bundle/`.*
 

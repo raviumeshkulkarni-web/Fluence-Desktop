@@ -911,16 +911,36 @@ mod tests {
     /// Returns the store path; the caller MUST restore write permission.
     fn block_legacy_store_aside() -> std::path::PathBuf {
         let path = agents_path();
-        let mut perms = std::fs::metadata(&path)
-            .expect("precondition: the legacy store must exist")
-            .permissions();
-        perms.set_readonly(true);
-        std::fs::set_permissions(&path, perms).expect("must be able to set read-only");
-        assert!(
-            path.exists(),
-            "the store must still be READABLE, or the delete has nothing to remove"
-        );
-        path
+        #[cfg(target_os = "windows")]
+        {
+            let mut perms = std::fs::metadata(&path)
+                .expect("precondition: the legacy store must exist")
+                .permissions();
+            perms.set_readonly(true);
+            std::fs::set_permissions(&path, perms).expect("must be able to set read-only");
+            assert!(
+                path.exists(),
+                "the store must still be READABLE, or the delete has nothing to remove"
+            );
+            path
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            let dir = path
+                .parent()
+                .expect("store path must have a parent dir")
+                .to_path_buf();
+            let mut perms = std::fs::metadata(&dir)
+                .expect("precondition: the store dir must exist")
+                .permissions();
+            perms.set_readonly(true);
+            std::fs::set_permissions(&dir, perms).expect("must be able to set read-only");
+            assert!(
+                path.exists(),
+                "the store must still be READABLE, or the delete has nothing to remove"
+            );
+            dir
+        }
     }
 
     /// A name unique per run.

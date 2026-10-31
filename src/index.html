@@ -1,0 +1,1046 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';" />
+  <title>Fluence Settings</title>
+  <link rel="stylesheet" href="css/settings.css" />
+</head>
+<body>
+  <!-- Custom Titlebar -->
+  <div data-tauri-drag-region class="titlebar">
+    <div class="titlebar-title" data-tauri-drag-region>Fluence Settings</div>
+    <div class="titlebar-controls">
+      <button type="button" class="titlebar-button" id="titlebar-minimize" aria-label="Minimize window">
+        <svg width="11" height="1" viewBox="0 0 11 1" aria-hidden="true"><rect width="11" height="1" fill="currentColor"/></svg>
+      </button>
+      <button type="button" class="titlebar-button" id="titlebar-maximize" aria-label="Maximize window" title="Maximize window">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.75" y="0.75" width="8.5" height="8.5" rx="1" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>
+      </button>
+      <button type="button" class="titlebar-button titlebar-close" id="titlebar-close" aria-label="Minimize to tray — still listening for hotkey" title="Minimize to tray — still listening for hotkey">
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M5 1v5M2 4.5L5 7.5l3-3M1 9h8" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+      </button>
+    </div>
+  </div>
+<div class="app-shell">
+
+  <!-- Sidebar Navigation -->
+  <nav class="sidebar" role="navigation" aria-label="Settings navigation">
+    <div class="sidebar-logo" style="display:flex;align-items:center;gap:10px;">
+      <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-sidebar)" stroke-width="2.2" stroke-dasharray="1.8 3" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-sidebar)" stroke-width="2.2" stroke-dasharray="2 3" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-sidebar)" stroke-width="2.2" stroke-dasharray="2 2" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-sidebar)"/>
+        <defs>
+          <linearGradient id="logo-grad-sidebar" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+              <stop offset="0%" stop-color="#8B45D8"/>
+              <stop offset="50%" stop-color="#8B45D8"/>
+              <stop offset="100%" stop-color="#0BD6E3"/>
+          </linearGradient>
+        </defs>
+      </svg>
+      <span class="logo-text" style="font-weight:600;font-size:22px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:20px;margin-left:6px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></span>
+    </div>
+
+    <span class="nav-section-label">Home</span>
+    <button type="button" class="nav-item active" data-page="dashboard" id="nav-dashboard" aria-current="page">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 3v16a2 2 0 0 0 2 2h16"/><path d="M7 14l4-4 4 3 5-6"/></svg>
+      Dashboard
+    </button>
+    <button type="button" class="nav-item" data-page="history" id="nav-history">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+      History
+    </button>
+    <span class="nav-section-label" style="margin-top:8px;">Configuration</span>
+    <button type="button" class="nav-item" data-page="general" id="nav-general">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M4.93 4.93a10 10 0 0 0 0 14.14"/></svg>
+      General
+    </button>
+    <button type="button" class="nav-item" data-page="providers" id="nav-providers">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/></svg>
+      Providers
+    </button>
+    <button type="button" class="nav-item" data-page="dictionary" id="nav-dictionary">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
+      Dictionary
+    </button>
+    <button type="button" class="nav-item" data-page="snippets" id="nav-snippets">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3"/><path d="M12 8v8M9 11l3-3 3 3"/></svg>
+      Snippets
+    </button>
+    <button type="button" class="nav-item" data-page="sync" id="nav-sync">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg>
+      Sync
+    </button>
+    <button type="button" class="nav-item" data-page="about" id="nav-about">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+      About
+    </button>
+
+    <div class="sidebar-footer">
+      <div class="sidebar-update-widget" id="sidebar-update-widget">
+        <!-- Version Label Header (v1.6.0 / Update Available / Update Ready) -->
+        <div class="sidebar-version-label" id="sidebar-version-label">v…</div>
+
+        <!-- Optional Status Subtitle -->
+        <div id="sidebar-update-status" class="sidebar-update-status" role="status"></div>
+
+        <!-- Progress bar container -->
+        <div id="sidebar-update-progress-bar" class="sidebar-update-progress-bar" role="progressbar" aria-label="Update download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+          <div id="sidebar-update-progress-fill" class="sidebar-update-progress-fill"></div>
+        </div>
+
+        <!-- Single Control Button always present -->
+        <button id="sidebar-update-btn" class="sidebar-update-btn">
+          <span id="sidebar-update-btn-text">Check for Updates</span>
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Content -->
+  <main class="content-area" role="main">
+
+    <!-- ===== GENERAL PAGE ===== -->
+    <section class="page" id="page-general">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">General</h1>
+        <p class="page-subtitle">Hotkey, recording mode, overlay, and system preferences</p>
+        <p class="autosave-hint" aria-live="polite">All changes save automatically</p>
+      </div>
+
+      <!-- Hotkey -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Global Shortcut</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" id="hotkey-label">Recording Hotkey</div>
+            <div class="setting-desc">Press this key combination to start/stop voice recording from any app</div>
+          </div>
+          <div class="setting-control">
+            <div class="hotkey-recorder">
+              <div class="hotkey-display" id="hotkey-display" tabindex="0" role="button" aria-labelledby="hotkey-label hotkey-display-text">
+                <span id="hotkey-display-text">Ctrl+Shift+Space</span>
+              </div>
+              <button class="btn-ghost btn-small" id="hotkey-clear-btn">Reset</button>
+            </div>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Transcription Mode Behavior</div>
+            <div class="setting-desc">How the hotkey controls recording</div>
+          </div>
+          <div class="setting-control">
+            <select id="recording-mode-select" class="select-md" aria-label="Transcription mode behavior">
+              <option value="push_to_toggle">Push-to-Toggle</option>
+              <option value="hold_to_record">Hold-to-Record</option>
+            </select>
+          </div>
+        </div>
+        <!-- Agent Mode Hotkey -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" id="agent-hotkey-label">Agent Mode Hotkey</div>
+            <div class="setting-desc">Dedicated hotkey to activate AI Agent Mode from any app</div>
+          </div>
+          <div class="setting-control">
+            <div class="hotkey-recorder">
+              <div class="hotkey-display" id="agent-hotkey-display" tabindex="0" role="button" aria-labelledby="agent-hotkey-label agent-hotkey-display-text">
+                <span id="agent-hotkey-display-text">Ctrl+Shift+A</span>
+              </div>
+              <button class="btn-ghost btn-small" id="agent-hotkey-clear-btn">Reset</button>
+            </div>
+          </div>
+        </div>
+        <!-- Agent Mode Recording Mode -->
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Agent Mode Behavior</div>
+            <div class="setting-desc">How the agent hotkey controls recording</div>
+          </div>
+          <div class="setting-control">
+            <select id="agent-recording-mode-select" class="select-md" aria-label="Agent mode behavior">
+              <option value="push_to_toggle">Push-to-Toggle</option>
+              <option value="hold_to_record">Hold-to-Record</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Overlay -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Recording Overlay</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Overlay Style</div>
+            <div class="setting-desc">Choose between the full telemetry card, compact pill, or minimal circular bubble</div>
+          </div>
+          <div class="setting-control">
+            <select id="overlay-style-select" class="select-md" aria-label="Overlay style">
+              <option value="full">Full Status Island</option>
+              <option value="compact">Compact Pill</option>
+              <option value="bubble">Minimal Bubble</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Overlay Position</div>
+            <div class="setting-desc">Where the floating overlay appears on screen during recording</div>
+          </div>
+          <div class="setting-control">
+            <select id="overlay-position-select" class="select-md" aria-label="Overlay position">
+              <option value="bottom_right">Bottom Right</option>
+              <option value="bottom_left">Bottom Left</option>
+              <option value="center">Center Bottom</option>
+              <option value="top_left">Top Left</option>
+              <option value="top_center">Top Center</option>
+              <option value="top_right">Top Right</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Audio -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Audio Input</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Microphone</div>
+            <div class="setting-desc">Select the audio input device for voice recording</div>
+          </div>
+          <div class="setting-control">
+            <select id="audio-device-select" class="select-lg" aria-label="Microphone input device">
+              <option value="">System Default</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Transcription Language</div>
+            <div class="setting-desc">Hint to the STT model about the spoken language</div>
+          </div>
+          <div class="setting-control">
+            <select id="language-select" class="select-md" aria-label="Transcription language">
+              <option value="en">English</option>
+              <option value="auto">Auto-detect</option>
+              <option value="es">Spanish</option>
+              <option value="fr">French</option>
+              <option value="de">German</option>
+              <option value="zh">Chinese</option>
+              <option value="ja">Japanese</option>
+              <option value="hi">Hindi</option>
+              <option value="ar">Arabic</option>
+              <option value="pt">Portuguese</option>
+              <option value="it">Italian</option>
+              <option value="nl">Dutch</option>
+              <option value="ko">Korean</option>
+              <option value="ru">Russian</option>
+              <option value="mr">Marathi</option>
+              <option value="pa">Punjabi</option>
+              <option value="hu">Hungarian</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">AI Polish Style</div>
+            <div class="setting-desc">Automatically rewrite or clean up text before pasting</div>
+          </div>
+          <div class="setting-control">
+            <select id="ai-polish-select" class="select-md" aria-label="AI polish style">
+              <option value="none">None (Raw)</option>
+              <option value="clean">Clean Fillers &amp; Grammar</option>
+              <option value="professional">Professional Tone</option>
+              <option value="bullet_points">Bulleted List</option>
+              <option value="translate_en">Translate to English</option>
+            </select>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Play Completion Sound</div>
+            <div class="setting-desc">Play a short chime when a transcription finishes</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="sound-on-complete-toggle">
+              <input type="checkbox" id="sound-on-complete-cb" aria-label="Play a sound when transcription completes" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <!-- System -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>System</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Launch at Windows Startup</div>
+            <div class="setting-desc">Automatically start Fluence when you log in to Windows</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="autostart-toggle">
+              <input type="checkbox" id="autostart-cb" aria-label="Launch at Windows startup" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Mute Background Apps</div>
+            <div class="setting-desc">Silence music, videos, and calls while you dictate</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="duck-toggle">
+              <input type="checkbox" id="duck-cb" aria-label="Mute background apps while dictating" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Grab Highlighted Text</div>
+            <div class="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-grab-toggle">
+              <input type="checkbox" id="auto-grab-cb" aria-label="Grab highlighted text when entering Agent Mode" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;padding-top:var(--spacing-md);">
+        <button class="btn-primary" id="save-general-btn" style="min-width:120px;">Save Changes</button>
+      </div>
+    </section>
+
+    <!-- ===== PROVIDERS PAGE ===== -->
+    <section class="page" id="page-providers">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">AI Providers</h1>
+        <p class="page-subtitle">Configure speech-to-text and language model providers</p>
+        <p class="autosave-hint" aria-live="polite">All changes save automatically — keys stay in Windows Credential Manager</p>
+      </div>
+
+      <!-- STT Provider -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Speech-to-Text (STT)</h2></div>
+        <div class="provider-grid" id="stt-provider-grid" role="group" aria-label="Speech-to-text provider">
+          <button class="provider-card selected" data-provider="groq" id="stt-groq" aria-pressed="true">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100" height="100" rx="16" fill="#F55036"/>
+              <path d="M53 20 C 37 20 28 30 28 45 C 28 60 37 70 53 70 C 58 70 63 68 67 65 L 67 71 C 67 82 59 90 47 90 C 40 90 35 87 31 81 L 22 88 C 28 97 37 100 47 100 C 65 100 78 88 78 71 L 78 22 L 67 22 L 67 27 C 63 23 58 20 53 20 Z M 53 60 C 44 60 39 53 39 45 C 39 37 44 30 53 30 C 62 30 67 37 67 45 C 67 53 62 60 53 60 Z" fill="#fff"/>
+            </svg>
+            <span class="provider-name">Groq</span>
+          </button>
+          <button class="provider-card" data-provider="openai" id="stt-openai" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.896zm16.597 3.855l-5.843-3.372 2.02-1.163a.076.076 0 0 1 .071 0l4.83 2.786a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.402-.678zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/>
+            </svg>
+            <span class="provider-name">OpenAI</span>
+          </button>
+          <button class="provider-card" data-provider="mistral" id="stt-mistral" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0" y="0" width="10" height="10" fill="#FCD34D"/>
+              <rect x="40" y="0" width="10" height="10" fill="#FCD34D"/>
+              <rect x="0" y="10" width="10" height="10" fill="#F59E0B"/>
+              <rect x="40" y="10" width="10" height="10" fill="#F59E0B"/>
+              <rect x="0" y="20" width="50" height="10" fill="#F97316"/>
+              <rect x="0" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="20" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="40" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="0" y="40" width="20" height="10" fill="#DC2626"/>
+              <rect x="30" y="40" width="20" height="10" fill="#DC2626"/>
+            </svg>
+            <span class="provider-name">Mistral</span>
+          </button>
+          <button class="provider-card" data-provider="custom" id="stt-custom" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            <span class="provider-name">Custom</span>
+          </button>
+          <button class="provider-card" data-provider="Local Offline" id="stt-offline" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+            </svg>
+            <span class="provider-name">Local Offline</span>
+          </button>
+        </div>
+        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-md);">
+          <div id="stt-credentials-wrapper" style="display:flex;flex-direction:column;gap:var(--spacing-md);">
+          <div class="form-row">
+            <label for="stt-base-url">API Endpoint</label>
+            <input type="url" id="stt-base-url" placeholder="https://api.groq.com/openai" />
+          </div>
+          <div class="form-row">
+            <label for="stt-api-key">API Key</label>
+            <div class="input-with-btn">
+              <input type="password" id="stt-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+              <button class="btn-secondary" id="stt-save-key-btn" style="white-space:nowrap;">Save Key</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="stt-model-select">Model</label>
+            <div class="input-with-btn">
+              <select id="stt-model-select"><option value="whisper-large-v3">whisper-large-v3</option></select>
+              <button class="btn-ghost" id="stt-fetch-models-btn" title="Fetch models from API" aria-label="Fetch speech-to-text models from API">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.9"/></svg>
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
+            <button class="btn-secondary" id="stt-test-btn">Test Connection</button>
+            <div class="connection-status" id="stt-status" role="status">
+              <div class="dot dot-idle"></div>
+              <span id="stt-status-text">Not tested yet — Test to verify</span>
+            </div>
+          </div>
+        </div> <!-- Closes stt-credentials-wrapper -->
+
+        <!-- Offline Model Downloader -->
+        <div id="stt-offline-downloader" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-md);margin-top:4px;padding-top:8px;">
+          <div style="font-weight:600;font-size:14px;color:var(--color-on-surface);display:flex;align-items:center;gap:6px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>
+            Offline Model Manager
+          </div>
+          <!-- Engine picker (Android parity: radio cards with speed/accuracy) -->
+          <div style="display:flex;flex-direction:column;gap:4px;">
+            <span class="text-body-md" style="font-weight:600;">Choose a model</span>
+            <span class="text-muted" style="font-size:var(--text-label-sm);">Pick the option that fits how you dictate. You can change this any time.</span>
+          </div>
+          <div class="offline-model-list" role="radiogroup" aria-label="Offline speech recognition model">
+            <!-- Fast (English) - Moonshine v2 Small -->
+            <div class="offline-model-card" id="v2small-model-card" data-engine="moonshine_v2_small" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Fast (English)</span>
+                <span class="offline-badge">Recommended</span>
+              </div>
+              <span class="text-muted offline-model-desc">Quick, reliable English dictation for everyday use (~142 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 4 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 4 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="v2small-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="v2small-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
+            </div>
+            <!-- Fast (Multilingual) - SenseVoice -->
+            <div class="offline-model-card" id="sensevoice-model-card" data-engine="sensevoice" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Fast (Multilingual)</span>
+              </div>
+              <span class="text-muted offline-model-desc">Dictate in many languages with fast, on-device transcription (~239 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 5 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 3 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i></i><i></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="offline-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="offline-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
+            </div>
+            <!-- Pro (English) - Moonshine v2 Medium -->
+            <div class="offline-model-card" id="v2medium-model-card" data-engine="moonshine_v2_medium" role="radio" aria-checked="false" tabindex="0">
+              <div class="offline-model-card-top">
+                <span class="offline-radio" aria-hidden="true"></span>
+                <span class="text-body-md offline-model-title">Pro (English)</span>
+              </div>
+              <span class="text-muted offline-model-desc">Our most accurate English model. Ideal when every word matters. Slightly slower to respond (~269 MB)</span>
+              <div class="offline-metrics">
+                <span class="offline-metric" role="img" aria-label="Speed 2 out of 5">
+                  <span class="offline-metric-label">Speed</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i></i><i></i><i></i></span>
+                </span>
+                <span class="offline-metric" role="img" aria-label="Accuracy 5 out of 5">
+                  <span class="offline-metric-label">Accuracy</span>
+                  <span class="offline-metric-segs"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>
+                </span>
+              </div>
+              <div class="offline-model-actions">
+                <button class="btn-primary" id="v2medium-download-btn" style="min-width:140px;">Download Model</button>
+                <button class="btn-danger hidden" id="v2medium-delete-btn" style="min-width:140px;">Delete Model</button>
+              </div>
+            </div>
+          </div><!-- Closes offline-model-list -->
+          <div id="offline-progress-wrapper" class="hidden" style="display:flex;flex-direction:column;gap:var(--spacing-sm);background:var(--color-surface-secondary);padding:14px;border-radius:var(--radius-md);">
+            <div style="display:flex;justify-content:space-between;font-size:12px;">
+              <span id="offline-progress-status" style="font-weight:500;">Downloading ASR Engine…</span>
+              <span id="offline-progress-percentage" style="font-weight:600;color:var(--color-on-surface);">0%</span>
+            </div>
+            <div style="width:100%;height:8px;background:var(--color-border-structural);border-radius:var(--radius-xs);overflow:hidden;" role="progressbar" aria-label="Offline model download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="offline-progress-track">
+              <div id="offline-progress-fill" style="width:0%;height:100%;background:rgba(255,255,255,0.30);border-radius:var(--radius-xs);transition:width 0.2s ease;"></div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:11px;color:var(--color-on-surface-variant);">
+              <span id="offline-progress-bytes">0 / 0 MB</span>
+              <button class="btn-ghost btn-xs" id="offline-cancel-btn">Cancel</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <!-- LLM Provider -->
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Language Model (Agent Mode)</h2></div>
+        <div class="provider-grid" id="llm-provider-grid" role="group" aria-label="Language model provider">
+          <button class="provider-card selected" data-provider="groq" id="llm-groq" aria-pressed="true">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <rect width="100" height="100" rx="16" fill="#F55036"/>
+              <path d="M53 20 C 37 20 28 30 28 45 C 28 60 37 70 53 70 C 58 70 63 68 67 65 L 67 71 C 67 82 59 90 47 90 C 40 90 35 87 31 81 L 22 88 C 28 97 37 100 47 100 C 65 100 78 88 78 71 L 78 22 L 67 22 L 67 27 C 63 23 58 20 53 20 Z M 53 60 C 44 60 39 53 39 45 C 39 37 44 30 53 30 C 62 30 67 37 67 45 C 67 53 62 60 53 60 Z" fill="#fff"/>
+            </svg>
+            <span class="provider-name">Groq</span>
+          </button>
+          <button class="provider-card" data-provider="openai" id="llm-openai" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+              <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.896zm16.597 3.855l-5.843-3.372 2.02-1.163a.076.076 0 0 1 .071 0l4.83 2.786a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.402-.678zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z"/>
+            </svg>
+            <span class="provider-name">OpenAI</span>
+          </button>
+          <button class="provider-card" data-provider="mistral" id="llm-mistral" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg">
+              <rect x="0" y="0" width="10" height="10" fill="#FCD34D"/>
+              <rect x="40" y="0" width="10" height="10" fill="#FCD34D"/>
+              <rect x="0" y="10" width="10" height="10" fill="#F59E0B"/>
+              <rect x="40" y="10" width="10" height="10" fill="#F59E0B"/>
+              <rect x="0" y="20" width="50" height="10" fill="#F97316"/>
+              <rect x="0" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="20" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="40" y="30" width="10" height="10" fill="#EA580C"/>
+              <rect x="0" y="40" width="20" height="10" fill="#DC2626"/>
+              <rect x="30" y="40" width="20" height="10" fill="#DC2626"/>
+            </svg>
+            <span class="provider-name">Mistral</span>
+          </button>
+          <button class="provider-card" data-provider="custom" id="llm-custom" aria-pressed="false">
+            <svg aria-hidden="true" focusable="false" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+            <span class="provider-name">Custom</span>
+          </button>
+        </div>
+        <div style="padding:0 var(--spacing-md) var(--spacing-md);display:flex;flex-direction:column;gap:var(--spacing-md);">
+          <div class="form-row">
+            <label for="llm-base-url">API Endpoint</label>
+            <input type="url" id="llm-base-url" placeholder="https://api.groq.com/openai" />
+          </div>
+          <div class="form-row">
+            <label for="llm-api-key">API Key</label>
+            <div class="input-with-btn">
+              <input type="password" id="llm-api-key" placeholder="sk-••••••••••••••••" autocomplete="off" />
+              <button class="btn-secondary" id="llm-save-key-btn" style="white-space:nowrap;">Save Key</button>
+            </div>
+          </div>
+          <div class="form-row">
+            <label for="llm-model-select">Model</label>
+            <div class="input-with-btn">
+              <select id="llm-model-select"><option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option></select>
+              <button class="btn-ghost" id="llm-fetch-models-btn" title="Fetch models from API" aria-label="Fetch language models from API">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-4.9"/></svg>
+              </button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:var(--spacing-md);">
+            <button class="btn-secondary" id="llm-test-btn">Test Connection</button>
+            <div class="connection-status" id="llm-status" role="status">
+              <div class="dot dot-idle"></div>
+              <span id="llm-status-text">Not tested yet — Test to verify</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;padding-top:var(--spacing-md);">
+        <button class="btn-primary" id="save-providers-btn" style="min-width:120px;">Save Changes</button>
+      </div>
+    </section>
+
+    <!-- ===== DICTIONARY PAGE ===== -->
+    <section class="page" id="page-dictionary">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Custom Dictionary</h1>
+        <p class="page-subtitle">Correct specific words or phrases automatically after transcription</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Correction Learning</h2>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Learn Corrections</div>
+            <div class="setting-desc">Suggest transcription corrections based on detected patterns</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-learn-toggle">
+              <input type="checkbox" id="auto-learn-cb" aria-label="Auto-learn transcription corrections" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Auto-Accept Suggestions</div>
+            <div class="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch" id="auto-accept-toggle">
+              <input type="checkbox" id="auto-accept-cb" aria-label="Auto-accept repeated correction suggestions" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Word Corrections</h2>
+          <div style="display:flex;gap:var(--spacing-sm);">
+            <button class="btn-ghost btn-small" id="import-dict-btn">Import</button>
+            <button class="btn-ghost btn-small" id="export-dict-btn">Export</button>
+            <button class="btn-primary btn-sm" id="add-dict-btn">+ Add Entry</button>
+          </div>
+        </div>
+        <div id="dict-add-row" class="hidden">
+          <div class="form-row" style="flex:1;">
+            <label for="dict-spoken-input">Spoken Word/Phrase</label>
+            <input type="text" id="dict-spoken-input" placeholder="e.g. fluence" />
+          </div>
+          <div class="form-row" style="flex:1;">
+            <label for="dict-corrected-input">Corrected Form</label>
+            <input type="text" id="dict-corrected-input" placeholder="e.g. Fluence" />
+          </div>
+          <div style="display:flex;gap:var(--spacing-sm);">
+            <button class="btn-primary btn-sm" id="dict-save-btn">Save</button>
+            <button class="btn-ghost btn-sm" id="dict-cancel-btn">Cancel</button>
+          </div>
+        </div>
+        <table class="dict-table" id="dict-table">
+          <thead>
+            <tr>
+              <th class="col-word">Spoken</th>
+              <th class="col-word">Corrected</th>
+              <th class="col-meta added-col">Added</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="dict-table-body">
+            <tr id="dict-empty-row">
+              <td colspan="4">
+                <div class="empty-state">
+                  <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/>
+                    <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/>
+                  </svg>
+                  <div class="empty-state-title">No dictionary entries yet</div>
+                  <div class="empty-state-hint">Add corrections for words that are often misheard during transcription</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Suggestions Section -->
+      <div class="settings-section" style="margin-top:var(--spacing-lg);">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Suggested Corrections</h2>
+          <div class="suggestions-bulk-actions" style="display:flex;align-items:center;gap:var(--spacing-sm);">
+            <span id="suggestions-selected-count">0 selected</span>
+            <button class="btn-ghost btn-small" id="dismiss-selected-btn" disabled>Dismiss Selected</button>
+            <button class="btn-ghost btn-small hidden" id="clear-selection-btn">Cancel</button>
+          </div>
+        </div>
+        <table class="dict-table" id="suggestions-table">
+          <thead>
+            <tr>
+              <th class="select-col">
+                <input type="checkbox" id="select-all-suggestions" aria-label="Select all suggestions">
+              </th>
+              <th class="col-word">Detected</th>
+              <th class="col-word">Should Be</th>
+              <th class="col-meta seen-col">Seen</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="suggestions-table-body">
+            <tr id="suggestions-empty-row">
+              <td colspan="5">
+                <div class="empty-state">
+                  <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M9 18h6"/>
+                    <path d="M10 22h4"/>
+                    <path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/>
+                  </svg>
+                  <div class="empty-state-title">No suggestions yet</div>
+                  <div class="empty-state-hint">Correction suggestions will appear here as you use dictation regularly</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== DASHBOARD PAGE ===== -->
+    <section class="page active" id="page-dashboard">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Dashboard</h1>
+        <p class="page-subtitle">Your transcription activity at a glance</p>
+      </div>
+
+      <!-- Hero Stats -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-eyebrow">Lifetime</div>
+          <div class="stat-value" id="stat-total-words">0</div>
+          <div class="stat-label">Words Transcribed</div>
+          <div class="stat-sub" id="stat-total-words-sub">to date</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-eyebrow">Estimate · 40 WPM</div>
+          <div class="stat-value" id="stat-time-saved">0m</div>
+          <div class="stat-label">Typing Time Saved</div>
+          <div class="stat-sub" id="stat-time-saved-sub">to date</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-eyebrow">Recorded</div>
+          <div class="stat-value" id="stat-dictation-time">0m</div>
+          <div class="stat-label">Dictation Time</div>
+          <div class="stat-sub" id="stat-dictation-sub">to date</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-eyebrow">Last 30 days</div>
+          <div class="stat-value" id="stat-monthly-saved">0m</div>
+          <div class="stat-label">30-Day Time Saved</div>
+          <div class="stat-sub" id="stat-monthly-sub">in last 30 days</div>
+        </div>
+      </div>
+
+      <!-- Weekly Activity Chart - Area Under The Curve -->
+      <div class="settings-section dashboard-chart-card">
+        <div class="settings-section-header dashboard-chart-header">
+          <div class="dashboard-chart-titles">
+            <h2>Weekly Activity</h2>
+            <p class="chart-range" id="chart-range-label">Last 7 days</p>
+          </div>
+          <span id="chart-header-count" class="chart-summary">Loading…</span>
+        </div>
+        <div class="dashboard-chart-body" id="weekly-chart">
+          <!-- Y-Axis title (no numeric ticks: values live on the data points) -->
+          <div class="chart-y-axis" aria-hidden="true">
+            <span class="axis-title-y">Transcriptions</span>
+          </div>
+
+          <!-- Main Canvas Column -->
+          <div class="chart-canvas-col" id="chart-canvas-col">
+            <svg id="weekly-area-svg" role="img" aria-label="Weekly transcription activity area chart">
+              <defs>
+                <linearGradient id="area-gradient" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stop-color="#8E7CC3" stop-opacity="0.22" />
+                  <stop offset="50%" stop-color="#7498C6" stop-opacity="0.10" />
+                  <stop offset="100%" stop-color="#5FB4C2" stop-opacity="0.03" />
+                </linearGradient>
+                <linearGradient id="curve-stroke-grad" x1="0" y1="0" x2="1" y2="0" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#8E7CC3" />
+                  <stop offset="55%" stop-color="#7498C6" />
+                  <stop offset="100%" stop-color="#5FB4C2" />
+                </linearGradient>
+              </defs>
+              <g id="weekly-chart-grid"></g>
+              <!-- Area Fill -->
+              <path id="weekly-area-path" d="" fill="url(#area-gradient)" />
+              <!-- Curve Stroke -->
+              <path id="weekly-curve-path" d="" fill="none" stroke="url(#curve-stroke-grad)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+
+              <!-- Data dots + value labels (rendered by JS) -->
+              <g id="weekly-chart-points"></g>
+              <g id="weekly-chart-labels"></g>
+            </svg>
+
+            <!-- Weekday labels (counts shown once, above the curve dots) -->
+            <div class="chart-day-labels" id="chart-day-labels">
+              <div class="chart-day-cell" data-day="0"><span class="day-name">Mon</span></div>
+              <div class="chart-day-cell" data-day="1"><span class="day-name">Tue</span></div>
+              <div class="chart-day-cell" data-day="2"><span class="day-name">Wed</span></div>
+              <div class="chart-day-cell" data-day="3"><span class="day-name">Thu</span></div>
+              <div class="chart-day-cell" data-day="4"><span class="day-name">Fri</span></div>
+              <div class="chart-day-cell" data-day="5"><span class="day-name">Sat</span></div>
+              <div class="chart-day-cell" data-day="6"><span class="day-name">Sun</span></div>
+            </div>
+
+            <!-- X-Axis title -->
+            <div class="axis-title-x">Days</div>
+          </div>
+
+          <div class="chart-tooltip" id="chart-tooltip" hidden></div>
+          <div class="chart-empty" id="chart-empty" hidden>No activity this week yet — press your hotkey to dictate.</div>
+        </div>
+      </div>
+
+      <!-- This Week insights — pure derivation from the 7 weekly counts,
+           no extra backend calls, so nothing sync/DB related is touched -->
+      <div class="insights-grid">
+        <div class="insight-card">
+          <div class="insight-eyebrow">Most active day</div>
+          <div class="insight-value" id="insight-best-day">–</div>
+          <div class="insight-sub" id="insight-best-day-sub">this week</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Daily average</div>
+          <div class="insight-value" id="insight-daily-avg">–</div>
+          <div class="insight-sub">transcriptions / day</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Active days</div>
+          <div class="insight-value" id="insight-active-days">–</div>
+          <div class="insight-sub" id="insight-active-sub">of 7 days</div>
+        </div>
+        <div class="insight-card">
+          <div class="insight-eyebrow">Today</div>
+          <div class="insight-value" id="insight-today">–</div>
+          <div class="insight-sub" id="insight-today-sub">so far</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== HISTORY PAGE ===== -->
+    <section class="page" id="page-history">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">History</h1>
+        <p class="page-subtitle">Browse and search every transcription on this device</p>
+      </div>
+
+      <!-- Recent History -->
+      <div class="settings-section" style="overflow:hidden;">
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;">
+          <h2>Recent Transcriptions</h2>
+          <button class="btn-danger btn-xs" id="clear-history-btn">Clear All</button>
+        </div>
+        <div class="search-wrapper">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+          <input type="search" id="history-search" placeholder="Search transcriptions…" aria-label="Search transcriptions" />
+        </div>
+        <div id="history-list" style="max-height:400px;overflow-y:auto;">
+          <div class="empty-state" id="history-empty">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true">
+              <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/>
+              <path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+              <line x1="12" y1="19" x2="12" y2="23"/>
+              <line x1="8" y1="23" x2="16" y2="23"/>
+            </svg>
+            <div class="empty-state-title">No transcriptions yet</div>
+            <div class="empty-state-hint">Press <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Space</kbd> to start your first transcription</div>
+          </div>
+          <div class="empty-state hidden" id="history-no-results">
+            <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" aria-hidden="true"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+            <div class="empty-state-title">No matches</div>
+            <div class="empty-state-hint" id="history-no-results-hint">Nothing matches your search.</div>
+            <button class="btn-ghost btn-sm" id="history-clear-search-btn">Clear search</button>
+          </div>
+        </div>
+        <div style="padding:var(--spacing-md);display:flex;justify-content:center;" id="history-load-more" class="hidden">
+          <button class="btn-ghost" id="load-more-btn">Load More</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== SNIPPETS PAGE ===== -->
+    <section class="page" id="page-snippets">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Text Expansion</h1>
+        <p class="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="setting-row" style="padding-bottom:var(--spacing-lg);border-bottom:1px solid var(--color-outline-variant);">
+          <div class="setting-info">
+            <div class="setting-label">Enable Text Expansion</div>
+            <div class="setting-desc">Dictate a short trigger like "my linkedin" and Fluence pastes your expansion text instead</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="snippets-enabled-cb" aria-label="Enable text expansion" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+
+        <div class="settings-section-header" style="display:flex;justify-content:space-between;align-items:center;margin-top:var(--spacing-lg);">
+          <h2>My Snippets</h2>
+          <button class="btn-primary btn-sm" id="add-snippet-btn">+ Add Snippet</button>
+        </div>
+        <div id="snippet-add-row" class="hidden" style="padding:var(--spacing-md);display:flex;gap:var(--spacing-md);align-items:flex-end;">
+          <div class="form-row" style="flex:1;">
+            <label for="snippet-trigger-input">Spoken Trigger</label>
+            <input type="text" id="snippet-trigger-input" maxlength="100" placeholder="e.g. my linkedin" />
+          </div>
+          <div class="form-row" style="flex:2;">
+            <label for="snippet-expansion-input">Expansion Text</label>
+            <input type="text" id="snippet-expansion-input" maxlength="500" placeholder="e.g. https://linkedin.com/in/username" />
+          </div>
+          <div style="display:flex;gap:var(--spacing-sm);">
+            <button class="btn-primary btn-sm" id="snippet-save-btn">Save</button>
+            <button class="btn-ghost btn-sm" id="snippet-cancel-btn">Cancel</button>
+          </div>
+        </div>
+        <table class="dict-table">
+          <thead>
+            <tr>
+              <th>Trigger</th>
+              <th>Expansion</th>
+              <th class="actions">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="snippet-table-body">
+            <tr id="snippet-empty-row">
+              <td colspan="3">
+                <div class="empty-state">
+                  <svg class="empty-state-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <path d="M5 8V5h3M16 5h3v3M5 16v3h3M16 19h3v-3"/>
+                    <path d="M12 8v8M9 11l3-3 3 3"/>
+                  </svg>
+                  <div class="empty-state-title">No snippets yet</div>
+                  <div class="empty-state-hint">Add a trigger phrase and its expansion, e.g. "my email" becomes your full email address</div>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ===== SYNC PAGE ===== -->
+    <section class="page" id="page-sync">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">Sync</h1>
+        <p class="page-subtitle">Back up your dictionary, snippets, usage stats, and preferences to your private Google Drive app storage. Transcripts and history never leave this device.</p>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Cloud Sync</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Enable Background Sync</div>
+            <!-- Cadence copy mirrors SYNC_CADENCE_MS in src-tauri/src/sync/scheduler.rs (15 min) -->
+            <div class="setting-desc">Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
+          </div>
+          <div class="setting-control">
+            <label class="toggle-switch">
+              <input type="checkbox" id="sync-enabled-cb" aria-label="Enable background sync" />
+              <div class="toggle-track"><div class="toggle-thumb"></div></div>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <div class="settings-section-header"><h2>Account</h2></div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label" id="sync-account-label">Not Signed In</div>
+            <div class="setting-desc" id="sync-account-desc">Sign in with Google to start syncing your data.</div>
+          </div>
+          <div class="setting-control">
+            <button type="button" class="btn-primary btn-sm" id="sync-sign-in-btn">Sign in with Google</button>
+            <button type="button" class="btn-ghost btn-sm" id="sync-sign-out-btn" style="display:none;">Sign Out</button>
+          </div>
+        </div>
+        <div class="setting-row">
+          <div class="setting-info">
+            <div class="setting-label">Sync Status</div>
+            <div class="setting-desc" id="sync-status-desc">Sync is off.</div>
+          </div>
+          <div class="setting-control">
+            <button type="button" class="btn-ghost btn-sm" id="sync-now-btn">Sync Now</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ===== ABOUT PAGE ===== -->
+    <section class="page" id="page-about">
+      <div class="page-header">
+        <h1 class="page-title" tabindex="-1">About Fluence</h1>
+        <p class="page-subtitle">AI-powered voice typing for Windows</p>
+      </div>
+
+      <div class="settings-section">
+        <div style="padding:var(--spacing-xl);display:flex;flex-direction:column;align-items:center;gap:var(--spacing-lg);text-align:center;">
+          <div style="display:flex;align-items:center;justify-content:center;gap:12px;">
+            <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="1.8 3" stroke-linecap="round"/>
+              <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="2 3" stroke-linecap="round"/>
+              <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-about)" stroke-width="2.2" stroke-dasharray="2 2" stroke-linecap="round"/>
+              <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-about)"/>
+              <defs>
+                <linearGradient id="logo-grad-about" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
+                  <stop offset="0%" stop-color="#8B45D8"/>
+                  <stop offset="50%" stop-color="#8B45D8"/>
+                  <stop offset="100%" stop-color="#0BD6E3"/>
+                </linearGradient>
+              </defs>
+            </svg>
+            <div class="text-headline-md" style="font-weight:600;font-size:24px;letter-spacing:-0.03em;display:inline-flex;align-items:baseline;">flu<span style="color:var(--color-brand-cyan);">ence</span><span style="font-family:'Allura',cursive;font-weight:400;font-size:22px;margin-left:7px;line-height:1;color:var(--color-on-surface-variant);">Transcribe</span></div>
+          </div>
+          <div class="text-muted text-body-md" style="margin-top:4px;">Version <span id="about-version">1.0.0</span></div>
+          <div class="text-muted" style="font-size:12px;">Closing this window never stops dictation — Fluence stays in the tray.</div>
+           <div class="text-body-md text-muted" style="max-width:400px;line-height:1.7;">
+             Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.
+           </div>
+
+          <!-- Update Status Card -->
+          <div class="update-card" id="update-card" style="width:100%;max-width:420px;margin-top:12px;padding:16px;border-radius:12px;background:var(--color-surface-container);border:1px solid var(--color-outline-variant);display:flex;flex-direction:column;align-items:center;gap:10px;">
+            <div style="display:flex;flex-direction:column;align-items:center;gap:4px;">
+              <div style="font-size:14px;font-weight:600;color:var(--color-on-surface);" id="update-status-title">You're up to date</div>
+              <div style="font-size:11px;color:var(--color-on-surface-variant);" id="update-last-checked"></div>
+            </div>
+            <div style="font-size:13px;color:var(--color-on-surface-variant);display:none;text-align:center;line-height:1.4;" id="update-status-desc"></div>
+            
+            <div id="update-progress-container" style="display:none;width:100%;max-width:280px;margin-top:4px;">
+              <div style="width:100%;height:4px;background:rgba(255,255,255,0.1);border-radius:2px;overflow:hidden;" role="progressbar" aria-label="Update download progress" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" id="update-progress-track">
+                <div id="update-progress-fill" style="width:0%;height:100%;background:var(--color-brand-cyan);transition:width 0.2s ease;"></div>
+              </div>
+              <div style="font-size:11px;color:var(--color-outline);text-align:center;margin-top:4px;" id="update-progress-text">0%</div>
+            </div>
+
+            <div style="display:flex;gap:8px;margin-top:4px;" id="update-status-actions">
+              <button class="btn-primary btn-sm" id="update-action-btn">Check for Updates</button>
+            </div>
+          </div>
+
+          <div class="text-label-sm text-muted">Powered by Tauri v2 · Rust · WebView2</div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+
+
+<!-- Toast container -->
+<div class="toast-container" id="toast-container" role="status" aria-live="polite"></div>
+
+<script src="js/update-manager.js"></script>
+<script src="js/settings.js"></script>
+</body>
+</html>

@@ -1,0 +1,207 @@
+/* Theme presets only replace functional accent roles; Fluence surfaces and
+ * the logo/overlay palettes stay on their existing tokens. */
+:root {
+  --color-brand-cyan: var(--fluence-accent-dark, #0BD6E3);
+  --color-accent-rgb: var(--fluence-accent-dark-rgb, 11, 214, 227);
+  --color-logo-cyan: #0BD6E3;
+  --color-overlay-agent-cyan: #0BD6E3;
+}
+
+[data-theme='light'] {
+  --color-brand-cyan: var(--fluence-accent-light, #0E7490);
+  --color-accent-rgb: var(--fluence-accent-light-rgb, 14, 116, 144);
+  --color-logo-cyan: #0E7490;
+}
+
+[data-theme='light'][data-accent='fluence'] {
+  --color-accent-rgb: 11, 214, 227;
+}
+
+[data-accent]:not([data-accent='fluence']) {
+  --color-on-accent: #09090B;
+  --color-brand-cyan-soft: rgba(var(--color-accent-rgb), 0.8);
+  --color-brand-accent-glow: rgba(var(--color-accent-rgb), 0.2);
+  --color-border-focus-glow: rgba(var(--color-accent-rgb), 0.25);
+  --color-mark-search: rgba(var(--color-accent-rgb), 0.22);
+  --shadow-glow-cyan: 0 0 16px rgba(var(--color-accent-rgb), 0.25);
+}
+
+[data-theme='light'][data-accent]:not([data-accent='fluence']) {
+  --color-on-accent: #FFFFFF;
+  /* Legacy focus-visible outlines (hotkey display, offline model cards,
+   * toggle switch) read --color-border-focus; keep them on the preset
+   * accent instead of the frozen fluence teal. */
+  --color-border-focus: rgba(var(--color-accent-rgb), 0.55);
+  --color-brand-accent-glow: rgba(var(--color-accent-rgb), 0.12);
+  --color-border-focus-glow: rgba(var(--color-accent-rgb), 0.16);
+  --color-mark-search: rgba(var(--color-accent-rgb), 0.16);
+  --shadow-glow-cyan: 0 0 12px rgba(var(--color-accent-rgb), 0.14);
+}
+
+[data-accent]:not([data-accent='fluence']) .btn-primary:not(:disabled) {
+  color: var(--color-on-accent);
+  background: var(--color-brand-cyan);
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .btn-primary:not(:disabled):hover,
+[data-accent]:not([data-accent='fluence']) .btn-primary:not(:disabled):active {
+  color: var(--color-on-accent);
+  background: var(--color-brand-cyan);
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .btn-secondary:hover,
+[data-accent]:not([data-accent='fluence']) .btn-outline:hover,
+[data-accent]:not([data-accent='fluence']) .sidebar-update-btn:hover,
+[data-accent]:not([data-accent='fluence']) .select-trigger:hover,
+[data-accent]:not([data-accent='fluence']) .switch:hover:not([data-disabled]) .switch-track,
+[data-accent]:not([data-accent='fluence']) .hotkey-display:hover,
+[data-accent]:not([data-accent='fluence']) .provider-card:hover,
+[data-accent]:not([data-accent='fluence']) .offline-model-card:hover {
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .choice-surface {
+  --choice-hover-border: var(--color-brand-cyan);
+  --choice-selected-border: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .choice-surface:focus-visible {
+  outline-color: var(--color-focus-ring);
+}
+
+[data-accent]:not([data-accent='fluence']) .switch[data-state='checked'] .switch-track {
+  background: var(--color-brand-cyan);
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .switch[data-state='checked'] .switch-thumb {
+  background: var(--color-on-accent);
+}
+
+[data-accent]:not([data-accent='fluence']) .radio-item[data-state='checked'] {
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .radio-item[data-state='checked'] .radio-indicator::before,
+[data-accent]:not([data-accent='fluence']) .selection-row-main[aria-checked='true'] .selection-radio,
+[data-accent]:not([data-accent='fluence']) .selection-row-main[data-state='checked'] .selection-radio {
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .selection-row-main[aria-checked='true'] .selection-radio::after,
+[data-accent]:not([data-accent='fluence']) .selection-row-main[data-state='checked'] .selection-radio::after {
+  background: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .provider-card.selected,
+[data-accent]:not([data-accent='fluence']) .offline-model-card.selected,
+[data-accent]:not([data-accent='fluence']) .offline-model-card.selected .offline-radio {
+  border-color: var(--color-brand-cyan);
+}
+
+[data-accent]:not([data-accent='fluence']) .offline-model-card.selected .offline-radio::after {
+  background: var(--color-brand-cyan);
+  box-shadow: none;
+}
+
+[data-accent]:not([data-accent='fluence']) .sidebar-update-btn.btn-has-update:not(.btn-ready) {
+  color: var(--color-on-accent);
+}
+
+.settings-card-content.accent-theme-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) 18px;
+}
+
+.accent-preset-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--spacing-sm);
+}
+
+.accent-preset-card {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  width: 100%;
+  min-height: 58px;
+  padding: var(--spacing-sm) var(--spacing-md);
+  color: var(--color-on-surface);
+  text-align: left;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.accent-preset-card:hover {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-brand-cyan);
+}
+
+.accent-preset-card[data-state='checked'] {
+  border-color: var(--color-brand-cyan);
+  background: var(--color-surface-elevated);
+}
+
+.accent-preset-card:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+
+.accent-preset-card::after {
+  position: absolute;
+  top: 50%;
+  right: 10px;
+  width: 12px;
+  height: 12px;
+  transform: translateY(-50%);
+  border: 1px solid var(--color-brand-cyan);
+  border-radius: var(--radius-full);
+  background: var(--color-surface-elevated);
+  content: '';
+}
+
+.accent-preset-card[data-state='checked']::after {
+  border-color: var(--color-brand-cyan);
+  background: var(--color-brand-cyan);
+  box-shadow: inset 0 0 0 3px var(--color-surface-elevated);
+}
+
+.accent-preset-swatch {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-full);
+  background: linear-gradient(
+    90deg,
+    var(--preset-accent-dark) 0 50%,
+    var(--preset-accent-light) 50% 100%
+  );
+}
+
+.accent-preset-label {
+  padding-right: var(--spacing-md);
+  font-size: var(--text-label-lg);
+  font-weight: 500;
+}
+
+.accent-theme-note {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label-sm);
+  line-height: var(--leading-label);
+}
+
+@media (max-width: 850px) {
+  .accent-preset-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

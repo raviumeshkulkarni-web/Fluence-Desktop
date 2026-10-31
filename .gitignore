@@ -1,0 +1,83 @@
+# Local prebuilt native vendor libs (Moonshine v2 C++ core, etc.)
+# Provisioned per-machine from official releases; never committed.
+.vendor/
+
+# Node dependencies
+node_modules/
+
+# Local Rust toolchain (installed project-locally, not system-wide)
+.rust/
+.cargo/
+
+# Local MSVC Build Tools + Windows SDK (installed project-locally)
+.msvc/
+
+# Rust build artifacts
+src-tauri/target/
+src-tauri/moonshine-v2-server/target/
+# Tauri sidecar/resource staging (built from workspace + vendor per-machine;
+# CI stages these; never committed)
+src-tauri/binaries/
+
+# Tauri bundling output
+src-tauri/gen/
+src-tauri/bin/
+
+# React migration build output (rebuilt by web:build; never committed)
+src/dist/
+
+# IDE files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Env files
+.env
+.env.*
+
+# Local dev logs
+.tauri-dev.log
+.tauri-dev.err.log
+dev-server.out.log
+dev-server.err.log
+dev-react.out.log
+dev-react.err.log
+autolearn-run.out.log
+autolearn-run.err.log
+cargo-test-suggestion.log
+
+# Local debug recordings
+src-tauri/debug_recordings/
+
+# Local/extraneous artifacts
+compose-rich-editor/
+diagnostics-runner.mjs
+vs_buildtools.exe
+
+# Local agent/design tooling
+.claude/
+.impeccable/
+# Vendored agent skills (git-cloned shadcn/ui skills + their lockfile).
+# Same class as .claude/ and .impeccable/ above: local tooling, not product
+# code. skills-lock.json is only meaningful alongside the vendored tree.
+.agents/
+skills-lock.json
+
+# Local scratch/test logs (never committed)
+scratch/
+
+# OAuth client-secret file. The app reads it from %LOCALAPPDATA%\Fluence\, but
+# the setup guidance tells developers to create `Fluence/sync-oauth.json`, so a
+# repo-local copy is a realistic accident. It must never be committable.
+sync-oauth.json
+**/sync-oauth.json
+*.oauth.json

@@ -1,0 +1,23 @@
+{
+  "sherpa_version": "v1.12.23",
+  "downloads": [
+    {
+      "url": "https://github.com/k2-fsa/sherpa-onnx/releases/download/v1.12.23/sherpa-onnx-v1.12.23-win-x64-shared.tar.bz2",
+      "filename": "sherpa-onnx-win-x64.tar.bz2",
+      "sha256": "cff9ce91e5dde019d0dd37f7a2fa5b07ded7c920d9c7a78985ca3fa0ede69676"
+    },
+    {
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/model.int8.onnx",
+      "filename": "model.int8.onnx",
+      "sha256": "c71f0ce00bec95b07744e116345e33d8cbbe08cef896382cf907bf4b51a2cd51"
+    },
+    {
+      "url": "https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main/tokens.txt",
+      "filename": "tokens.txt",
+      "sha256": "f449eb28dc567533d7fa59be34e2abca8784f771850c78a47fb731a31429a1dc"
+    }
+  ],
+  "expected_binaries": {
+    "sherpa-onnx-offline-websocket-server.exe": "c4865ec26dbf3624669ca07b4a006b9975dc61171916ad7ec6712d41e380956f"
+  }
+}

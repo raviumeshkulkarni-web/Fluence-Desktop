@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "overlay-capability",
+  "description": "Least privilege for the recording overlay: invoke/listen only, no plugin access",
+  "windows": ["overlay"],
+  "permissions": ["core:default"]
+}

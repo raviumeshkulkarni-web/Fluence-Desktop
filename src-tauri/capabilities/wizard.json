@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "wizard-capability",
+  "description": "Least privilege for first-run setup: invoke only, no plugin access",
+  "windows": ["wizard"],
+  "permissions": ["core:default"]
+}

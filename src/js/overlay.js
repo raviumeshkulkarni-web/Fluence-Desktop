@@ -1,0 +1,1477 @@
+/**
+ * Fluence Windows - Overlay Window JS
+ * 
+ * Controls the floating recording overlay states and connects to
+ * Tauri IPC events from the Rust backend.
+ * 
+ * Design: Precision Ink status card - three luminance zones,
+ * waveform hero, duration timer, mode badge.
+ */
+
+const { invoke } = window.__TAURI__.core;
+const { listen } = window.__TAURI__.event;
+
+// Session-level tracking: superseded sessions whose in-flight transcription
+// result should be preserved in history, sessions the user explicitly
+// discarded (their late results are dropped), the foreground HWND captured
+// at recording start so paste can validate the target, and one recoverable
+// pending injection for the paste-retry/copy UI.
+const supersededSessions = new Set();
+const discardedSessions = new Set();
+let pendingInjection = null;
+
+// DOM refs
+const overlayRoot = document.getElementById('overlay-root');
+const recLabel    = document.getElementById('rec-label');
+const modeBadge   = document.getElementById('mode-badge');
+const cardTimer   = document.getElementById('card-timer');
+const cardDiscard = document.getElementById('card-discard');
+const statusMsg   = document.getElementById('status-msg');
+const statusRetry = document.getElementById('status-retry');
+const recHint     = document.getElementById('rec-hint');
+
+// State
+let currentState = 'idle';
+let aura = null;
+let cachedSettings = null;
+let timerInterval = null;
+let recordingStartTime = 0;
+let retryTimer = null;
+let statusResetTimer = null;
+let nextSessionId = 0;
+let activeSessionId = 0;
+let chimeCtx = null;
+// Agent-mode hardening state (agent path only - the STT flow never reads these)
+let agentRequestSeq = 0;
+let agentRetryContext = null;
+let lastAgentStartAt = 0;
+// Agent Mode: id-only selection, resolved server-side. Null = built-in
+// default. Seeded from the persisted default chosen in Settings; this is the
+// only bridge between that setting and a turn. The STT flow never reads it.
+let activeAgentId = null;
+// Stable placement model: the floating bubble (overlay-root) is the anchor and
+// is pinned to the window edge the OS never moves, so the island's resting spot
+// is identical for every dock.
+let agentPickerPlacement = 'above'; // 'above' | 'below'
+const AGENT_LLM_WATCHDOG_MS = 25000;
+
+function beginSession(explicitId) {
+  const supersededId = activeSessionId;
+  if (typeof explicitId === 'number' && explicitId > 0) {
+    activeSessionId = explicitId;
+    if (explicitId > nextSessionId) {
+      nextSessionId = explicitId;
+    }
+  } else {
+    activeSessionId = ++nextSessionId;
+  }
+  // A transcription still in flight for the previous session can outlive
+  // this one; remember the superseded session so its late result can be
+  // preserved in history (unless the user explicitly discarded that take).
+  if (supersededId > 0 && supersededId !== activeSessionId) {
+    supersededSessions.add(supersededId);
+    discardedSessions.delete(supersededId);
+    // Bounded tracking: keep only the most recent 20 ids.
+    if (supersededSessions.size > 20) {
+      supersededSessions.delete(supersededSessions.values().next().value);
+    }
+  }
+  return activeSessionId;
+}
+
+function isSessionActive(sessionId) {
+  return sessionId !== 0 && sessionId === activeSessionId;
+}
+
+function completeSession(sessionId) {
+  if (isSessionActive(sessionId)) activeSessionId = 0;
+}
+
+function resetTransientUi() {
+  clearAutoDismiss();
+  hideRetry();
+  hideCopy();
+  hideRecHint();
+  setStatusMessage('');
+  hideAppPill();
+  activeAgentId = null;
+  pendingInjection = null;
+  // A new recording invalidates any cached agent retry (A2).
+  agentRetryContext = null;
+}
+
+// ── Native State Reconciliation ─────────────────────────────────
+
+async function reconcileWithNativeState() {
+  try {
+    const state = await invoke('get_hotkey_state');
+    if (!state) return;
+
+    // If native recording is active or owned in Rust, restore local state
+    if (state.active_owner === 1 || state.active_owner === 2) {
+      const isAgent = state.active_owner === 2;
+      const nativeSessionId = (typeof state.session_id === 'number' && state.session_id > 0)
+        ? state.session_id
+        : 1;
+
+      if (isSessionActive(nativeSessionId) && (currentState === 'recording' || currentState === 'agent')) {
+        return;
+      }
+
+      activeSessionId = nativeSessionId;
+      if (nativeSessionId > nextSessionId) {
+        nextSessionId = nativeSessionId;
+      }
+
+      resetTransientUi();
+      setState(isAgent ? 'agent' : 'recording', false);
+      setMode(isAgent ? 'agent' : 'stt');
+
+      try {
+        const prefs = await getRecordingPreferences();
+        setOverlayCorner(prefs.overlayPosition);
+        await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+        if (isAgent) {
+          await resolveDefaultAgentId();
+          setAgentPickerAnchor(
+            resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+            true,
+          );
+        }
+        await invoke('show_overlay', { position: prefs.overlayPosition });
+        updateRecHint();
+        if (overlayRoot) overlayRoot.classList.add('active');
+        startTimer();
+      } catch (uiErr) {
+        console.warn('Failed to restore overlay UI during reconcile:', uiErr);
+      }
+      console.log(`[RECONCILE] Restored native recording session ${nativeSessionId} (mode=${isAgent ? 'agent' : 'stt'})`);
+    }
+  } catch (err) {
+    console.warn('Failed to reconcile native hotkey state:', err);
+  }
+}
+
+// ── Initialization ──────────────────────────────────────────────
+
+window.addEventListener('DOMContentLoaded', async () => {
+  aura = new AuraVisualizer('waveform-canvas');
+  await setupEventListeners();
+  setupDiscardButton();
+  setupRetryButton();
+  setupPasteRecovery();
+  setupHotkeyBusyFeedback();
+  // Reset synchronously before any awaits so a hotkey that fires while the
+  // settings fetch is in flight never observes a stale state (which would
+  // make applyAppInfo skip the pill for that session).
+  setState('idle');
+  try {
+    const prefs = await getRecordingPreferences();
+    applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+  } catch {}
+  void resolveDefaultAgentId();
+  await reconcileWithNativeState();
+});
+
+window.addEventListener('pageshow', () => {
+  void resolveDefaultAgentId();
+  reconcileWithNativeState().catch(() => {});
+});
+
+// ── Tauri Event Listeners ───────────────────────────────────────
+
+async function setupEventListeners() {
+
+  // Hotkey events from Rust (Transcription Mode)
+  await listen('hotkey-start-recording', async (evt) => {
+    console.log('hotkey-start-recording event received');
+    const incomingSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : undefined;
+    const sessionId = beginSession(incomingSessionId);
+    resetTransientUi();
+    setState('recording', false);
+    setMode('stt');
+    if (overlayRoot) overlayRoot.classList.remove('active');
+    // Capture the foreground app while the overlay is still hidden so the
+    // target app owns focus (timing-sensitive).
+    const appIcon = loadAppIcon(sessionId);
+    // Capture the target HWND for paste validation (same timing window:
+    // the target app must own the foreground here).
+    let recordingStarted = false;
+    try {
+      const prefs = await getRecordingPreferences();
+      await invoke('start_recording', { deviceId: prefs.audioDeviceId });
+      recordingStarted = true;
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
+      setOverlayCorner(prefs.overlayPosition);
+      await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+      // Transcription mode has no picker: drop the agent edge anchor so the
+      // bubble uses the standard layout.
+      setAgentPickerAnchor('above', false);
+      await invoke('show_overlay', { position: prefs.overlayPosition });
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
+      updateRecHint();
+
+      // Trigger opening transition immediately
+      if (overlayRoot) overlayRoot.classList.add('active');
+      startTimer();
+      void appIcon;
+    } catch (err) {
+      console.error('Failed to start/show recording:', err);
+      if (recordingStarted) {
+        await invoke('stop_recording').catch(stopErr =>
+          console.error('Failed to clean up recording start:', stopErr)
+        );
+      }
+      if (isSessionActive(sessionId)) {
+        setState('idle');
+        completeSession(sessionId);
+      }
+    }
+  });
+
+  await listen('hotkey-stop-recording', async (evt) => {
+    let sessionId = activeSessionId;
+    const payloadSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : 0;
+
+    // Reload recovery: if JS state was reset (activeSessionId === 0)
+    // but Rust provided an active session_id, adopt it.
+    if (activeSessionId === 0 && payloadSessionId > 0) {
+      activeSessionId = payloadSessionId;
+      sessionId = payloadSessionId;
+      currentState = 'recording';
+    } else if (payloadSessionId > 0 && activeSessionId !== payloadSessionId) {
+      console.warn(`[OVERLAY] Ignoring stop event for session ${payloadSessionId} (current=${activeSessionId})`);
+      return;
+    }
+
+    const sessionActive = isSessionActive(sessionId);
+    const stateCondition = (currentState === 'recording' || currentState === 'agent');
+    if (!sessionActive || !stateCondition) {
+      console.warn(`[OVERLAY] Stop guard rejected: sessionActive=${sessionActive}, stateCondition=${stateCondition}, currentState=${currentState}`);
+      return;
+    }
+
+    stopTimer();
+    await stopAndTranscribe(false, sessionId);
+  });
+
+  // Hotkey events from Rust (Agent Mode)
+  await listen('hotkey-start-agent-recording', async (evt) => {
+    console.log('hotkey-start-agent-recording event received');
+    // Debounce (A4): a duplicate start arriving <300ms into an agent
+    // recording is a hotkey bounce, not intent - dropping it protects the
+    // just-started capture. Starts in any other state proceed normally.
+    const now = Date.now();
+    if (currentState === 'agent' && now - lastAgentStartAt < 300) return;
+    lastAgentStartAt = now;
+
+    const incomingSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : undefined;
+    const sessionId = beginSession(incomingSessionId);
+    resetTransientUi();
+    setState('agent', false);
+    setMode('agent');
+    if (overlayRoot) overlayRoot.classList.remove('active');
+    // Capture the foreground app while the overlay is still hidden so the
+    // target app owns focus (timing-sensitive).
+    const appIcon = loadAppIcon(sessionId);
+    // Capture the target HWND for paste validation (same timing window:
+    // the target app must own the foreground here).
+    let recordingStarted = false;
+    try {
+      const prefs = await getRecordingPreferences();
+      await invoke('start_recording', { deviceId: prefs.audioDeviceId });
+      recordingStarted = true;
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
+      setOverlayCorner(prefs.overlayPosition);
+      await applyOverlayStyle(prefs.overlayStyle, prefs.overlayGlow);
+      // Resolve the agent chosen in Settings before the overlay is shown, so
+      // the turn never runs against the built-in default by accident.
+      await resolveDefaultAgentId();
+      // Edge-anchor the whole agent session so the bubble's resting spot is
+      // identical for every dock and never moves during the turn.
+      setAgentPickerAnchor(
+        resolveAgentPickerPlacement(prefs.overlayPosition, readAgentPickerAnchor(), readAgentPickerViewport()),
+        true,
+      );
+
+      await invoke('show_overlay', { position: prefs.overlayPosition });
+      if (!isSessionActive(sessionId)) {
+        await invoke('stop_recording').catch(() => {});
+        return;
+      }
+      updateRecHint();
+
+      // Trigger opening transition immediately
+      if (overlayRoot) overlayRoot.classList.add('active');
+      startTimer();
+      void appIcon;
+    } catch (err) {
+      console.error('Failed to start/show recording (agent):', err);
+      if (recordingStarted) {
+        await invoke('stop_recording').catch(stopErr =>
+          console.error('Failed to clean up agent recording start:', stopErr)
+        );
+      }
+      if (isSessionActive(sessionId)) {
+        setState('idle');
+        completeSession(sessionId);
+      }
+    }
+  });
+
+  await listen('hotkey-stop-agent-recording', async (evt) => {
+    let sessionId = activeSessionId;
+    const payloadSessionId = (evt && evt.payload && typeof evt.payload.session_id === 'number')
+      ? evt.payload.session_id
+      : 0;
+
+    if (activeSessionId === 0 && payloadSessionId > 0) {
+      activeSessionId = payloadSessionId;
+      sessionId = payloadSessionId;
+      currentState = 'agent';
+    } else if (payloadSessionId > 0 && activeSessionId !== payloadSessionId) {
+      console.warn(`[OVERLAY] Ignoring stop agent event for session ${payloadSessionId} (current=${activeSessionId})`);
+      return;
+    }
+
+    const sessionActive = isSessionActive(sessionId);
+    const stateCondition = (currentState === 'recording' || currentState === 'agent');
+    if (!sessionActive || !stateCondition) {
+      console.warn(`[OVERLAY] Stop agent guard rejected: sessionActive=${sessionActive}, stateCondition=${stateCondition}, currentState=${currentState}`);
+      return;
+    }
+
+    stopTimer();
+    await stopAndTranscribe(true, sessionId);
+  });
+
+  // Live amplitude data from Rust audio stream
+  // BUG-14: ignore waveform work when overlay not in recording (saves JS work after hide)
+  await listen('audio-amplitude', (evt) => {
+    if (currentState !== 'recording' && currentState !== 'agent') return;
+    if (!overlayRoot || !overlayRoot.classList.contains('active')) return;
+    let raw = evt.payload;
+    if (typeof raw === 'object' && raw !== null) {
+      raw = raw.payload ?? raw.value ?? 0;
+    }
+    if (aura && typeof raw === 'number') {
+      aura.setAmplitude(raw);
+    }
+  });
+
+  // Navigate overlay to specific state (from main window)
+  await listen('overlay-state', (evt) => {
+    setState(evt.payload);
+  });
+}
+
+// ── Timer ───────────────────────────────────────────────────────
+
+function startTimer() {
+  stopTimer();
+  recordingStartTime = Date.now();
+  updateTimerDisplay();
+  timerInterval = setInterval(updateTimerDisplay, 1000);
+}
+
+function stopTimer() {
+  if (timerInterval) {
+    clearInterval(timerInterval);
+    timerInterval = null;
+  }
+}
+
+function updateTimerDisplay() {
+  const elapsed = Math.floor((Date.now() - recordingStartTime) / 1000);
+  const mins = Math.floor(elapsed / 60);
+  const secs = elapsed % 60;
+  if (cardTimer) {
+    cardTimer.textContent = `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  }
+}
+
+// ── Mode Badge ──────────────────────────────────────────────────
+
+function setMode(mode) {
+  if (modeBadge) {
+    modeBadge.textContent = mode === 'agent' ? 'Agent Mode' : 'Transcribe';
+  }
+}
+
+// ── Foreground App Pill ──────────────────────────────────────────
+
+let appPollTimer = null;
+let appPollRequestId = 0;
+let appPillHideTimer = null;
+
+// Floating Bubble app-pill toggle: absence means ON, so pre-toggle settings
+// files keep today's behavior. Read fresh in loadAppIcon (summon path) so a
+// just-flipped toggle applies on the very next summon, not one later.
+async function loadAppIcon(sessionId) {
+  const pill = document.getElementById('app-pill');
+  const pillIcon = document.getElementById('app-pill-icon');
+  const pillName = document.getElementById('app-pill-name');
+  if (!pill || !pillIcon || !pillName) return;
+  pill.hidden = true;
+  try {
+    const prefs = await getRecordingPreferences();
+    if (prefs && prefs.showAppPill === false) return;
+    const info = await invoke('get_foreground_app_icon');
+    if (isSessionActive(sessionId) && info && info.name && info.icon_data_url) {
+      applyAppInfo(info);
+    }
+  } catch (err) {
+    console.warn('Failed to load foreground app icon:', err);
+  }
+}
+
+function applyAppInfo(info) {
+  const pill = document.getElementById('app-pill');
+  const pillIcon = document.getElementById('app-pill-icon');
+  const pillName = document.getElementById('app-pill-name');
+  if (!pill || !pillIcon || !pillName || !info || !info.name) return;
+  // Backstop for the poll path and any in-flight fetch that resolves after
+  // the toggle flipped: the cache is fresh here on every path.
+  if ((cachedSettings || {}).show_app_pill === false) return;
+  if (currentState !== 'recording' && currentState !== 'agent') return;
+  if (pillName.textContent !== info.name) {
+    pillIcon.src = info.icon_data_url || pillIcon.src;
+    pillIcon.alt = `${info.name} icon`;
+    pillName.textContent = info.name;
+  }
+  // A pending fade-out must not hide a pill that just became visible again.
+  if (appPillHideTimer) { clearTimeout(appPillHideTimer); appPillHideTimer = null; }
+  pill.hidden = false;
+  // Apply synchronously - requestAnimationFrame can be dropped while the
+  // overlay window is still hidden, which would leave the pill at opacity 0.
+  pill.classList.add('visible');
+}
+
+// Poll the foreground app while recording so the pill tracks app switches.
+// Skipped entirely when the pill is toggled off (display is gated too, so a
+// stale cache here can only cost one session of harmless polling, never UI).
+function startAppPolling() {
+  stopAppPolling();
+  if ((cachedSettings || {}).show_app_pill === false) return;
+  const sessionId = activeSessionId;
+  appPollTimer = setInterval(async () => {
+    if (!isSessionActive(sessionId) || (currentState !== 'recording' && currentState !== 'agent')) {
+      stopAppPolling();
+      return;
+    }
+    const requestId = ++appPollRequestId;
+    try {
+      const info = await invoke('get_foreground_app_icon');
+      if (
+        isSessionActive(sessionId) &&
+        requestId === appPollRequestId &&
+        info &&
+        info.name
+      ) {
+        applyAppInfo(info);
+      }
+    } catch (err) {
+      // Transient - keep showing the current pill.
+    }
+  }, 1200);
+}
+
+function stopAppPolling() {
+  appPollRequestId += 1;
+  if (appPollTimer) {
+    clearInterval(appPollTimer);
+    appPollTimer = null;
+  }
+}
+
+function hideAppPill() {
+  stopAppPolling();
+  const pill = document.getElementById('app-pill');
+  if (!pill) return;
+  // Fade out before display:none — an instant hide reads as a pop, which is
+  // what made agent-mode transitions feel rougher than transcription.
+  pill.classList.remove('visible');
+  if (appPillHideTimer) clearTimeout(appPillHideTimer);
+  appPillHideTimer = setTimeout(() => {
+    appPillHideTimer = null;
+    const current = document.getElementById('app-pill');
+    if (!current || current.classList.contains('visible')) return;
+    current.hidden = true;
+    const pillName = document.getElementById('app-pill-name');
+    if (pillName) pillName.textContent = '';
+  }, 200);
+}
+
+// ── Agent Mode agent resolution ───────────────────────────────────
+// Fail-closed: if the agent store cannot be read, activeAgentId stays null and
+// the backend falls back to the built-in agent. Only agent ids cross IPC;
+// prompt text stays server-side in agents.json.
+async function resolveDefaultAgentId() {
+  try {
+    const view = await invoke('get_agents');
+    const defaultId = (view && view.default_id) || 'builtin';
+    if (!activeAgentId) activeAgentId = defaultId;
+  } catch (err) {
+    console.warn('Failed to resolve default agent:', err);
+  }
+}
+
+// Edge anchor for the whole agent session. The bubble is pinned to the docked
+// screen edge (the window edge the OS never moves) at a constant per-tier
+// offset, so no dock or session transition can reflow or shift it.
+function setAgentPickerAnchor(placement, active) {
+  const place = placement === 'below' ? 'below' : 'above';
+  const on = active !== false;
+  document.body.classList.toggle('agent-placement-above', on && place === 'above');
+  document.body.classList.toggle('agent-placement-below', on && place === 'below');
+  if (on) agentPickerPlacement = place;
+}
+
+// ── Agent placement model (single coherent function set) ────────
+// Anchor: the floating bubble (overlay-root). Placement is resolved from the
+// bubble's docked position hint plus, for unknown positions, the bubble's
+// actual rendered rect vs. viewport space — never from hardcoded per-corner
+// pixel coordinates. Pure + DOM-free so it is unit-testable in Node.
+function resolveAgentPickerPlacement(overlayPosition, anchorRect, viewport) {
+  const pos = typeof overlayPosition === 'string' ? overlayPosition.toLowerCase() : '';
+  const hasTop = pos.includes('top');
+  const hasBottom = pos.includes('bottom') || pos === 'center' || pos.includes('center_bottom') || pos.includes('bottom_center');
+  let hinted = '';
+  if (hasTop && !hasBottom) hinted = 'below'; // top dock → open downward, away from top edge
+  else if (hasBottom && !hasTop) hinted = 'above'; // bottom dock → open upward, away from bottom edge
+  else if (pos.includes('center_top')) hinted = 'below';
+  else if (pos.includes('center_bottom')) hinted = 'above';
+  // Unknown/ambiguous positions (e.g. a future center_left / center_right):
+  // pick the side with more measured space; default to above (current default dock).
+  // NOTE: The gap literal (8) is inlined so this function stays
+  // dependency-free and unit-testable in Node.
+  const rectOk = anchorRect && Number.isFinite(anchorRect.top) && Number.isFinite(anchorRect.bottom);
+  const vpOk = viewport && Number.isFinite(viewport.height) && viewport.height > 0;
+  if (!hinted) {
+    if (rectOk && vpOk) {
+      const spaceAbove = anchorRect.top - 8;
+      const spaceBelow = viewport.height - anchorRect.bottom - 8;
+      if (Number.isFinite(spaceAbove) && Number.isFinite(spaceBelow)) {
+        return spaceBelow > spaceAbove ? 'below' : 'above';
+      }
+    }
+    return 'above';
+  }
+  // A docked hint is authoritative for direction — never re-flip it. The OS
+  // window grows INWARD from the docked edge, so the hinted side is exactly
+  // the side that gains room when the picker's extra height lands, while the
+  // opposite side stays fixed. Re-measuring here would compare window-local
+  // coordinates (the bubble sits ~46px from the window top in every tier, and
+  // is still the 36px pre-`active` box at this point) against a threshold
+  // written as if it were screen space — which read "more room below" for
+  // EVERY bottom dock and inverted them to `below`, dropping the strip past
+  // the island. Direction comes from the dock; measurement only arbitrates
+  // positions that have no dock (branch above).
+  return hinted;
+}
+
+function readAgentPickerAnchor() {
+  try {
+    const root = document.getElementById('overlay-root');
+    if (!root) return null;
+    const r = root.getBoundingClientRect();
+    if (!r || (r.width === 0 && r.height === 0)) return null;
+    return { top: r.top, bottom: r.bottom, left: r.left, right: r.right, width: r.width, height: r.height };
+  } catch { return null; }
+}
+
+function readAgentPickerViewport() {
+  try {
+    if (!Number.isFinite(window.innerWidth) || !Number.isFinite(window.innerHeight)) return null;
+    return { width: window.innerWidth, height: window.innerHeight };
+  } catch { return null; }
+}
+
+function setOverlayCorner(position) {
+  if (!overlayRoot) return;
+  overlayRoot.classList.remove('corner-bottom-left', 'corner-bottom-right', 'corner-bottom-center', 'corner-top-left', 'corner-top-right', 'corner-top-center');
+  if (position === 'bottom_left') {
+    overlayRoot.classList.add('corner-bottom-left');
+  } else if (position === 'bottom_right') {
+    overlayRoot.classList.add('corner-bottom-right');
+  } else if (position === 'top_left') {
+    overlayRoot.classList.add('corner-top-left');
+  } else if (position === 'top_right') {
+    overlayRoot.classList.add('corner-top-right');
+  } else if (position === 'top_center') {
+    overlayRoot.classList.add('corner-top-center');
+  } else {
+    overlayRoot.classList.add('corner-bottom-center');
+  }
+}
+
+async function applyOverlayStyle(style, glowOn = true) {
+  if (!overlayRoot) return;
+  overlayRoot.classList.remove('style-full', 'style-compact', 'style-bubble');
+  const normalized = (style === 'compact' || style === 'bubble') ? style : 'full';
+  overlayRoot.classList.add(`style-${normalized}`);
+  // Floating Bubble halo toggle (Android pill-glow parity): absence of
+  // `.no-glow` means glow ON, so pre-toggle settings files keep the halo.
+  overlayRoot.classList.toggle('no-glow', glowOn === false);
+  // Keep body layout in sync so the bubble/compact windows center their content
+  // (see overlay.css body.style-bubble / body.style-compact).
+  document.body.classList.remove('style-full', 'style-compact', 'style-bubble');
+  document.body.classList.add(`style-${normalized}`);
+  // BUG-02: keep OS window hitbox in sync with visuals (bubble 130x140,
+  // compact 180x130, full 400x190 logical). Await the resize so show_overlay
+  // positions using the actual window size.
+  await invoke('set_overlay_style', { style: normalized }).catch(()=>{});
+}
+
+// ── Status Message + Retry ──────────────────────────────────────
+
+function setStatusMessage(text, opts = {}) {
+  // markOnly = icon-only finish (green check / red X). The text stays in
+  // the DOM for aria-live and hover tooltips but is hidden visually
+  // (.status-text-hidden in overlay.css). A plain call without markOnly
+  // clears the class, so unrelated notices go back to text.
+  if (overlayRoot) {
+    overlayRoot.classList.toggle('status-text-hidden', opts.markOnly === true);
+  }
+  if (statusMsg) {
+    statusMsg.textContent = text || '';
+    // Compact/bubble hide the text visually - keep it available as hover
+    // tooltip so minimal-tier users still get the failure reason.
+    if (text) statusMsg.title = text;
+    else statusMsg.removeAttribute('title');
+  }
+  // Screen-reader + tooltip path for tiers that hide .status-msg.
+  if (overlayRoot) {
+    if (text) overlayRoot.title = text;
+    else overlayRoot.removeAttribute('title');
+  }
+  if (statusRetry && text) statusRetry.setAttribute('aria-label', `Retry - ${text}`);
+  else if (statusRetry) statusRetry.removeAttribute('aria-label');
+}
+
+function showRetry() {
+  if (statusRetry) statusRetry.hidden = false;
+}
+
+function hideRetry() {
+  if (statusRetry) statusRetry.hidden = true;
+}
+
+let autoDismissMs = 0;
+let autoDismissDeadline = 0;
+let autoDismissPaused = false;
+let autoDismissPauseBound = false;
+let autoDismissHover = false;
+let autoDismissFocus = false;
+
+function clearStatusReset() {
+  if (statusResetTimer) {
+    clearTimeout(statusResetTimer);
+    statusResetTimer = null;
+  }
+}
+
+function scheduleStatusReset(message, delay) {
+  clearStatusReset();
+  const sessionId = activeSessionId;
+  statusResetTimer = setTimeout(() => {
+    statusResetTimer = null;
+    if (isSessionActive(sessionId) && (!statusMsg || statusMsg.textContent === message)) {
+      setStatusMessage('');
+    }
+  }, delay);
+}
+
+function clearAutoDismiss() {
+  clearStatusReset();
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+  autoDismissPaused = false;
+  autoDismissHover = false;
+  autoDismissFocus = false;
+  autoDismissMs = 0;
+}
+
+function pauseAutoDismiss() {
+  // Only a live countdown can be paused. Without this guard, hovering the
+  // overlay mid-recording (no countdown armed) would latch `paused` with
+  // 0ms remaining, and the matching mouseleave would dismiss the overlay
+  // while still recording.
+  if (autoDismissPaused || !retryTimer) return;
+  autoDismissPaused = true;
+  autoDismissMs = Math.max(0, autoDismissDeadline - Date.now());
+  if (retryTimer) {
+    clearTimeout(retryTimer);
+    retryTimer = null;
+  }
+}
+
+// Resume only once neither hover nor focus is active. If the remaining time
+// already elapsed while paused, dismiss immediately.
+function resumeAutoDismiss() {
+  if (autoDismissHover || autoDismissFocus) return;
+  if (!autoDismissPaused) return;
+  autoDismissPaused = false;
+  if (autoDismissMs <= 0) {
+    autoDismissMs = 0;
+    const sessionId = activeSessionId;
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+    return;
+  }
+  autoDismissDeadline = Date.now() + autoDismissMs;
+  const sessionId = activeSessionId;
+  retryTimer = setTimeout(() => {
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+  }, autoDismissMs);
+}
+
+// Hover/focus pauses the dismiss countdown so long or critical errors stay
+// readable; the retry button stays clickable the whole time. Re-arms on
+// leave/blur with the remaining time (mirrors the settings-toast
+// hover-pause pattern).
+function ensureAutoDismissPause() {
+  if (autoDismissPauseBound || !overlayRoot) return;
+  autoDismissPauseBound = true;
+  overlayRoot.addEventListener('mouseenter', () => {
+    autoDismissHover = true;
+    pauseAutoDismiss();
+  });
+  overlayRoot.addEventListener('mouseleave', () => {
+    autoDismissHover = false;
+    resumeAutoDismiss();
+  });
+  document.addEventListener('focusin', (e) => {
+    if (e.target === statusRetry) {
+      autoDismissFocus = true;
+      pauseAutoDismiss();
+    }
+  });
+  document.addEventListener('focusout', (e) => {
+    if (e.target === statusRetry) {
+      autoDismissFocus = false;
+      resumeAutoDismiss();
+    }
+  });
+}
+
+function scheduleAutoDismiss(ms) {
+  const sessionId = activeSessionId;
+  clearAutoDismiss();
+  autoDismissMs = ms;
+  autoDismissDeadline = Date.now() + ms;
+  ensureAutoDismissPause();
+  retryTimer = setTimeout(() => {
+    if (isSessionActive(sessionId)) void fadeAndHide(sessionId);
+  }, ms);
+  // clearAutoDismiss resets our pause flags, but the cursor or retry may
+  // already be over the overlay right now (mouseenter/focusin already fired).
+  // Re-apply the pause for the fresh countdown so it doesn't run while held.
+  if (overlayRoot && overlayRoot.matches(':hover')) {
+    autoDismissHover = true;
+    pauseAutoDismiss();
+  }
+  if (document.activeElement === statusRetry) {
+    autoDismissFocus = true;
+    pauseAutoDismiss();
+  }
+}
+
+function setupRetryButton() {
+  if (statusRetry) {
+    statusRetry.addEventListener('click', async () => {
+      clearAutoDismiss();
+      hideRetry();
+      setStatusMessage('');
+      const sessionId = activeSessionId;
+      if (!isSessionActive(sessionId)) return;
+      // P0-B: a recoverable paste failure replays just the injection (with
+      // fresh foreground validation) instead of re-transcribing audio.
+      if (pendingInjection && pendingInjection.sessionId === sessionId) {
+        await retryPendingInjection(sessionId);
+        return;
+      }
+      // Agent retry (A2): re-send the cached LLM request on the still-active
+      // session instead of forcing a re-record. STT path below is unchanged.
+      if (agentRetryContext && agentRetryContext.sessionId === sessionId) {
+        const ctx = agentRetryContext;
+        agentRetryContext = null;
+        setState('agent_transcribing');
+        if (recLabel) recLabel.textContent = 'PROCESSING';
+        await handleAgentMode(ctx.voiceCommand, ctx.settings, ctx.durationMs, ctx.clipboardCtx, sessionId, ctx.agentId);
+        return;
+      }
+      setState('transcribing');
+      if (recLabel) recLabel.textContent = 'PROCESSING';
+       await runSttFlow(sessionId, true);
+    });
+  }
+}
+
+// ── Paste Recovery + Agent Action Confirmation ──────────────────
+// P0-B: a failed paste is reported truthfully and stays recoverable (the
+// transcript is already in history). P2: dangerous agent actions require an
+// explicit confirm click before any destructive keystroke is sent.
+
+
+async function attemptPaste(text, monitorAutoLearn) {
+  return invoke('inject_text', { text, monitorAutoLearn });
+}
+
+async function attemptKeyboardAction(action, charCount) {
+  return invoke('execute_keyboard_action', { action, charCount });
+}
+
+// Clicking Retry/Copy does NOT move the foreground window: the overlay window
+// is configured with "focusable": false (WS_EX_NOACTIVATE, tauri.conf.json).
+// Injection targets whatever window holds OS focus when transcription finishes
+// - there is no target-window validation, so reading in one app while
+// dictating and pasting into another works. Hiding the overlay first would
+// only add latency and hide the recovery UI, so injection runs while the
+// overlay stays visible.
+
+function showCopy() {
+  const btn = document.getElementById('status-copy');
+  if (btn) btn.hidden = false;
+}
+
+function hideCopy() {
+  const btn = document.getElementById('status-copy');
+  if (btn) btn.hidden = true;
+}
+
+// Map a backend injection failure to a short, specific status line. Without
+// this every failure showed the same generic "Insert failed", which made it
+// impossible to tell a wrong-window refusal from a blocked SendInput.
+function describeInjectError(err) {
+  const raw = String(err || '');
+
+  if (raw.includes('PASTE_FAILED')) {
+    const m = raw.match(/delivered (\d+) of 4/);
+    return m ? `Keys blocked (${m[1]}/4)` : 'Keys blocked';
+  }
+  if (raw.includes('KEYBOARD_ACTION_FAILED')) {
+    const m = raw.match(/delivered (\d+) of (\d+)/);
+    return m ? `Keys blocked (${m[1]}/${m[2]})` : 'Keys blocked';
+  }
+  if (raw.includes('Not allowed from this window')) return 'Blocked by permissions';
+  const trimmed = raw.trim();
+  if (!trimmed) return 'Insert failed';
+  return trimmed.length > 42 ? `${trimmed.slice(0, 42)}...` : trimmed;
+}
+
+async function handlePasteFailure(pending, err, sessionId) {
+  if (!isSessionActive(sessionId)) {
+    // Session is over: the transcript was already saved to history before
+    // injection was attempted, so nothing is lost.
+    pendingInjection = null;
+    return;
+  }
+  pendingInjection = pending;
+  console.error('[overlay] injection failed:', String(err || ''));
+  setState('error');
+  setStatusMessage(describeInjectError(err), { markOnly: true });
+  if (pending.kind === 'text') showCopy();
+  showRetry();
+  scheduleAutoDismiss(12000);
+}
+
+async function retryPendingInjection(sessionId) {
+  const pending = pendingInjection;
+  pendingInjection = null;
+  hideRetry();
+  hideCopy();
+  setStatusMessage('');
+  try {
+    if (pending.kind === 'text') {
+      await attemptPaste(pending.text, pending.monitorAutoLearn);
+    } else {
+      await attemptKeyboardAction(pending.action, pending.charCount);
+    }
+    if (!isSessionActive(sessionId)) return;
+    setState('success');
+    setStatusMessage(pending.kind === 'text' ? 'Inserted' : 'Executed', { markOnly: true });
+    playCompletionChime();
+    agentRetryContext = null;
+    await new Promise(r => setTimeout(r, 800));
+    await fadeAndHide(sessionId);
+  } catch (err) {
+    console.error('Paste retry failed:', err);
+    await handlePasteFailure(pending, err, sessionId);
+  }
+}
+
+function setupPasteRecovery() {
+  const copyBtn = document.getElementById('status-copy');
+  if (copyBtn) {
+    copyBtn.addEventListener('click', async () => {
+      const pending = pendingInjection;
+      if (!pending || pending.kind !== 'text') return;
+      clearAutoDismiss();
+      copyBtn.disabled = true;
+      try {
+        await invoke('copy_text', { text: pending.text });
+        pendingInjection = null;
+        hideCopy();
+        setStatusMessage('Copied - paste with Ctrl+V');
+        scheduleAutoDismiss(5000);
+      } catch (err) {
+        console.error('Copy failed:', err);
+        setStatusMessage('Copy failed');
+        scheduleAutoDismiss(6000);
+      } finally {
+        copyBtn.disabled = false;
+      }
+    });
+  }
+}
+
+
+// ── Hold-to-Record Hint ──────────────────────────────────────────
+
+function updateRecHint() {
+  if (!recHint) return;
+  const isHoldToRecord =
+    (currentState === 'recording' && cachedSettings?.recording_mode === 'hold_to_record') ||
+    (currentState === 'agent' && cachedSettings?.agent_recording_mode === 'hold_to_record');
+  recHint.textContent = isHoldToRecord ? 'RELEASE TO STOP' : '';
+  recHint.hidden = !isHoldToRecord;
+}
+
+function hideRecHint() {
+  if (recHint) recHint.hidden = true;
+}
+
+// ── Completion Chime ─────────────────────────────────────────────
+
+function playCompletionChime() {
+  try {
+    if (cachedSettings && cachedSettings.sound_on_complete === false) return;
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    if (!Ctx) return;
+    if (!chimeCtx) chimeCtx = new Ctx();
+    if (chimeCtx.state === 'suspended') {
+      chimeCtx.resume().catch(() => {});
+    }
+    if (chimeCtx.state !== 'running') return;
+    const t0 = chimeCtx.currentTime;
+    const gain = chimeCtx.createGain();
+    gain.gain.setValueAtTime(0.0001, t0);
+    gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+    gain.connect(chimeCtx.destination);
+    // BUG-13: disconnect graph after chime to avoid AudioContext node accumulation
+    const cleanupDelayMs = 700;
+    setTimeout(() => { try { gain.disconnect(); } catch {} }, cleanupDelayMs);
+    [523.25, 659.25].forEach((freq, i) => {
+      const osc = chimeCtx.createOscillator();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, t0 + i * 0.11);
+      osc.connect(gain);
+      osc.start(t0 + i * 0.11);
+      osc.stop(t0 + i * 0.11 + 0.3);
+      // Nodes are garbage-collected after stop + gain disconnect
+    });
+  } catch (err) {
+    console.warn('Completion chime failed:', err);
+  }
+}
+
+// ── Recording Flow ──────────────────────────────────────────────
+
+function setupDiscardButton() {
+  // Shared discard path: stop the capture, invalidate the session so any
+  // late transcription result is dropped, then hide. No text is injected.
+  const discardRecording = async (e) => {
+    if (e) e.stopPropagation();
+    stopTimer();
+    // NOTE (A10): beginSession() invalidates any in-flight agent/transcription
+    // session; its late result is dropped by isSessionActive guards. An
+    // orphaned backend LLM request (if any) still runs to completion but can
+    // no longer touch UI, clipboard, or history. Accepted behavior - true
+    // backend cancellation is Class B (needs explicit approval).
+    const supersededId = activeSessionId;
+    const sessionId = beginSession();
+    // Explicit user discard: the superseded take must NOT be preserved by
+    // the orphan-save path in runSttFlow.
+    if (supersededId > 0 && supersededId !== sessionId) {
+      supersededSessions.delete(supersededId);
+      discardedSessions.add(supersededId);
+    }
+    resetTransientUi();
+    try {
+      await invoke('stop_recording');
+    } catch (err) {
+      console.error('Stop recording failed:', err);
+    }
+    await fadeAndHide(sessionId);
+  };
+  if (cardDiscard) {
+    cardDiscard.addEventListener('click', discardRecording);
+    // Bubble tier: the visible chip is a 20px badge with a 12px invisible
+    // halo that belongs to the footer container, not the button. Clicks on
+    // the halo/padding would otherwise hit the footer (no handler) or start
+    // a window drag - a dead close button. Forward those to the same path.
+    // Guarded to bubble tier and non-button targets so full/compact tiers
+    // and the button itself never double-fire.
+    const badge = cardDiscard.parentElement;
+    if (badge) {
+      badge.addEventListener('click', (e) => {
+        if (!overlayRoot || !overlayRoot.classList.contains('style-bubble')) return;
+        if (e.target instanceof Element && e.target.closest('#card-discard')) return;
+        void discardRecording(e);
+      });
+    }
+  }
+}
+
+async function getRecordingPreferences() {
+    try {
+      cachedSettings = await invoke('get_settings');
+      // One hook covers every caller of getRecordingPreferences (session
+      // starts, reconcile, DOMContentLoaded): the pick rides the existing
+      // settings fetch, unknown values normalize inside setStyle.
+      if (aura) aura.setStyle(cachedSettings.waveform_style);
+    } catch {
+      cachedSettings = cachedSettings || {};
+    }
+
+    return {
+      overlayPosition: cachedSettings.overlay_position || 'bottom_right',
+      overlayStyle: cachedSettings.overlay_style || 'full',
+      waveformStyle: cachedSettings.waveform_style || 'waves',
+    overlayGlow: cachedSettings.overlay_glow !== false,
+    showAppPill: cachedSettings.show_app_pill !== false,
+    audioDeviceId: cachedSettings.audio_device_id || null,
+  };
+}
+
+async function fadeAndHide(sessionId = activeSessionId) {
+  if (!isSessionActive(sessionId)) return;
+  stopTimer();
+  clearAutoDismiss();
+  hideRetry();
+  hideCopy();
+  setStatusMessage('');
+  hideAppPill();
+  if (overlayRoot) {
+    overlayRoot.classList.remove('active');
+  }
+  await new Promise(r => setTimeout(r, 200)); // let CSS exit transition finish
+  if (!isSessionActive(sessionId)) return;
+  await invoke('hide_overlay');
+  if (!isSessionActive(sessionId)) return;
+  // Window is hidden now: safe to drop the agent edge anchor without any
+  // visible shift. Geometry lives in CSS, so there is nothing to reset.
+  setAgentPickerAnchor(agentPickerPlacement, false);
+  setState('idle');
+  completeSession(sessionId);
+}
+
+async function stopAndTranscribe(agentMode, sessionId) {
+  if (!isSessionActive(sessionId)) return;
+  setState(agentMode ? 'agent_transcribing' : 'transcribing');
+
+  // Update label for transcribing state
+  if (recLabel) recLabel.textContent = 'PROCESSING';
+
+  let startTs = Date.now();
+
+  try {
+    if (agentMode) {
+      const selectionPromise = invoke('grab_active_selection').catch((err) => {
+        console.warn('Failed to grab active selection early:', err);
+        return null;
+      });
+
+      const [result, settings] = await Promise.all([
+        invoke('stop_and_transcribe_recording'),
+        invoke('get_settings'),
+      ]);
+      // BUG-06: differentiate empty/silence from error - show brief feedback, not silent vanish
+      // EXPERIMENT Trial 4: gate rejections vanish instantly (no notice).
+      // The gate already proved there is no speech; anything else empty
+      // keeps the gentle notice below.
+      if (result.silenceRejected) {
+        if (isSessionActive(sessionId)) await fadeAndHide(sessionId);
+        return;
+      }
+      if (!result.text || !result.text.trim() || !/[\p{L}\p{N}]/u.test(result.text || '')) {
+        if (isSessionActive(sessionId)) {
+          // Very short recordings (<200ms) are already discarded by audio pipeline as accidental press
+          // Silence gets a gentle, neutral notice - not a red error X
+          setState('no-speech');
+          setStatusMessage('No speech detected');
+          scheduleAutoDismiss(2500);
+        }
+        return;
+      }
+
+      const selection = await selectionPromise;
+      if (isSessionActive(sessionId)) {
+        await handleAgentMode(result.text, settings, result.durationMs || (Date.now() - startTs), selection, sessionId);
+      }
+    } else {
+      await runSttFlow(sessionId);
+    }
+  } catch (err) {
+    console.error('Transcription error:', err);
+    if (!isSessionActive(sessionId)) return;
+    setState('error');
+    if (agentMode) {
+      setStatusMessage('Failed');
+      scheduleAutoDismiss(8000);
+    } else {
+      setStatusMessage('Transcription failed');
+      showRetry();
+      scheduleAutoDismiss(8000);
+    }
+  }
+}
+
+async function runSttFlow(sessionId, retry = false) {
+  if (!isSessionActive(sessionId)) return;
+  const startTs = Date.now();
+  try {
+    const result = await invoke(retry ? 'retry_transcription_flow' : 'finish_transcription_flow');
+
+    // EXPERIMENT Trial 4: gate rejections vanish instantly (no notice).
+    if (result.silenceRejected) {
+      if (isSessionActive(sessionId)) await fadeAndHide(sessionId);
+      return;
+    }
+
+    const hasAlphanumeric = /[\p{L}\p{N}]/u.test(result.text || '');
+    if (!result.text || !result.text.trim() || !hasAlphanumeric) {
+      if (isSessionActive(sessionId)) {
+        // Silence is a normal outcome, not an error - neutral notice, no red X
+        setState('no-speech');
+        setStatusMessage('No speech detected');
+        scheduleAutoDismiss(2500);
+      }
+      return;
+    }
+
+    if (!isSessionActive(sessionId)) {
+      // Superseded take: a newer hotkey started the next session while this
+      // transcription was still running. Preserve the finished transcript in
+      // history (injection is skipped - the foreground belongs to whatever
+      // the new session is now recording). A take the user explicitly
+      // discarded is intentionally dropped.
+      if (!discardedSessions.has(sessionId) && (result.text || '').trim()) {
+        invoke('save_history_entry', {
+          text: result.text,
+          mode: 'transcription',
+          durationMs: result.durationMs || (Date.now() - startTs),
+          provider: result.provider,
+        }).catch(err => console.error('Failed to save history entry:', err));
+      }
+      return;
+    }
+
+    invoke('save_history_entry', {
+      text: result.text,
+      mode: 'transcription',
+      durationMs: result.durationMs || (Date.now() - startTs),
+      provider: result.provider,
+    }).catch(err => console.error('Failed to save history entry:', err));
+
+    try {
+      // inject_text returns true when it replaced non-text clipboard content
+      // (an image or copied files). It is reported, not blocked: refusing
+      // broke screenshot-and-dictate, where replacing the clipboard is the
+      // whole point.
+      const replacedClipboard = await attemptPaste(result.text, true);
+      if (!isSessionActive(sessionId)) return;
+      setState('success');
+      if (replacedClipboard) {
+        setStatusMessage('Inserted (clipboard replaced)', { markOnly: true });
+      } else {
+        setStatusMessage(result.realtimeFallback ? 'Inserted (standard mode)' : 'Inserted', { markOnly: true });
+      }
+      playCompletionChime();
+      await new Promise(r => setTimeout(r, 1000));
+      await fadeAndHide(sessionId);
+    } catch (err) {
+      console.error('Inject failed:', err);
+      await handlePasteFailure({ sessionId, kind: 'text', text: result.text, monitorAutoLearn: true }, err, sessionId);
+    }
+  } catch (err) {
+    console.error('Transcription error:', err);
+    if (!isSessionActive(sessionId)) return;
+    setState('error');
+    setStatusMessage('Transcription failed');
+    showRetry();
+    scheduleAutoDismiss(8000);
+  }
+}
+
+// Polish skip reason → user-facing status label (pure function - no DOM, so
+// it can be unit-tested in Node like mapAgentErrorToStatus; the agent flow
+// never calls it).
+function mapPolishReason(reason) {
+  switch (reason) {
+    case 'missing_key':
+      return 'no key set';
+    case 'rate_limited':
+      return 'rate limited';
+    case 'network_error':
+      return 'network error';
+    case 'rejected':
+      return 'AI output rejected';
+    default:
+      return 'AI error';
+  }
+}
+
+// Agent error → user-facing status label (pure function - no DOM, so it can
+// be unit-tested in Node; the STT flow never calls it).
+function mapAgentErrorToStatus(err) {
+  const msg = String(err || '');
+  if (msg.includes('Agent timed out')) return { label: 'LLM timed out', retryable: true };
+  if (msg.includes('Missing API key')) return { label: 'Missing LLM key', retryable: false };
+  // FIX-03: local configuration/validation/authorization failures are never
+  // retryable. Only the label is shown (never the raw message), so no OS or
+  // credential-store detail reaches the user.
+  if (msg.includes('Not allowed from this window')) return { label: 'Not permitted here', retryable: false };
+  if (msg.includes('Access denied') || msg.includes('Invalid credential target') || msg.includes('unknown credential target')) return { label: 'Key config error', retryable: false };
+  if (msg.includes('CredReadW') || msg.includes('CredWriteW') || msg.includes('CredDeleteW') || msg.includes('Credential Manager')) return { label: 'Key storage error', retryable: false };
+  if (msg.includes('exceeds maximum length') || msg.includes('too long') || msg.includes('too large') || msg.includes('Maximum is')) return { label: 'Input too long', retryable: false };
+  if (msg.includes('LLM auth failed') || msg.includes('401') || msg.includes('403')) return { label: 'LLM auth failed', retryable: false };
+  if (msg.includes('Invalid URL') || msg.includes('HTTPS')) return { label: 'Check LLM URL', retryable: false };
+  if (msg.includes('404') || msg.includes('400') || msg.includes('model')) return { label: 'Check LLM model', retryable: false };
+  if (msg.includes('LLM rate limited') || msg.includes('429')) return { label: 'Rate limited. Retry', retryable: true };
+  if (msg.includes('LLM provider unavailable') || msg.includes('500') || msg.includes('502') || msg.includes('503')) return { label: 'LLM unavailable', retryable: true };
+  if (msg.includes('timed out') || msg.includes('timeout') || msg.includes('Network error') || msg.includes('Connection failed')) return { label: 'Network error', retryable: true };
+  if (msg.includes('Action parse error') || msg.includes('Empty response')) return { label: 'Agent parse failed', retryable: true };
+  if (msg.includes('Clipboard') || msg.includes('No speech')) return { label: 'No selection', retryable: false };
+  return { label: 'Agent failed', retryable: true };
+}
+
+async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId, retryAgentId) {
+  if (!isSessionActive(sessionId)) return;
+  // Function scope (NOT inside try): the catch block below caches this for
+  // Retry, and try-block `let`s are invisible to catch. Params are already
+  // function-scoped, so only this one needs hoisting.
+  let clipboardCtx = '';
+  // Per-turn agent: retry reuses the turn's pick, else the live picker value.
+  const turnAgentId = retryAgentId !== undefined ? retryAgentId : activeAgentId;
+  try {
+    // Credentials stay server-side: the secure command resolves the saved
+    // LLM provider/key from settings + Credential Manager. No api_key in
+    // IPC args (Task 4 hardening).
+    if (!isSessionActive(sessionId)) return;
+
+    let grabbed = false;
+    if (settings.auto_grab_highlight !== false) {
+      if (preGrabbedSelection && preGrabbedSelection.trim()) {
+        clipboardCtx = preGrabbedSelection;
+        grabbed = true;
+      }
+    }
+
+    if (!grabbed) {
+      try {
+        clipboardCtx = (await invoke('grab_active_selection').catch(() => '')) || '';
+      } catch {
+        // Clipboard read may fail if no permission - proceed without context
+      }
+    }
+
+    const agentRequestId = `agent-${++agentRequestSeq}-${Date.now()}`;
+    const agentInvoke = invoke('execute_agent_command_secure', {
+      req: {
+        voice_command: voiceCommand,
+        clipboard_context: clipboardCtx,
+        request_id: agentRequestId,
+        agent_id: turnAgentId,
+      }
+    });
+    // Watchdog (A3): the backend caps at 20s; if the IPC promise never
+    // settles, fail deterministically instead of sticking on PROCESSING.
+    // A late arrival is dropped by the isSessionActive guards below.
+    let agentTimeoutId = null;
+    const agentTimeout = new Promise((_, reject) => {
+      agentTimeoutId = setTimeout(() => reject(new Error('Agent timed out. Retry')), AGENT_LLM_WATCHDOG_MS);
+    });
+    let action;
+    try {
+      action = await Promise.race([agentInvoke, agentTimeout]);
+    } finally {
+      if (agentTimeoutId) clearTimeout(agentTimeoutId);
+    }
+
+    if (!isSessionActive(sessionId)) return;
+
+    // Defensive (A7): the backend whitelists actions and rejects blank
+    // content, but never present a silent no-op as success if anything
+    // slips through - route it to the parse-failure branch instead.
+    if (action.action === 'insert' || action.action === 'rewrite') {
+      if (!action.content || !action.content.trim()) {
+        throw new Error('Empty response from LLM');
+      }
+    } else if (!['copy', 'delete_chars', 'select_all', 'submit'].includes(action.action)) {
+      throw new Error(`Action parse error: unknown action '${action.action}'`);
+    }
+
+    if (!isSessionActive(sessionId)) return;
+
+    if (action.action === 'copy') {
+      try {
+        await invoke('copy_text', { text: action.content || '' });
+      } catch (err) {
+        // Never report success for a copy that did not happen.
+        console.error('Failed to copy to clipboard:', err);
+        if (!isSessionActive(sessionId)) return;
+        setState('error');
+        setStatusMessage(describeInjectError(err));
+        agentRetryContext = null;
+        scheduleAutoDismiss(6000);
+        return;
+      }
+      if (!isSessionActive(sessionId)) return;
+      setState('success');
+      setStatusMessage('Copied');
+      playCompletionChime();
+      agentRetryContext = null;
+      await new Promise(r => setTimeout(r, 900));
+      await fadeAndHide(sessionId);
+    } else {
+      // Agent actions execute immediately, as they did before the
+      // confirmation flow was introduced: insert/rewrite/delete/select-all/
+      // submit all run without a prompt. The paste recovery affordances
+      // (Retry / Copy) still cover a failed injection.
+
+      let executed = false;
+      try {
+        // The overlay cannot take OS focus (WS_EX_NOACTIVATE), so the
+        // confirmed keystroke goes straight to the still-foreground target;
+        // validation lives in the inject_* backend commands.
+        if (action.action === 'insert' || action.action === 'rewrite') {
+          await attemptPaste(action.content || '', false);
+          executed = true;
+        } else if (action.action === 'delete_chars') {
+          await attemptKeyboardAction('delete_chars', action.char_count || 0);
+          executed = true;
+        } else if (action.action === 'select_all') {
+          await attemptKeyboardAction('select_all', null);
+          executed = true;
+        } else if (action.action === 'submit') {
+          await attemptKeyboardAction('submit', null);
+          executed = true;
+        }
+      } catch (err) {
+        console.error('Agent action failed:', err);
+        const pending = (action.action === 'insert' || action.action === 'rewrite')
+          ? { sessionId, kind: 'text', text: action.content || '', monitorAutoLearn: false }
+          : { sessionId, kind: 'keyboard', action: action.action, charCount: action.action === 'delete_chars' ? (action.char_count || 0) : null };
+        await handlePasteFailure(pending, err, sessionId);
+        return;
+      }
+
+      if (!isSessionActive(sessionId)) return;
+
+      setState('success');
+      setStatusMessage(executed ? 'Executed' : 'Done');
+      playCompletionChime();
+      agentRetryContext = null;
+      await new Promise(r => setTimeout(r, 800));
+      await fadeAndHide(sessionId);
+    }
+
+    invoke('save_history_entry', {
+      text: `[Agent] ${voiceCommand}`,
+      mode: 'agent',
+      durationMs,
+      provider: settings.llm_provider.preset,
+    }).catch(err => console.error('Failed to save history entry:', err));
+
+  } catch (err) {
+    console.error('Agent Error:', err);
+    if (!isSessionActive(sessionId)) return;
+    setState('error');
+    // Actionable error mapping (A1) - never show generic Failed alone.
+    // Retryable failures cache the attempt so Retry re-sends the LLM request
+    // without forcing a re-record (A2); config errors offer no retry.
+    const { label, retryable } = mapAgentErrorToStatus(err);
+    setStatusMessage(label);
+    if (retryable) {
+      agentRetryContext = { voiceCommand, settings, durationMs, clipboardCtx, sessionId, agentId: turnAgentId };
+      showRetry();
+    }
+    scheduleAutoDismiss(8000);
+  }
+}
+
+// Hotkey busy feedback (BUG-05)
+async function setupHotkeyBusyFeedback() {
+  await listen('hotkey-busy', (evt) => {
+    console.warn('Hotkey busy:', evt.payload);
+    if (currentState === 'recording' || currentState === 'agent' || currentState === 'transcribing' || currentState === 'agent_transcribing') {
+      setStatusMessage('Recording busy');
+      scheduleStatusReset('Recording busy', 1200);
+    }
+  });
+}
+
+// ── State Management ────────────────────────────────────────────
+
+function setState(state, updateVisibility = true) {
+  currentState = state;
+
+  if (aura) aura.setState(state);
+
+  // Track the foreground app while actively recording so the app pill
+  // updates if the user switches to another window mid-recording.
+  if (state === 'recording' || state === 'agent') {
+    startAppPolling();
+  } else {
+    stopAppPolling();
+  }
+
+  if (overlayRoot && updateVisibility) {
+    if (state !== 'idle') {
+      overlayRoot.classList.add('active');
+    } else {
+      overlayRoot.classList.remove('active');
+    }
+  }
+
+  // Update rec label based on state
+  if (recLabel) {
+    switch (state) {
+      case 'recording':
+      case 'agent':
+        recLabel.textContent = 'LISTENING';
+        break;
+      case 'transcribing':
+      case 'agent_transcribing':
+        recLabel.textContent = 'PROCESSING';
+        break;
+      case 'no-speech':
+        // Quiet neutral state - the status notice carries the message
+        recLabel.textContent = '';
+        break;
+      default:
+        recLabel.textContent = 'LISTENING';
+    }
+  }
+
+  updateRecHint();
+}

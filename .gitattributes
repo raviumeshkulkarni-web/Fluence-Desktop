@@ -1,0 +1,19 @@
+# Canonical cross-platform sync wire fixtures must stay LF on every OS.
+# Windows checkouts with core.autocrlf=true otherwise rewrite them to CRLF,
+# breaking byte-exact roundtrip tests that compile them via include_bytes!.
+examples/sync/v1/*.json text eol=lf
+
+# The wire-contract README is kept byte-identical to the Android repo's copy, so
+# a Windows checkout must not rewrite its line endings either — otherwise the
+# cross-repo parity the contract claims silently stops holding.
+examples/sync/v1/README.md text eol=lf
+
+# Convergence scenarios are JSON parsed by include_bytes!/getResourceAsStream, so
+# line endings are semantically irrelevant — but both repos currently hold them
+# with the SAME endings, and pinning LF keeps a fresh checkout on either platform
+# from introducing a needless difference.
+examples/sync/convergence/*.json text eol=lf
+
+# Cargo.toml must stay LF: autocrlf would otherwise flip it into a perpetual
+# stat-only modification that Git reports as dirty on every checkout.
+src-tauri/Cargo.toml text eol=lf

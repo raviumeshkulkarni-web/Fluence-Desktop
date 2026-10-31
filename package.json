@@ -1,0 +1,27 @@
+{
+  "name": "fluence-windows",
+  "version": "1.31.0",
+  "description": "Fluence - AI Voice Typing for Windows",
+  "license": "AGPL-3.0-only",
+  "private": true,
+  "scripts": {
+    "tauri": "tauri",
+    "dev": "pwsh -File dev.ps1",
+    "web:build": "npm run build --prefix web",
+    "web:dev": "npm run dev --prefix web",
+    "web:watch": "npm run watch --prefix web",
+    "build": "tauri build",
+    "check": "cd src-tauri && cargo check",
+    "clippy": "cd src-tauri && cargo clippy"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-process": "^2.0.0",
+    "@tauri-apps/plugin-updater": "^2.0.0",
+    "@tauri-apps/plugin-dialog": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0"
+  }
+}

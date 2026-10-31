@@ -1,0 +1,13 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "main-capability",
+  "description": "Full permissions for the main Settings window (sole admin surface)",
+  "windows": ["main"],
+  "permissions": [
+    "core:default",
+    "updater:default",
+    "process:default",
+    "process:allow-restart",
+    "dialog:allow-open"
+  ]
+}

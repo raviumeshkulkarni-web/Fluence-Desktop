@@ -1,0 +1,1140 @@
+/* ====================================================
+   Fluence Windows - Overlay / Capture Palette
+   Pixel-perfect spec implementation
+   ==================================================== */
+
+@import './global.css';
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: transparent;
+}
+
+body {
+  --agent-bubble-height: 96px;
+  /* Island geometry, all declared once and never measured at runtime.
+     --agent-stack-top: the island's top inset inside the window (matches the
+       46px reserve in overlay.rs::overlay_window_size).
+     --agent-pill-top:  the app pill's top inset (fixed, never moves).
+     --agent-base-height: the tier's window height (overlay.rs::overlay_window_size). */
+  --agent-stack-top: 46px;
+  --agent-pill-top: 8px;
+  --agent-base-height: 190px;
+  font-family: var(--font-body), system-ui, -apple-system, sans-serif;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--agent-stack-top);
+  position: relative;
+  /* BUG-02: transparent area must not steal clicks. Only the orb/card is draggable */
+  -webkit-app-region: no-drag;
+  pointer-events: none;
+}
+
+/* ── Card Root ─────────────────────────────────────────────────── */
+.overlay-root {
+  --overlay-amethyst: var(--color-brand-amethyst);
+  --overlay-amethyst-rgb: 139, 69, 216;
+  width: 36px;
+  height: 36px;
+  border-radius: 16px;
+  background: var(--color-overlay-surface);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  backdrop-filter: blur(18px) saturate(125%);
+  -webkit-backdrop-filter: blur(18px) saturate(125%);
+  isolation: isolate;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  position: relative;
+  opacity: 0;
+  scale: 0.95;
+  will-change: transform, opacity;
+  /* BUG-02: only the visible card/bubble is interactive and draggable */
+  -webkit-app-region: drag;
+  pointer-events: auto;
+
+  transition:
+    width 200ms var(--ease-premium),
+    height 200ms var(--ease-premium),
+    scale 200ms var(--ease-premium),
+    opacity 150ms ease-out,
+    box-shadow 200ms ease,
+    background 200ms ease,
+    border-radius 200ms var(--ease-premium);
+}
+
+/* ── Active (Expanded) State ───────────────────────────────────── */
+.overlay-root.active {
+  width: 320px;
+  height: 96px;
+  opacity: 1;
+  scale: 1;
+  border-radius: 16px;
+  pointer-events: auto;
+}
+
+/* Docked-corner treatment - keep transform-origin aligned to dock edge with unified curvature */
+.overlay-root.corner-bottom-left {
+  transform-origin: 0% 100%;
+  border-radius: 16px;
+}
+
+.overlay-root.corner-bottom-right {
+  transform-origin: 100% 100%;
+  border-radius: 16px;
+}
+
+.overlay-root.corner-bottom-center {
+  transform-origin: 50% 100%;
+  border-radius: 16px;
+}
+
+/* Top dock: same treatment mirrored */
+.overlay-root.corner-top-left {
+  transform-origin: 0% 0%;
+  border-radius: 16px;
+}
+
+.overlay-root.corner-top-right {
+  transform-origin: 100% 0%;
+  border-radius: 16px;
+}
+
+.overlay-root.corner-top-center {
+  transform-origin: 50% 0%;
+  border-radius: 16px;
+}
+
+/* ── Tier 2: Compact Pill Style ────────────────────────────────── */
+/* Pill = waveform + × only (stop stays hidden here by explicit product
+   decision). Width is sized so the × starts right where the waveform ends:
+   14px left pad + flex waveform + 6px gap + 24px discard + 8px right pad. */
+.overlay-root.active.style-compact {
+  width: 118px;
+  height: 36px;
+  border-radius: 9999px;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 8px 0 14px;
+  gap: 6px;
+}
+
+.overlay-root.style-compact.corner-bottom-left,
+.overlay-root.style-compact.corner-bottom-right,
+.overlay-root.style-compact.corner-bottom-center,
+.overlay-root.style-compact.corner-top-left,
+.overlay-root.style-compact.corner-top-right,
+.overlay-root.style-compact.corner-top-center {
+  border-radius: 9999px;
+}
+
+.overlay-root.style-compact .card-meta {
+  display: none !important;
+}
+
+.overlay-root.style-compact .card-waveform {
+  display: block;
+  opacity: 1;
+  flex: 1;
+  height: 100%;
+  position: relative;
+  min-height: 0;
+}
+
+.overlay-root.style-compact .card-footer {
+  display: flex !important;
+  opacity: 1 !important;
+  height: 100%;
+  padding: 0;
+  gap: 0;
+  align-items: center;
+  justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+.overlay-root.style-compact .card-timer {
+  display: none !important;
+}
+
+.overlay-root.style-compact .card-discard {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--color-on-surface-variant);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
+}
+
+/* 44px effective target via invisible hit area — visual stays 24px */
+.overlay-root.style-compact .card-discard::after {
+  content: '';
+  position: absolute;
+  inset: -10px;
+}
+
+.overlay-root.style-compact .card-discard:active {
+  transform: scale(0.97);
+}
+
+.overlay-root.style-compact .card-discard:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+/* Compact has no room for a text line — the message stays available via
+   title/aria (see setStatusMessage) while error shows icon + tappable retry.
+   Stop stays hidden here by explicit product decision (pill = × only). */
+.overlay-root.style-compact .status-msg {
+  display: none !important;
+}
+
+.overlay-root.style-compact .status-retry {
+  top: 68%;
+  padding: 2px 10px;
+  font-size: 10px;
+}
+
+.overlay-root.style-compact.state-error .status-icon {
+  top: 36%;
+  scale: 0.65;
+}
+
+.overlay-root.style-compact.state-error .status-retry:not([hidden]) {
+  display: block !important;
+  opacity: 1;
+  pointer-events: all;
+}
+
+.overlay-root.style-compact .status-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  scale: 0.8;
+}
+
+/* ── Tier 3: Minimal Circular Bubble Style ──────────────────────── */
+.overlay-root.active.style-bubble {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.30);
+}
+
+/* Let the discard badge extend past the orb's edge - it anchors on the
+   bubble but must not cover the waveform face. */
+.overlay-root.style-bubble {
+  overflow: visible;
+}
+
+.overlay-root.style-bubble.corner-bottom-left,
+.overlay-root.style-bubble.corner-bottom-right,
+.overlay-root.style-bubble.corner-bottom-center,
+.overlay-root.style-bubble.corner-top-left,
+.overlay-root.style-bubble.corner-top-right,
+.overlay-root.style-bubble.corner-top-center {
+  border-radius: 50%;
+}
+
+.overlay-root.style-bubble .card-meta {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .card-waveform {
+  display: block;
+  opacity: 1;
+  width: auto;
+  height: auto;
+  position: absolute;
+  inset: 2px;
+}
+
+/* Discard badge - a small circular "×" chip floating just clear of the
+   orb's top-right edge (no waveform overlap). The invisible ::after halo
+   below keeps the 44px touch target. !important overrides the base
+   `.overlay-root.active .card-footer { opacity: 1 }` rule. */
+.overlay-root.style-bubble .card-footer {
+  position: absolute;
+  top: -16px;
+  right: -16px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--color-overlay-surface);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(12px) saturate(125%);
+  -webkit-backdrop-filter: blur(12px) saturate(125%);
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  z-index: 5;
+  padding: 0;
+  opacity: 0 !important;
+  scale: 0.8;
+  pointer-events: none !important;
+  /* The root is a drag region: the whole chip (not just the glyph button)
+   * must opt out, otherwise edge clicks start a window drag or land on the
+   * footer halo with no handler — a dead close button. */
+  -webkit-app-region: no-drag;
+  cursor: pointer;
+  transition: opacity 180ms ease, scale 180ms var(--ease-premium) !important;
+}
+
+/* Badge hit area — visual stays 20px, effective target 44px */
+.overlay-root.style-bubble .card-footer::after {
+  content: '';
+  position: absolute;
+  inset: -12px;
+}
+
+.overlay-root.style-bubble:hover .card-footer,
+.overlay-root.style-bubble:focus-within .card-footer {
+  opacity: 1 !important;
+  scale: 1;
+  pointer-events: all !important;
+}
+
+/* Failure must be reachable without hover — reuse the same badge, no
+   hitbox change. Success shows it briefly before auto-dismiss. */
+.overlay-root.style-bubble.state-error .card-footer,
+.overlay-root.style-bubble.state-success .card-footer {
+  opacity: 1 !important;
+  scale: 1;
+  pointer-events: all !important;
+}
+
+.overlay-root.style-bubble .card-timer {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .card-discard {
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  background: transparent;
+  border: none;
+  color: var(--color-on-surface);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.overlay-root.style-bubble .card-discard:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+.overlay-root.style-bubble .status-msg,
+.overlay-root.style-bubble .status-retry {
+  display: none !important;
+}
+
+.overlay-root.style-bubble .status-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  scale: 0.8;
+}
+
+/* Transcribe mode surface - monochrome ink */
+.overlay-root.active:not(.state-agent):not(.state-agent_transcribing) {
+  background: var(--color-canvas);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Agent mode surface - the same monochrome ink */
+.overlay-root.state-agent.active,
+.overlay-root.state-agent_transcribing.active {
+  background: var(--color-canvas);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+}
+
+/* Glass edge highlight */
+.overlay-root.active::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-top-color: rgba(255, 255, 255, 0.14);
+  pointer-events: none;
+  z-index: 3;
+}
+
+/* ── Entry / Exit Animations ──────────────────────────────────── */
+/* Entry: Expo.out rise — fade + settle, no bounce (anti-AI: real objects
+   decelerate smoothly). Exit stays faster than entry. */
+.overlay-root.active {
+  animation: palette-enter 220ms var(--ease-premium) forwards;
+}
+
+@keyframes palette-enter {
+  0% {
+    opacity: 0;
+    scale: 0.94;
+    translate: 0 4px;
+  }
+  100% {
+    opacity: 1;
+    scale: 1;
+    translate: 0 0;
+  }
+}
+
+/* Mass-aware entry: smaller tiers settle faster on the same expo-out curve,
+   so the 44px orb never feels laggy next to the full card. */
+.overlay-root.active.style-compact {
+  animation-duration: 180ms;
+}
+
+.overlay-root.active.style-bubble {
+  animation-duration: 160ms;
+}
+
+/* Entrance cascade (full island only): meta, waveform, and footer settle in
+   sequence behind the card rise. Scoped to :active so exits stay instant —
+   once the class drops, the base delay-free transitions take over. */
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-meta {
+  transition: opacity 150ms ease 30ms;
+}
+
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-waveform {
+  transition: opacity 150ms ease 60ms;
+}
+
+.overlay-root.active:not(.style-compact):not(.style-bubble) .card-footer {
+  transition: opacity 150ms ease 90ms;
+}
+
+/* Exit: scale 100%→95%, 100ms ease-in, fade 100%→0%, 120ms */
+.overlay-root:not(.active) {
+  animation: palette-exit 120ms var(--ease-exit, ease-in) forwards;
+  pointer-events: none;
+}
+
+@keyframes palette-exit {
+  0% {
+    opacity: 0.97;
+    scale: 1;
+    translate: 0 0;
+  }
+  100% {
+    opacity: 0;
+    scale: 0.95;
+    translate: 0 3px;
+  }
+}
+
+/* ── Processing Breathing (compact + bubble tiers only) ────────── */
+/* While the transcription is being processed, the compact pill and the
+   bubble gently pulse. The full card keeps its static processing state.
+   Uses the `scale` property (not transform) so the root's translate
+   positioning is never disturbed. Replaces the one-shot palette-enter,
+   which has already finished by the time processing begins. */
+.overlay-root.active.state-transcribing.style-compact,
+.overlay-root.active.state-agent_transcribing.style-compact,
+.overlay-root.active.state-transcribing.style-bubble,
+.overlay-root.active.state-agent_transcribing.style-bubble {
+  --breathe-scale: 1.02;
+  animation: overlay-breathe 1.8s ease-in-out infinite;
+}
+
+.overlay-root.active.state-transcribing.style-bubble,
+.overlay-root.active.state-agent_transcribing.style-bubble {
+  --breathe-scale: 1.03;
+}
+
+@keyframes overlay-breathe {
+  0%,
+  100% {
+    scale: 1;
+  }
+  50% {
+    scale: var(--breathe-scale, 1.04);
+  }
+}
+
+/* ── Card Zones ────────────────────────────────────────────────── */
+
+/* Row 1: Metadata - REC indicator + mode badge */
+.card-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  height: 28px;
+  flex-shrink: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 150ms ease;
+}
+
+.overlay-root.active .card-meta {
+  opacity: 1;
+}
+
+/* Row 2: Waveform */
+.card-waveform {
+  flex: 1;
+  position: relative;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  min-height: 0;
+}
+
+.overlay-root.active .card-waveform {
+  opacity: 1;
+}
+
+#waveform-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 100%;
+  height: 100%;
+  display: block;
+  will-change: transform;
+}
+
+/* Row 3: Footer - timer + close */
+.card-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 18px;
+  height: 32px;
+  flex-shrink: 0;
+  background: transparent;
+  opacity: 0;
+  transition: opacity 150ms ease;
+  gap: 8px;
+}
+
+.overlay-root.active .card-footer {
+  opacity: 1;
+}
+
+/* ── Recording Indicator ───────────────────────────────────────── */
+.card-rec {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.rec-stack {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  line-height: 1.15;
+  min-width: 0;
+}
+
+.rec-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--overlay-amethyst);
+  box-shadow: 0 0 8px rgba(var(--overlay-amethyst-rgb), 0.26);
+  animation: rec-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes rec-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.rec-label {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-on-surface);
+}
+
+/* ── Separate App Pill (foreground app icon + name, floats on top edge) ─── */
+.app-pill {
+  position: absolute;
+  /* The 8px fallback keeps this valid in body-less contexts: the settings
+     preview inlines this stylesheet into a shadow root with `.ovpv-frame`
+     standing in for `body`, so body-declared vars never resolve there. */
+  top: var(--agent-pill-top, 8px);
+  left: 50%;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--color-canvas);
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  box-shadow:
+    0 8px 22px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+  backdrop-filter: blur(16px) saturate(125%);
+  -webkit-backdrop-filter: blur(16px) saturate(125%);
+  opacity: 0;
+  transform: translateX(-50%) translateY(-4px);
+  transition: opacity 180ms ease-out, transform 220ms var(--ease-premium);
+  pointer-events: none;
+}
+
+.app-pill[hidden] {
+  display: none;
+}
+
+.app-pill.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+}
+
+.app-pill .app-pill-icon {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.app-pill .app-pill-name {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  color: var(--color-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+/* ── Agent placement model (edge-anchored) ─────────────────────────────── */
+/* The OS window is sized to the tier and never resized during a session, so
+   the island's resting spot is decided purely by which screen edge the window
+   is docked to:
+
+     above (bottom dock) → bottom-anchored at a constant per-tier offset
+     below (top dock)    → top-anchored 46px at a constant per-tier offset
+
+   Neither offset depends on the window height, so the island and the app pill
+   sit in exactly the same place for every dock. */
+body.agent-placement-above {
+  /* Vertical mirror of the below placement: bottom-anchor the island to the
+     window edge at a constant per-tier offset (base - stack-top - bubble-height). */
+  align-items: flex-end;
+  padding-top: var(--agent-stack-top);
+  padding-bottom: calc(var(--agent-base-height) - var(--agent-stack-top) - var(--agent-bubble-height));
+}
+
+body.agent-placement-below {
+  align-items: flex-start;
+  padding-top: var(--agent-stack-top);
+}
+
+/* Rendered bubble height + window height per tier, declared in CSS so nothing
+   has to be measured at runtime (reading offsetHeight here used to catch the
+   bubble mid-entry and pin an intermediate height for the whole session).
+   Keep in sync with overlay.rs::overlay_window_size. */
+body.style-full { --agent-bubble-height: 96px; --agent-base-height: 190px; }
+body.style-compact { --agent-bubble-height: 36px; --agent-base-height: 130px; }
+body.style-bubble { --agent-bubble-height: 44px; --agent-base-height: 140px; }
+
+body.agent-placement-below .app-pill {
+  top: var(--agent-pill-top);
+  bottom: auto;
+  transition: opacity 180ms ease-out, transform 220ms var(--ease-premium);
+}
+
+/* above: the pill is bottom-anchored to the window edge at the same constant
+   offset it settles at in transcription mode, so it never moves. */
+body.agent-placement-above .app-pill {
+  top: auto;
+  bottom: calc(var(--agent-base-height) - var(--agent-pill-top) - 24px);
+}
+
+/* ── Metadata Left Group (REC) ─────────────────────────────────── */
+.card-meta-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+/* ── Mode Badge ────────────────────────────────────────────────── */
+.mode-badge {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.015em;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: rgba(var(--overlay-amethyst-rgb), 0.12);
+  border: 1px solid rgba(var(--overlay-amethyst-rgb), 0.22);
+  color: #C4A5F5;
+}
+
+/* Agent mode badge - teal */
+.overlay-root.state-agent .mode-badge,
+.overlay-root.state-agent_transcribing .mode-badge {
+  background: rgba(11, 214, 227, 0.10);
+  border-color: rgba(11, 214, 227, 0.18);
+  color: var(--color-brand-cyan);
+}
+
+/* ── Timer ─────────────────────────────────────────────────────── */
+.card-timer {
+  font-family: var(--font-label), 'SF Mono', 'Cascadia Code', monospace;
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  letter-spacing: 0.02em;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── Close Button ──────────────────────────────────────────────── */
+.card-discard {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  border: none;
+  background: transparent;
+  color: var(--color-ink-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  padding: 0;
+  position: relative;
+  transition: background 150ms ease, color 150ms ease, transform 150ms var(--ease-premium);
+  -webkit-app-region: no-drag;
+  flex-shrink: 0;
+}
+
+/* 44px effective target — visual stays 28px */
+.card-discard::after {
+  content: '';
+  position: absolute;
+  inset: -8px;
+}
+
+.card-discard:hover {
+  background: var(--color-error-container);
+  color: var(--color-error);
+}
+
+.card-discard:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+.card-discard:active {
+  background: rgba(255, 255, 255, 0.10);
+  transform: scale(0.97);
+}
+
+/* ── Status Icons (success/error) ──────────────────────────────── */
+.status-icon {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  scale: 0.5;
+  opacity: 0;
+  color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  transition: opacity 200ms ease, scale 280ms var(--ease-premium);
+}
+
+.overlay-root.state-success .status-icon.success-icon {
+  opacity: 1;
+  scale: 1;
+  color: var(--color-success);
+  animation: status-pop 280ms var(--ease-premium);
+}
+
+.overlay-root.state-error .status-icon.error-icon {
+  opacity: 1;
+  scale: 1;
+  color: var(--color-error);
+  animation: status-pop 280ms var(--ease-premium);
+}
+
+@keyframes status-pop {
+  0% { scale: 0.6; opacity: 0; }
+  100% { scale: 1; opacity: 1; }
+}
+
+/* ── Status Message (end-of-flow confirmation) ─────────────────── */
+.status-msg {
+  position: absolute;
+  left: 50%;
+  top: 66%;
+  translate: -50% -50%;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface-variant);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 180ms ease 80ms;
+}
+
+.overlay-root.state-success .status-msg {
+  opacity: 1;
+  color: var(--color-success);
+}
+
+.overlay-root.state-error .status-msg {
+  opacity: 1;
+  color: var(--color-error);
+}
+
+/* Neutral "no speech" notice - variant-colored, no red X, quiet. Guarded
+   with :not(.style-bubble) so the minimal bubble, which hides status-msg
+   anyway, stays pixel-identical. */
+.overlay-root.state-no-speech:not(.style-bubble) .status-msg {
+  opacity: 1;
+  color: var(--color-on-surface-variant);
+}
+
+.overlay-root.state-no-speech:not(.style-bubble) .card-waveform {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+/* Icon-only finish (paste outcomes): the green check / red X carries the
+   result; the message text stays in the DOM for aria-live + tooltips but
+   is not painted. Placed after the state rules so it wins the cascade. */
+.overlay-root.status-text-hidden .status-msg {
+  opacity: 0;
+}
+
+/* ── Hold-to-Record Hint ───────────────────────────────────────── */
+.rec-hint {
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.15;
+  color: var(--color-on-surface-variant);
+  white-space: nowrap;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Retry Button (error state) ────────────────────────────────── */
+.status-retry {
+  position: absolute;
+  left: 50%;
+  top: 84%;
+  translate: -50% -50%;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, background 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.status-retry:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.status-retry:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.overlay-root.state-error .status-retry:not([hidden]) {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* ── Manual Copy fallback (recoverable paste failures) ─────────── */
+.status-copy {
+  position: absolute;
+  left: 50%;
+  top: 72%;
+  translate: -50% -50%;
+  font-family: var(--font-body), system-ui, sans-serif;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-on-surface);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  border-radius: 999px;
+  padding: 4px 14px;
+  cursor: pointer;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 150ms ease, background 150ms ease;
+  -webkit-app-region: no-drag;
+}
+
+.status-copy:hover {
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.status-copy:focus-visible {
+  outline: 1.5px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+
+.overlay-root.state-error .status-copy:not([hidden]) {
+  opacity: 1;
+  pointer-events: all;
+}
+
+/* The minimal bubble/compact tiers have no room for the copy pill; the
+   transcript stays recoverable via Retry and the History page. */
+.overlay-root.style-bubble .status-copy {
+  display: none;
+}
+
+.overlay-root.style-compact .status-copy {
+  display: none !important;
+}
+
+/* ── Processing Pulse ──────────────────────────────────────────── */
+@keyframes pulse-processing {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+.overlay-root.state-transcribing .rec-label,
+.overlay-root.state-agent_transcribing .rec-label {
+  /* Desynced from the 1.2s rec-dot pulse so the two never throb as one. */
+  animation: pulse-processing 1.7s ease-in-out infinite;
+}
+
+/* Processing spinner */
+.overlay-root.state-transcribing .rec-dot,
+.overlay-root.state-agent_transcribing .rec-dot {
+  background: transparent;
+  border: 2px solid rgba(var(--overlay-amethyst-rgb), 0.28);
+  border-top-color: var(--overlay-amethyst);
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  animation: spin 0.8s linear infinite;
+  box-shadow: none;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Agent rec-dot color ──────────────────────────────────────── */
+.overlay-root.state-agent .rec-dot,
+.overlay-root.state-agent_transcribing .rec-dot {
+  background: var(--color-brand-cyan);
+  box-shadow: 0 0 8px rgba(11, 214, 227, 0.35);
+}
+
+.overlay-root.state-agent_transcribing .rec-dot {
+  background: transparent;
+  border: 2px solid rgba(11, 214, 227, 0.3);
+  border-top-color: var(--color-brand-cyan);
+  border-radius: 50%;
+  width: 10px;
+  height: 10px;
+  animation: spin 0.8s linear infinite;
+  box-shadow: none;
+}
+
+/* ── Fade waveform on success/error ────────────────────────────── */
+.overlay-root.state-success .card-waveform,
+.overlay-root.state-error .card-waveform {
+  opacity: 0;
+  transition: opacity 100ms ease;
+}
+
+/* ── Premium material + anti-AI discipline ─────────────────────── */
+/* Flat monochrome ink with one accent per mode — no gradient wash, no
+   shadow stacking. Gradient is vertical light falloff only (top-lit). */
+.overlay-root.active.style-compact,
+.overlay-root.active.style-bubble {
+  background: var(--overlay-gradient);
+  border-color: rgba(255, 255, 255, 0.09);
+}
+
+.overlay-root.active.style-compact {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+/* ── Optional halo glow (Floating Bubble toggle, Android pill-glow parity) ── */
+/* The rules above stay halo-free (today's flat look). With glow ON — the
+   default, i.e. `.no-glow` absent — each tier gains a stacked halo in its
+   mode accent: a tight wash for edge presence plus a wide wash for lift.
+   Amethyst while transcribing, teal in Agent mode. Borders, glass, and
+   depth shadows are repeated verbatim, never retuned. */
+.overlay-root.active:not(.no-glow):not(.state-agent):not(.state-agent_transcribing):not(.style-compact):not(.style-bubble) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 14px rgba(139, 69, 216, 0.32),
+    0 0 36px rgba(139, 69, 216, 0.16);
+}
+
+.overlay-root.state-agent.active:not(.no-glow):not(.style-compact):not(.style-bubble),
+.overlay-root.state-agent_transcribing.active:not(.no-glow):not(.style-compact):not(.style-bubble) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.07),
+    0 0 14px rgba(11, 214, 227, 0.32),
+    0 0 36px rgba(11, 214, 227, 0.16);
+}
+
+.overlay-root.active.style-compact:not(.no-glow):not(.state-agent):not(.state-agent_transcribing) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 10px rgba(139, 69, 216, 0.35),
+    0 0 24px rgba(139, 69, 216, 0.18);
+}
+
+.overlay-root.active.style-compact.state-agent:not(.no-glow),
+.overlay-root.active.style-compact.state-agent_transcribing:not(.no-glow) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 12px 32px rgba(0, 0, 0, 0.5),
+    0 2px 8px rgba(0, 0, 0, 0.3),
+    0 0 10px rgba(11, 214, 227, 0.35),
+    0 0 24px rgba(11, 214, 227, 0.18);
+}
+
+.overlay-root.active.style-bubble:not(.no-glow):not(.state-agent):not(.state-agent_transcribing) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 10px rgba(139, 69, 216, 0.35),
+    0 0 24px rgba(139, 69, 216, 0.18);
+}
+
+.overlay-root.active.style-bubble.state-agent:not(.no-glow),
+.overlay-root.active.style-bubble.state-agent_transcribing:not(.no-glow) {
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.10),
+    0 8px 24px rgba(0, 0, 0, 0.45),
+    0 2px 8px rgba(0, 0, 0, 0.30),
+    0 0 10px rgba(11, 214, 227, 0.35),
+    0 0 24px rgba(11, 214, 227, 0.18);
+}
+
+/* Small-text contrast: 11px pill/app names hit 4.5:1 on dark */
+.app-pill .app-pill-name,
+.rec-hint {
+  color: var(--overlay-text-dim);
+}
+
+/* Full-card processing: waveform recedes, label carries state */
+.overlay-root.active.state-transcribing:not(.style-compact):not(.style-bubble) .card-waveform,
+.overlay-root.active.state-agent_transcribing:not(.style-compact):not(.style-bubble) .card-waveform {
+  opacity: 0.6;
+}
+
+/* Retry as real pill button */
+.status-retry {
+  padding: 6px 16px;
+  transition: opacity 180ms ease, background 150ms ease, transform 150ms var(--ease-premium);
+}
+
+.status-retry:active {
+  transform: scale(0.97);
+}
+
+/* ── Reduced motion - keep the processing spinner perceivable ──── */
+/* Policy: infinite/persistent motion collapses to static (breathe included —
+   a 1.8s scale loop is a vestibular trigger); one-shot confirmations under
+   ~300ms (status-pop) and the slowed 1.5s spinner stay so state changes
+   remain perceivable without animation. */
+@media (prefers-reduced-motion: reduce) {
+  .overlay-root.active {
+    animation: none;
+    transition-duration: 1ms;
+  }
+
+  /* Entrance-cascade and status delays collapse too, or content pops in
+     late under an otherwise instant transition. */
+  .overlay-root.active .card-meta,
+  .overlay-root.active .card-waveform,
+  .overlay-root.active .card-footer,
+  .overlay-root .status-msg {
+    transition-delay: 0ms;
+  }
+
+  .overlay-root.active.state-transcribing.style-compact,
+  .overlay-root.active.state-agent_transcribing.style-compact,
+  .overlay-root.active.state-transcribing.style-bubble,
+  .overlay-root.active.state-agent_transcribing.style-bubble {
+    animation: none;
+  }
+
+  .app-pill,
+  .rec-dot,
+  .status-icon,
+  .overlay-root.state-transcribing .rec-label,
+  .overlay-root.state-agent_transcribing .rec-label {
+    animation: none !important;
+    transition-duration: 1ms;
+  }
+
+  body {
+    transition-duration: 1ms;
+  }
+
+  .overlay-root.state-transcribing .rec-dot,
+  .overlay-root.state-agent_transcribing .rec-dot {
+    animation: spin 1.5s linear infinite !important;
+  }
+}

@@ -1,0 +1,354 @@
+/* ====================================================
+   Fluence Windows - Design Tokens
+   "Acoustic Precision Instrument" - Studio-grade desktop UI
+   THEME LOCK (anti-slop program, owner decision): dark only for now.
+   No light-mode work in this branch. data-theme="dark" is intentional.
+   ACCENT LOCK: --color-brand-cyan is the single functional accent.
+   White is reserved for primary buttons + selected text. Amethyst stays
+   ONLY inside the logo-mark gradient. No new gradient washes.
+   RADIUS RULE: cards 12, inputs/selects 8, buttons 8, badges/pills 999,
+   checkboxes 0 (square hardware), toggles pill by nature, dialogs 12.
+   TYPE: Sora display + Hanken Grotesk body + Geist Mono labels. Allura
+   is reserved for the logo wordmark ONLY (logo frozen, owner decision);
+   never use Allura anywhere else.
+   ==================================================== */
+
+/* Bundled fonts - served locally from src/fonts/ (no network at runtime) */
+@font-face { font-family: 'Allura'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/allura-latin-400.woff2') format('woff2'); }
+
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/sora-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/sora-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Sora'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/sora-latin-600.woff2') format('woff2'); }
+
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 300; font-display: swap; src: url('../fonts/hanken-grotesk-latin-300.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/hanken-grotesk-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/hanken-grotesk-latin-500.woff2') format('woff2'); }
+@font-face { font-family: 'Hanken Grotesk'; font-style: normal; font-weight: 600; font-display: swap; src: url('../fonts/hanken-grotesk-latin-600.woff2') format('woff2'); }
+
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 400; font-display: swap; src: url('../fonts/geist-mono-latin-400.woff2') format('woff2'); }
+@font-face { font-family: 'Geist Mono'; font-style: normal; font-weight: 500; font-display: swap; src: url('../fonts/geist-mono-latin-500.woff2') format('woff2'); }
+
+:root {
+  /* Surface Hierarchy (Design System v2.1 Canonical) */
+  /* App background / page plane. #0D0D0D is the value the system already
+   * declares as the Windows app background (--color-surface-sunken, and the
+   * Android AppBackground "spec/Windows app background"). At #121212 the page
+   * sat only 3/255 above the #141414 card, a 0.13-stop step that read as one
+   * flat plane; on #0D0D0D the card separation is 0.73 stops. Light mode was
+   * already correct (#FFFFFF card on #EFF0F3) and is unchanged below. */
+  --color-canvas:                #0D0D0D;
+  --color-surface:               #141414;
+  --color-surface-secondary:     #1E1E1E;
+  --color-surface-elevated:      #262626;
+  --color-surface-menu:          #2E2E2E;
+  --color-surface-dialog:        #2E2E2E;
+  --color-panel:                 var(--color-surface-secondary);
+  --color-panel-elevated:        var(--color-surface-elevated);
+  --color-dialog:                var(--color-surface-dialog);
+  --color-dialog-elevated:       #363636;
+  --color-input-bg:              #262626;
+
+  /* Backward compatibility aliases */
+  --color-background:            #0D0D0D;
+  --color-surface-container:     var(--color-surface);
+  --color-surface-container-high: var(--color-surface-elevated);
+  --color-surface-container-highest: var(--color-surface-menu);
+  --color-surface-container-lowest: var(--color-canvas);
+  --color-surface-variant:       var(--color-surface-secondary);
+  --color-surface-bright:        var(--color-surface-menu);
+  --color-secondary-container:   var(--color-surface-elevated);
+
+  /* Borders / Divider (Design System Original) */
+  --color-border:                rgba(255, 255, 255, 0.05);
+  --color-border-subtle:         rgba(255, 255, 255, 0.03);
+  --color-surface-sunken:        #0D0D0D;
+  --color-divider:               #2A2A2A;
+  --color-border-structural:     #2A2A2A;
+  --color-border-muted:          rgba(255, 255, 255, 0.03);
+  /* --color-border-focus is the HOVER/emphasis border, not the focus
+   * indicator: it is consumed by .switch:hover, .switch[data-state=checked],
+   * .select-trigger:hover and .btn-outline:hover. Do not repoint it at the
+   * accent or hover states turn brand-coloured.
+   * --color-focus-ring below is the FOCUS-ONLY indicator and is the DS's
+   * closed-list accent use #1 ("Focus rings"). */
+  --color-border-focus:          rgba(255, 255, 255, 0.20);
+  --color-border-focus-glow:     rgba(11, 214, 227, 0.25);
+  /* Focus indicator. WCAG 1.4.11 requires 3:1 against the adjacent colour.
+   * The previous 20%-white ring measured 1.79-1.91:1 on every dark surface
+   * and 1.34:1 focus-vs-unfocused on the kit checkbox/radio. Solid
+   * --color-brand-cyan measures 10.47:1 on --color-canvas and is the
+   * accent's sanctioned use. Paired with the existing cyan halo below. */
+  --color-focus-ring:            var(--color-brand-cyan);
+
+  /* Backward compat */
+  --color-outline:               #808080;
+  --color-outline-variant:       rgba(255, 255, 255, 0.05);
+
+  /* Text / Ink Hierarchy (Design System v2.1 Canonical - WCAG AA calibrated) */
+  --color-text-primary:          #E2E2E2;
+  --color-text-secondary:        #A0A0A0;
+  --color-text-tertiary:         #8E8E8E;
+  --color-text-disabled:         #4A4A4A;
+  --color-text-link:             #B197FC;
+
+  /* Text Backward compatibility aliases */
+  --color-on-surface:            var(--color-text-primary);
+  --color-on-surface-variant:    var(--color-text-secondary);
+  --color-on-background:         var(--color-text-primary);
+  --color-on-primary:            #FFFFFF;
+  /* Emphasis text that sits on a SURFACE, not on a primary fill. The KPI
+   * figure and the chart tooltip readout used --color-on-primary, which is
+   * #FFFFFF in both modes and therefore 1.00:1 on the five light surfaces
+   * that are themselves #FFFFFF. Previously rescued by an ad-hoc
+   * light-mode override; this token removes the double duty so
+   * the two values can never drift apart again. */
+  --color-on-surface-emphasis:   #FFFFFF;
+  --color-ink-muted:             var(--color-text-tertiary);
+  --color-ink-disabled:          var(--color-text-disabled);
+
+  /* Semantic (Design System v2.1 Canonical - WCAG AA calibrated) */
+  --color-error:                 #EF4444;
+  --color-error-text:            #F87171;
+  --color-error-container:       rgba(239, 68, 68, 0.15);
+  --color-success:               #22C55E;
+  --color-success-container:     rgba(34, 197, 94, 0.15);
+  --color-warning:               #F59E0B;
+  --color-warning-container:     rgba(245, 158, 11, 0.15);
+
+  /* Brand / Accent System (Design System Original) */
+  --color-brand-amethyst:        #8B45D8;
+  --color-brand-cyan:            #0BD6E3;
+  --color-brand-amethyst-soft:   rgba(139, 69, 216, 0.8);
+  --color-brand-cyan-soft:       rgba(11, 214, 227, 0.8);
+
+  /* Brand Signature Gradients — DEPRECATED for surfaces (anti-slop lock).
+   * Kept only because the logo-mark SVG gradient stops reference these hues.
+   * Do not use for progress fills, dots, or button glows; those are flat
+   * --color-brand-cyan. EXCEPTION (owner direction): the dashboard chart
+   * uses a muted amethyst-to-cyan duo (#8E7CC3 → #7498C6 → #5FB4C2,
+   * desaturated, no glow) defined at the chart, not from these tokens. */
+  --brand-gradient:              linear-gradient(135deg, #8B45D8 0%, #0BD6E3 100%);
+  --brand-gradient-h:            linear-gradient(90deg, #8B45D8 0%, #0BD6E3 100%);
+  --brand-gradient-v:            linear-gradient(180deg, #8B45D8 0%, #0BD6E3 100%);
+  --brand-gradient-glow:         0 0 16px rgba(139, 69, 216, 0.25), 0 0 8px rgba(11, 214, 227, 0.25);
+  --color-brand-accent-glow:     rgba(139, 69, 216, 0.2);
+
+  /* Overlay Compatibility Variables (frozen overlay) */
+  --color-overlay-surface:       rgba(13, 13, 13, 0.94);
+  --overlay-amethyst:            #8B45D8;
+  --overlay-amethyst-rgb:        139, 69, 216;
+  --breathe-scale:               1.0;
+
+  /* Accent Modifiers (alpha variants of brand/semantic colors) */
+  --color-chart-bar-a:           rgba(139, 69, 216, 0.55);
+  --color-chart-bar-b:           rgba(139, 69, 216, 0.12);
+  --color-mark-search:           rgba(11, 214, 227, 0.22);
+  --color-mark-candidate:        rgba(255, 176, 32, 0.22);
+  --color-mark-candidate-hover:  rgba(255, 176, 32, 0.45);
+  --color-mark-candidate-border: rgba(255, 176, 32, 0.75);
+  --color-toast-success:         rgba(34, 197, 94, 0.12);
+  --color-toast-error:           rgba(239, 68, 68, 0.12);
+  --color-copy-flash:            rgba(34, 197, 94, 0.10);
+
+  /* State Modifiers */
+  --color-hover:                 rgba(255, 255, 255, 0.04);
+  --color-active:                rgba(255, 255, 255, 0.08);
+  --color-selected:              rgba(255, 255, 255, 0.10);
+  --color-interactive:           rgba(255, 255, 255, 0.08);
+  --color-interactive-hover:     rgba(255, 255, 255, 0.12);
+  --color-interactive-active:    rgba(255, 255, 255, 0.16);
+  --color-placeholder:           rgba(160, 160, 160, 0.85);
+
+  /* Button state fills. Promoted from raw literals in global.css so the
+   * light theme can re-point them: .btn-primary:hover was painting #FFFFFF
+   * on a #FFFFFF card (1.00:1) and .btn-link:hover was painting #FFFFFF
+   * text on a #EFF0F3 canvas (1.14:1) because the light block overrode
+   * border-color and color but never background. Dark values are the
+   * previous literals verbatim, so dark rendering is unchanged. */
+  --color-btn-primary-hover-bg:     #FFFFFF;
+  --color-btn-primary-hover-fg:     #000000;
+  --color-btn-primary-active-bg:    #E4E4E7;
+  --color-btn-hover-fg:             #FFFFFF;
+
+  /* Typography Scale */
+  --font-display:  'Sora', system-ui, sans-serif;
+  --font-body:     'Hanken Grotesk', system-ui, sans-serif;
+  --font-label:    'Geist Mono', 'JetBrains Mono', monospace;
+
+  --text-display-lg:    1.75rem;
+  --text-title-lg:      1.5rem;
+  --text-headline-md:   1.3rem;
+  --text-body-lg:       1.125rem;
+  --text-body-md:       1rem;
+  --text-label-lg:      0.875rem;
+  --text-label-sm:      0.75rem;
+  --text-label-xs:      0.6875rem;
+
+  --leading-display:    1.3;
+  --leading-headline:   1.3;
+  --leading-body-lg:    1.75;
+  --leading-body-md:    1.5;
+  --leading-label:      1.5;
+
+  /* Spacing Scale (base-4) */
+  --spacing-2xs:  2px;
+  --spacing-xs:   4px;
+  --spacing-sm:   8px;
+  --spacing-md:   16px;
+  --spacing-lg:   24px;
+  --spacing-xl:   32px;
+  --spacing-2xl:  48px;
+  --spacing-3xl:  64px;
+
+  /* Declared micro-rhythm (audit): values shared with the frozen section
+   * chrome — 18px horizontal gutters, 12px section padding, 10px/7px/6px
+   * control rhythm. Numeric names; the t-shirt scale above stays canonical.
+   * Additive only: no existing token is renamed or revalued. */
+  --spacing-6:   6px;
+  --spacing-7:   7px;
+  --spacing-10:  10px;
+  --spacing-12:  12px;
+  --spacing-18:  18px;
+
+  /* Corner Radius */
+  --radius-2xs:   2px;
+  --radius-xs:    3px;
+  --radius-sm:    8px;
+  --radius-md:    12px;
+  --radius-lg:    16px;
+  --radius-xl:    20px;
+  --radius-full:  999px;
+
+  /* Elevation / Shadow */
+  --shadow-sm:  0 1px 3px rgba(0,0,0,0.35);
+  --shadow-md:  0 4px 24px rgba(0,0,0,0.45), 0 1px 4px rgba(0,0,0,0.25);
+  --shadow-lg:  0 12px 56px rgba(0,0,0,0.65), 0 2px 8px rgba(0,0,0,0.35);
+  --shadow-glow-cyan: 0 0 16px rgba(11, 214, 227, 0.25);
+  --shadow-glow-amethyst: 0 0 16px rgba(139, 69, 216, 0.25);
+
+  /* Motion */
+  --transition-fast:   all 0.12s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-base:   all 0.18s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-slow:   all 0.3s cubic-bezier(0.25, 0.1, 0.25, 1);
+  --transition-spring: all 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+
+  --ease-standard:     cubic-bezier(0.25, 0.1, 0.25, 1);
+  --ease-exit:         cubic-bezier(0.4, 0.0, 1, 1);
+  --ease-structural:   cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-spring:       cubic-bezier(0.34, 1.2, 0.64, 1);
+  /* Overlay premium motion + material (additive only — nothing renamed) */
+  --ease-premium:      cubic-bezier(0.16, 1, 0.3, 1);
+  --overlay-gradient:  linear-gradient(180deg, #17171a 0%, #0e0e10 100%);
+  --overlay-text-dim:  #B8B8B8;
+
+  /* Z-index */
+  --z-overlay:  100;
+  --z-dropdown: 150;
+  --z-modal:    200;
+  --z-toast:    300;
+}
+
+/* ====================================================
+   Light theme — settings shell only (owner decision).
+   Same token names, recalibrated values: neutral zinc surfaces
+   (no beige), hairline black borders, soft shadows, deepened
+   functional teal for AA contrast on white. Overlay and wizard
+   windows never set data-theme so they keep the dark :root values.
+   Equal specificity to :root, later in cascade, so it wins.
+   ==================================================== */
+[data-theme="light"] {
+  /* Surface Hierarchy */
+  --color-canvas:                #EFF0F3;
+  --color-surface:               #FFFFFF;
+  --color-surface-secondary:     #F5F5F7;
+  --color-surface-elevated:      #FFFFFF;
+  --color-surface-menu:          #FFFFFF;
+  --color-surface-dialog:        #FFFFFF;
+  --color-dialog-elevated:       #F5F5F7;
+  --color-input-bg:              #FFFFFF;
+  --color-surface-sunken:        #E7E8EC;
+
+  /* Backward compatibility aliases */
+  --color-background:            #EFF0F3;
+
+  /* Borders / Divider */
+  --color-border:                rgba(0, 0, 0, 0.08);
+  --color-border-subtle:         rgba(0, 0, 0, 0.05);
+  --color-divider:               #E2E3E6;
+  --color-border-structural:     #DFE0E4;
+  --color-border-muted:          rgba(0, 0, 0, 0.04);
+  --color-border-focus:          rgba(14, 116, 144, 0.55);
+  --color-border-focus-glow:     rgba(14, 116, 144, 0.16);
+  /* Light focus indicator: the light functional cyan (#0E7490), which
+   * measures 4.70:1 on --color-canvas #EFF0F3 and 5.36:1 on white. */
+  --color-focus-ring:            var(--color-brand-cyan);
+
+  /* Backward compat */
+  --color-outline:               #A1A1AA;
+  --color-outline-variant:       rgba(0, 0, 0, 0.06);
+
+  /* Text / Ink Hierarchy (WCAG AA on white: primary ~15:1, secondary ~7:1) */
+  --color-text-primary:          #18181B;
+  --color-text-secondary:        #52525B;
+  --color-text-tertiary:         #71717A;
+  --color-text-disabled:         #A1A1AA;
+  --color-text-link:             #6D28D9;
+  /* Emphasis text on a light surface. Was #FFFFFF (invisible) before the
+   * [data-theme="light"] rescue; the rescue now comes from this token. */
+  --color-on-surface-emphasis:   #18181B;
+
+  /* Semantic */
+  --color-error:                 #DC2626;
+  --color-error-text:            #B91C1C;
+  --color-error-container:       rgba(220, 38, 38, 0.08);
+  --color-success:               #15803D;
+  --color-success-container:     rgba(21, 128, 61, 0.10);
+  --color-warning:               #B45309;
+  --color-warning-container:     rgba(180, 83, 9, 0.10);
+
+  /* Brand / Accent — amethyst frozen (logo), functional cyan deepened
+   * to teal for contrast on white. Logo-mark gradient stops untouched. */
+  --color-brand-cyan:            #0E7490;
+  --color-brand-cyan-soft:       rgba(14, 116, 144, 0.8);
+  --color-brand-accent-glow:     rgba(14, 116, 144, 0.12);
+
+  /* Accent Modifiers */
+  --color-mark-search:           rgba(14, 116, 144, 0.16);
+  --color-mark-candidate:        rgba(180, 83, 9, 0.16);
+  --color-mark-candidate-hover:  rgba(180, 83, 9, 0.28);
+  --color-mark-candidate-border: rgba(180, 83, 9, 0.55);
+  --color-toast-success:         rgba(21, 128, 61, 0.08);
+  --color-toast-error:           rgba(220, 38, 38, 0.08);
+  --color-copy-flash:            rgba(21, 128, 61, 0.08);
+
+  /* State Modifiers */
+  --color-hover:                 rgba(0, 0, 0, 0.04);
+  --color-active:                rgba(0, 0, 0, 0.07);
+  --color-selected:              rgba(0, 0, 0, 0.07);
+  --color-interactive:           rgba(0, 0, 0, 0.05);
+  --color-interactive-hover:     rgba(0, 0, 0, 0.08);
+  --color-interactive-active:    rgba(0, 0, 0, 0.12);
+  --color-placeholder:           rgba(113, 113, 122, 0.9);
+
+  /* Primary-button fill in light mode — matte charcoal instead of pure
+   * black (owner direction). Toggles, checkboxes, and text stay as they
+   * are; strictly buttons use charcoal. */
+  --color-charcoal:              #3F3F46;
+
+  /* Button state fills — light re-point. Hover darkens toward the ink
+   * value (#18181B) and active returns to the charcoal base, so the
+   * pressed state is never lighter than the rest state on a white card.
+   * Link/secondary hover text moves to --color-text-link (#6D28D9,
+   * 6.23:1 on white) instead of #FFFFFF. */
+  --color-btn-primary-hover-bg:     #18181B;
+  --color-btn-primary-hover-fg:     #FFFFFF;
+  --color-btn-primary-active-bg:    #3F3F46;
+  --color-btn-hover-fg:             #6D28D9;
+
+  /* Elevation / Shadow — soft, no glow stacking */
+  --shadow-sm:  0 1px 2px rgba(16, 24, 40, 0.06);
+  --shadow-md:  0 4px 16px rgba(16, 24, 40, 0.08), 0 1px 3px rgba(16, 24, 40, 0.06);
+  --shadow-lg:  0 12px 32px rgba(16, 24, 40, 0.14), 0 2px 6px rgba(16, 24, 40, 0.08);
+  --shadow-glow-cyan: 0 0 12px rgba(14, 116, 144, 0.14);
+  --shadow-glow-amethyst: 0 0 12px rgba(124, 58, 237, 0.14);
+}

@@ -1,0 +1,151 @@
+[package]
+name = "fluence-windows"
+version = "1.31.0"
+description = "Fluence - AI Voice Typing for Windows"
+authors = ["Fluence Team"]
+license = "AGPL-3.0-only"
+repository = ""
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "fluence_windows_lib"
+crate-type = ["rlib"]
+
+# Cargo workspace: the main app plus the Moonshine v2 sidecar server.
+# `cargo check/test/clippy` in src-tauri cover all members; the sidecar
+# links the gitignored per-machine vendor tree (see
+# moonshine-v2-server/VENDOR.json), which CI provisions before any cargo
+# invocation. `default-members` intentionally left unset so a broken
+# sidecar fails the build loudly instead of silently dropping out.
+[workspace]
+members = [".", "moonshine-v2-server"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+# Sidecar integrity: the app build hashes the staged sidecar exe (when
+# present) and bakes it in as MOONSHINE_V2_SERVER_SHA256 for the
+# runtime verify_sha256 gate. No network access here by design.
+sha2 = "0.10"
+hex = "0.4"
+
+[dependencies]
+tauri = { version = "2", features = [
+  "tray-icon",
+  "image-png",
+] }
+tauri-plugin-shell = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-global-shortcut = "2"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-single-instance = "2"
+tauri-plugin-updater = "2"
+tauri-plugin-process = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-fs = "2"
+
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-webpki-roots", "multipart", "json", "stream", "blocking"] }
+uuid = { version = "1", features = ["v4", "v5"] }
+md-5 = "0.10"
+dirs = "5"
+rusqlite = { version = "0.31", features = ["bundled"] }
+log = "0.4"
+env_logger = "0.11"
+anyhow = "1"
+chrono = { version = "0.4", features = ["serde"] }
+base64 = "0.22"
+image = { version = "0.25", default-features = false, features = ["png"] }
+once_cell = "1"
+tokio-tungstenite = { version = "0.23", features = ["rustls-tls-webpki-roots"] }
+futures-util = { version = "0.3", default-features = false, features = ["std", "sink"] }
+flacenc = "0.5.1"
+shine-rs = "0.1"
+regex = "1"
+url = "2"
+similar = { version = "3", features = ["text"] }
+strsim = "0.11"
+sha2 = "0.10"
+hex = "0.4"
+unicode-normalization = "0.1"
+
+
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.58", features = [
+  "Win32_Foundation",
+  "Win32_UI_Input_KeyboardAndMouse",
+  "Win32_System_DataExchange",
+  "Win32_System_Memory",
+  "Win32_Security_Credentials",
+  "Win32_System_Registry",
+  "Win32_UI_WindowsAndMessaging",
+  "Win32_Media_Audio",
+  "Win32_System_Com",
+  "Win32_UI_Accessibility",
+  "Win32_Graphics_Gdi",
+  "Win32_UI_Shell",
+  "Win32_System_Threading",
+  "Win32_System_Diagnostics_ToolHelp",
+  "Win32_Storage_FileSystem",
+] }
+cpal = "0.15"
+audio_thread_priority = "0.28"
+
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+# Release MUST unwind. `finish_guarded` in src/sync/scheduler.rs wraps a sync
+# pass in `std::panic::catch_unwind` and maps a mid-pass panic to a fatal
+# outcome (single-flight latch released, scheduling waits for a manual
+# command). That guard is a no-op when panics abort: under `panic = "abort"`
+# `catch_unwind` can never catch anything in a release build, so a bug
+# mid-pass terminates the whole process instead of latching the scheduler -
+# and the guard's tests (`panic_in_pass_releases_single_flight_latch`,
+# `successful_pass_after_crash_resets_state`) only prove anything under
+# panic=unwind. The size/speed settings above are what buy the release win,
+# so keep them and unwind.
+panic = "unwind"
+strip = true
+
+[profile.dev]
+opt-level = 0
+# Limit codegen to one unit at a time so LLVM never holds multiple modules
+# in RAM simultaneously — fixes "rustc-LLVM ERROR: out of memory" on this crate.
+codegen-units = 1
+# Line-tables-only debuginfo (debug = 1) uses far less memory than full DWARF
+# (debug = 2) while still giving usable backtraces in dev builds.
+debug = 1
+
+[profile.dev.package.reqwest]
+opt-level = 3
+
+[profile.dev.package.hyper]
+opt-level = 3
+
+[profile.dev.package.tokio]
+opt-level = 3
+
+[profile.dev.package.native-tls]
+opt-level = 3
+
+[profile.dev.package.schannel]
+opt-level = 3
+
+[profile.dev.package.hound]
+opt-level = 3
+
+[profile.dev.package.base64]
+opt-level = 3
+
+[profile.dev.package.h2]
+opt-level = 3

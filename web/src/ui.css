@@ -1,0 +1,1640 @@
+/* Fluence React UI kit (shadcn anatomy, Path B).
+ *
+ * Component classes for the Radix-anatomy primitives under
+ * web/src/components/ui/. Token bridge ONLY: every value below references
+ * a token from the frozen vanilla layer (design-tokens.css) — no token is
+ * redefined here, no Tailwind/preflight is introduced, and nothing outside
+ * these `.ui-*` / shadcn-canonical class names is touched.
+ */
+
+/* ——— Card (shadcn anatomy, Fluence metrics = .settings-section) ——— */
+.card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  /* No overflow clipping: badges wrap inside, and the chart tooltip +
+     dropdown (portaled) must paint past the card edge. */
+}
+.card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md) var(--spacing-md) 0;
+}
+.card-title {
+  font-family: var(--font-body);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-on-surface);
+  letter-spacing: -0.01em;
+  text-transform: none;
+  margin: 0;
+}
+.card-description {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  margin: var(--spacing-2xs) 0 0;
+}
+.card-content {
+  padding: var(--spacing-sm) var(--spacing-md) var(--spacing-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  min-width: 0;
+}
+.card-footer {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 0 var(--spacing-md) var(--spacing-md);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+}
+
+/* ——— Badge (shadcn variants, Fluence semantics) ——— */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-label);
+  font-size: var(--text-label-xs);
+  font-weight: 500;
+  line-height: 1;
+  padding: 4px 8px;
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  white-space: nowrap;
+  transition: var(--transition-fast);
+  /* The frozen layer (global.css .badge) also sets these two. They are
+   * restated here so the rendered badge no longer depends on which
+   * stylesheet loads last: previously the mono family and the 11px size
+   * came from this layer while uppercase and the 0.04em tracking were
+   * inherited from the frozen layer, so neither author produced the
+   * result. Values are exactly what the cascade was already yielding. */
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.badge-default {
+  background: var(--color-surface-elevated);
+  color: var(--color-on-surface);
+  border-color: var(--color-border);
+}
+.badge-secondary {
+  background: var(--color-surface-secondary);
+  color: var(--color-on-surface-variant);
+  border-color: var(--color-border);
+}
+.badge-success {
+  background: var(--color-success-container);
+  color: var(--color-success);
+  border-color: transparent;
+}
+.badge-destructive {
+  background: var(--color-error-container);
+  color: var(--color-error);
+  border-color: transparent;
+}
+.badge-outline {
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  border-color: var(--color-border);
+}
+
+/* ——— Tabs (Radix anatomy) ——— */
+.tabs-list {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  padding: 3px;
+}
+.tabs-trigger {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  background: transparent;
+  border: 0;
+  border-radius: var(--radius-xs);
+  padding: 5px 12px;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+.tabs-trigger:hover {
+  color: var(--color-on-surface);
+}
+.tabs-trigger[data-state='active'],
+.toggle-group-item[data-state='on'] {
+  background: var(--color-surface-elevated);
+  color: var(--color-on-surface);
+  box-shadow: var(--shadow-sm);
+}
+.tabs-trigger:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 1px;
+}
+
+/* ——— Dropdown menu (Radix anatomy) ——— */
+.dropdown-content {
+  min-width: 160px;
+  background: var(--color-surface-menu);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  z-index: var(--z-dropdown);
+}
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface);
+  border-radius: var(--radius-xs);
+  padding: 7px 10px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.dropdown-item[data-highlighted] {
+  background: var(--color-interactive-hover);
+  color: var(--color-on-surface);
+}
+.dropdown-item[data-disabled] {
+  color: var(--color-ink-disabled);
+  cursor: default;
+}
+.dropdown-separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
+
+/* ——— Skeleton (shadcn anatomy) ——— */
+.skeleton {
+  background: var(--color-surface-elevated);
+  border-radius: var(--radius-xs);
+  animation: ui-skeleton-pulse 1.6s ease-in-out infinite;
+}
+.route-skeleton {
+  width: 100%;
+  height: 96px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+}
+.page-tabs {
+  align-self: stretch;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--spacing-lg);
+}
+.page-tabs > .tabs-list {
+  align-self: flex-start;
+  max-width: 100%;
+  overflow-x: auto;
+}
+.page-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  padding-top: 0;
+}
+.page-actions .btn-primary {
+  min-width: 120px;
+}
+.empty-state-header,
+.empty-state-content {
+  display: contents;
+}
+.choice-surface {
+  --choice-bg: var(--color-surface-secondary);
+  --choice-border: var(--color-border-structural);
+  --choice-hover-bg: var(--color-surface-elevated);
+  --choice-hover-border: var(--color-border-focus);
+  --choice-selected-bg: var(--color-interactive-active);
+  --choice-selected-border: var(--color-border-focus);
+  --choice-selected-shadow: var(--shadow-sm);
+}
+.choice-surface.provider-card,
+.choice-surface.offline-model-card {
+  background: var(--choice-bg);
+  border-color: var(--choice-border);
+  color: var(--color-on-surface-variant);
+}
+.choice-surface.provider-card:hover:not(:disabled),
+.choice-surface.offline-model-card:hover:not([data-disabled]) {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
+  color: var(--color-on-surface);
+}
+.choice-surface.provider-card:active:not(:disabled),
+.choice-surface.offline-model-card:active:not([data-disabled]) {
+  background: var(--color-active);
+}
+.choice-surface.provider-card.selected,
+.choice-surface.provider-card[aria-pressed='true'],
+.choice-surface.provider-card[data-state='checked'],
+.choice-surface.offline-model-card.selected,
+.choice-surface.offline-model-card[data-state='checked'] {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+.selection-radio {
+  position: relative;
+  flex: 0 0 auto;
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid var(--color-on-surface-variant);
+  border-radius: var(--radius-full);
+  transition: border-color var(--transition-fast), background-color var(--transition-fast);
+}
+.choice-surface[aria-checked='true'] .selection-radio,
+.choice-surface[aria-pressed='true'] .selection-radio,
+.choice-surface.selected .selection-radio,
+.choice-surface[data-state='checked'] .selection-radio,
+.selection-row-main[aria-checked='true'] .selection-radio,
+.selection-row-main[data-state='checked'] .selection-radio {
+  border-color: var(--color-on-surface);
+}
+.choice-surface[aria-checked='true'] .selection-radio::after,
+.choice-surface[aria-pressed='true'] .selection-radio::after,
+.choice-surface.selected .selection-radio::after,
+.choice-surface[data-state='checked'] .selection-radio::after,
+.selection-row-main[aria-checked='true'] .selection-radio::after,
+.selection-row-main[data-state='checked'] .selection-radio::after {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+}
+.choice-surface:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.choice-surface:disabled,
+.choice-surface[data-disabled],
+.choice-surface[aria-disabled='true'] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-ghost.destructive-action,
+.dropdown-item.destructive-action {
+  color: var(--color-error-text);
+}
+.btn-ghost.destructive-action:hover:not(:disabled),
+.dropdown-item.destructive-action[data-highlighted] {
+  color: var(--color-error-text);
+  background: var(--color-error-container);
+  border-color: var(--color-error);
+}
+@keyframes ui-skeleton-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+/* ——— Field / Label (vanilla `.form-row label` values) ——— */
+.field-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+}
+
+.field-content {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xs);
+}
+
+.field-label {
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+}
+.field-hint {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  line-height: 1.4;
+}
+.field-warning,
+.field-error {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  line-height: 1.4;
+}
+.field-warning {
+  color: var(--color-warning);
+}
+.field-error {
+  color: var(--color-error-text);
+}
+
+/* ——— Checkbox (vanilla tactile monochrome square, global.css) ——— */
+.checkbox {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  margin: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: 0;
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  outline: none;
+  box-shadow: none;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: relative;
+}
+/* 24px effective target - 14px visual unchanged (WCAG 2.5.8).
+ * Radix Checkbox renders a <button>, so the vanilla
+ * `input[type="checkbox"]::after` hit-area rule in global.css cannot match
+ * it. Without this the settings checkbox is a literal 14x14px (196px^2)
+ * target against a 576px^2 floor. */
+.checkbox::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+.checkbox:hover {
+  background: var(--color-surface-secondary);
+  border-color: var(--color-outline);
+}
+.checkbox:focus-visible {
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
+}
+.checkbox[data-state='checked'],
+.checkbox[data-state='indeterminate'] {
+  background: var(--color-on-surface);
+  border-color: var(--color-on-surface);
+}
+.checkbox-indicator {
+  display: block;
+}
+.checkbox[data-state='checked'] .checkbox-indicator::before {
+  content: '';
+  width: 3.5px;
+  height: 7px;
+  border: solid var(--color-canvas);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg) translate(-0.5px, -1px);
+  display: block;
+}
+.checkbox[data-state='indeterminate'] .checkbox-indicator::before {
+  content: '';
+  width: 8px;
+  height: 2px;
+  background: var(--color-canvas);
+  display: block;
+}
+.checkbox[data-disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ——— Switch (vanilla tactile hardware switch, global.css) ——— */
+.switch {
+  position: relative;
+  display: inline-flex;
+  width: 42px;
+  height: 22px;
+  flex-shrink: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.switch-track {
+  position: absolute;
+  inset: 0;
+  background: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-full);
+  transition: var(--transition-base);
+}
+.switch-thumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--color-on-surface-variant);
+  border-radius: var(--radius-full);
+  transform-origin: left center;
+  scale: 1 1;
+  transition: transform 0.22s var(--ease-spring), background-color 0.15s ease, scale 0.15s ease;
+  box-shadow: var(--shadow-sm);
+  display: block;
+}
+.switch:hover:not([data-disabled]) .switch-track {
+  border-color: var(--color-border-focus);
+}
+.switch:active .switch-thumb {
+  scale: 1.1875 1;
+}
+.switch[data-state='checked'] .switch-track {
+  background: var(--color-interactive-active);
+  border-color: var(--color-border-focus);
+}
+.switch[data-state='checked'] .switch-thumb {
+  transform: translateX(20px);
+  background: var(--color-on-primary);
+  box-shadow: var(--shadow-sm);
+}
+.switch[data-state='checked']:active .switch-thumb {
+  transform: translateX(17px);
+}
+.switch:focus-visible {
+  outline: none;
+}
+.switch:focus-visible .switch-track {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 2px;
+}
+.switch[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+/* ——— Select (Radix trigger with Lucide chevron) ——— */
+.select-trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-sm);
+  width: 100%;
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  color: var(--color-on-surface);
+  background-color: var(--color-surface-elevated);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px 10px 14px;
+  outline: none;
+  cursor: pointer;
+  box-sizing: border-box;
+  transition: var(--transition-fast);
+}
+.select-trigger:hover {
+  border-color: var(--color-border-focus);
+}
+.select-trigger:focus,
+.select-trigger:focus-visible {
+  background-color: var(--color-surface-menu);
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
+  outline: none;
+}
+.select-trigger[data-placeholder] {
+  color: var(--color-placeholder);
+}
+.select-trigger[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.select-icon {
+  color: var(--color-on-surface-variant);
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+.select-trigger[data-state='open'] .select-icon {
+  transform: rotate(180deg);
+}
+.select-content {
+  min-width: var(--radix-select-trigger-width);
+  max-height: min(320px, var(--radix-select-content-available-height));
+  background: var(--color-surface-menu);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: 4px;
+  /* Selects portal to body, so a select opened from inside a dialog would
+  otherwise paint behind the dialog chrome (modal 200 > dropdown 150).
+  A select list is always the topmost interaction: nothing behind an open
+  modal is clickable, so floating above it is always correct. */
+  z-index: calc(var(--z-modal) + 10);
+  overflow: hidden;
+}
+.select-viewport {
+  max-height: inherit;
+  overflow-y: auto;
+  padding: 0;
+}
+.select-label {
+  font-family: var(--font-body);
+  font-size: var(--text-label-xs);
+  font-weight: 500;
+  color: var(--color-ink-muted);
+  padding: 6px 10px 2px;
+  user-select: none;
+}
+.select-item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface);
+  border-radius: var(--radius-xs);
+  padding: 7px 32px 7px 10px;
+  cursor: pointer;
+  outline: none;
+  user-select: none;
+}
+.select-item[data-highlighted] {
+  background: var(--color-interactive-hover);
+  color: var(--color-on-surface);
+}
+.select-item[data-state='checked'] {
+  color: var(--color-on-surface);
+  font-weight: 600;
+}
+.select-item[data-disabled] {
+  color: var(--color-ink-disabled);
+  cursor: default;
+}
+.select-item-text {
+  min-width: 0;
+  flex: 1;
+}
+
+.select-item-indicator {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--color-on-surface);
+  transform: translateY(-50%);
+}
+.select-separator {
+  height: 1px;
+  background: var(--color-border);
+  margin: 4px 6px;
+}
+
+/* ——— Dialog (new chrome; tokens only, no vanilla ancestor) ——— */
+.dialog-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(13, 13, 13, 0.7);
+  z-index: var(--z-modal);
+}
+.dialog-overlay[data-state='open'] {
+  animation: ui-dialog-fade-in 0.15s var(--ease-standard);
+}
+.dialog-overlay[data-state='closed'] {
+  animation: ui-dialog-fade-out 0.12s var(--ease-exit);
+}
+.dialog-content {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: min(440px, calc(100vw - 48px));
+  max-height: calc(100vh - 48px);
+  overflow-y: auto;
+  background: var(--color-surface-dialog);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  padding: var(--spacing-lg);
+  z-index: var(--z-modal);
+}
+.dialog-content[data-state='open'] {
+  animation: ui-dialog-in 0.15s var(--ease-standard);
+}
+.dialog-content[data-state='closed'] {
+  animation: ui-dialog-out 0.12s var(--ease-exit);
+}
+.dialog-content:focus {
+  outline: none;
+}
+.dialog-header {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-2xs);
+  margin-bottom: var(--spacing-sm);
+}
+.dialog-title {
+  font-family: var(--font-body);
+  font-size: var(--text-headline-md);
+  font-weight: 600;
+  color: var(--color-on-surface);
+  margin: 0;
+}
+.dialog-description {
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface-variant);
+  margin: 0;
+}
+.dialog-body {
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface-variant);
+  line-height: var(--leading-body-md);
+}
+.dialog-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--spacing-sm);
+  margin-top: var(--spacing-lg);
+}
+@keyframes ui-dialog-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes ui-dialog-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@keyframes ui-dialog-in {
+  from {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+}
+@keyframes ui-dialog-out {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, calc(-50% + 4px)) scale(0.98);
+  }
+}
+
+/* ——— Separator ——— */
+.separator {
+  background: var(--color-border);
+  flex-shrink: 0;
+}
+.separator[data-orientation='horizontal'] {
+  height: 1px;
+  width: 100%;
+  margin: var(--spacing-sm) 0;
+}
+.separator[data-orientation='vertical'] {
+  width: 1px;
+  align-self: stretch;
+  margin: 0 var(--spacing-sm);
+}
+
+/* ——— Table (shadcn anatomy, Fluence tokens) ——— */
+.table-card {
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+.fluence-table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+.fluence-table-caption {
+  padding: var(--spacing-sm) var(--spacing-md);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface-variant);
+}
+.fluence-table-head {
+  text-align: left;
+  padding: 11px 18px;
+  font-family: var(--font-body);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  text-transform: none;
+  color: var(--color-on-surface);
+  /* The tinted band is its own separator: no rule under it, so nothing
+   * spans edge to edge and no stub floats under the wash. */
+  background: var(--color-surface-secondary);
+  border-bottom: none;
+}
+.fluence-table-cell {
+  padding: 12px 18px;
+  font-size: 13px;
+  vertical-align: middle;
+  border-bottom: none;
+  color: var(--color-on-surface);
+}
+/* Inset row dividers: an 18px-inset 1px gradient on the row itself, because
+ * collapsed table borders cannot inset. Hover/selected cell washes paint
+ * above it, so an active row reads as one solid block. */
+.fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / calc(100% - 36px) 1px no-repeat;
+}
+/* Dashboard "By weekday" table: tabular data beside a chart, not a settings
+ * list, so its row rules run end to end and the block reads as one ledger.
+ * This also matches the real geometry — that table sets its own 10px cell
+ * padding inline, so the 18px settings inset would not line up with the text
+ * column and would drop 36px out of a card only ~220px wide. Scoped by page
+ * id so the Dictionary and Snippets settings tables keep the inset language. */
+#page-dashboard .fluence-table-body .fluence-table-row:not(:last-child) {
+  background: linear-gradient(var(--color-border-structural), var(--color-border-structural)) bottom center / 100% 1px no-repeat;
+}
+.fluence-table-body .fluence-table-row:hover .fluence-table-cell {
+  background: var(--color-hover);
+}
+.fluence-table-row[data-state='selected'] .fluence-table-cell,
+.fluence-table-row.is-selected .fluence-table-cell {
+  background: var(--color-selected);
+}
+
+/* ——— Tooltip (menu paint; portaled by default) ——— */
+.tooltip-content {
+  background: var(--color-surface-menu);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-md);
+  padding: 5px 10px;
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface);
+  max-width: 280px;
+  z-index: var(--z-dropdown);
+}
+.tooltip-content[data-state='delayed-open'] {
+  animation: ui-tooltip-in 0.15s var(--ease-standard);
+}
+@keyframes ui-tooltip-in {
+  from {
+    opacity: 0;
+    transform: translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* ——— Progress (wizard step bar, wizard.css) ——— */
+.progress-track {
+  position: relative;
+  height: 3px;
+  background: var(--color-interactive);
+  overflow: hidden;
+  flex-shrink: 0;
+}
+.progress-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--color-brand-cyan);
+  transition: transform 0.35s var(--ease-spring);
+}
+
+/* ——— Progress meter variant: block-level download meter (8px structural
+   track, flat fill). Same paint language as the vanilla offline
+   downloader it replaces. ——— */
+.progress-track.progress-meter {
+  height: 8px;
+  background: var(--color-border-structural);
+  border-radius: var(--radius-xs);
+}
+.progress-track.progress-meter .progress-fill {
+  background: var(--color-brand-cyan);
+  box-shadow: none;
+  transition: transform 0.2s ease;
+}
+
+/* ——— RadioGroup (round sibling of the square checkbox) ——— */
+.radio-group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+}
+/* Provider logo grids reuse RadioGroup for arrow-key behavior, but keep
+   their small-card grid layout: the grid display must win over the
+   column default above (same grid as before the RadioGroup migration). */
+.radio-group.provider-grid {
+  display: grid;
+}
+.radio-item {
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  min-width: 14px;
+  min-height: 14px;
+  aspect-ratio: 1 / 1;
+  padding: 0;
+  margin: 0;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-full);
+  cursor: pointer;
+  display: inline-grid;
+  place-content: center;
+  vertical-align: middle;
+  transition: background-color 0.12s ease, border-color 0.12s ease;
+  outline: none;
+  box-shadow: none;
+  box-sizing: border-box;
+  flex-shrink: 0;
+  position: relative;
+}
+/* 24px effective target - 14px visual unchanged (WCAG 2.5.8). Same reason
+ * as .checkbox::after above: Radix renders a <button>, so the vanilla
+ * element-selector hit area does not apply. */
+.radio-item::after {
+  content: '';
+  position: absolute;
+  inset: -5px;
+}
+.radio-item:hover {
+  background: var(--color-surface-secondary);
+  border-color: var(--color-outline);
+}
+.radio-item:focus-visible {
+  border-color: var(--color-focus-ring);
+  box-shadow: 0 0 0 3px var(--color-border-focus-glow);
+}
+.radio-item[data-state='checked'] {
+  border-color: var(--color-on-surface);
+}
+.radio-indicator {
+  display: block;
+}
+.radio-item[data-state='checked'] .radio-indicator::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: var(--radius-full);
+  background: var(--color-on-surface);
+  display: block;
+}
+.radio-item[data-disabled] {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+
+/* ——— Chart (recharts host + shadcn-style tooltip) ——— */
+.chart-container {
+  width: 100%;
+  min-width: 0;
+}
+/* Dashboard chart: min-height is a floor so the plot stays readable in short
+   windows, where the page scrolls. It deliberately does NOT stretch to fill
+   the scrollport — `min-height: 100%` on the page root was unique to the
+   dashboard and pushed the last card row onto the container's content-box
+   edge, so .content-area's 28px bottom padding was pushed below the fold and
+   the row sat flush with the window. Every other page (AI Cleanup and the
+   rest) simply ends its content, which is what keeps their bottom margin. */
+#page-dashboard .chart-fill {
+  flex: 1 0 auto;
+  display: flex;
+  flex-direction: column;
+  min-height: 360px;
+}
+#page-dashboard .chart-fill .card-content {
+  flex: 1;
+  min-height: 0;
+}
+#page-dashboard .chart-fill .chart-container {
+  flex: 1;
+  min-height: 0;
+}
+/* Card-scoped empty state ("By weekday" / "Today"): the base .chart-empty in
+   the frozen settings.css layer is an absolute overlay sized for the hero
+   chart, and reusing it inside these cards overlapped their content. Reset it
+   to normal flow so the message sits inside its card; min-height keeps the
+   empty card from collapsing to a bare line of text. The #page-dashboard
+   scope also outranks the [data-theme="light"] .chart-empty background
+   override in settings.css, so the transparent background holds in light
+   mode too. */
+#page-dashboard .chart-empty.chart-empty-inline {
+  position: static;
+  margin: 0;
+  padding: 20px 16px;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+.chart-container .recharts-wrapper:focus,
+.chart-container .recharts-surface:focus {
+  outline: none;
+}
+.chart-tooltip {
+  background: var(--color-surface-menu);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  padding: var(--spacing-sm) 12px;
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface);
+}
+.chart-tooltip .chart-tooltip-value {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--color-on-surface-emphasis);
+}
+.chart-tooltip .chart-tooltip-label {
+  color: var(--color-on-surface-variant);
+  margin-left: 6px;
+}
+/* Android-parity hover overlay: crosshair + halo dot + point-anchored chip,
+   positioned from measured geometry in DashboardPage (hoverGeom). The layer
+   is pointer-transparent so hover keeps reaching the chart; the chip reuses
+   .chart-tooltip paint and can never clip because it is clamped in JS. */
+.chart-hover-host {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chart-hover-host > .chart-container {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+}
+.chart-hover-layer {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  pointer-events: none;
+}
+.chart-crosshair {
+  position: absolute;
+  width: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+.chart-hover-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--color-brand-cyan);
+}
+.chart-hover-chip {
+  position: absolute;
+  white-space: nowrap;
+}
+
+/* ——— Motion & focus discipline (Task 7) ———
+ *
+ * ONE scale, frozen tokens only:
+ *   micro (hover/press/focus)  -> var(--transition-fast)   0.12s
+ *   structural (track/thumb)   -> var(--transition-base)   0.18s
+ *     (exception: switch thumb snap -> 0.22s var(--ease-spring); the
+ *     overshoot is the toggle's tactile feedback, kept deliberately)
+ *   overlay enter              -> 0.15s var(--ease-standard) (dialog, tooltip)
+ *   overlay exit               -> <=0.12s var(--ease-exit)   (never above 250ms)
+ *   progress fill              -> 0.35s var(--ease-spring)   (wizard parity)
+ *     (exception: block download meter -> 0.2s ease; high-frequency
+ *     progress must not wobble, so no spring overshoot there)
+ *   skeleton pulse             -> loading indicator only (never decorative)
+ *
+ * Reduced motion: the frozen global guard in global.css collapses every
+ * transition/animation to 0.01ms under `prefers-reduced-motion`, so all kit
+ * motion above complies with zero per-component overrides.
+ *
+ * Focus: every kit interactive paints a visible ring on :focus-visible
+ * (checkbox/radio/select ring the control; switch rings the track; dialog
+ * content takes focus without a ring since Radix moves focus inside).
+ * `.ui-focus-ring` is the shared helper for Phase 2/3 call sites.
+ */
+.ui-focus-ring:focus-visible {
+  outline: 2px solid var(--color-focus-ring);
+  outline-offset: 1px;
+}
+
+/* ——— Dashboard compositions (layout only; all paint from tokens) ——— */
+.kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--spacing-md);
+}
+@media (max-width: 1100px) {
+  .kpi-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+.kpi-value {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--color-on-surface-emphasis);
+  letter-spacing: -0.03em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.15;
+}
+.kpi-skel {
+  height: 32px;
+  width: 70%;
+}
+.recent-skel {
+  height: 52px;
+}
+.kpi-foot {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+}
+.kpi-trendrow {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.recents-list {
+  display: flex;
+  flex-direction: column;
+}
+.recent-row {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-md);
+  padding: 10px var(--spacing-md);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 0;
+  background: transparent;
+  width: 100%;
+  text-align: left;
+  font-family: var(--font-body);
+  transition: var(--transition-fast);
+}
+.recent-row:hover {
+  background: var(--color-hover);
+}
+.recent-row:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
+}
+.recent-row.copy-flash {
+  background: var(--color-copy-flash);
+}
+.recent-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.recent-text {
+  font-size: var(--text-label-lg);
+  color: var(--color-on-surface);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.recent-meta {
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+/* ——— Command palette (CMDK anatomy, canonical shadcn/ui) ——— */
+.command-dialog.dialog-content {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 160px);
+  padding: 0;
+  overflow: hidden;
+  top: 16%;
+  transform: translate(-50%, -16%);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lg);
+  outline: none;
+}
+.command-dialog.dialog-content[data-state='open'] {
+  animation: ui-command-in-aligned 0.15s var(--ease-standard);
+}
+.command-dialog.dialog-content[data-state='closed'] {
+  animation: ui-command-out-aligned 0.12s var(--ease-exit);
+}
+@keyframes ui-command-in-aligned {
+  from {
+    opacity: 0;
+    transform: translate(-50%, -16%) translateY(-6px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, -16%) scale(1);
+  }
+}
+@keyframes ui-command-out-aligned {
+  from {
+    opacity: 1;
+    transform: translate(-50%, -16%) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translate(-50%, -16%) translateY(-4px) scale(0.98);
+  }
+}
+.command-root {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: transparent;
+  width: 100%;
+}
+.command-body {
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+.command-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  height: 48px;
+  padding: 0 var(--spacing-md);
+  background: transparent;
+  border-bottom: 1px solid var(--color-border-structural);
+  box-sizing: border-box;
+}
+.command-input-icon {
+  position: static;
+  transform: none;
+  width: 16px;
+  height: 16px;
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  pointer-events: none;
+}
+.command-dialog .command-input-wrap .command-input {
+  flex: 1;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  margin: 0;
+  background: transparent !important;
+  border: none !important;
+  border-radius: 0 !important;
+  box-shadow: none !important;
+  outline: none !important;
+  font-family: var(--font-body);
+  font-size: var(--text-body-md);
+  font-weight: 400;
+  color: var(--color-on-surface);
+  line-height: normal;
+}
+.command-dialog .command-input-wrap .command-input:focus,
+.command-dialog .command-input-wrap .command-input:focus-visible {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  outline: none !important;
+}
+.command-dialog .command-input-wrap .command-input::placeholder {
+  color: var(--color-ink-muted);
+}
+.command-list {
+  overflow-y: auto;
+  max-height: min(340px, calc(100vh - 220px));
+  padding: 6px 8px;
+  background: transparent;
+}
+.command-empty {
+  padding: var(--spacing-lg) var(--spacing-md);
+  text-align: center;
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  color: var(--color-ink-muted);
+}
+.command-group {
+  overflow: hidden;
+  padding: var(--spacing-xs) 0;
+  display: flex;
+  flex-direction: column;
+}
+[cmdk-group-heading],
+.command-group-heading {
+  padding: 8px 10px 4px;
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+.command-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 12px;
+  margin: 2px 0;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-body);
+  font-size: var(--text-label-lg);
+  font-weight: 500;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  user-select: none;
+  transition: background var(--transition-fast), color var(--transition-fast), border-color var(--transition-fast);
+}
+.command-item:hover:not([data-selected='true']) {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.command-item[data-selected='true'],
+.command-item[aria-selected='true'] {
+  background: var(--color-surface-elevated);
+  border-color: var(--color-border-structural);
+  color: #FFFFFF;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+}
+.command-item[data-disabled='true'] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.command-item-icon {
+  width: 16px;
+  height: 16px;
+  color: var(--color-ink-muted);
+  flex-shrink: 0;
+  transition: color var(--transition-fast);
+}
+.command-item[data-selected='true'] .command-item-icon,
+.command-item[aria-selected='true'] .command-item-icon {
+  color: #FFFFFF;
+}
+.command-item[data-current='true'] .command-item-icon {
+  color: var(--color-brand-cyan);
+}
+.command-separator {
+  height: 1px;
+  background: var(--color-border-structural);
+  margin: 6px 4px;
+  border: none;
+}
+.command-shortcut {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  white-space: nowrap;
+}
+.command-current {
+  font-family: var(--font-label);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-brand-cyan);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 6px;
+  background: rgba(var(--color-accent-rgb, 11, 214, 227), 0.10);
+  border: 1px solid rgba(var(--color-accent-rgb, 11, 214, 227), 0.25);
+  border-radius: var(--radius-xs);
+}
+.command-footer,
+.command-dialog .command-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 0;
+  padding: 8px 14px;
+  background: transparent;
+  border-top: 1px solid var(--color-border-structural);
+}
+.command-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--text-label-sm);
+  color: var(--color-ink-muted);
+  font-family: var(--font-body);
+}
+.command-hint-icon {
+  width: 13px;
+  height: 13px;
+  color: var(--color-ink-muted);
+}
+
+/* ——— Search Highlight ——— */
+.search-highlight {
+  background: var(--color-mark-search);
+  color: var(--color-brand-cyan);
+  border-radius: var(--radius-2xs);
+  padding: 0 2px;
+  font-weight: 500;
+}
+
+
+/* ——— Collapsible sidebar shell ———
+ * The frozen settings stylesheet owns the original 230px layout. These
+ * additive states keep that layout intact while giving the React shell a
+ * compact, keyboard-accessible navigation mode. */
+.sidebar {
+  overflow-x: hidden;
+  transition: width 0.18s var(--ease-standard);
+}
+.sidebar:not(.collapsed) {
+  width: 248px;
+}
+.sidebar-logo {
+  position: relative;
+  transition: padding 0.18s var(--ease-standard), margin 0.18s var(--ease-standard);
+}
+.sidebar:not(.collapsed) .sidebar-logo {
+  padding: 0 14px 16px;
+}
+.sidebar-brand {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  min-width: 0;
+}
+.sidebar-logo-mark {
+  flex: 0 0 auto;
+}
+.logo-tagline {
+  margin-left: 4px;
+  color: var(--color-on-surface-variant);
+  font-family: 'Allura', cursive;
+  /* Brand lockup ratio: the product name is ~91% of the wordmark size
+   * (Brand.kt FluenceProductLockup; the legacy shell uses 22px/20px =
+   * 90.9%). The wordmark is 1.15rem (18.4px) at settings.css:74, so 91%
+   * is 1.047rem. This was previously 19px = 103%, which rendered the
+   * product name larger than the logotype on Windows only. */
+  font-size: 1.047rem;
+  font-weight: 400;
+  line-height: 1;
+}
+.sidebar-collapse-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-xs);
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  transition: background var(--transition-fast), color var(--transition-fast), opacity 0.15s var(--ease-standard);
+}
+.sidebar-collapse-toggle:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.sidebar-collapse-toggle:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.sidebar-collapse-toggle svg {
+  width: 15px;
+  height: 15px;
+}
+.nav-item-label {
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 1;
+  transition: opacity 0.12s var(--ease-standard);
+}
+.sidebar-update-icon {
+  width: 13px;
+  height: 13px;
+  flex: 0 0 auto;
+}
+
+/* ——— Deliberate compact navigation rail (collapsed state) ——— */
+.sidebar.collapsed {
+  width: 64px;
+}
+.sidebar.collapsed .sidebar-logo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 44px;
+  padding: 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--color-border);
+}
+.sidebar.collapsed .sidebar-brand {
+  display: none;
+}
+.sidebar.collapsed .sidebar-collapse-toggle {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 36px;
+  margin: 0 auto;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--color-on-surface-variant);
+  cursor: pointer;
+  opacity: 1;
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.sidebar.collapsed .sidebar-collapse-toggle:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+.sidebar.collapsed .sidebar-collapse-toggle:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: 2px;
+}
+.sidebar.collapsed .sidebar-collapse-toggle svg {
+  width: 17px;
+  height: 17px;
+}
+.sidebar.collapsed .logo-text,
+.sidebar.collapsed .nav-section-label,
+.sidebar.collapsed .nav-item-label,
+.sidebar.collapsed .sidebar-version-label,
+.sidebar.collapsed .sidebar-update-status,
+.sidebar.collapsed #sidebar-update-btn-text {
+  display: none;
+}
+.sidebar.collapsed .nav-item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  margin: 2px 10px;
+  padding: 0;
+  width: 44px;
+  height: 36px;
+  border-radius: var(--radius-sm);
+  flex-shrink: 0;
+}
+.sidebar.collapsed .nav-item svg {
+  margin: 0;
+  width: 17px;
+  height: 17px;
+}
+.sidebar.collapsed .sidebar-footer {
+  padding: 12px 10px;
+  margin-top: auto;
+}
+.sidebar.collapsed .sidebar-update-widget {
+  align-items: center;
+  width: 100%;
+}
+.sidebar.collapsed .sidebar-update-btn {
+  width: 44px;
+  height: 36px;
+  padding: 0;
+  margin: 0 auto;
+  border-radius: var(--radius-sm);
+}
+.sidebar.collapsed .sidebar-update-progress-bar {
+  width: 100%;
+}
+
+.sidebar-header,
+.sidebar-content,
+.sidebar-group,
+.sidebar-menu,
+.sidebar-menu-item {
+  min-width: 0;
+}
+.sidebar-content {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+  flex-direction: column;
+}
+.sidebar-group {
+  display: flex;
+  flex-direction: column;
+}
+.sidebar-group + .sidebar-group {
+  margin-top: 8px;
+}
+.sidebar-group-label {
+  display: block;
+  flex-shrink: 0;
+}
+.sidebar-menu {
+  display: flex;
+  flex-direction: column;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sidebar-menu-item {
+  display: flex;
+  list-style: none;
+}
+.sidebar-menu-item .nav-item {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.sidebar-logo {
+  margin-bottom: 0;
+  border-bottom: 0;
+}
+.sidebar-header-separator {
+  margin: 0 0 12px;
+}
+.sidebar-footer-separator {
+  margin: 0;
+}
+.sidebar-footer {
+  border-top: 0;
+}
+.sidebar.collapsed .sidebar-logo {
+  border-bottom: 0;
+}
+.sidebar.collapsed .sidebar-header-separator {
+  margin-bottom: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sidebar,
+  .sidebar-logo,
+  .sidebar-logo-mark,
+  .sidebar-collapse-toggle,
+  .nav-item-label,
+  .select-icon {
+    transition: none !important;
+  }
+  .skeleton {
+    animation: none !important;
+  }
+}
+
+/* ====================================================
+   Light theme overrides — settings shell only.
+   Additive: dark rules above are untouched.
+   ==================================================== */
+[data-theme="light"] .command-item[data-selected='true'],
+[data-theme="light"] .command-item[aria-selected='true'] {
+  color: #18181B;
+}
+[data-theme="light"] .command-item[data-selected='true'],
+[data-theme="light"] .command-item[aria-selected='true'] {
+  background: var(--color-surface-secondary);
+  border-color: var(--color-border-structural);
+  box-shadow: none;
+}
+[data-theme="light"] .command-item[data-selected='true'] .command-item-icon,
+[data-theme="light"] .command-item[aria-selected='true'] .command-item-icon {
+  color: #18181B;
+}
+[data-theme="light"] .chart-crosshair {
+  background: rgba(0, 0, 0, 0.15);
+}
+[data-theme="light"] .skeleton {
+  background: var(--color-surface-sunken);
+}
+[data-theme="light"] .switch[data-state='checked'] .switch-track {
+  background: var(--color-charcoal);
+  border-color: var(--color-charcoal);
+}

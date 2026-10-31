@@ -1,0 +1,94 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Fluence",
+  "identifier": "com.fluence.desktop",
+  "version": "1.31.0",
+  "build": {
+    "frontendDist": "../src",
+    "devUrl": "http://localhost:1420",
+    "beforeDevCommand": "npm run dev --prefix web",
+    "beforeBuildCommand": "npm run web:build"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "Fluence Settings",
+        "width": 1200,
+        "height": 880,
+        "minWidth": 800,
+        "minHeight": 600,
+        "resizable": true,
+        "center": true,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "url": "dist/index.html",
+        "dragDropEnabled": false,
+        "theme": "Dark"
+      },
+      {
+        "label": "overlay",
+        "title": "Fluence Overlay",
+        "width": 260,
+        "height": 146,
+        "resizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "url": "overlay.html",
+        "focus": false,
+        "focusable": false
+      },
+      {
+        "label": "wizard",
+        "title": "Welcome to Fluence",
+        "width": 680,
+        "height": 620,
+        "resizable": false,
+        "center": true,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "url": "wizard.html",
+        "theme": "Dark"
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": "v1Compatible",
+    "targets": ["nsis"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": ["binaries/moonshine-v2-server"],
+    "resources": ["binaries/onnxruntime.dll"],
+    "windows": {
+      "nsis": {
+        "displayLanguageSelector": false,
+        "languages": ["English"],
+        "installMode": "currentUser"
+      }
+    },
+    "publisher": "Fluence",
+    "copyright": "Copyright © 2025 Fluence",
+    "shortDescription": "AI-powered voice typing for Windows"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDUzMTk5RTVDRkQ0QUU3OTIKUldTUzUwcjlYSjRaVTRiNFJadmFTSVAydnFoWGNsNXVOeXBkL21zT1NBdElTdm85TGMvaDN5V3cK",
+      "endpoints": [
+        "https://github.com/raviumeshkulkarni-web/Fluence-Desktop/releases/latest/download/latest.json"
+      ]
+    }
+  }
+}

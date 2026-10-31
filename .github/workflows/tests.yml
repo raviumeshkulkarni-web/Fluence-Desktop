@@ -1,0 +1,97 @@
+name: Tests
+
+# PR / push gate: run the same quality checks the release workflow runs,
+# but never allow these prerequisites to mutate repository state.
+# Release runs additionally execute `tauri build` (see release.yml);
+# pin policy matches release.yml: third-party actions pinned by commit SHA.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  frontend:
+    name: node + security tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: setup node
+        uses: actions/setup-node@1d0ff469b7ec7b3cb9d8673fde0c81c44821de2a # v4.2.0
+        with:
+          node-version: lts/*
+
+      - name: install frontend dependencies
+        run: npm ci
+
+      # See release.yml for the history behind this second install: the React
+      # build and credential-target-parity.test.mjs both need web/node_modules.
+      - name: install web frontend dependencies
+        run: npm ci --prefix web
+
+      - name: run frontend + security test suite
+        shell: pwsh
+        run: |
+          node --test "tests/*.test.mjs"
+          npm test --prefix web
+          pwsh -File tests/verify-security.ps1
+
+  backend:
+    name: rust workspace tests
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      # Pinned by SHA as required by release.yml's pin policy; the explicit
+      # toolchain pins the compiler to the version validated locally
+      # (rustc 1.97.1), so CI results mean the same thing as dev runs.
+      - name: install Rust
+        uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+        with:
+          toolchain: "1.97.1"
+
+      - name: fetch moonshine v2 vendor bundle
+        shell: pwsh
+        run: |
+          $vendor = Get-Content src-tauri/moonshine-v2-server/VENDOR.json | ConvertFrom-Json
+          $dest = ".vendor/moonshine-voice-windows-x86_64.tar.gz"
+          New-Item -ItemType Directory -Force -Path ".vendor/moonshine" | Out-Null
+          Invoke-WebRequest -Uri $vendor.url -OutFile $dest
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $dest).Hash.ToLower()
+          if ($actual -ne $vendor.sha256) {
+            throw "Vendor digest mismatch: expected $($vendor.sha256), got $actual"
+          }
+          $size = (Get-Item -LiteralPath $dest).Length
+          if ($size -ne $vendor.size_bytes) {
+            throw "Vendor size mismatch: expected $($vendor.size_bytes), got $size"
+          }
+          C:\Windows\System32\tar.exe -xzf $dest -C .vendor/moonshine
+          if (-not (Test-Path ".vendor/moonshine/moonshine-voice-windows-x86_64/lib/onnxruntime.dll")) {
+            throw "Vendor extract missing onnxruntime.dll"
+          }
+
+      # tauri.conf.json declares the sidecar as an externalBin, so the file
+      # must exist before ANY cargo invocation that runs the app build script -
+      # which fails the build outright with "resource path ... doesn't exist"
+      # when it is missing. release.yml already stages it; CI must too.
+      - name: build and stage moonshine v2 sidecar
+        shell: pwsh
+        run: |
+          cargo build --release --manifest-path src-tauri/Cargo.toml -p moonshine-v2-server
+          $triple = (rustc --print host-tuple).Trim()
+          New-Item -ItemType Directory -Force -Path "src-tauri/binaries" | Out-Null
+          Copy-Item "src-tauri/target/release/moonshine-v2-server.exe" `
+            "src-tauri/binaries/moonshine-v2-server-$triple.exe" -Force
+          Copy-Item "src-tauri/target/release/onnxruntime.dll" `
+            "src-tauri/binaries/onnxruntime.dll" -Force
+          if (-not (Test-Path "src-tauri/binaries/moonshine-v2-server-$triple.exe")) {
+            throw "Sidecar staging failed"
+          }
+
+      - name: run backend test suite
+        working-directory: src-tauri
+        run: cargo test --workspace

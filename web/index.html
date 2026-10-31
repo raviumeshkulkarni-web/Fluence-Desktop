@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <!-- Same contract as vanilla src/index.html: Tauri IPC only, no remote code. -->
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; connect-src http://ipc.localhost ws://ipc.localhost; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; script-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none';" />
+  <title>Fluence Settings</title>
+  <style>
+    html, body {
+      background-color: #121212;
+      color: #E2E2E2;
+      margin: 0;
+      padding: 0;
+      height: 100%;
+      overflow: hidden;
+    }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+  <script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
+import { t } from '@/i18n';
 
 // Faithful port of the vanilla About surface (src/index.html #page-about +
 // the About-card branch of setupUpdaterUI). Same DOM ids/classes, same copy,
@@ -21,8 +22,8 @@ export function AboutPage() {
   return (
     <section className="page active" id="page-about">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>About Fluence</h1>
-        <p className="page-subtitle">Voice typing for Windows</p>
+        <h1 className="page-title" tabIndex={-1}>{t('About Fluence')}</h1>
+        <p className="page-subtitle">{t('Voice typing for Windows')}</p>
       </div>
 
       <div className="settings-section settings-section--unboxed">
@@ -43,14 +44,14 @@ export function AboutPage() {
             </svg>
             <div className="text-headline-md" style={{ fontWeight: 600, fontSize: 24, letterSpacing: '-0.03em', display: 'inline-flex', alignItems: 'baseline' }}>
               flu<span style={{ color: 'var(--color-logo-cyan)' }}>ence</span>
-              <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 22, marginLeft: 7, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
+              <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 22, marginLeft: 7, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>{t('Transcribe')}</span>
             </div>
           </div>
           <div className="text-muted text-body-md" style={{ marginTop: 'var(--spacing-xs)' }}>
-            Version <span id="about-version">{appVersion}</span>
+            {t('Version')} <span id="about-version">{appVersion}</span>
           </div>
           <div className="text-body-md text-muted" style={{ maxWidth: 400, lineHeight: 1.7 }}>
-            Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.
+            {t('Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.')}
           </div>
 
           <div
@@ -63,7 +64,9 @@ export function AboutPage() {
                 {card.title}
               </div>
               <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-on-surface-variant)' }} id="update-last-checked">
-                {updater.lastCheckedText ? `Last checked: ${updater.lastCheckedText}` : ''}
+                {updater.lastCheckedText
+                  ? t('Last checked: {time}', { time: updater.lastCheckedText })
+                  : ''}
               </div>
             </div>
             <div
@@ -77,7 +80,7 @@ export function AboutPage() {
             <div id="update-progress-container" style={{ display: updater.state === 'downloading' ? 'block' : 'none', width: '100%', maxWidth: 280, marginTop: 'var(--spacing-xs)' }}>
               <Progress
                 id="update-progress-track"
-                aria-label="Update download progress"
+                aria-label={t('Update download progress')}
                 value={updater.progress}
               />
               <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-outline)', textAlign: 'center', marginTop: 'var(--spacing-xs)' }} id="update-progress-text">
@@ -98,7 +101,7 @@ export function AboutPage() {
             </div>
           </div>
 
-          <div className="text-label-sm text-muted">Powered by Tauri v2 · Rust · WebView2</div>
+          <div className="text-label-sm text-muted">{t('Powered by Tauri v2 · Rust · WebView2')}</div>
         </div>
       </div>
     </section>
@@ -119,32 +122,53 @@ export function AboutPage() {
     const restart = () => void updaterStore.restartApp();
     switch (updater.state) {
       case 'checking':
-        return { title: 'Checking for updates…', btnText: 'Checking…', btnDisabled: true, btnPrimary: false, onAction: check };
+        return {
+          title: t('Checking for updates…'),
+          btnText: t('Checking…'),
+          btnDisabled: true,
+          btnPrimary: false,
+          onAction: check,
+        };
       case 'available':
         return {
-          title: `New Version Available (v${updater.version})`,
-          desc: updater.body ? updater.body.trim() : 'Bug fixes and performance improvements.',
+          title: t('New Version Available (v{version})', { version: updater.version ?? '' }),
+          desc: updater.body
+            ? updater.body.trim()
+            : t('Bug fixes and performance improvements.'),
           descAlign: 'left' as const, descNotes: true,
-          btnText: 'Download Update', btnDisabled: false, btnPrimary: true, onAction: download,
+          btnText: t('Download Update'), btnDisabled: false, btnPrimary: true, onAction: download,
         };
       case 'downloading':
-        return { title: 'Downloading Update…', btnText: `Downloading ${updater.progress}%`, btnDisabled: true, btnPrimary: true, onAction: check };
+        return {
+          title: t('Downloading Update…'),
+          btnText: t('Downloading {percent}%', { percent: updater.progress }),
+          btnDisabled: true,
+          btnPrimary: true,
+          onAction: check,
+        };
       case 'ready':
         return {
-          title: 'Update Downloaded & Staged', desc: 'Restart Fluence to apply the update.',
+          title: t('Update Downloaded & Staged'),
+          desc: t('Restart Fluence to apply the update.'),
           descAlign: 'center' as const, descNotes: false,
-          btnText: 'Restart Fluence', btnDisabled: false, btnPrimary: true, onAction: restart,
+          btnText: t('Restart Fluence'), btnDisabled: false, btnPrimary: true, onAction: restart,
         };
       case 'failed':
         return {
-          title: "Couldn't check for updates",
-          desc: updater.error ?? 'Please check your internet connection or try again later.',
+          title: t("Couldn't check for updates"),
+          desc: updater.error ?? t('Please check your internet connection or try again later.'),
           descAlign: 'center' as const, descNotes: false,
-          btnText: 'Try Again', btnDisabled: false, btnPrimary: false, onAction: check,
+          btnText: t('Try Again'), btnDisabled: false, btnPrimary: false, onAction: check,
         };
       case 'idle':
       default:
-        return { title: "You're up to date", btnText: 'Check for Updates', btnDisabled: false, btnPrimary: false, onAction: check };
+        return {
+          title: t("You're up to date"),
+          btnText: t('Check for Updates'),
+          btnDisabled: false,
+          btnPrimary: false,
+          onAction: check,
+        };
     }
   }
 }

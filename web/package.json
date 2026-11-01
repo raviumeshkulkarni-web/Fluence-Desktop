@@ -10,6 +10,7 @@
     "build": "tsc -b && vite build",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.test.json",
+    "i18n": "node scripts/i18n/extract.mjs",
     "test": "node --import ./test-setup.mjs --test \"src/lib/claim.test.ts\" \"src/lib/signinError.test.ts\" \"src/ipc/claim-boundary.test.ts\" \"src/ipc/sync-boundary.test.ts\" \"src/ipc/dictionary-boundary.test.ts\" \"src/test-manifest.test.ts\" \"src/components/fluence/waveform.test.ts\""
   },
   "dependencies": {

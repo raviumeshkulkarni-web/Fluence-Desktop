@@ -28,10 +28,11 @@ import {
   setSettingField,
   subscribeSettings,
 } from '@/ipc/settings';
+import { t, type TranslationKey } from '@/i18n';
 
 type OverlayStyle = OverlayTier;
 
-const STYLE_OPTIONS: { value: OverlayTier; title: string; desc: string }[] = [
+const STYLE_OPTIONS: { value: OverlayTier; title: TranslationKey; desc: TranslationKey }[] = [
   { value: 'full', title: 'Full Status Island', desc: 'Shows the timer, status, and live waveform while you dictate' },
   { value: 'compact', title: 'Compact Pill', desc: 'A slim strip with just the waveform and a close button' },
   { value: 'bubble', title: 'Minimal Bubble', desc: 'A tiny floating dot. Hover it to see the close button' },
@@ -100,7 +101,7 @@ export function BubblePage() {
 
   useEffect(() => {
     const onSave = () => {
-      saveSettingsNow().catch((err) => toast('Failed to save settings: ' + String(err), 'error'));
+      saveSettingsNow().catch((err) => toast(t('Failed to save settings: {error}', { error: String(err) }), 'error'));
     };
     window.addEventListener('fluence:save-page', onSave);
     return () => window.removeEventListener('fluence:save-page', onSave);
@@ -147,38 +148,38 @@ export function BubblePage() {
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Failed to save settings: ' + String(err), 'error');
+      toast(t('Failed to save settings: {error}', { error: String(err) }), 'error');
       return;
     }
-    toast('Settings saved', 'success');
+    toast(t('Settings saved'), 'success');
   };
 
   return (
     <section className="page active" id="page-bubble">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>
-          Floating Bubble
+          {t('Floating Bubble')}
         </h1>
-        <p className="page-subtitle">Preview each style live, then set the appearance and placement</p>
+        <p className="page-subtitle">{t('Preview each style live, then set the appearance and placement')}</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as BubbleTab)}>
-        <TabsList aria-label="Floating bubble area">
-          <TabsTrigger value="style">Style</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+        <TabsList aria-label={t('Floating bubble area')}>
+          <TabsTrigger value="style">{t('Style')}</TabsTrigger>
+          <TabsTrigger value="appearance">{t('Appearance')}</TabsTrigger>
         </TabsList>
 
       <TabsContent value="style">
         <SettingsSectionHeader
-          title="Overlay Style"
-          description="Choose the floating recording indicator that appears on screen"
+          title={t('Overlay Style')}
+          description={t('Choose the floating recording indicator that appears on screen')}
         />
         <div className="settings-card">
           <RadioGroup
             className="bubble-option-list"
             value={overlayStyle}
             onValueChange={onStyleChange}
-            aria-label="Overlay style"
+            aria-label={t('Overlay style')}
           >
             {STYLE_OPTIONS.map((option) => {
               const selected = overlayStyle === option.value;
@@ -192,14 +193,14 @@ export function BubblePage() {
                     <button
                       type="button"
                       className="selection-row-main"
-                      aria-label={`Select ${option.title}`}
+                      aria-label={t('Select {style}', { style: t(option.title) })}
                     >
                       <span className="selection-radio" aria-hidden="true" />
                       <span className="selection-row-copy">
                         <span className="selection-row-heading">
-                          <span className="selection-row-title">{option.title}</span>
+                          <span className="selection-row-title">{t(option.title)}</span>
                         </span>
-                        <span className="selection-row-description">{option.desc}</span>
+                        <span className="selection-row-description">{t(option.desc)}</span>
                       </span>
                     </button>
                   </RadioGroupItem>
@@ -214,31 +215,31 @@ export function BubblePage() {
         <div className="bubble-legend">
           <span className="bubble-legend-item">
             <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-            Transcription mode
+            {t('Transcription mode')}
           </span>
           <span className="bubble-legend-item">
             <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-            Agent mode
+            {t('Agent mode')}
           </span>
         </div>
       </TabsContent>
 
       <TabsContent value="appearance">
         <SettingsSectionHeader
-          title="Appearance"
-          description="Visual indicators and glow effects for dictation"
+          title={t('Appearance')}
+          description={t('Visual indicators and glow effects for dictation')}
         />
         <div className="settings-card">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Halo Glow</div>
-              <div className="setting-desc">Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode</div>
+              <div className="setting-label">{t('Halo Glow')}</div>
+              <div className="setting-desc">{t('Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="bubble-glow-cb"
-                  aria-label="Overlay halo glow"
+                  aria-label={t('Overlay halo glow')}
                   checked={overlayGlow}
                   onCheckedChange={onGlowChange}
                 />
@@ -247,14 +248,14 @@ export function BubblePage() {
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">App Pill</div>
-              <div className="setting-desc">Shows the name and icon of the app you are dictating into</div>
+              <div className="setting-label">{t('App Pill')}</div>
+              <div className="setting-desc">{t('Shows the name and icon of the app you are dictating into')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="bubble-app-pill-cb"
-                  aria-label="Foreground app pill"
+                  aria-label={t('Foreground app pill')}
                   checked={showAppPill}
                   onCheckedChange={onAppPillChange}
                 />
@@ -264,15 +265,15 @@ export function BubblePage() {
         </div>
 
         <SettingsSectionHeader
-          title="Waveform Animation"
-          description="The shape of the live recording meter. The selected style animates"
+          title={t('Waveform Animation')}
+          description={t('The shape of the live recording meter. The selected style animates')}
         />
         <div className="settings-card">
           <RadioGroup
             className="bubble-option-list"
             value={waveformStyle}
             onValueChange={onWaveformChange}
-            aria-label="Waveform animation"
+            aria-label={t('Waveform animation')}
           >
             {WAVEFORM_STYLE_OPTIONS.map((option) => {
               const selected = waveformStyle === option.value;
@@ -286,14 +287,14 @@ export function BubblePage() {
                     <button
                       type="button"
                       className="selection-row-main"
-                      aria-label={`Select ${option.title}`}
+                      aria-label={t('Select {style}', { style: t(option.title) })}
                     >
                       <span className="selection-radio" aria-hidden="true" />
                       <span className="selection-row-copy">
                         <span className="selection-row-heading">
-                          <span className="selection-row-title">{option.title}</span>
+                          <span className="selection-row-title">{t(option.title)}</span>
                         </span>
-                        <span className="selection-row-description">{option.desc}</span>
+                        <span className="selection-row-description">{t(option.desc)}</span>
                       </span>
                     </button>
                   </RadioGroupItem>
@@ -307,29 +308,29 @@ export function BubblePage() {
         </div>
 
         <SettingsSectionHeader
-          title="Placement"
-          description="Where the floating overlay appears on screen during recording"
+          title={t('Placement')}
+          description={t('Where the floating overlay appears on screen during recording')}
         />
         <div className="settings-card">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Overlay Position</div>
-              <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
+              <div className="setting-label">{t('Overlay Position')}</div>
+              <div className="setting-desc">{t('Where the floating overlay appears on screen during recording')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Select value={overlayPosition} onValueChange={onPositionChange}>
-                  <SelectTrigger id="bubble-position-select" className="select-md" aria-label="Overlay position">
+                  <SelectTrigger id="bubble-position-select" className="select-md" aria-label={t('Overlay position')}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="bottom_right">Bottom Right</SelectItem>
-                      <SelectItem value="bottom_left">Bottom Left</SelectItem>
-                      <SelectItem value="center">Center Bottom</SelectItem>
-                      <SelectItem value="top_left">Top Left</SelectItem>
-                      <SelectItem value="top_center">Top Center</SelectItem>
-                      <SelectItem value="top_right">Top Right</SelectItem>
+                      <SelectItem value="bottom_right">{t('Bottom Right')}</SelectItem>
+                      <SelectItem value="bottom_left">{t('Bottom Left')}</SelectItem>
+                      <SelectItem value="center">{t('Center Bottom')}</SelectItem>
+                      <SelectItem value="top_left">{t('Top Left')}</SelectItem>
+                      <SelectItem value="top_center">{t('Top Center')}</SelectItem>
+                      <SelectItem value="top_right">{t('Top Right')}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -341,18 +342,18 @@ export function BubblePage() {
         <div className="bubble-legend">
           <span className="bubble-legend-item">
             <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-            Transcription mode
+            {t('Transcription mode')}
           </span>
           <span className="bubble-legend-item">
             <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-            Agent mode
+            {t('Agent mode')}
           </span>
         </div>
       </TabsContent>
       </Tabs>
 
       <div className="page-actions">
-        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>{t('Save Changes')}</Button>
       </div>
     </section>
   );

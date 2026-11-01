@@ -26,6 +26,7 @@ mod foreground;
 mod history;
 mod hotkey;
 mod http_client;
+mod i18n;
 mod installed_apps;
 mod offline_downloader;
 mod offline_transcribe;
@@ -103,6 +104,9 @@ pub fn run() {
                 log::error!("Failed to set up tray: {}", e);
             }
 
+            let app_settings = settings::load_settings().unwrap_or_default();
+            let ui_lang = i18n::resolve(&app_settings.ui_language);
+
             // One-time first-run notification that Fluence is running in the tray
             if let Ok(cfg_dir) = app.path().app_config_dir() {
                 let flag = cfg_dir.join("tray_notified.flag");
@@ -110,10 +114,11 @@ pub fn run() {
                     if let Err(e) = app
                         .notification()
                         .builder()
-                        .title("Fluence is ready")
-                        .body(
+                        .title(i18n::tr(&ui_lang, "Fluence is ready"))
+                        .body(i18n::tr(
+                            &ui_lang,
                             "Running in the system tray. Press your hotkey to start voice typing.",
-                        )
+                        ))
                         .show()
                     {
                         log::warn!("Failed to show first-run tray notification: {}", e);
@@ -125,8 +130,12 @@ pub fn run() {
                 }
             }
 
-            // Load settings
-            let app_settings = settings::load_settings().unwrap_or_default();
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.set_title(i18n::tr(&ui_lang, "Fluence Settings"));
+            }
+            if let Some(win) = app.get_webview_window("wizard") {
+                let _ = win.set_title(i18n::tr(&ui_lang, "Welcome to Fluence"));
+            }
 
             // Recover any background-app audio left ducked by a prior crash.
             ducking::replay_on_launch();

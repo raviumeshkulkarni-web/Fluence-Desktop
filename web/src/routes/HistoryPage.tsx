@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { toast } from '@/components/fluence/Toasts';
 import { Button } from '@/components/ui/button';
+import { getLocale, t, tr } from '@/i18n';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Badge } from '@/components/ui/badge';
 import { ConfirmDialog } from '@/components/ui/dialog';
@@ -93,15 +94,15 @@ function historyGroupForDate(date: Date): string {
   if (t >= todayStart) return 'Today';
   if (t >= todayStart - 86400000) return 'Yesterday';
   if (t >= todayStart - 6 * 86400000) {
-    return date.toLocaleDateString(undefined, { weekday: 'long' });
+    return date.toLocaleDateString(getLocale(), { weekday: 'long' });
   }
   if (date.getFullYear() === now.getFullYear()) {
-    return date.toLocaleDateString(undefined, {
+    return date.toLocaleDateString(getLocale(), {
       month: 'long',
       day: 'numeric',
     });
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(getLocale(), {
     year: 'numeric',
     month: 'long',
     day: 'numeric',
@@ -117,18 +118,20 @@ export function formatHistoryTimestamp(ts: string): string {
     now.getMonth(),
     now.getDate(),
   ).getTime();
-  const clock = date.toLocaleTimeString(undefined, {
+  const clock = date.toLocaleTimeString(getLocale(), {
     hour: 'numeric',
     minute: '2-digit',
   });
-  if (diff < 60000) return 'Just now';
-  if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
-  if (date.getTime() >= todayStart) return `${Math.floor(diff / 3600000)}h ago`;
-  if (date.getTime() >= todayStart - 86400000) return `Yesterday, ${clock}`;
+  if (diff < 60000) return t('Just now');
+  if (diff < 3600000) return t('{count}m ago', { count: Math.floor(diff / 60000) });
+  if (date.getTime() >= todayStart)
+    return t('{count}h ago', { count: Math.floor(diff / 3600000) });
+  if (date.getTime() >= todayStart - 86400000)
+    return t('Yesterday, {time}', { time: clock });
   if (date.getTime() >= todayStart - 6 * 86400000) {
-    return `${date.toLocaleDateString(undefined, { weekday: 'short' })}, ${clock}`;
+    return `${date.toLocaleDateString(getLocale(), { weekday: 'short' })}, ${clock}`;
   }
-  return date.toLocaleDateString(undefined, {
+  return date.toLocaleDateString(getLocale(), {
     month: 'short',
     day: 'numeric',
     year: date.getFullYear() === now.getFullYear() ? undefined : 'numeric',
@@ -147,7 +150,8 @@ export function countWords(text: string): number {
 export function historyItemMeta(entry: { text: string; duration_ms: number }): string {
   const parts: string[] = [];
   const words = countWords(entry.text);
-  if (words > 0) parts.push(words === 1 ? '1 word' : words + ' words');
+  if (words > 0)
+    parts.push(words === 1 ? t('1 word') : t('{count} words', { count: words }));
   const ms = Number(entry.duration_ms) || 0;
   if (ms > 0) {
     const s = Math.round(ms / 1000);
@@ -195,7 +199,9 @@ function renderTranscriptTextWithSpec(text: string, spec: HighlightSpec): string
   return safe.replace(spec.re, (match) => {
     const info = spec.terms.get(match.toLowerCase());
     if (info?.isCandidate) {
-      const title = `Suggestion: replace with '${info.corrected}' (click to accept)`;
+      const title = t("Suggestion: replace with '{corrected}' (click to accept)", {
+        corrected: info.corrected ?? '',
+      });
       return `<mark class="candidate-word" data-suggestion-id="${escapeAttr(info.id)}" role="button" tabindex="0" title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}">${match}</mark>`;
     }
     return `<mark>${match}</mark>`;
@@ -293,7 +299,7 @@ const HistoryRow = memo(function HistoryRow({
           tabIndex={tabIndex}
           role="button"
           aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse transcription' : 'Expand transcription'}
+          aria-label={expanded ? t('Collapse transcription') : t('Expand transcription')}
           onFocus={() => onFocusRow(entry.id)}
           onClick={(e) => {
             if (e.ctrlKey || e.metaKey) {
@@ -322,7 +328,7 @@ const HistoryRow = memo(function HistoryRow({
             <div className="history-item-main">
               <Checkbox
                 checked={selected}
-                aria-label={selected ? 'Deselect transcription' : 'Select transcription'}
+                aria-label={selected ? t('Deselect transcription') : t('Select transcription')}
                 onClick={(e) => e.stopPropagation()}
                 onCheckedChange={(checked) => {
                   if (checked !== selected) onToggleSelect(entry.id);
@@ -346,14 +352,14 @@ const HistoryRow = memo(function HistoryRow({
                   onCopy(entry.text, entry.id);
                 }}
               >
-                Copy
+                {t('Copy')}
               </Button>
               <Button
                 variant="ghost"
                 size="xs"
                 className="history-delete-btn destructive-action"
                 data-history-id={entry.id}
-                aria-label="Delete transcription"
+                aria-label={t('Delete transcription')}
                 onClick={(e) => {
                   e.stopPropagation();
                   onDelete(entry.id);
@@ -377,20 +383,20 @@ const HistoryRow = memo(function HistoryRow({
           data-action="copy"
           onSelect={() => onCopy(entry.text, entry.id)}
         >
-          Copy
+          {t('Copy')}
         </ContextMenuItem>
         <ContextMenuItem
           data-action="select"
           onSelect={() => onToggleSelect(entry.id)}
         >
-          {selected ? 'Deselect' : 'Select'}
+          {selected ? t('Deselect') : t('Select')}
         </ContextMenuItem>
         <ContextMenuItem
           data-action="delete"
           className="destructive-action"
           onSelect={() => onDelete(entry.id)}
         >
-          Delete
+          {t('Delete')}
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -521,7 +527,7 @@ export function HistoryPage() {
         return list.length;
       } catch (err) {
         if (seq !== loadSeq.current) return null;
-        toast('Failed to load history: ' + String(err), 'error');
+        toast(t('Failed to load history: {error}', { error: String(err) }), 'error');
         return null;
       } finally {
         if (inflightRef.current?.promise === work) inflightRef.current = null;
@@ -705,7 +711,7 @@ export function HistoryPage() {
   const copyItem = useCallback((text: string, id: string) => {
     // Verbatim vanilla: no rejection handler; failures stay silent.
     copyText(text).then(() => {
-      toast('Copied to clipboard', 'success');
+      toast(t('Copied to clipboard'), 'success');
       setFlashId(id);
       if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
       flashTimer.current = window.setTimeout(() => setFlashId(null), 400);
@@ -753,11 +759,13 @@ export function HistoryPage() {
     try {
       for (const e of doomed) await deleteHistoryEntry(e.id);
       toast(
-        doomed.length === 1 ? 'Deleted' : `Deleted ${doomed.length} transcriptions`,
+        doomed.length === 1
+          ? t('Deleted')
+          : t('Deleted {count} transcriptions', { count: doomed.length }),
         'success',
       );
     } catch (err) {
-      toast('Failed to delete: ' + String(err), 'error');
+      toast(t('Failed to delete: {error}', { error: String(err) }), 'error');
       void load(true);
       // Resync the filtered working set if one is active.
       setFullBump((n) => n + 1);
@@ -771,7 +779,9 @@ export function HistoryPage() {
     // Verbatim single-copy semantics: silent failures stay silent.
     copyText(sel.map((e) => e.text).join('\n\n')).then(() => {
       toast(
-        sel.length === 1 ? 'Copied to clipboard' : `Copied ${sel.length} transcriptions`,
+        sel.length === 1
+          ? t('Copied to clipboard')
+          : t('Copied {count} transcriptions', { count: sel.length }),
         'success',
       );
     });
@@ -791,9 +801,9 @@ export function HistoryPage() {
     // on the Dictionary route) then refreshes markers and this list.
     try {
       await acceptSuggestion(id);
-      toast('Added to dictionary', 'success');
+      toast(t('Added to dictionary'), 'success');
     } catch (err) {
-      toast('Failed to accept: ' + String(err), 'error');
+      toast(t('Failed to accept: {error}', { error: String(err) }), 'error');
       return;
     }
     await loadPendingSuggestionMap(true);
@@ -846,13 +856,13 @@ export function HistoryPage() {
   const doClearAll = async () => {
     try {
       await clearHistory();
-      toast('History cleared', 'success');
+      toast(t('History cleared'), 'success');
       persistedHistorySearch = '';
       setSearchInput('');
       setAllEntries([]);
       void load(true);
     } catch (err) {
-      toast('Failed to clear history: ' + String(err), 'error');
+      toast(t('Failed to clear history: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -1109,8 +1119,8 @@ export function HistoryPage() {
   return (
     <section className="page active" id="page-history">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>History</h1>
-        <p className="page-subtitle">Browse and search every transcription on this device</p>
+        <h1 className="page-title" tabIndex={-1}>{t('History')}</h1>
+        <p className="page-subtitle">{t('Browse and search every transcription on this device')}</p>
       </div>
 
       <div className="settings-card history-card" id="history-container">
@@ -1119,8 +1129,8 @@ export function HistoryPage() {
             ref={searchFieldRef}
             id="history-search"
             className="history-search-input"
-            placeholder="Search transcriptions…"
-            aria-label="Search transcriptions"
+            placeholder={t('Search transcriptions…')}
+            aria-label={t('Search transcriptions')}
             value={searchInput}
             onChange={(e) => onSearchInput(e.target.value)}
           />
@@ -1130,7 +1140,7 @@ export function HistoryPage() {
             id="clear-history-btn"
             onClick={() => setConfirmClear(true)}
           >
-            Clear All
+            {t('Clear All')}
           </Button>
         </div>
         <div className="history-filter-bar">
@@ -1141,11 +1151,11 @@ export function HistoryPage() {
             onValueChange={(value) => {
               if (value) setDateFilter(value as DateFilter);
             }}
-            aria-label="Date range"
+            aria-label={t('Date range')}
           >
             {DATE_FILTERS.map((f) => (
               <ToggleGroupItem key={f.value} value={f.value} className="tabs-trigger">
-                {f.label}
+                {t(f.label)}
               </ToggleGroupItem>
             ))}
           </ToggleGroup>
@@ -1157,13 +1167,13 @@ export function HistoryPage() {
               <Select value={providerFilter} onValueChange={setProviderFilter}>
                 <SelectTrigger
                   className="select-md"
-                  aria-label="Filter by provider"
+                  aria-label={t('Filter by provider')}
                 >
-                  <SelectValue placeholder="Provider" />
+                  <SelectValue placeholder={t('Provider')} />
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="all">All providers</SelectItem>
+                    <SelectItem value="all">{t('All providers')}</SelectItem>
                     {providerOptions.map((p) => (
                       <SelectItem key={p} value={p}>{p}</SelectItem>
                     ))}
@@ -1174,14 +1184,14 @@ export function HistoryPage() {
             <Select value={sort} onValueChange={(v) => setSort(v as HistorySort)}>
               <SelectTrigger
                 className="select-md"
-                aria-label="Sort transcriptions"
+                aria-label={t('Sort transcriptions')}
               >
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
                 <SelectGroup>
                   {SORT_OPTIONS.map((o) => (
-                    <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+                    <SelectItem key={o.value} value={o.value}>{t(o.label)}</SelectItem>
                   ))}
                 </SelectGroup>
               </SelectContent>
@@ -1189,12 +1199,16 @@ export function HistoryPage() {
           </div>
         </div>
         {selectedIds.size > 0 && (
-          <div className="history-selection-bar" role="toolbar" aria-label="Selected transcriptions">
+          <div className="history-selection-bar" role="toolbar" aria-label={t('Selected transcriptions')}>
             <span className="history-selection-count">
-              {selectedIds.size === 1 ? '1 selected' : `${selectedIds.size} selected`}
+              {selectedIds.size === 1
+                ? t('1 selected')
+                : t('{count} selected', { count: selectedIds.size })}
             </span>
             <Button variant="ghost" size="xs" onClick={copySelected}>
-              Copy{selectedIds.size > 1 ? ` ${selectedIds.size}` : ''}
+              {selectedIds.size > 1
+                ? t('Copy {count}', { count: selectedIds.size })
+                : t('Copy')}
             </Button>
             <Button
               variant="ghost"
@@ -1202,10 +1216,10 @@ export function HistoryPage() {
               className="destructive-action"
               onClick={() => deleteItems([...selectedIds])}
             >
-              Delete{selectedIds.size > 1 ? ` ${selectedIds.size}` : ''}
+              {t('Delete')}{selectedIds.size > 1 ? ` ${selectedIds.size}` : ''}
             </Button>
             <Button variant="ghost" size="xs" onClick={clearSelection}>
-              Clear
+              {t('Clear')}
             </Button>
           </div>
         )}
@@ -1227,8 +1241,8 @@ export function HistoryPage() {
                 <EmptyMedia variant="icon">
                   <Mic strokeWidth={1.5} aria-hidden="true" />
                 </EmptyMedia>
-                <EmptyTitle>No transcriptions yet</EmptyTitle>
-                <EmptyDescription>Press <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Space</Kbd> to start your first transcription</EmptyDescription>
+                <EmptyTitle>{t('No transcriptions yet')}</EmptyTitle>
+                <EmptyDescription>{t('Press')} <Kbd>{t('Ctrl')}</Kbd>+<Kbd>{t('Shift')}</Kbd>+<Kbd>{t('Space')}</Kbd> {t('to start your first transcription')}</EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
@@ -1238,13 +1252,15 @@ export function HistoryPage() {
                 <EmptyMedia variant="icon">
                   <Search strokeWidth={1.5} aria-hidden="true" />
                 </EmptyMedia>
-                <EmptyTitle>No matches</EmptyTitle>
+                <EmptyTitle>{t('No matches')}</EmptyTitle>
                 <EmptyDescription id="history-no-results-hint">
-                  {query ? `Nothing matches "${query}" on this device.` : 'Nothing matches your search.'}
+                  {query
+                    ? t('Nothing matches "{query}" on this device.', { query })
+                    : t('Nothing matches your search.')}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="ghost" size="sm" id="history-clear-search-btn" onClick={onClearSearch}>Clear search</Button>
+                <Button variant="ghost" size="sm" id="history-clear-search-btn" onClick={onClearSearch}>{t('Clear search')}</Button>
               </EmptyContent>
             </Empty>
           )}
@@ -1254,13 +1270,13 @@ export function HistoryPage() {
                 <EmptyMedia variant="icon">
                   <Search strokeWidth={1.5} aria-hidden="true" />
                 </EmptyMedia>
-                <EmptyTitle>No matches for these filters</EmptyTitle>
+                <EmptyTitle>{t('No matches for these filters')}</EmptyTitle>
                 <EmptyDescription>
-                  Try widening the date range or clearing the filters.
+                  {t('Try widening the date range or clearing the filters.')}
                 </EmptyDescription>
               </EmptyHeader>
               <EmptyContent>
-                <Button variant="ghost" size="sm" onClick={clearFilters}>Clear filters</Button>
+                <Button variant="ghost" size="sm" onClick={clearFilters}>{t('Clear filters')}</Button>
               </EmptyContent>
             </Empty>
           )}
@@ -1279,10 +1295,12 @@ export function HistoryPage() {
                     aria-hidden="true"
                     className={collapsedDays.has(group.dayKey) ? 'is-collapsed' : undefined}
                   />
-                  {group.label}
+                  {tr(group.label)}
                 </span>
                 <span className="history-group-count">
-                  {group.items.length === 1 ? '1 transcription' : `${group.items.length} transcriptions`}
+                  {group.items.length === 1
+                    ? t('1 transcription')
+                    : t('{count} transcriptions', { count: group.items.length })}
                 </span>
               </button>
               {!collapsedDays.has(group.dayKey) && group.items.map((entry) => {
@@ -1319,17 +1337,21 @@ export function HistoryPage() {
           className={pagedEntries.length === 0 ? 'hidden' : undefined}
         >
           <span className="history-pager-count">
-            Rows per page: {HISTORY_PAGE_SIZE}
+            {t('Rows per page:')} {HISTORY_PAGE_SIZE}
           </span>
           <div className="history-pager-controls">
             <span className="history-pager-page" aria-live="polite">
-              {loadingMore ? 'Loading…' : `Page ${page + 1}${totalPages != null ? ` of ${totalPages}` : ''}`}
+              {loadingMore
+                ? t('Loading…')
+                : totalPages != null
+                  ? t('Page {page} of {total}', { page: page + 1, total: totalPages })
+                  : t('Page {page}', { page: page + 1 })}
             </span>
             <Button
               variant="secondary"
               size="xs"
               className="history-pager-btn"
-              aria-label="Go to first page"
+              aria-label={t('Go to first page')}
               disabled={page === 0 || loadingMore}
               onClick={() => void goToPage(0)}
             >
@@ -1339,7 +1361,7 @@ export function HistoryPage() {
               variant="secondary"
               size="xs"
               className="history-pager-btn"
-              aria-label="Go to previous page"
+              aria-label={t('Go to previous page')}
               disabled={page === 0 || loadingMore}
               onClick={() => void goToPage(page - 1)}
             >
@@ -1349,7 +1371,7 @@ export function HistoryPage() {
               variant="secondary"
               size="xs"
               className="history-pager-btn"
-              aria-label="Go to next page"
+              aria-label={t('Go to next page')}
               disabled={loadingMore || (totalPages != null && page + 1 >= totalPages)}
               onClick={() => void goToPage(page + 1)}
             >
@@ -1359,7 +1381,7 @@ export function HistoryPage() {
               variant="secondary"
               size="xs"
               className="history-pager-btn"
-              aria-label="Go to last page"
+              aria-label={t('Go to last page')}
               disabled={loadingMore || (totalPages != null && page + 1 >= totalPages)}
               onClick={() => void goToPage(Number.POSITIVE_INFINITY)}
             >
@@ -1372,31 +1394,37 @@ export function HistoryPage() {
       <ConfirmDialog
         open={confirmClear}
         onOpenChange={setConfirmClear}
-        title="Clear History"
-        body="Clear all transcription history on this device? Statistics are unaffected."
-        confirmLabel="Clear All"
+        title={t('Clear History')}
+        body={t('Clear all transcription history on this device? Statistics are unaffected.')}
+        confirmLabel={t('Clear All')}
         danger
         onConfirm={() => void doClearAll()}
       />
       <ConfirmDialog
         open={confirmDeleteIds !== null}
         onOpenChange={(open) => { if (!open) setConfirmDeleteIds(null); }}
-        title={(confirmDeleteIds?.length ?? 0) > 1 ? 'Delete transcriptions' : 'Delete transcription'}
+        title={
+          (confirmDeleteIds?.length ?? 0) > 1
+            ? t('Delete transcriptions')
+            : t('Delete transcription')
+        }
         body={
           (confirmDeleteIds?.length ?? 0) > 1
-            ? `This action cannot be undone. Delete ${confirmDeleteIds?.length} transcriptions?`
-            : 'This action cannot be undone. Delete this transcription?'
+            ? t('This action cannot be undone. Delete {count} transcriptions?', {
+                count: confirmDeleteIds?.length ?? 0,
+              })
+            : t('This action cannot be undone. Delete this transcription?')
         }
-        confirmLabel="Delete"
+        confirmLabel={t('Delete')}
         danger
         onConfirm={() => void doConfirmDelete()}
       />
       <ConfirmDialog
         open={confirmAcceptMark !== null}
         onOpenChange={(open) => { if (!open) setConfirmAcceptMark(null); }}
-        title="Add to dictionary"
+        title={t('Add to dictionary')}
         body={confirmAcceptMark?.detail ?? ''}
-        confirmLabel="Add"
+        confirmLabel={t('Add')}
         onConfirm={() => {
           const id = confirmAcceptMark?.id;
           setConfirmAcceptMark(null);

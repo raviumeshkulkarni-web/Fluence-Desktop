@@ -1,4 +1,5 @@
 import { closeWizard, minimizeWizard } from './ipc';
+import { t } from '@/i18n';
 
 // Wizard frameless controls: minimize + close only (no maximize on the
 // 680×620 fixed window). Same inline glyphs as vanilla src/wizard.html.
@@ -6,14 +7,14 @@ export function WizardTitlebar() {
   return (
     <div data-tauri-drag-region className="titlebar">
       <div className="titlebar-title" data-tauri-drag-region>
-        Welcome to Fluence
+        {t('Welcome to Fluence')}
       </div>
       <div className="titlebar-controls">
         <button
           type="button"
           className="titlebar-button"
           id="titlebar-minimize"
-          aria-label="Minimize window"
+          aria-label={t('Minimize window')}
           onClick={() => void minimizeWizard().catch(() => undefined)}
         >
           <svg width="11" height="1" viewBox="0 0 11 1" aria-hidden="true">
@@ -24,7 +25,7 @@ export function WizardTitlebar() {
           type="button"
           className="titlebar-button titlebar-close"
           id="titlebar-close"
-          aria-label="Close window"
+          aria-label={t('Close window')}
           onClick={() => void closeWizard().catch(() => undefined)}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">

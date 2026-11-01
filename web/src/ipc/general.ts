@@ -5,6 +5,7 @@ import {
   registerPersistHook,
 } from '@/ipc/settings';
 import { toast } from '@/components/fluence/Toasts';
+import { t } from '@/i18n';
 
 // Command names + argument shapes reproduced exactly from vanilla
 // (setupHotkeyRecorders/applyHotkeyChanges/applyAutostartChange,
@@ -58,7 +59,7 @@ async function applyHotkeyChanges(): Promise<void> {
   try {
     await updateHotkeys(desired);
   } catch (err) {
-    toast('Failed to update hotkeys: ' + String(err), 'error');
+    toast(t('Failed to update hotkeys: {error}', { error: String(err) }), 'error');
   }
 }
 

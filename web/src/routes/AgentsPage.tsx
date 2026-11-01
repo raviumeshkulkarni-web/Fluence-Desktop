@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
+import { t, tr } from '@/i18n';
 import {
   Empty,
   EmptyContent,
@@ -69,7 +70,7 @@ export function AgentsPage() {
     } catch (err) {
       const message = String(err).replace(/^Error:\s*/, '');
       setError(message);
-      toast('Failed to load agents: ' + message, 'error');
+      toast(t('Failed to load agents: {error}', { error: message }), 'error');
     } finally {
       setLoading(false);
     }
@@ -92,7 +93,7 @@ export function AgentsPage() {
     try {
       await setDefaultAgent(id);
       setView((prev) => (prev ? { ...prev, default_id: id } : prev));
-      toast('Default agent updated', 'success');
+      toast(t('Default agent updated'), 'success');
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
     }
@@ -114,7 +115,7 @@ export function AgentsPage() {
 
   const onSave = async () => {
     if (!name.trim() || !hint.trim()) {
-      toast('Please fill in both name and instructions', 'error');
+      toast(t('Please fill in both name and instructions'), 'error');
       return;
     }
     setSaving(true);
@@ -127,7 +128,7 @@ export function AgentsPage() {
       await load();
       setShowEditor(false);
       setEditing(null);
-      toast('Agent saved', 'success');
+      toast(t('Agent saved'), 'success');
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
     } finally {
@@ -140,7 +141,7 @@ export function AgentsPage() {
     try {
       await deleteAgent(pendingDelete.id);
       await load();
-      toast('Agent deleted', 'success');
+      toast(t('Agent deleted'), 'success');
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
     } finally {
@@ -173,7 +174,7 @@ export function AgentsPage() {
     return (
       <section className="page active" id="page-agents">
         <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
+          <h1 className="page-title" tabIndex={-1}>{t('Agents')}</h1>
         </div>
         <Skeleton className="route-skeleton" />
       </section>
@@ -184,22 +185,22 @@ export function AgentsPage() {
     return (
       <section className="page active" id="page-agents">
         <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
-          <p className="page-subtitle">Saved agents are temporarily unavailable.</p>
+          <h1 className="page-title" tabIndex={-1}>{t('Agents')}</h1>
+          <p className="page-subtitle">{t('Saved agents are temporarily unavailable.')}</p>
         </div>
         <Empty className="agents-empty agents-error" role="alert">
           <EmptyHeader>
             <EmptyMedia variant="icon">
               <AlertCircle className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
             </EmptyMedia>
-            <EmptyTitle className="agents-empty-title">Unable to load agents</EmptyTitle>
+            <EmptyTitle className="agents-empty-title">{t('Unable to load agents')}</EmptyTitle>
             <EmptyDescription className="agents-empty-desc">
-              {error || 'Try again to load your saved agents.'}
+              {error || t('Try again to load your saved agents.')}
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
             <Button variant="default" size="sm" onClick={retryLoad}>
-              Try again
+              {t('Try again')}
             </Button>
           </EmptyContent>
         </Empty>
@@ -212,18 +213,15 @@ export function AgentsPage() {
     return (
       <section className="page active" id="page-agents">
         <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
+          <h1 className="page-title" tabIndex={-1}>{t('Agents')}</h1>
           <p className="page-subtitle">
-            Agents are saved instructions that shape how Agent Mode writes for
-            you, e.g. keep my emails short and professional. They only change
-            wording and can never take actions. Select one to make it your
-            default.
+            {t('Agents are saved instructions that shape how Agent Mode writes for you, e.g. keep my emails short and professional. They only change wording and can never take actions. Select one to make it your default.')}
           </p>
         </div>
 
       <SettingsSectionHeader
-        title="Built-in Agent"
-        description="The default multipurpose agent that handles general dictation and formatting"
+        title={t('Built-in Agent')}
+        description={t('The default multipurpose agent that handles general dictation and formatting')}
       />
       <Card
         className={`settings-card${view.default_id === view.builtin_id ? ' settings-card-selected' : ''}`}
@@ -233,12 +231,12 @@ export function AgentsPage() {
             className="agent-choice-group"
             value={view.default_id}
             onValueChange={(id) => void onSelectDefault(id)}
-            aria-label="Built-in agents"
+            aria-label={t('Built-in agents')}
           >
             <AgentRow
               value={view.builtin_id}
-              title={view.builtin_name}
-              description={view.builtin_description}
+              title={tr(view.builtin_name)}
+              description={tr(view.builtin_description)}
               isDefault={view.default_id === view.builtin_id}
               selected={view.default_id === view.builtin_id}
               claimable={false}
@@ -251,8 +249,8 @@ export function AgentsPage() {
       </Card>
 
       <SettingsSectionHeader
-        title="Custom Agents"
-        description="Custom instructions for specific writing styles or workflows"
+        title={t('Custom Agents')}
+        description={t('Custom instructions for specific writing styles or workflows')}
       >
         <Button
           variant="default"
@@ -260,7 +258,7 @@ export function AgentsPage() {
           id="agents-new-btn"
           onClick={openNew}
         >
-          New Agent
+          {t('New Agent')}
         </Button>
       </SettingsSectionHeader>
       <Card className="settings-card">
@@ -271,10 +269,9 @@ export function AgentsPage() {
               <EmptyMedia variant="icon">
                 <Zap className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
               </EmptyMedia>
-              <EmptyTitle className="agents-empty-title">No custom agents yet</EmptyTitle>
+              <EmptyTitle className="agents-empty-title">{t('No custom agents yet')}</EmptyTitle>
               <EmptyDescription className="agents-empty-desc">
-                Create one that writes the way you want, e.g. a translator
-                that always replies in Hindi
+                {t('Create one that writes the way you want, e.g. a translator that always replies in Hindi')}
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
@@ -283,7 +280,7 @@ export function AgentsPage() {
                 size="sm"
                 onClick={openNew}
               >
-                Create your first agent
+                {t('Create your first agent')}
               </Button>
             </EmptyContent>
           </Empty>
@@ -292,7 +289,7 @@ export function AgentsPage() {
             className="agent-choice-group"
             value={view.default_id}
             onValueChange={(id) => void onSelectDefault(id)}
-            aria-label="Custom agents"
+            aria-label={t('Custom agents')}
           >
             {customs.map((agent) => (
               <AgentRow
@@ -321,27 +318,27 @@ export function AgentsPage() {
           if (!open) setShowEditor(false);
         }}
       >
-        <DialogContent aria-label={editing ? 'Edit agent' : 'New agent'}>
+        <DialogContent aria-label={editing ? t('Edit agent') : t('New agent')}>
           <DialogHeader>
-            <DialogTitle>{editing ? 'Edit agent' : 'New agent'}</DialogTitle>
+            <DialogTitle>{editing ? t('Edit agent') : t('New agent')}</DialogTitle>
             <DialogDescription>
               {editing
-                ? 'Update the instructions used when this agent responds.'
-                : 'Create reusable instructions for how this agent should respond.'}
+                ? t('Update the instructions used when this agent responds.')
+                : t('Create reusable instructions for how this agent should respond.')}
             </DialogDescription>
           </DialogHeader>
           <FieldGroup>
-            <Field label="Name (max 30 characters)" htmlFor="agent-name-input">
+            <Field label={t('Name (max 30 characters)')} htmlFor="agent-name-input">
               <Input
                 id="agent-name-input"
                 value={name}
                 maxLength={30}
-                placeholder="e.g. Translator"
+                placeholder={t('e.g. Translator')}
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
             <Field
-              label="Instructions (max 1000 characters)"
+              label={t('Instructions (max 1000 characters)')}
               htmlFor="agent-hint-input"
             >
               <Textarea
@@ -349,7 +346,7 @@ export function AgentsPage() {
                 value={hint}
                 maxLength={1000}
                 rows={4}
-                placeholder="e.g. always reply in Hindi, keep it short"
+                placeholder={t('e.g. always reply in Hindi, keep it short')}
                 onChange={(e) => setHint(e.target.value)}
               />
             </Field>
@@ -360,10 +357,10 @@ export function AgentsPage() {
               onClick={() => setShowEditor(false)}
               disabled={saving}
             >
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button onClick={() => void onSave()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('Saving…') : t('Save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -377,20 +374,20 @@ export function AgentsPage() {
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete custom agent</AlertDialogTitle>
+            <AlertDialogTitle>{t('Delete custom agent')}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete
-                ? `This action cannot be undone. Delete "${pendingDelete.name}"?`
-                : 'This action cannot be undone.'}
+                ? t('This action cannot be undone. Delete "{name}"?', { name: pendingDelete.name })
+                : t('This action cannot be undone.')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel asChild>
-              <Button variant="secondary">Cancel</Button>
+              <Button variant="secondary">{t('Cancel')}</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button variant="destructive" onClick={() => void onDelete()}>
-                Delete
+                {t('Delete')}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>
@@ -444,12 +441,12 @@ function AgentRow({
             <span className="selection-row-heading">
               <span className="selection-row-title">{title}</span>
               <Badge variant="secondary" className="agent-unclaimed-badge">
-                On this device
+                {t('On this device')}
               </Badge>
             </span>
             <span className="selection-row-description agent-row-desc">{description}</span>
             <span className="selection-row-description agent-unclaimed-note">
-              Saved on this device before it was linked to an account.
+              {t('Saved on this device before it was linked to an account.')}
             </span>
           </span>
         </div>
@@ -458,7 +455,7 @@ function AgentRow({
           <button
             type="button"
             className="selection-row-main"
-            aria-label={`Set ${title} as default agent`}
+            aria-label={t('Set {name} as default agent', { name: title })}
           >
             <span className="selection-radio" aria-hidden="true" />
             <span className="selection-row-copy">
@@ -466,7 +463,7 @@ function AgentRow({
                 <span className="selection-row-title">{title}</span>
                 {isDefault && (
                   <Badge variant="secondary" className="agent-default-badge">
-                    DEFAULT
+                    {t('DEFAULT')}
                   </Badge>
                 )}
               </span>
@@ -484,18 +481,18 @@ function AgentRow({
               onClick={onClaim}
               disabled={claiming}
             >
-              {claiming ? 'Adding…' : 'Add to my account'}
+              {claiming ? t('Adding…') : t('Add to my account')}
             </Button>
           ) : (
             <>
               {!selected && (
                 <Button variant="secondary" size="xs" onClick={onSelect}>
-                  Set as default
+                  {t('Set as default')}
                 </Button>
               )}
               {onEdit && (
                 <Button variant="secondary" size="xs" onClick={onEdit}>
-                  Edit
+                  {t('Edit')}
                 </Button>
               )}
               {onDelete && (
@@ -504,7 +501,7 @@ function AgentRow({
                   size="xs"
                   onClick={onDelete}
                 >
-                  Delete
+                  {t('Delete')}
                 </Button>
               )}
             </>

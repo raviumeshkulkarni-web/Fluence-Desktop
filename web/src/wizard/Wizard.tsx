@@ -13,6 +13,7 @@ import { StepStyle } from './steps/StepStyle';
 import { StepTheme } from './steps/StepTheme';
 import { StepTest } from './steps/StepTest';
 import { StepDone } from './steps/StepDone';
+import { t, type TranslationKey } from '@/i18n';
 
 export const TOTAL_STEPS = 9;
 
@@ -44,8 +45,7 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
   skipApiKey: false,
 };
 
-const STEP_TITLES = [
-  '',
+const STEP_TITLES: TranslationKey[] = [
   'Welcome to Fluence Transcribe',
   'Choose Your Theme',
   'What Fluence Can Do',
@@ -58,9 +58,9 @@ const STEP_TITLES = [
 ];
 
 function nextLabel(step: number): string {
-  if (step === 1) return 'Get Started';
-  if (step === TOTAL_STEPS - 1) return 'Finish Setup';
-  return 'Continue';
+  if (step === 1) return t('Get Started');
+  if (step === TOTAL_STEPS - 1) return t('Finish Setup');
+  return t('Continue');
 }
 
 // Faithful port of the vanilla wizard shell: same 6-step flow, same
@@ -113,7 +113,13 @@ export function Wizard() {
         el?.scrollTo({ top: 0 });
         el?.querySelector<HTMLElement>('.step-title')?.focus({ preventScroll: true });
         const announcer = document.getElementById('wiz-step-announcer');
-        if (announcer) announcer.textContent = `Step ${n} of ${TOTAL_STEPS}: ${STEP_TITLES[n]}`;
+        if (announcer) {
+          announcer.textContent = t('Step {step} of {total}: {title}', {
+            step: n,
+            total: TOTAL_STEPS,
+            title: t(STEP_TITLES[n - 1]),
+          });
+        }
       });
       later(350, () => setLeaving(null));
     },
@@ -177,12 +183,12 @@ export function Wizard() {
       const key = d.apiKey.trim();
       const baseUrl = d.baseUrl.trim();
       if (d.provider === 'custom' && !baseUrl) {
-        setApiError('Please enter your API endpoint URL');
+        setApiError(t('Please enter your API endpoint URL'));
         flashNext();
         return;
       }
       if (!key) {
-        setApiError('Enter your API key to continue, or skip to offline transcription below.');
+        setApiError(t('Enter your API key to continue, or skip to offline transcription below.'));
         flashNext();
         return;
       }
@@ -191,7 +197,7 @@ export function Wizard() {
         await saveApiKey('Fluence/STT_ApiKey', key);
         await saveApiKey('Fluence/LLM_ApiKey', key);
       } catch (err) {
-        setApiError('Failed to save API key: ' + String(err));
+        setApiError(t('Failed to save API key: {error}', { error: String(err) }));
         flashNext();
         return;
       }
@@ -253,11 +259,11 @@ export function Wizard() {
     <TooltipProvider>
       <div className="wizard-page">
       <WizardTitlebar />
-      <div className="wizard-shell" role="dialog" aria-modal="true" aria-label="Fluence setup wizard">
+      <div className="wizard-shell" role="dialog" aria-modal="true" aria-label={t('Fluence setup wizard')}>
         <div id="wiz-step-announcer" className="sr-only" role="status" aria-live="polite" />
         <Progress
           value={progress}
-          aria-label="Setup progress"
+          aria-label={t('Setup progress')}
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={Math.round(progress)}
@@ -306,7 +312,7 @@ export function Wizard() {
             style={{ visibility: step > 1 && step < TOTAL_STEPS ? 'visible' : 'hidden' }}
             onClick={() => goTo(step - 1)}
           >
-            Back
+            {t('Back')}
           </Button>
           <div className="step-dots" id="step-dots" aria-hidden="true">
             {Array.from({ length: TOTAL_STEPS }, (_, k) => k + 1).map((i) => (

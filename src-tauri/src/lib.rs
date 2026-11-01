@@ -21,6 +21,7 @@ pub mod foreground;
 pub mod history;
 pub mod hotkey;
 pub mod http_client;
+pub mod i18n;
 pub mod installed_apps;
 pub mod offline_downloader;
 pub mod offline_transcribe;

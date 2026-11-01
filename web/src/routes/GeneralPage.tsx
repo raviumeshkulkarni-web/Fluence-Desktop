@@ -32,6 +32,15 @@ import {
   setHotkeyRecording,
 } from '@/ipc/general';
 import { ACCENT_THEMES, type AccentTheme } from '@/lib/theme';
+import {
+  getLanguagePreference,
+  getUiLanguage,
+  reloadWithLanguage,
+  resolveSystemLanguage,
+  SYSTEM_LANGUAGE,
+  t,
+  UI_LANGUAGES,
+} from '@/i18n';
 
 type HotkeyKey = 'hotkey' | 'agent_hotkey';
 
@@ -70,14 +79,15 @@ export function GeneralPage({
   // Seeded with the backend default (ON) so a slow/failing settings load
   // never displays a misleading OFF for the copy-transcript retention.
   const [copyTranscript, setCopyTranscript] = useState(true);
+  const [uiLanguage, setUiLanguage] = useState(getLanguagePreference());
 
   // One concern visible at a time (Providers pattern): shortcuts for the
   // hotkeys, audio for input/language/feedback, system for OS behavior.
-  type GeneralTab = 'shortcuts' | 'audio' | 'system' | 'appearance';
+  type GeneralTab = 'shortcuts' | 'audio' | 'language' | 'system' | 'appearance';
   const [tab, setTab] = useState<GeneralTab>('shortcuts');
 
   const [recording, setRecording] = useState<HotkeyKey | null>(null);
-  const [pendingText, setPendingText] = useState('Press your shortcut…');
+  const [pendingText, setPendingText] = useState(() => t('Press your shortcut…'));
   const recordingRef = useRef<HotkeyKey | null>(null);
   recordingRef.current = recording;
   const pendingKeys = useRef<Set<string>>(new Set());
@@ -141,6 +151,7 @@ export function GeneralPage({
         setAgentHotkey(str(s.agent_hotkey, DEFAULT_AGENT_HOTKEY));
         setAgentRecordingMode(str(s.agent_recording_mode, 'push_to_toggle'));
         setLanguage(str(s.language, 'en'));
+        setUiLanguage(str(s.ui_language, SYSTEM_LANGUAGE));
         setAutostart(s.auto_start === true);
         setDuck(s.duck_enabled === true);
         setAutoGrab(s.auto_grab_highlight !== false);
@@ -180,7 +191,7 @@ export function GeneralPage({
       pendingKeys.current.add(e.key);
       const parts = buildHotkeyString(e);
       pendingHotkey.current = parts;
-      setPendingText(parts || 'Press keys…');
+      setPendingText(parts || t('Press keys…'));
     };
     const onKeyUp = (e: KeyboardEvent) => {
       if (!recordingRef.current) return;
@@ -214,7 +225,7 @@ export function GeneralPage({
   useEffect(() => {
     const onSave = () => {
       saveSettingsNow().catch((err) =>
-        toast('Failed to save settings: ' + String(err), 'error'),
+        toast(t('Failed to save settings: {error}', { error: String(err) }), 'error'),
       );
     };
     window.addEventListener('fluence:save-page', onSave);
@@ -229,7 +240,7 @@ export function GeneralPage({
     if (recordingRef.current) cancelRecording();
     pendingKeys.current = new Set();
     pendingHotkey.current = '';
-    setPendingText('Press your shortcut…');
+    setPendingText(t('Press your shortcut…'));
     setRecording(key);
   };
 
@@ -265,35 +276,61 @@ export function GeneralPage({
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Failed to save settings: ' + String(err), 'error');
+      toast(t('Failed to save settings: {error}', { error: String(err) }), 'error');
       return;
     }
-    toast('Settings saved', 'success');
+    toast(t('Settings saved'), 'success');
   };
+
+  const onUiLanguageChange = async (value: string) => {
+    let settings = getCachedSettings();
+    if (!settings) {
+      try {
+        settings = await loadSettings();
+      } catch {
+        return;
+      }
+    }
+    setUiLanguage(value);
+    setSettingField('ui_language', value);
+    try {
+      await saveSettingsNow();
+    } catch (err) {
+      toast(t('Failed to save settings: {error}', { error: String(err) }), 'error');
+      return;
+    }
+    reloadWithLanguage(value);
+  };
+
+  const resolvedSystemLanguage =
+    uiLanguage === SYSTEM_LANGUAGE
+      ? getUiLanguage(resolveSystemLanguage())?.nativeName ?? 'English'
+      : null;
 
   return (
     <section className="page active" id="page-general">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>General</h1>
-        <p className="page-subtitle">Hotkey, recording mode, audio, and system preferences</p>
+        <h1 className="page-title" tabIndex={-1}>{t('General')}</h1>
+        <p className="page-subtitle">{t('Hotkey, recording mode, audio, and system preferences')}</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as GeneralTab)}>
-        <TabsList aria-label="General settings area">
-          <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
-          <TabsTrigger value="audio">Audio</TabsTrigger>
-          <TabsTrigger value="system">System</TabsTrigger>
-          <TabsTrigger value="appearance">Appearance</TabsTrigger>
+        <TabsList aria-label={t('General settings area')}>
+          <TabsTrigger value="shortcuts">{t('Shortcuts')}</TabsTrigger>
+          <TabsTrigger value="audio">{t('Audio')}</TabsTrigger>
+          <TabsTrigger value="language">{t('Language')}</TabsTrigger>
+          <TabsTrigger value="system">{t('System')}</TabsTrigger>
+          <TabsTrigger value="appearance">{t('Appearance')}</TabsTrigger>
         </TabsList>
 
       <TabsContent value="shortcuts">
-        <SettingsSectionHeader title="Global Shortcut" description="Global hotkey to start and stop speech recording" />
+        <SettingsSectionHeader title={t('Global Shortcut')} description={t('Global hotkey to start and stop speech recording')} />
         <Card className="settings-card">
           <CardContent className="settings-card-content">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label" id="hotkey-label">Recording Hotkey</div>
-              <div className="setting-desc">Press this key combination to start/stop voice recording from any app</div>
+              <div className="setting-label" id="hotkey-label">{t('Recording Hotkey')}</div>
+              <div className="setting-desc">{t('Press this key combination to start/stop voice recording from any app')}</div>
             </div>
             <div className="setting-control">
               <div className="hotkey-recorder">
@@ -325,15 +362,15 @@ export function GeneralPage({
                   id="hotkey-clear-btn"
                   onClick={() => onResetHotkey('hotkey', DEFAULT_HOTKEY)}
                 >
-                  Reset
+                  {t('Reset')}
                 </Button>
               </div>
             </div>
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Transcription Mode Behavior</div>
-              <div className="setting-desc">How the hotkey controls recording</div>
+              <div className="setting-label">{t('Transcription Mode Behavior')}</div>
+              <div className="setting-desc">{t('How the hotkey controls recording')}</div>
             </div>
             <div className="setting-control">
               <Field>
@@ -344,14 +381,14 @@ export function GeneralPage({
                   <SelectTrigger
                     id="recording-mode-select"
                     className="select-md"
-                    aria-label="Transcription mode behavior"
+                    aria-label={t('Transcription mode behavior')}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
-                      <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                      <SelectItem value="push_to_toggle">{t('Push-to-Toggle')}</SelectItem>
+                      <SelectItem value="hold_to_record">{t('Hold-to-Record')}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -361,13 +398,13 @@ export function GeneralPage({
           </CardContent>
         </Card>
 
-        <SettingsSectionHeader title="Agent Mode Shortcut" description="Dedicated shortcut to activate AI Agent Mode" />
+        <SettingsSectionHeader title={t('Agent Mode Shortcut')} description={t('Dedicated shortcut to activate AI Agent Mode')} />
         <Card className="settings-card">
           <CardContent className="settings-card-content">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label" id="agent-hotkey-label">Agent Mode Hotkey</div>
-              <div className="setting-desc">Dedicated hotkey to activate AI Agent Mode from any app</div>
+              <div className="setting-label" id="agent-hotkey-label">{t('Agent Mode Hotkey')}</div>
+              <div className="setting-desc">{t('Dedicated hotkey to activate AI Agent Mode from any app')}</div>
             </div>
             <div className="setting-control">
               <div className="hotkey-recorder">
@@ -399,15 +436,15 @@ export function GeneralPage({
                   id="agent-hotkey-clear-btn"
                   onClick={() => onResetHotkey('agent_hotkey', DEFAULT_AGENT_HOTKEY)}
                 >
-                  Reset
+                  {t('Reset')}
                 </Button>
               </div>
             </div>
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Agent Mode Behavior</div>
-              <div className="setting-desc">How the agent hotkey controls recording</div>
+              <div className="setting-label">{t('Agent Mode Behavior')}</div>
+              <div className="setting-desc">{t('How the agent hotkey controls recording')}</div>
             </div>
             <div className="setting-control">
               <Field>
@@ -418,14 +455,14 @@ export function GeneralPage({
                   <SelectTrigger
                     id="agent-recording-mode-select"
                     className="select-md"
-                    aria-label="Agent mode behavior"
+                    aria-label={t('Agent mode behavior')}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="push_to_toggle">Push-to-Toggle</SelectItem>
-                      <SelectItem value="hold_to_record">Hold-to-Record</SelectItem>
+                      <SelectItem value="push_to_toggle">{t('Push-to-Toggle')}</SelectItem>
+                      <SelectItem value="hold_to_record">{t('Hold-to-Record')}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -437,13 +474,13 @@ export function GeneralPage({
       </TabsContent>
 
       <TabsContent value="audio">
-        <SettingsSectionHeader title="Audio & Language" description="Select input hardware and speech recognition language" />
+        <SettingsSectionHeader title={t('Audio & Language')} description={t('Select input hardware and speech recognition language')} />
         <Card className="settings-card">
           <CardContent className="settings-card-content">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Microphone</div>
-              <div className="setting-desc">Select the audio input device for voice recording</div>
+              <div className="setting-label">{t('Microphone')}</div>
+              <div className="setting-desc">{t('Select the audio input device for voice recording')}</div>
             </div>
             <div className="setting-control">
               <Field>
@@ -458,13 +495,13 @@ export function GeneralPage({
                   <SelectTrigger
                     id="audio-device-select"
                     className="select-lg"
-                    aria-label="Microphone input device"
+                    aria-label={t('Microphone input device')}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value={SYSTEM_DEFAULT_DEVICE}>System Default</SelectItem>
+                      <SelectItem value={SYSTEM_DEFAULT_DEVICE}>{t('System Default')}</SelectItem>
                       {devices.map((name) => (
                         <SelectItem key={name} value={name}>{name}</SelectItem>
                       ))}
@@ -479,8 +516,8 @@ export function GeneralPage({
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Transcription Language</div>
-              <div className="setting-desc">Hint to the STT model about the spoken language</div>
+              <div className="setting-label">{t('Transcription Language')}</div>
+              <div className="setting-desc">{t('Hint to the STT model about the spoken language')}</div>
             </div>
             <div className="setting-control">
               <Field>
@@ -491,29 +528,29 @@ export function GeneralPage({
                   <SelectTrigger
                     id="language-select"
                     className="select-md"
-                    aria-label="Transcription language"
+                    aria-label={t('Transcription language')}
                   >
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectGroup>
-                      <SelectItem value="en">English</SelectItem>
-                      <SelectItem value="auto">Auto-detect</SelectItem>
-                      <SelectItem value="es">Spanish</SelectItem>
-                      <SelectItem value="fr">French</SelectItem>
-                      <SelectItem value="de">German</SelectItem>
-                      <SelectItem value="zh">Chinese</SelectItem>
-                      <SelectItem value="ja">Japanese</SelectItem>
-                      <SelectItem value="hi">Hindi</SelectItem>
-                      <SelectItem value="ar">Arabic</SelectItem>
-                      <SelectItem value="pt">Portuguese</SelectItem>
-                      <SelectItem value="it">Italian</SelectItem>
-                      <SelectItem value="nl">Dutch</SelectItem>
-                      <SelectItem value="ko">Korean</SelectItem>
-                      <SelectItem value="ru">Russian</SelectItem>
-                      <SelectItem value="mr">Marathi</SelectItem>
-                      <SelectItem value="pa">Punjabi</SelectItem>
-                      <SelectItem value="hu">Hungarian</SelectItem>
+                      <SelectItem value="en">{t('English')}</SelectItem>
+                      <SelectItem value="auto">{t('Auto-detect')}</SelectItem>
+                      <SelectItem value="es">{t('Spanish')}</SelectItem>
+                      <SelectItem value="fr">{t('French')}</SelectItem>
+                      <SelectItem value="de">{t('German')}</SelectItem>
+                      <SelectItem value="zh">{t('Chinese')}</SelectItem>
+                      <SelectItem value="ja">{t('Japanese')}</SelectItem>
+                      <SelectItem value="hi">{t('Hindi')}</SelectItem>
+                      <SelectItem value="ar">{t('Arabic')}</SelectItem>
+                      <SelectItem value="pt">{t('Portuguese')}</SelectItem>
+                      <SelectItem value="it">{t('Italian')}</SelectItem>
+                      <SelectItem value="nl">{t('Dutch')}</SelectItem>
+                      <SelectItem value="ko">{t('Korean')}</SelectItem>
+                      <SelectItem value="ru">{t('Russian')}</SelectItem>
+                      <SelectItem value="mr">{t('Marathi')}</SelectItem>
+                      <SelectItem value="pa">{t('Punjabi')}</SelectItem>
+                      <SelectItem value="hu">{t('Hungarian')}</SelectItem>
                     </SelectGroup>
                   </SelectContent>
                 </Select>
@@ -522,14 +559,14 @@ export function GeneralPage({
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Play Completion Sound</div>
-              <div className="setting-desc">Play a short chime when a transcription finishes</div>
+              <div className="setting-label">{t('Play Completion Sound')}</div>
+              <div className="setting-desc">{t('Play a short chime when a transcription finishes')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="sound-on-complete-cb"
-                  aria-label="Play a sound when transcription completes"
+                  aria-label={t('Play a sound when transcription completes')}
                   checked={sound}
                   onCheckedChange={bindCheck(setSound, 'sound_on_complete')}
                 />
@@ -538,14 +575,14 @@ export function GeneralPage({
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Copy Transcription to Clipboard</div>
-              <div className="setting-desc">Your dictated text and agent results stay on the clipboard after each dictation, even if the paste fails, so you can paste them again with Ctrl+V. Turn this off to keep your earlier copied text instead.</div>
+              <div className="setting-label">{t('Copy Transcription to Clipboard')}</div>
+              <div className="setting-desc">{t('Your dictated text and agent results stay on the clipboard after each dictation, even if the paste fails, so you can paste them again with Ctrl+V. Turn this off to keep your earlier copied text instead.')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="copy-transcript-cb"
-                  aria-label="Keep dictated text on the clipboard"
+                  aria-label={t('Keep dictated text on the clipboard')}
                   checked={copyTranscript}
                   onCheckedChange={bindCheck(setCopyTranscript, 'copy_transcript_to_clipboard')}
                 />
@@ -556,20 +593,70 @@ export function GeneralPage({
         </Card>
       </TabsContent>
 
-      <TabsContent value="system">
-        <SettingsSectionHeader title="System Preferences" description="Configure startup and background audio behavior" />
+      <TabsContent value="language">
+        <SettingsSectionHeader
+          title={t('Interface Language')}
+          description={t('Choose the language used across the Fluence settings window, wizard, and overlay')}
+        />
         <Card className="settings-card">
           <CardContent className="settings-card-content">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Launch at Windows Startup</div>
-              <div className="setting-desc">Automatically start Fluence when you log in to Windows</div>
+              <div className="setting-label">{t('Display Language')}</div>
+              <div className="setting-desc">{t('Changes apply immediately. System default follows your Windows language.')}</div>
+            </div>
+            <div className="setting-control">
+              <Field>
+                <Select
+                  value={uiLanguage}
+                  onValueChange={(value) => void onUiLanguageChange(value)}
+                >
+                  <SelectTrigger
+                    id="ui-language-select"
+                    className="select-md"
+                    aria-label={t('Interface language')}
+                  >
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>
+                      <SelectItem value={SYSTEM_LANGUAGE}>
+                        {t('System default')}{resolvedSystemLanguage ? ` (${resolvedSystemLanguage})` : ''}
+                      </SelectItem>
+                      {UI_LANGUAGES.map((language) => (
+                        <SelectItem key={language.code} value={language.code}>
+                          {language.nativeName}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+              </Field>
+            </div>
+          </div>
+          <div className="setting-row">
+            <div className="setting-desc" style={{ margin: 0 }}>
+              {t('The settings window reloads briefly after a language change. Transcription language stays separate and is configured under Audio.')}
+            </div>
+          </div>
+          </CardContent>
+        </Card>
+      </TabsContent>
+
+      <TabsContent value="system">
+        <SettingsSectionHeader title={t('System Preferences')} description={t('Configure startup and background audio behavior')} />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+          <div className="setting-row">
+            <div className="setting-info">
+              <div className="setting-label">{t('Launch at Windows Startup')}</div>
+              <div className="setting-desc">{t('Automatically start Fluence when you log in to Windows')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="autostart-cb"
-                  aria-label="Launch at Windows startup"
+                  aria-label={t('Launch at Windows startup')}
                   checked={autostart}
                   onCheckedChange={bindCheck(setAutostart, 'auto_start', 'autostart')}
                 />
@@ -578,14 +665,14 @@ export function GeneralPage({
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Mute Background Apps</div>
-              <div className="setting-desc">Silence music, videos, and calls while you dictate</div>
+              <div className="setting-label">{t('Mute Background Apps')}</div>
+              <div className="setting-desc">{t('Silence music, videos, and calls while you dictate')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="duck-cb"
-                  aria-label="Mute background apps while dictating"
+                  aria-label={t('Mute background apps while dictating')}
                   checked={duck}
                   onCheckedChange={bindCheck(setDuck, 'duck_enabled')}
                 />
@@ -594,14 +681,14 @@ export function GeneralPage({
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Grab Highlighted Text</div>
-              <div className="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
+              <div className="setting-label">{t('Grab Highlighted Text')}</div>
+              <div className="setting-desc">{t('Automatically read highlighted text when entering Agent Mode')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="auto-grab-cb"
-                  aria-label="Grab highlighted text when entering Agent Mode"
+                  aria-label={t('Grab highlighted text when entering Agent Mode')}
                   checked={autoGrab}
                   onCheckedChange={bindCheck(setAutoGrab, 'auto_grab_highlight')}
                 />
@@ -612,14 +699,14 @@ export function GeneralPage({
         </Card>
       </TabsContent>
       <TabsContent value="appearance">
-        <SettingsSectionHeader title="Accent theme" description="Choose a preset accent for the Fluence settings window" />
+        <SettingsSectionHeader title={t('Accent theme')} description={t('Choose a preset accent for the Fluence settings window')} />
         <Card className="settings-card">
           <CardContent className="settings-card-content accent-theme-content">
             <RadioGroup
               className="accent-preset-grid"
               value={accentTheme}
               onValueChange={(value) => onAccentThemeChange(value as AccentTheme)}
-              aria-label="Accent theme"
+              aria-label={t('Accent theme')}
               aria-describedby="accent-theme-note"
             >
               {ACCENT_THEMES.map((preset) => (
@@ -635,13 +722,13 @@ export function GeneralPage({
                 >
                   <button type="button" className="accent-preset-card">
                     <span className="accent-preset-swatch" aria-hidden="true" />
-                    <span className="accent-preset-label">{preset.label}</span>
+                    <span className="accent-preset-label">{t(preset.label)}</span>
                   </button>
                 </RadioGroupItem>
               ))}
             </RadioGroup>
             <p className="accent-theme-note" id="accent-theme-note">
-              Accents adapt for dark and light appearance. Your surfaces, Fluence logo, and floating overlay stay unchanged.
+              {t('Accents adapt for dark and light appearance. Your surfaces, Fluence logo, and floating overlay stay unchanged.')}
             </p>
           </CardContent>
         </Card>
@@ -650,7 +737,7 @@ export function GeneralPage({
 
       {tab !== 'appearance' && (
         <div className="page-actions">
-          <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+          <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>{t('Save Changes')}</Button>
         </div>
       )}
     </section>

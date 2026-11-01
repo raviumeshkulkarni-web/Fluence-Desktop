@@ -937,6 +937,19 @@
   flex: 1;
   min-height: 0;
 }
+#page-dashboard .chart-empty.chart-empty-inline {
+  position: static;
+  inset: auto;
+  margin: 0;
+  padding: 20px 16px;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
 .chart-container .recharts-wrapper:focus,
 .chart-container .recharts-surface:focus {
   outline: none;

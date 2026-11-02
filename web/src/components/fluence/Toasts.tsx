@@ -1,4 +1,5 @@
 import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { tr } from '@/i18n';
 
 // Port of vanilla showToast (settings.js): max 3 stacked, newest last,
 // 3s auto-dismiss, hover pauses, 800ms grace after mouse-leave, fade-out
@@ -38,7 +39,7 @@ class ToastStore {
   getSnapshot = () => this.toasts;
 
   push(message: string, kind: ToastKind = 'info') {
-    const list = [...this.toasts, { id: this.nextId++, message, kind }];
+    const list = [...this.toasts, { id: this.nextId++, message: tr(message), kind }];
     while (list.length > 3) list.shift();
     this.toasts = list;
     this.emit();

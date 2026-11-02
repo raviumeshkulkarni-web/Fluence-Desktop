@@ -99,6 +99,8 @@ pub struct AppSettings {
     pub first_run: bool,
     #[serde(default = "default_language")]
     pub language: String,
+    #[serde(default = "default_ui_language")]
+    pub ui_language: String,
     #[serde(default = "default_agent_hotkey")]
     pub agent_hotkey: String, // e.g. "Ctrl+Shift+A"
     #[serde(default = "default_agent_recording_mode")]
@@ -180,6 +182,9 @@ fn default_agent_mode_threshold_ms() -> u64 {
 fn default_language() -> String {
     "en".to_string()
 }
+fn default_ui_language() -> String {
+    "system".to_string()
+}
 fn default_agent_hotkey() -> String {
     "Ctrl+Shift+A".to_string()
 }
@@ -233,6 +238,7 @@ impl Default for AppSettings {
             agent_mode_threshold_ms: default_agent_mode_threshold_ms(),
             first_run: default_true(),
             language: default_language(),
+            ui_language: default_ui_language(),
             agent_hotkey: default_agent_hotkey(),
             agent_recording_mode: default_agent_recording_mode(),
             ai_polish_style: default_ai_polish_style(),
@@ -458,6 +464,7 @@ pub fn get_settings() -> Result<AppSettings, String> {
 
 #[tauri::command]
 pub fn update_settings(
+    app: tauri::AppHandle,
     window: tauri::Window,
     settings: AppSettings,
     scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
@@ -498,6 +505,18 @@ pub fn update_settings(
         crate::snippets::invalidate_cache();
     }
     scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
+
+    let lang = crate::i18n::resolve(&settings.ui_language);
+    let _ = crate::tray::refresh_menu(&app);
+    {
+        use tauri::Manager;
+        if let Some(win) = app.get_webview_window("main") {
+            let _ = win.set_title(crate::i18n::tr(&lang, "Fluence Settings"));
+        }
+        if let Some(win) = app.get_webview_window("wizard") {
+            let _ = win.set_title(crate::i18n::tr(&lang, "Welcome to Fluence"));
+        }
+    }
     Ok(())
 }
 

@@ -1,4 +1,5 @@
 import { invokeCmd } from '@/ipc/tauri';
+import { t } from '@/i18n';
 
 export interface DictEntry {
   id: string;
@@ -48,8 +49,11 @@ export const getLearningSuggestions = () =>
  *  identical copy. */
 export function buildConfirmDetail(spoken?: string, corrected?: string): string {
   return spoken && corrected
-    ? `Add "${spoken}" → "${corrected}" to the dictionary? This will automatically rewrite future dictations.`
-    : 'Add this suggestion to the dictionary? This will automatically rewrite future dictations.';
+    ? t('Add "{spoken}" → "{corrected}" to the dictionary? This will automatically rewrite future dictations.', {
+        spoken,
+        corrected,
+      })
+    : t('Add this suggestion to the dictionary? This will automatically rewrite future dictations.');
 }
 
 export const acceptSuggestion = (id: string) =>
@@ -82,7 +86,7 @@ interface DialogPlugin {
 function dialogPlugin(): DialogPlugin {
   const w = window as unknown as Record<string, unknown>;
   const dialog = w.__TAURI_PLUGIN_DIALOG__ as DialogPlugin | undefined;
-  if (!dialog) throw new Error('File dialog plugin not available');
+  if (!dialog) throw new Error(t('File dialog plugin not available'));
   return dialog;
 }
 

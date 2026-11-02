@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
+import { t } from '@/i18n';
 import {
   acceptSuggestion,
   addDictionaryEntry,
@@ -107,7 +108,7 @@ export function DictionaryPage() {
       }
       setAutoAdded(keys);
     } catch (err) {
-      toast('Failed to load dictionary: ' + String(err), 'error');
+      toast(t('Failed to load dictionary: {error}', { error: String(err) }), 'error');
     }
   }, []);
 
@@ -167,16 +168,16 @@ export function DictionaryPage() {
     const s = spoken.trim();
     const c = corrected.trim();
     if (!s || !c) {
-      toast('Please fill in both fields', 'error');
+      toast(t('Please fill in both fields'), 'error');
       return;
     }
     try {
       const entry = await addDictionaryEntry(s, c);
       setEntries((prev) => [...prev, entry]);
       closeAdd();
-      toast('Entry added', 'success');
+      toast(t('Entry added'), 'success');
     } catch (err) {
-      toast('Failed to add entry: ' + String(err), 'error');
+      toast(t('Failed to add entry: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -185,9 +186,9 @@ export function DictionaryPage() {
       await deleteDictionaryEntry(id);
       setEntries((prev) => prev.filter((e) => e.id !== id));
       await loadSugg(); // delete→dismiss linkage may dismiss a suggestion row
-      toast('Entry deleted', 'success');
+      toast(t('Entry deleted'), 'success');
     } catch (err) {
-      toast('Failed to delete: ' + String(err), 'error');
+      toast(t('Failed to delete: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -195,21 +196,23 @@ export function DictionaryPage() {
     try {
       const result = await importDictionaryFile();
       if (result === null) return;
-      toast(`Imported ${result.added} entries`, 'success');
+      toast(t('Imported {count} entries', { count: result.added }), 'success');
       // Entries with an unrecognized type cannot sync (the frozen wire format
       // has no `kind` field), so they were imported as plain corrections.
       // Say so rather than silently changing what the user imported.
       if (result.coerced_kind > 0) {
         toast(
-          `${result.coerced_kind} ${result.coerced_kind === 1 ? 'entry had' : 'entries had'} an unrecognized type and ${
-            result.coerced_kind === 1 ? 'was' : 'were'
-          } imported as a correction`,
+          result.coerced_kind === 1
+            ? t('1 entry had an unrecognized type and was imported as a correction')
+            : t('{count} entries had an unrecognized type and were imported as a correction', {
+                count: result.coerced_kind,
+              }),
           'info',
         );
       }
       await loadDict();
     } catch (err) {
-      toast('Import failed: ' + String(err), 'error');
+      toast(t('Import failed: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -217,7 +220,7 @@ export function DictionaryPage() {
     try {
       downloadDictionaryJson(await exportDictionaryJson());
     } catch (err) {
-      toast('Export failed: ' + String(err), 'error');
+      toast(t('Export failed: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -232,37 +235,39 @@ export function DictionaryPage() {
   const doAccept = async (id: string) => {
     try {
       await acceptSuggestion(id);
-      toast('Added to dictionary', 'success');
+      toast(t('Added to dictionary'), 'success');
       await loadSugg();
       await loadDict();
     } catch (err) {
-      toast('Failed to accept: ' + String(err), 'error');
+      toast(t('Failed to accept: {error}', { error: String(err) }), 'error');
     }
   };
 
   const onDismiss = async (id: string) => {
     try {
       await dismissSuggestion(id);
-      toast('Suggestion dismissed', 'success');
+      toast(t('Suggestion dismissed'), 'success');
       await loadSugg();
     } catch (err) {
-      toast('Failed to dismiss: ' + String(err), 'error');
+      toast(t('Failed to dismiss: {error}', { error: String(err) }), 'error');
     }
   };
 
   const onDismissSelected = async () => {
     if (selected.size === 0) {
-      toast('Nothing selected', 'error');
+      toast(t('Nothing selected'), 'error');
       return;
     }
     try {
       for (const id of selected) await dismissSuggestion(id);
       toast(
-        `Dismissed ${selected.size} suggestion${selected.size === 1 ? '' : 's'}`,
+        selected.size === 1
+          ? t('Dismissed 1 suggestion')
+          : t('Dismissed {count} suggestions', { count: selected.size }),
         'success',
       );
     } catch (err) {
-      toast('Failed to dismiss selected: ' + String(err), 'error');
+      toast(t('Failed to dismiss selected: {error}', { error: String(err) }), 'error');
     } finally {
       setSelected(new Set());
       await loadSugg();
@@ -283,33 +288,33 @@ export function DictionaryPage() {
   return (
     <section className="page active" id="page-dictionary">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Dictionary</h1>
-        <p className="page-subtitle">Correct specific words or phrases automatically after transcription</p>
+        <h1 className="page-title" tabIndex={-1}>{t('Dictionary')}</h1>
+        <p className="page-subtitle">{t('Correct specific words or phrases automatically after transcription')}</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as DictionaryTab)}>
-        <TabsList aria-label="Dictionary area">
-          <TabsTrigger value="learning">Learning</TabsTrigger>
-          <TabsTrigger value="words">Words</TabsTrigger>
-          <TabsTrigger value="suggestions">Suggestions</TabsTrigger>
+        <TabsList aria-label={t('Dictionary area')}>
+          <TabsTrigger value="learning">{t('Learning')}</TabsTrigger>
+          <TabsTrigger value="words">{t('Words')}</TabsTrigger>
+          <TabsTrigger value="suggestions">{t('Suggestions')}</TabsTrigger>
         </TabsList>
 
       <TabsContent value="learning">
         <SettingsSectionHeader
-          title="Correction Learning"
-          description="Configure automatic learning and dictionary suggestions"
+          title={t('Correction Learning')}
+          description={t('Configure automatic learning and dictionary suggestions')}
         />
         <Card className="settings-card">
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Auto-Learn Corrections</div>
-              <div className="setting-desc">Suggest transcription corrections based on detected patterns</div>
+              <div className="setting-label">{t('Auto-Learn Corrections')}</div>
+              <div className="setting-desc">{t('Suggest transcription corrections based on detected patterns')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="auto-learn-cb"
-                  aria-label="Auto-learn transcription corrections"
+                  aria-label={t('Auto-learn transcription corrections')}
                   checked={learn}
                   onCheckedChange={(v) => setAutoLearn(v)}
                 />
@@ -318,17 +323,17 @@ export function DictionaryPage() {
           </div>
           <div className="setting-row">
             <div className="setting-info">
-              <div className="setting-label">Auto-Accept Suggestions</div>
-              <div className="setting-desc">Automatically add repeated corrections to the dictionary on this device</div>
+              <div className="setting-label">{t('Auto-Accept Suggestions')}</div>
+              <div className="setting-desc">{t('Automatically add repeated corrections to the dictionary on this device')}</div>
             </div>
             <div className="setting-control">
               <Field>
                 <Switch
                   id="auto-accept-cb"
-                  aria-label="Auto-accept repeated correction suggestions"
+                  aria-label={t('Auto-accept repeated correction suggestions')}
                   checked={accept}
                   disabled={!learn}
-                  title={!learn ? 'Requires Auto-Learn' : undefined}
+                  title={!learn ? t('Requires Auto-Learn') : undefined}
                   onCheckedChange={(v) => setSettingField('auto_accept_enabled', v)}
                 />
               </Field>
@@ -339,53 +344,53 @@ export function DictionaryPage() {
 
       <TabsContent value="words">
         <SettingsSectionHeader
-          title="Word Corrections"
-          description="Saved replacements applied automatically after dictation"
+          title={t('Word Corrections')}
+          description={t('Saved replacements applied automatically after dictation')}
         >
           <div className="dict-header-actions">
-            <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>Import</Button>
-            <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>Export</Button>
-            <Button variant="default" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
+            <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>{t('Import')}</Button>
+            <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>{t('Export')}</Button>
+            <Button variant="default" size="sm" id="add-dict-btn" onClick={openAdd}>{t('Add Entry')}</Button>
           </div>
         </SettingsSectionHeader>
 
         {showAdd && (
           <div id="dict-add-row" className="dict-add-card">
-            <Field label="Spoken Word/Phrase" htmlFor="dict-spoken-input" className="dict-add-field">
+            <Field label={t('Spoken Word/Phrase')} htmlFor="dict-spoken-input" className="dict-add-field">
               <Input
                 ref={spokenRef}
                 type="text"
                 id="dict-spoken-input"
-                placeholder="e.g. fluence"
+                placeholder={t('e.g. fluence')}
                 value={spoken}
                 onChange={(e) => setSpoken(e.target.value)}
               />
             </Field>
-            <Field label="Corrected Form" htmlFor="dict-corrected-input" className="dict-add-field">
+            <Field label={t('Corrected Form')} htmlFor="dict-corrected-input" className="dict-add-field">
               <Input
                 type="text"
                 id="dict-corrected-input"
-                placeholder="e.g. Fluence"
+                placeholder={t('e.g. Fluence')}
                 value={corrected}
                 onChange={(e) => setCorrected(e.target.value)}
               />
             </Field>
             <div className="dict-add-actions">
-              <Button variant="default" size="sm" id="dict-save-btn" onClick={() => void onSave()}>Save</Button>
-              <Button variant="ghost" size="sm" id="dict-cancel-btn" onClick={closeAdd}>Cancel</Button>
+              <Button variant="default" size="sm" id="dict-save-btn" onClick={() => void onSave()}>{t('Save')}</Button>
+              <Button variant="ghost" size="sm" id="dict-cancel-btn" onClick={closeAdd}>{t('Cancel')}</Button>
             </div>
           </div>
         )}
 
         <div className="table-card settings-card">
           <Table className="dict-table" id="dict-table">
-            <TableCaption className="sr-only">Saved correction words</TableCaption>
+            <TableCaption className="sr-only">{t('Saved correction words')}</TableCaption>
             <TableHeader>
               <TableRow>
-                <TableHead className="col-word">Spoken</TableHead>
-                <TableHead className="col-word">Corrected</TableHead>
-                <TableHead className="col-meta added-col">Added</TableHead>
-                <TableHead className="actions">Actions</TableHead>
+                <TableHead className="col-word">{t('Spoken')}</TableHead>
+                <TableHead className="col-word">{t('Corrected')}</TableHead>
+                <TableHead className="col-meta added-col">{t('Added')}</TableHead>
+                <TableHead className="actions">{t('Actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody id="dict-table-body">
@@ -408,8 +413,8 @@ export function DictionaryPage() {
                         <EmptyMedia variant="icon">
                           <BookOpen strokeWidth={1.5} aria-hidden="true" />
                         </EmptyMedia>
-                        <EmptyTitle>No dictionary entries yet</EmptyTitle>
-                        <EmptyDescription>Add corrections for words that are often misheard during transcription</EmptyDescription>
+                        <EmptyTitle>{t('No dictionary entries yet')}</EmptyTitle>
+                        <EmptyDescription>{t('Add corrections for words that are often misheard during transcription')}</EmptyDescription>
                       </EmptyHeader>
                     </Empty>
                   </TableCell>
@@ -421,12 +426,12 @@ export function DictionaryPage() {
                   <TableCell className="corrected-word">{entry.corrected}</TableCell>
                   <TableCell className="col-meta added-col">
                     {autoAdded.has(pairKey(entry.spoken, entry.corrected)) && (
-                      <span className="source-badge">auto</span>
+                      <span className="source-badge">{t('auto')}</span>
                     )}
                   </TableCell>
                   <TableCell className="actions">
                     <Button variant="ghost" size="sm" className="agent-delete-btn destructive-action" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>
-                      Delete
+                      {t('Delete')}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -438,17 +443,17 @@ export function DictionaryPage() {
 
       <TabsContent value="suggestions">
         <SettingsSectionHeader
-          title="Suggested Corrections"
-          description="Review automated suggestions detected from your edits"
+          title={t('Suggested Corrections')}
+          description={t('Review automated suggestions detected from your edits')}
         >
           <div className="suggestions-bulk-actions dict-bulk-actions">
-            <span id="suggestions-selected-count">{selected.size} selected</span>
+            <span id="suggestions-selected-count">{selected.size} {t('selected')}</span>
             <Button variant="ghost" size="sm" id="dismiss-selected-btn" disabled={selected.size === 0} onClick={() => void onDismissSelected()}>
-              Dismiss Selected
+              {t('Dismiss Selected')}
             </Button>
             {selected.size > 0 && (
               <Button variant="ghost" size="sm" id="clear-selection-btn" onClick={() => setSelected(new Set())}>
-                Cancel
+                {t('Cancel')}
               </Button>
             )}
           </div>
@@ -456,13 +461,13 @@ export function DictionaryPage() {
 
         <div className="table-card settings-card">
           <Table className="dict-table" id="suggestions-table">
-            <TableCaption className="sr-only">Suggested corrections awaiting review</TableCaption>
+            <TableCaption className="sr-only">{t('Suggested corrections awaiting review')}</TableCaption>
             <TableHeader>
               <TableRow>
                 <TableHead className="select-col">
                   <Checkbox
                     id="select-all-suggestions"
-                    aria-label="Select all suggestions"
+                    aria-label={t('Select all suggestions')}
                     disabled={suggestions.length === 0}
                     checked={
                       suggestions.length > 0 && selected.size === suggestions.length
@@ -474,10 +479,10 @@ export function DictionaryPage() {
                     onCheckedChange={(v) => toggleSelectAll(v === true)}
                   />
                 </TableHead>
-                <TableHead className="col-word">Detected</TableHead>
-                <TableHead className="col-word">Should Be</TableHead>
-                <TableHead className="col-meta seen-col">Seen</TableHead>
-                <TableHead className="actions">Actions</TableHead>
+                <TableHead className="col-word">{t('Detected')}</TableHead>
+                <TableHead className="col-word">{t('Should Be')}</TableHead>
+                <TableHead className="col-meta seen-col">{t('Seen')}</TableHead>
+                <TableHead className="actions">{t('Actions')}</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody id="suggestions-table-body">
@@ -500,8 +505,8 @@ export function DictionaryPage() {
                         <EmptyMedia variant="icon">
                           <Lightbulb strokeWidth={1.5} aria-hidden="true" />
                         </EmptyMedia>
-                        <EmptyTitle>No suggestions yet</EmptyTitle>
-                        <EmptyDescription>Correction suggestions will appear here as you use dictation regularly</EmptyDescription>
+                        <EmptyTitle>{t('No suggestions yet')}</EmptyTitle>
+                        <EmptyDescription>{t('Correction suggestions will appear here as you use dictation regularly')}</EmptyDescription>
                       </EmptyHeader>
                     </Empty>
                   </TableCell>
@@ -518,7 +523,7 @@ export function DictionaryPage() {
                     <Checkbox
                       className="suggestion-select"
                       data-suggestion-id={s.id}
-                      aria-label="Select suggestion"
+                      aria-label={t('Select suggestion')}
                       checked={selected.has(s.id)}
                       onCheckedChange={(v) => toggleSelect(s.id, v === true)}
                     />
@@ -528,10 +533,10 @@ export function DictionaryPage() {
                   <TableCell className="col-meta seen-col frequency">{s.frequency}x</TableCell>
                   <TableCell className="actions">
                     <Button variant="ghost" size="sm" className="suggestion-accept-btn" data-suggestion-id={s.id} onClick={() => void onAccept(s.id)}>
-                      Accept
+                      {t('Accept')}
                     </Button>
                     <Button variant="ghost" size="sm" className="suggestion-dismiss-btn" data-suggestion-id={s.id} onClick={() => void onDismiss(s.id)}>
-                      Dismiss
+                      {t('Dismiss')}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -544,9 +549,9 @@ export function DictionaryPage() {
       <ConfirmDialog
         open={confirmAccept !== null}
         onOpenChange={(open) => { if (!open) setConfirmAccept(null); }}
-        title="Add to dictionary"
+        title={t('Add to dictionary')}
         body={confirmAccept?.detail ?? ''}
-        confirmLabel="Add"
+        confirmLabel={t('Add')}
         onConfirm={() => {
           const id = confirmAccept?.id;
           setConfirmAccept(null);

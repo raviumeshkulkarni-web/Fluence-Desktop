@@ -1,6 +1,7 @@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import type { WizardData } from '../Wizard';
 import { HotkeyRecorder } from '../HotkeyRecorder';
+import { t } from '@/i18n';
 
 interface StepHotkeyProps {
   data: WizardData;
@@ -35,10 +36,10 @@ export function StepHotkey({
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Set Your Hotkey
+        {t('Set Your Hotkey')}
       </h1>
       <p className="step-desc">
-        Choose a global keyboard shortcut to start recording. It will work in any application.
+        {t('Choose a global keyboard shortcut to start recording. It will work in any application.')}
       </p>
       <div className="step-content">
         <HotkeyRecorder
@@ -49,7 +50,7 @@ export function StepHotkey({
         />
         <div className="form-row">
           <span id="wiz-mode-label" className="field-label">
-            Recording Mode
+            {t('Recording Mode')}
           </span>
           <RadioGroup
             className="seg-selector"
@@ -64,15 +65,15 @@ export function StepHotkey({
                   data-mode={m.value}
                   className="choice-surface seg-option"
                 >
-                  <span className="seg-title">{m.title}</span>
-                  <span className="seg-desc">{m.desc}</span>
+                  <span className="seg-title">{t(m.title)}</span>
+                  <span className="seg-desc">{t(m.desc)}</span>
                 </button>
               </RadioGroupItem>
             ))}
           </RadioGroup>
         </div>
         <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', margin: 0 }}>
-          <strong>Tip:</strong> Long press (&gt;800ms) activates Agent Mode for AI-powered editing commands
+          <strong>{t('Tip:')}</strong> {t('Long press (>800ms) activates Agent Mode for AI-powered editing commands')}
         </p>
       </div>
     </>

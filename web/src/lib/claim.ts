@@ -23,6 +23,8 @@
 // predates `refusedIds`/`skippedIds`. Reading those as definite would throw a
 // TypeError and replace truthful messaging with a raw crash toast, so every field
 // is treated as possibly-absent at runtime.
+import { t } from '@/i18n';
+
 export type ClaimRefusal = readonly [id: string, reason: string];
 
 export interface ClaimOutcome {
@@ -77,39 +79,49 @@ export function describeClaimOutcome(
   if (ids(outcome.claimedIds).length > 0) {
     return {
       kind: 'success',
-      text: 'Added to your account — it will sync to your devices',
+      text: t('Added to your account — it will sync to your devices'),
     };
   }
+
+  const copy =
+    subject === 'agent'
+      ? {
+          deleted: t('That agent was deleted in your account, so it was not added.'),
+          duplicate: t(
+            'That agent appears more than once on this device, so it was not added.',
+          ),
+          builtIn: t('That agent is built in and cannot be added to an account.'),
+          generic: t('That agent could not be added.'),
+        }
+      : {
+          deleted: t('That style was deleted in your account, so it was not added.'),
+          duplicate: t(
+            'That style appears more than once on this device, so it was not added.',
+          ),
+          builtIn: t('That style is built in and cannot be added to an account.'),
+          generic: t('That style could not be added.'),
+        };
 
   const reasons = new Set(refusals(outcome.refusedIds).map(([, reason]) => reason));
   if (reasons.size > 0) {
     if (reasons.has('tombstoned')) {
-      return {
-        kind: 'info',
-        text: `That ${subject} was deleted in your account, so it was not added.`,
-      };
+      return { kind: 'info', text: copy.deleted };
     }
     if (reasons.has('duplicate-legacy-id')) {
-      return {
-        kind: 'info',
-        text: `That ${subject} appears more than once on this device, so it was not added.`,
-      };
+      return { kind: 'info', text: copy.duplicate };
     }
     if (reasons.has('builtin-id')) {
-      return {
-        kind: 'info',
-        text: `That ${subject} is built in and cannot be added to an account.`,
-      };
+      return { kind: 'info', text: copy.builtIn };
     }
-    return { kind: 'info', text: `That ${subject} could not be added.` };
+    return { kind: 'info', text: copy.generic };
   }
 
   if (ids(outcome.skippedIds).length > 0) {
     return {
       kind: 'info',
-      text: 'Already in your account — nothing changed',
+      text: t('Already in your account — nothing changed'),
     };
   }
 
-  return { kind: 'info', text: 'Nothing to add' };
+  return { kind: 'info', text: t('Nothing to add') };
 }

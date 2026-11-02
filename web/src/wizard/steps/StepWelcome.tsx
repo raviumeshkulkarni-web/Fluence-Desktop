@@ -1,9 +1,21 @@
+import { getLanguagePreference, getUiLanguage, reloadWithLanguage, resolveSystemLanguage, SYSTEM_LANGUAGE, t, UI_LANGUAGES } from '@/i18n';
+import { setUiLanguage } from '../ipc';
+
 // Step 1: Welcome. OOBE-minimal: brand mark, title, one-line promise, the
 // three things Fluence does, Get Started. The mark is the brand master
 // symbol (design/brand/master/fluence-symbol.svg) reproduced verbatim —
 // never redrawn. The feature rows use typographic numerals, not icon glyphs:
 // no lucide, no hand-rolled SVG, no emoji — just hairlines and type.
 export function StepWelcome() {
+  const preference = getLanguagePreference();
+  const resolved = preference === SYSTEM_LANGUAGE ? resolveSystemLanguage() : preference;
+  const resolvedName = getUiLanguage(resolved)?.nativeName ?? 'English';
+
+  const onLanguageChange = async (code: string) => {
+    await setUiLanguage(code).catch(() => undefined);
+    reloadWithLanguage(code);
+  };
+
   return (
     <>
       <div className="fluence-logo-container">
@@ -15,7 +27,7 @@ export function StepWelcome() {
           fill="none"
           xmlns="http://www.w3.org/2000/svg"
           role="img"
-          aria-label="Fluence logo"
+          aria-label={t('Fluence logo')}
         >
           <circle cx="16" cy="16" r="13" stroke="url(#fluence-brand)" strokeWidth="1.8" strokeDasharray="1.5 3.5" strokeLinecap="round" />
           <circle cx="16" cy="16" r="9" stroke="url(#fluence-brand)" strokeWidth="1.8" strokeDasharray="1.8 3.5" strokeLinecap="round" />
@@ -41,7 +53,7 @@ export function StepWelcome() {
           justifyContent: 'center',
         }}
       >
-        Welcome to flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
+        {t('Welcome to')}{' '}flu<span style={{ color: 'var(--color-brand-cyan)' }}>ence</span>
         <span
           style={{
             fontFamily: "'Allura',cursive",
@@ -52,13 +64,33 @@ export function StepWelcome() {
             color: 'var(--color-on-surface-variant)',
           }}
         >
-          Transcribe
+          {t('Transcribe')}
         </span>
       </h1>
       <p className="step-desc">
-        Your AI-powered voice typing assistant for Windows. Speak naturally, and
-        Fluence transcribes your voice into any application, instantly.
+        {t('Your AI-powered voice typing assistant for Windows. Speak naturally, and Fluence transcribes your voice into any application, instantly.')}
       </p>
+
+      <div className="wizard-language">
+        <label className="wizard-language-label" htmlFor="wizard-language-select">
+          {t('Language')}
+        </label>
+        <select
+          id="wizard-language-select"
+          className="wizard-language-select"
+          value={preference}
+          onChange={(event) => void onLanguageChange(event.target.value)}
+        >
+          <option value={SYSTEM_LANGUAGE}>
+            {t('System default')} ({resolvedName})
+          </option>
+          {UI_LANGUAGES.map((language) => (
+            <option key={language.code} value={language.code}>
+              {language.nativeName}
+            </option>
+          ))}
+        </select>
+      </div>
     </>
   );
 }

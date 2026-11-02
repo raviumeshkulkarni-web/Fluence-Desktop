@@ -21,15 +21,15 @@
     <!-- Row 1: Metadata - REC indicator + mode badge -->
     <div class="card-meta">
       <div class="card-meta-left">
-        <div class="card-rec" aria-label="Listening">
+        <div class="card-rec" aria-label="Listening" data-i18n="Listening" data-i18n-attr="aria-label">
           <span class="rec-dot"></span>
           <span class="rec-stack">
-            <span class="rec-label" id="rec-label" aria-live="polite">LISTENING</span>
+            <span class="rec-label" id="rec-label" aria-live="polite" data-i18n="LISTENING">LISTENING</span>
             <span class="rec-hint" id="rec-hint" hidden></span>
           </span>
         </div>
       </div>
-      <span class="mode-badge" id="mode-badge">Transcribe</span>
+      <span class="mode-badge" id="mode-badge" data-i18n="Transcribe">Transcribe</span>
     </div>
 
     <!-- Row 2: Waveform -->
@@ -40,7 +40,7 @@
     <!-- Row 3: Footer - timer + discard -->
     <div class="card-footer">
       <span class="card-timer" id="card-timer">00:00</span>
-      <button class="card-discard" id="card-discard" type="button" title="Discard recording" aria-label="Discard recording">
+      <button class="card-discard" id="card-discard" type="button" title="Discard recording" aria-label="Discard recording" data-i18n="Discard recording" data-i18n-attr="title,aria-label">
         <svg width="10" height="10" viewBox="0 0 10 10" fill="none" aria-hidden="true"><path d="M2 2l6 6M8 2L2 8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
       </button>
     </div>
@@ -59,11 +59,12 @@
     </div>
 
     <!-- End-of-flow confirmation (announced to screen readers) -->
-    <div class="status-msg" id="status-msg" role="status" aria-live="polite">Inserted</div>
-    <button class="status-retry" id="status-retry" type="button" hidden>Retry</button>
-    <button class="status-copy" id="status-copy" type="button" hidden>Copy</button>
+    <div class="status-msg" id="status-msg" role="status" aria-live="polite" data-i18n="Inserted">Inserted</div>
+    <button class="status-retry" id="status-retry" type="button" hidden data-i18n="Retry">Retry</button>
+    <button class="status-copy" id="status-copy" type="button" hidden data-i18n="Copy">Copy</button>
   </div>
 
+  <script src="js/overlay-i18n.js"></script>
   <script src="js/audio-viz.js"></script>
   <script src="js/overlay.js"></script>
 </body>

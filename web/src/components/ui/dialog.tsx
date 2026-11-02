@@ -12,6 +12,7 @@ import {
   AlertDialogAction,
   AlertDialogCancel,
 } from './alert-dialog';
+import { t } from '@/i18n';
 
 // shadcn-canonical Dialog anatomy over Radix. Overlay policy (single source):
 // click-outside closes, Esc closes, focus is trapped and returned to the
@@ -112,7 +113,7 @@ function ConfirmDialog({
         </AlertDialogHeader>
         <AlertDialogFooter>
           <AlertDialogCancel asChild>
-            <Button variant="secondary">Cancel</Button>
+            <Button variant="secondary">{t('Cancel')}</Button>
           </AlertDialogCancel>
           <AlertDialogAction asChild>
             <Button

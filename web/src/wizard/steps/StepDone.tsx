@@ -4,6 +4,8 @@ import type { WizardData } from '../Wizard';
 import type { WizardSettings } from '../ipc';
 import { invokeCmd } from '@/ipc/tauri';
 import { closeWizard, showMainWindow, updateHotkeys, updateSettings } from '../ipc';
+import { getLanguagePreference, t } from '@/i18n';
+import { formatShortcut } from '@/lib/shortcut';
 
 interface StepDoneProps {
   data: WizardData;
@@ -69,6 +71,7 @@ export function StepDone({ data }: StepDoneProps) {
         auto_grab_highlight: true,
         audio_device_id: null,
         theme: resolvedTheme,
+        ui_language: getLanguagePreference(),
         first_run: false,
         ...(await getStoredCopyTranscript()),
       };
@@ -90,11 +93,11 @@ export function StepDone({ data }: StepDoneProps) {
         <Check size={40} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       </div>
       <h1 className="step-title" tabIndex={-1}>
-        You&apos;re All Set!
+        {t('You\'re All Set!')}
       </h1>
       <p className="step-desc">
-        Fluence is running in your system tray. Press{' '}
-        <span className="done-hotkey-chip">{data.hotkey}</span> anywhere to start voice typing.
+        {t('Fluence is running in your system tray. Press')}{' '}
+        <span className="done-hotkey-chip">{formatShortcut(data.hotkey)}</span> {t('anywhere to start voice typing.')}
       </p>
       <div className="done-actions">
         <Button
@@ -107,7 +110,7 @@ export function StepDone({ data }: StepDoneProps) {
             })()
           }
         >
-          Open Settings
+          {t('Open Settings')}
         </Button>
         <Button
           variant="ghost"
@@ -119,7 +122,7 @@ export function StepDone({ data }: StepDoneProps) {
             })()
           }
         >
-          Close Wizard
+          {t('Close Wizard')}
         </Button>
       </div>
     </>

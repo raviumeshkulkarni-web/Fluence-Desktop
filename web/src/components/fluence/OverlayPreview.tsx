@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react';
+import { t } from '@/i18n';
 import overlayCssRaw from '../../../../src/css/overlay.css?raw';
 import tokensCssRaw from '../../../../src/css/design-tokens.css?raw';
 
@@ -276,7 +277,7 @@ export function OverlayPreview({
         const icon = pill.querySelector('.app-pill-icon');
         if (icon) {
           icon.setAttribute('src', `data:image/svg+xml;charset=utf-8,${encodeURIComponent(CHROME_SVG)}`);
-          icon.setAttribute('alt', 'Chrome icon');
+          icon.setAttribute('alt', t('Chrome icon'));
         }
         const name = pill.querySelector('.app-pill-name');
         if (name && !name.textContent) name.textContent = 'Chrome';

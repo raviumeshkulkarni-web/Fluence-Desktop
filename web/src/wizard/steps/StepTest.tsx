@@ -3,6 +3,7 @@ import { Mic, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import type { WizardData } from '../Wizard';
 import { startRecording, stopRecording, transcribeAudio } from '../ipc';
+import { t } from '@/i18n';
 
 interface StepTestProps {
   data: WizardData;
@@ -16,27 +17,33 @@ type Phase = 'idle' | 'recording' | 'transcribing';
 // classes (lucide Mic + filled Square stand in for the vanilla inline SVGs).
 export function StepTest({ data }: StepTestProps) {
   const [phase, setPhase] = useState<Phase>('idle');
-  const [label, setLabel] = useState('Start Recording');
-  const [result, setResult] = useState({ text: 'Your transcription will appear here…', placeholder: true });
+  const [label, setLabel] = useState(() => t('Start Recording'));
+  const [result, setResult] = useState(() => ({
+    text: t('Your transcription will appear here…'),
+    placeholder: true,
+  }));
   const [busy, setBusy] = useState(false);
 
   const onRecord = async () => {
     if (phase === 'idle') {
       setPhase('recording');
-      setLabel('Stop Recording');
-      setResult({ text: 'Recording… speak now', placeholder: false });
+      setLabel(t('Stop Recording'));
+      setResult({ text: t('Recording… speak now'), placeholder: false });
       try {
         await startRecording(null);
       } catch (err) {
         setPhase('idle');
-        setLabel('Start Recording');
-        setResult({ text: 'Failed to start: ' + String(err), placeholder: false });
+        setLabel(t('Start Recording'));
+        setResult({
+          text: t('Failed to start: {error}', { error: String(err) }),
+          placeholder: false,
+        });
       }
       return;
     }
     if (phase === 'recording') {
       setPhase('transcribing');
-      setLabel('Transcribing…');
+      setLabel(t('Transcribing…'));
       setBusy(true);
       try {
         const wavB64 = await stopRecording();
@@ -47,12 +54,18 @@ export function StepTest({ data }: StepTestProps) {
           wav_b64: wavB64,
           language: 'en',
         });
-        setResult({ text: text || '(empty transcription)', placeholder: false });
+        setResult({
+          text: text || t('(empty transcription)'),
+          placeholder: false,
+        });
       } catch (err) {
-        setResult({ text: 'Error: ' + String(err), placeholder: false });
+        setResult({
+          text: t('Error: {error}', { error: String(err) }),
+          placeholder: false,
+        });
       } finally {
         setPhase('idle');
-        setLabel('Try Again');
+        setLabel(t('Try Again'));
         setBusy(false);
       }
     }
@@ -61,9 +74,9 @@ export function StepTest({ data }: StepTestProps) {
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Test Your Setup
+        {t('Test Your Setup')}
       </h1>
-      <p className="step-desc">Let&apos;s make sure everything is working. Click the button and say something.</p>
+      <p className="step-desc">{t('Let\'s make sure everything is working. Click the button and say something.')}</p>
       <div className="test-area">
         <Button
           variant="ghost"

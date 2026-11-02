@@ -10,6 +10,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from './dialog';
+import { t } from '@/i18n';
 export { highlightMatch } from '@/lib/highlight';
 
 // shadcn `command` (CMDK) anatomy over the Radix-backed command library.
@@ -42,8 +43,8 @@ const CommandDialog = ({
   <Dialog {...props}>
     <DialogContent className={cn('command-dialog', className)}>
       <DialogHeader className="sr-only">
-        <DialogTitle>Command palette</DialogTitle>
-        <DialogDescription>Search for pages and actions.</DialogDescription>
+        <DialogTitle>{t('Command palette')}</DialogTitle>
+        <DialogDescription>{t('Search for pages and actions.')}</DialogDescription>
       </DialogHeader>
       <Command className={cn('command-body', commandClassName)}>
         {children}

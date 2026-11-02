@@ -1,3 +1,5 @@
+import type { TranslationKey } from '@/i18n';
+
 // Mirror of the six AuraVisualizer paint passes (src/js/audio-viz.js),
 // following the drawFrozenWaveform precedent in OverlayPreview.tsx: the
 // settings window may not instantiate the overlay's rAF loop, but what the
@@ -13,7 +15,7 @@ export function normalizeWaveformStyle(value: unknown): WaveformStyle {
   return value === 'bars' ? 'bars' : 'waves';
 }
 
-export const WAVEFORM_STYLE_OPTIONS: { value: WaveformStyle; title: string; desc: string }[] = [
+export const WAVEFORM_STYLE_OPTIONS: { value: WaveformStyle; title: TranslationKey; desc: TranslationKey }[] = [
   { value: 'waves', title: 'Waves', desc: 'Three layered ripples. The animation Fluence ships with' },
   { value: 'bars', title: 'Amp Bars', desc: 'Equalizer bars that track how loud you speak' },
 ];

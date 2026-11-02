@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, Check, RefreshCw } from 'lucide-react';
 import { describeClaimOutcome } from '@/lib/claim';
+import { t, tr } from '@/i18n';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -140,12 +141,12 @@ function StyleChoiceCard({
             <span className="selection-row-heading">
               <span className="selection-row-title">{title}</span>
               <Badge variant="secondary" className="style-unclaimed-badge">
-                On this device
+                {t('On this device')}
               </Badge>
             </span>
             <span className="selection-row-description">{description}</span>
             <span className="selection-row-description style-unclaimed-note">
-              Saved on this device before it was linked to an account.
+              {t('Saved on this device before it was linked to an account.')}
             </span>
           </span>
         </div>
@@ -154,7 +155,7 @@ function StyleChoiceCard({
           <button
             type="button"
             className="selection-row-main"
-            aria-label={`Set ${title} as default style`}
+            aria-label={t('Set {name} as default style', { name: title })}
           >
             <span className="selection-radio" aria-hidden="true" />
             <span className="selection-row-copy">
@@ -162,7 +163,7 @@ function StyleChoiceCard({
                 <span className="selection-row-title">{title}</span>
                 {selected && (
                   <Badge variant="secondary" className="style-default-badge">
-                    Default
+                    {t('Default')}
                   </Badge>
                 )}
               </span>
@@ -180,18 +181,18 @@ function StyleChoiceCard({
               onClick={onClaim}
               disabled={claiming}
             >
-              {claiming ? 'Adding…' : 'Add to my account'}
+              {claiming ? t('Adding…') : t('Add to my account')}
             </Button>
           ) : (
             <>
               {!selected && (
                 <Button variant="secondary" size="xs" onClick={onSetDefault}>
-                  Set as default
+                  {t('Set as default')}
                 </Button>
               )}
               {onEdit && (
                 <Button variant="secondary" size="xs" onClick={onEdit}>
-                  Edit
+                  {t('Edit')}
                 </Button>
               )}
               {onDelete && (
@@ -200,7 +201,7 @@ function StyleChoiceCard({
                   size="xs"
                   onClick={onDelete}
                 >
-                  Delete
+                  {t('Delete')}
                 </Button>
               )}
             </>
@@ -244,7 +245,7 @@ export function FormattingPage() {
     try {
       setPrompts(await getPrompts());
     } catch (err) {
-      toast('Failed to load AI styles: ' + String(err), 'error');
+      toast(t('Failed to load AI styles: {error}', { error: String(err) }), 'error');
     }
   }, []);
 
@@ -309,15 +310,15 @@ export function FormattingPage() {
           lastNonNone && lastNonNone !== 'none' ? lastNonNone : 'default';
         setAiPolish(restore);
         if (getCachedSettings()) setSettingField('ai_polish_style', restore);
-        toast('AI post processing enabled', 'success');
+        toast(t('AI post processing enabled'), 'success');
       } else {
         if (aiPolish !== 'none') setLastNonNone(aiPolish);
         setAiPolish('none');
         if (getCachedSettings()) setSettingField('ai_polish_style', 'none');
-        toast('AI post processing disabled', 'success');
+        toast(t('AI post processing disabled'), 'success');
       }
     } catch (err) {
-      toast('Failed to update: ' + String(err), 'error');
+      toast(t('Failed to update: {error}', { error: String(err) }), 'error');
     }
   };
 
@@ -369,17 +370,17 @@ export function FormattingPage() {
       setAiPolish(next);
       if (getCachedSettings()) setSettingField('ai_polish_style', next);
     }
-    toast(`${aiStyleLabel(next)} is now the default`, 'success');
+    toast(t('{style} is now the default', { style: tr(aiStyleLabel(next)) }), 'success');
   };
 
   const setExeAiStyle = async (exe: string, value: string) => {
     try {
       if (value === 'global') {
         await clearPromptOverride(exe);
-        toast(`Removed style for ${appNameOf(exe)}`, 'success');
+        toast(t('Removed style for {app}', { app: appNameOf(exe) }), 'success');
       } else {
         await setPromptOverride(exe, value);
-        toast(`Updated style for ${appNameOf(exe)}`, 'success');
+        toast(t('Updated style for {app}', { app: appNameOf(exe) }), 'success');
       }
       await loadPrompts();
     } catch (err) {
@@ -412,21 +413,21 @@ export function FormattingPage() {
   };
 
   const pickerCurrentNote = (exe: string): string => {
-    if (!prompts) return 'No custom style';
+    if (!prompts) return t('No custom style');
     const key = findKey(prompts.overrides, exe);
-    if (!key) return 'No custom style';
-    return `Currently: ${aiStyleLabel(prompts.overrides[key] ?? '')}`;
+    if (!key) return t('No custom style');
+    return t('Currently: {style}', { style: tr(aiStyleLabel(prompts.overrides[key] ?? '')) });
   };
 
   const onAddRule = async () => {
     if (!pickerExe) {
-      toast('Choose an app first', 'error');
+      toast(t('Choose an app first'), 'error');
       return;
     }
     try {
       await setPromptOverride(pickerExe, pickerStyle);
       await loadPrompts();
-      toast(`${appNameOf(pickerExe)} updated`, 'success');
+      toast(t('{app} updated', { app: appNameOf(pickerExe) }), 'success');
       closePicker();
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
@@ -449,7 +450,7 @@ export function FormattingPage() {
 
   const onSaveStyle = async () => {
     if (!styleName.trim() || !styleHint.trim()) {
-      toast('Please fill in both name and instructions', 'error');
+      toast(t('Please fill in both name and instructions'), 'error');
       return;
     }
     setSaving(true);
@@ -458,7 +459,7 @@ export function FormattingPage() {
       await loadPrompts();
       setShowEditor(false);
       setEditing(null);
-      toast('Style saved', 'success');
+      toast(t('Style saved'), 'success');
     } catch (err) {
       toast(String(err).replace(/^Error:\s*/, ''), 'error');
     } finally {
@@ -499,8 +500,8 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       await loadPrompts();
       toast(
         affected.length > 0
-          ? `Style deleted, ${affected.length} app override(s) reset`
-          : 'Style deleted',
+          ? t('Style deleted, {count} app override(s) reset', { count: affected.length })
+          : t('Style deleted'),
         'success',
       );
     } catch (err) {
@@ -515,7 +516,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       <section className="page active" id="page-formatting">
         <div className="page-header">
           <h1 className="page-title" tabIndex={-1}>
-            AI Post Processing
+            {t('AI Post Processing')}
           </h1>
         </div>
         <Skeleton className="route-skeleton" />
@@ -527,33 +528,32 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
     <section className="page active" id="page-formatting">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>
-          AI Post Processing
+          {t('AI Post Processing')}
         </h1>
         <p className="page-subtitle">
-          Clean up transcripts automatically while keeping your original words. Create custom styles or
-          assign apps for more control.
+          {t('Clean up transcripts automatically while keeping your original words. Create custom styles or assign apps for more control.')}
         </p>
       </div>
 
       <SettingsSectionHeader
-        title="AI Post Processing"
-        description="Automatically refine and clean up dictations"
+        title={t('AI Post Processing')}
+        description={t('Automatically refine and clean up dictations')}
       />
       <Card className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">Enable AI Post Processing</div>
+            <div className="setting-label">{t('Enable AI Post Processing')}</div>
             <div className="setting-desc">
               {enabled
-                ? 'On: transcripts are cleaned up automatically'
-                : 'Off: transcripts stay exactly as spoken'}
+                ? t('On: transcripts are cleaned up automatically')
+                : t('Off: transcripts stay exactly as spoken')}
             </div>
           </div>
           <div className="setting-control">
             <Field>
               <Switch
                 id="ai-postprocessing-cb"
-                aria-label="Enable AI post processing"
+                aria-label={t('Enable AI post processing')}
                 checked={enabled}
                 onCheckedChange={onToggleCleanup}
               />
@@ -563,8 +563,8 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       </Card>
 
       <SettingsSectionHeader
-        title="Cleanup Styles"
-        description="Choose a default cleanup style or create custom prompt instructions"
+        title={t('Cleanup Styles')}
+        description={t('Choose a default cleanup style or create custom prompt instructions')}
       >
         <Button
           variant="default"
@@ -572,7 +572,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
           id="ai-style-new-btn"
           onClick={openNewStyle}
         >
-          Add Style
+          {t('Add Style')}
         </Button>
       </SettingsSectionHeader>
       <Card className="settings-card">
@@ -580,12 +580,12 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
           className="style-choice-group"
           value={effectiveDefault}
           onValueChange={(styleId) => void setDefaultStyle(styleId)}
-          aria-label="Default cleanup style"
+          aria-label={t('Default cleanup style')}
         >
           <StyleChoiceCard
             value="default"
-            title="Default cleanup"
-            description="Filler words removed, grammar fixed, your words kept."
+            title={t('Default cleanup')}
+            description={t('Filler words removed, grammar fixed, your words kept.')}
 selected={effectiveDefault === 'default'}
             onSetDefault={() => setDefaultStyle('default')}
             claimable={false}
@@ -611,8 +611,8 @@ selected={effectiveDefault === 'default'}
       </Card>
 
       <SettingsSectionHeader
-        title="App Styles"
-        description="Assign custom cleanup styles to specific applications"
+        title={t('App Styles')}
+        description={t('Assign custom cleanup styles to specific applications')}
       >
         <Button
           variant="default"
@@ -620,7 +620,7 @@ selected={effectiveDefault === 'default'}
           id="ai-style-add-app-btn"
           onClick={openPicker}
         >
-          Add App
+          {t('Add App')}
         </Button>
       </SettingsSectionHeader>
       <Card className="settings-card">
@@ -635,16 +635,15 @@ selected={effectiveDefault === 'default'}
                 />
               </EmptyMedia>
               <EmptyTitle className="agents-empty-title">
-                No per-app styles yet
+                {t('No per-app styles yet')}
               </EmptyTitle>
               <EmptyDescription className="agents-empty-desc">
-                Every application will use the cleanup style selected above.
-                Add an app to customize its style.
+                {t('Every application will use the cleanup style selected above. Add an app to customize its style.')}
               </EmptyDescription>
             </EmptyHeader>
             <EmptyContent>
               <Button variant="secondary" size="sm" onClick={openPicker}>
-                Add your first app style
+                {t('Add your first app style')}
               </Button>
             </EmptyContent>
           </Empty>
@@ -680,20 +679,20 @@ selected={effectiveDefault === 'default'}
                   >
                     <SelectTrigger
                       className="select-sm app-rule-select"
-                      aria-label={`Style for ${appNameOf(exe)}`}
+                      aria-label={t('Style for {app}', { app: appNameOf(exe) })}
                     >
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectGroup>
-                        <SelectItem value="default">Default cleanup</SelectItem>
+                        <SelectItem value="default">{t('Default cleanup')}</SelectItem>
                         {builtins
                           .filter(
                             (b) => b.id !== 'proofread' && b.id !== 'default',
                           )
                           .map((b) => (
                             <SelectItem key={b.id} value={b.id}>
-                              {b.title}
+                              {tr(b.title)}
                             </SelectItem>
                           ))}
 {/* Unclaimed styles are excluded: binding one to an app is
@@ -707,7 +706,7 @@ selected={effectiveDefault === 'default'}
                         ))}
                         {!isKnown && styleId && (
                           <SelectItem value={styleId}>
-                            {aiStyleLabel(styleId)}
+                            {tr(aiStyleLabel(styleId))}
                           </SelectItem>
                         )}
                       </SelectGroup>
@@ -717,10 +716,10 @@ selected={effectiveDefault === 'default'}
                     variant="ghost"
                     size="sm"
                     className="agent-delete-btn destructive-action"
-                    aria-label={`Remove style for ${appNameOf(exe)}`}
+                    aria-label={t('Remove style for {app}', { app: appNameOf(exe) })}
                     onClick={() => setPendingRemoveExe(key)}
                   >
-                    Remove
+                    {t('Remove')}
                   </Button>
                 </div>
               </div>
@@ -735,19 +734,19 @@ selected={effectiveDefault === 'default'}
           if (!open) closePicker();
         }}
       >
-        <DialogContent aria-label="Add app">
+        <DialogContent aria-label={t('Add app')}>
           <DialogHeader>
-            <DialogTitle>Add app style</DialogTitle>
+            <DialogTitle>{t('Add app style')}</DialogTitle>
             <DialogDescription>
-              Choose an installed app and the style Fluence should use there.
+              {t('Choose an installed app and the style Fluence should use there.')}
             </DialogDescription>
           </DialogHeader>
-          <Field label="Search installed apps" htmlFor="app-picker-search">
+          <Field label={t('Search installed apps')} htmlFor="app-picker-search">
             <SearchField
               id="app-picker-search"
               value={pickerQuery}
               maxLength={60}
-              placeholder="Search installed apps"
+              placeholder={t('Search installed apps')}
               onChange={(e) => setPickerQuery(e.target.value)}
             />
           </Field>
@@ -755,7 +754,7 @@ selected={effectiveDefault === 'default'}
             className="app-picker-list"
             value={pickerExe ?? ''}
             onValueChange={(exe) => setPickerExe(exe)}
-            aria-label="Choose app"
+            aria-label={t('Choose app')}
           >
             {installedLoading && (
               <div className="format-empty-note" role="status">
@@ -765,23 +764,23 @@ selected={effectiveDefault === 'default'}
                   className="animate-spin"
                   aria-hidden="true"
                 />
-                Loading installed apps…
+                {t('Loading installed apps…')}
               </div>
             )}
             {!installedLoading && installed.length === 0 && (
               <div className="format-empty-note">
-                No installed apps found.
+                {t('No installed apps found.')}
               </div>
             )}
             {!installedLoading && pickerApps().length === 0 && installed.length > 0 && (
-              <div className="format-empty-note">No apps match.</div>
+              <div className="format-empty-note">{t('No apps match.')}</div>
             )}
             {pickerApps().map((app) => (
               <RadioGroupItem key={app.exe.toLowerCase()} value={app.exe} asChild>
                 <button
                   type="button"
                   className="choice-surface app-pick-row"
-                  aria-label={`${app.name}: ${pickerCurrentNote(app.exe)}`}
+                  aria-label={t('{app}: {note}', { app: app.name, note: pickerCurrentNote(app.exe) })}
                   onClick={(event) => {
                     if (pickerExe?.toLowerCase() === app.exe.toLowerCase()) {
                       event.preventDefault();
@@ -801,7 +800,7 @@ selected={effectiveDefault === 'default'}
               </RadioGroupItem>
             ))}
           </RadioGroup>
-          <Field label="Style" htmlFor="app-picker-style">
+          <Field label={t('Style')} htmlFor="app-picker-style">
             {prompts ? (
               <Select value={pickerStyle} onValueChange={setPickerStyle}>
                 <SelectTrigger id="app-picker-style" className="select-md">
@@ -809,12 +808,12 @@ selected={effectiveDefault === 'default'}
                 </SelectTrigger>
                 <SelectContent>
                   <SelectGroup>
-                    <SelectItem value="default">Default cleanup</SelectItem>
+                    <SelectItem value="default">{t('Default cleanup')}</SelectItem>
                     {builtins
                       .filter((b) => b.id !== 'proofread' && b.id !== 'default')
                       .map((b) => (
                         <SelectItem key={b.id} value={b.id}>
-                          {b.title}
+                          {tr(b.title)}
                         </SelectItem>
                       ))}
 {assignableStyles(customs).map((c) => (
@@ -827,19 +826,19 @@ selected={effectiveDefault === 'default'}
               </Select>
             ) : (
               <div className="format-empty-note">
-                Could not load styles. Close and try again.
+                {t('Could not load styles. Close and try again.')}
               </div>
             )}
           </Field>
           <DialogFooter>
             <Button variant="secondary" onClick={closePicker}>
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button
               onClick={() => void onAddRule()}
               disabled={!prompts || !pickerExe || installedLoading}
             >
-              Add
+              {t('Add')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -851,26 +850,26 @@ selected={effectiveDefault === 'default'}
           if (!open) setShowEditor(false);
         }}
       >
-        <DialogContent aria-label={editing ? 'Edit style' : 'New style'}>
+        <DialogContent aria-label={editing ? t('Edit style') : t('New style')}>
            <DialogHeader>
-             <DialogTitle>{editing ? 'Edit style' : 'New style'}</DialogTitle>
+             <DialogTitle>{editing ? t('Edit style') : t('New style')}</DialogTitle>
              <DialogDescription>
                {editing
-                 ? 'Update the instructions used when this style is applied.'
-                 : 'Create reusable instructions for how Fluence should clean up text.'}
+                 ? t('Update the instructions used when this style is applied.')
+                 : t('Create reusable instructions for how Fluence should clean up text.')}
              </DialogDescription>
            </DialogHeader>
-          <Field label="Name (max 30 characters)" htmlFor="style-name-input">
+          <Field label={t('Name (max 30 characters)')} htmlFor="style-name-input">
             <Input
               id="style-name-input"
               value={styleName}
               maxLength={30}
-              placeholder="Translator"
+              placeholder={t('Translator')}
               onChange={(e) => setStyleName(e.target.value)}
             />
           </Field>
           <Field
-            label="Instructions (max 1000 characters)"
+            label={t('Instructions (max 1000 characters)')}
             htmlFor="style-hint-input"
           >
             <Textarea
@@ -878,7 +877,7 @@ selected={effectiveDefault === 'default'}
               value={styleHint}
               maxLength={1000}
               rows={4}
-              placeholder="Always reply in Hindi, keep it short"
+              placeholder={t('Always reply in Hindi, keep it short')}
               onChange={(e) => setStyleHint(e.target.value)}
             />
           </Field>
@@ -888,10 +887,10 @@ selected={effectiveDefault === 'default'}
               onClick={() => setShowEditor(false)}
               disabled={saving}
             >
-              Cancel
+              {t('Cancel')}
             </Button>
             <Button onClick={() => void onSaveStyle()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('Saving…') : t('Save')}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -902,13 +901,13 @@ selected={effectiveDefault === 'default'}
         onOpenChange={(open) => {
           if (!open) setPendingRemoveExe(null);
         }}
-        title="Remove app style"
+        title={t('Remove app style')}
         body={
           pendingRemoveExe
-            ? `This action cannot be undone. Remove the style for "${appNameOf(pendingRemoveExe)}"? It will use the default style.`
-            : 'This action cannot be undone.'
+            ? t('This action cannot be undone. Remove the style for "{app}"? It will use the default style.', { app: appNameOf(pendingRemoveExe) })
+            : t('This action cannot be undone.')
         }
-        confirmLabel="Remove"
+        confirmLabel={t('Remove')}
         danger
         onConfirm={() => {
           const target = pendingRemoveExe;
@@ -924,20 +923,20 @@ selected={effectiveDefault === 'default'}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete custom style</AlertDialogTitle>
+            <AlertDialogTitle>{t('Delete custom style')}</AlertDialogTitle>
             <AlertDialogDescription>
               {pendingDelete
-                ? `This action cannot be undone. Delete "${pendingDelete.name}"? App styles using it reset to global.`
-                : 'This action cannot be undone.'}
+                ? t('This action cannot be undone. Delete "{name}"? App styles using it reset to global.', { name: pendingDelete.name })
+                : t('This action cannot be undone.')}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel asChild>
-              <Button variant="secondary">Cancel</Button>
+              <Button variant="secondary">{t('Cancel')}</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
               <Button variant="destructive" onClick={() => void onDeleteStyle()}>
-                Delete
+                {t('Delete')}
               </Button>
             </AlertDialogAction>
           </AlertDialogFooter>

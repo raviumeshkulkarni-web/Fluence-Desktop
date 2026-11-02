@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { describeSignInError } from '@/lib/signinError';
+import { t } from '@/i18n';
 import {
   getSyncStatus,
   setSyncEnabled,
@@ -38,7 +39,7 @@ export function SyncPage() {
     try {
       setStatus(await getSyncStatus());
     } catch (err) {
-      toast('Failed to load sync status: ' + String(err), 'error');
+      toast(t('Failed to load sync status: {error}', { error: String(err) }), 'error');
     }
   }, []);
 
@@ -68,13 +69,15 @@ export function SyncPage() {
     try {
       await setSyncEnabled(enabled);
       toast(
-        enabled ? 'Background sync enabled' : 'Background sync disabled',
+        enabled ? t('Background sync enabled') : t('Background sync disabled'),
         'success',
       );
       await load();
     } catch (err) {
       toast(
-        'Failed to update sync: ' + String(err).replace(/^Error:\s*/, ''),
+        t('Failed to update sync: {error}', {
+          error: String(err).replace(/^Error:\s*/, ''),
+        }),
         'error',
       );
     } finally {
@@ -87,7 +90,9 @@ export function SyncPage() {
     try {
       const s = await signInWithGoogle();
       toast(
-        'Signed in as ' + (s?.account_key || 'your Google account'),
+        t('Signed in as {account}', {
+          account: s?.account_key || t('your Google account'),
+        }),
         'success',
       );
       setStatus(s);
@@ -107,7 +112,7 @@ export function SyncPage() {
   const onSignOut = async () => {
     try {
       await signOutGoogle();
-      toast('Signed out. Existing sync data stays in Drive.', 'success');
+      toast(t('Signed out. Existing sync data stays in Drive.'), 'success');
       await load();
     } catch (err) {
       toast(describeSignInError(err, 'Sign-out'), 'error');
@@ -116,7 +121,7 @@ export function SyncPage() {
 
   const onSyncNow = async () => {
     if (!status?.enabled) {
-      toast('Enable background sync first', 'error');
+      toast(t('Enable background sync first'), 'error');
       return;
     }
     try {
@@ -124,7 +129,7 @@ export function SyncPage() {
       // The status snapshot returned by a command is taken before the
       // scheduler thread applies it, so it cannot prove the latch is cleared
       // yet; the follow-up sync-status event is the source of truth.
-      toast('Sync requested', 'success');
+      toast(t('Sync requested'), 'success');
     } catch (err) {
       toast(describeSignInError(err, 'Sync'), 'error');
     }
@@ -138,63 +143,68 @@ export function SyncPage() {
   const accountBlock = signedIn && account
     ? {
         label: account,
-        desc: 'Signed in. Your data syncs privately to your personal Drive folder.',
+        desc: t('Signed in. Your data syncs privately to your personal Drive folder.'),
         signInVisible: false,
-        signInText: 'Sign in with Google',
+        signInText: t('Sign in with Google'),
         signOutVisible: true,
       }
     : account
       ? {
-          label: 'Reconnect Required',
-          desc: `Google Drive access needs reauthorization. Reconnect as ${account} to resume syncing.`,
+          label: t('Reconnect Required'),
+          desc: t('Google Drive access needs reauthorization. Reconnect as {account} to resume syncing.', {
+            account,
+          }),
           signInVisible: true,
-          signInText: 'Reconnect Google Drive',
+          signInText: t('Reconnect Google Drive'),
           signOutVisible: false,
         }
       : {
-          label: 'Not Signed In',
-          desc: 'Sign in with Google to start syncing your data.',
+          label: t('Not Signed In'),
+          desc: t('Sign in with Google to start syncing your data.'),
           signInVisible: true,
-          signInText: 'Sign in with Google',
+          signInText: t('Sign in with Google'),
           signOutVisible: false,
         };
 
   const statusText = !enabled
-    ? 'Sync is off.'
+    ? t('Sync is off.')
     : s.running
-      ? 'Syncing right now…'
+      ? t('Syncing right now…')
       : s.waiting_for_retry
-        ? 'Automatic sync paused after an error. Press Sync now to retry.'
+        ? t('Automatic sync paused after an error. Press Sync now to retry.')
         : s.last_sync_at
-          ? `Last synced ${formatSyncStamp(s.last_sync_at)}${syncSuffix(s)}`
-          : (syncErr(s.last_error) ?? 'Ready to sync.');
+          ? t('Last synced {time}{suffix}', {
+              time: formatSyncStamp(s.last_sync_at),
+              suffix: syncSuffix(s),
+            })
+          : (syncErr(s.last_error) ?? t('Ready to sync.'));
 
   const showSignInError = !signedIn && !!s.last_error;
 
   return (
     <section className="page active" id="page-sync">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Sync</h1>
+        <h1 className="page-title" tabIndex={-1}>{t('Sync')}</h1>
         <p className="page-subtitle">
-          Back up your dictionary, snippets, usage stats, and preferences to your private Google Drive app storage. Transcripts and history never leave this device.
+          {t('Back up your dictionary, snippets, usage stats, and preferences to your private Google Drive app storage. Transcripts and history never leave this device.')}
         </p>
       </div>
 
       <SettingsSectionHeader
-        title="Cloud Sync"
-        description="Configure automatic synchronization with your Google Drive"
+        title={t('Cloud Sync')}
+        description={t('Configure automatic synchronization with your Google Drive')}
       />
       <div className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">Enable Background Sync</div>
-            <div className="setting-desc">Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
+            <div className="setting-label">{t('Enable Background Sync')}</div>
+            <div className="setting-desc">{t('Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.')}</div>
           </div>
           <div className="setting-control">
             <Field>
               <Switch
                 id="sync-enabled-cb"
-                aria-label="Enable background sync"
+                aria-label={t('Enable background sync')}
                 checked={enabled}
                 onCheckedChange={(v) => void onToggle(v)}
               />
@@ -204,8 +214,8 @@ export function SyncPage() {
       </div>
 
       <SettingsSectionHeader
-        title="Account"
-        description="Manage your connected cloud account and sync status"
+        title={t('Account')}
+        description={t('Manage your connected cloud account and sync status')}
       />
       <div className="settings-card">
         <div className="setting-row">
@@ -227,19 +237,19 @@ export function SyncPage() {
                 disabled={signingIn}
                 onClick={() => void onSignIn()}
               >
-                {signingIn ? 'Opening browser…' : accountBlock.signInText}
+                {signingIn ? t('Opening browser…') : accountBlock.signInText}
               </Button>
             )}
             {accountBlock.signOutVisible && (
               <Button variant="ghost" size="sm" id="sync-sign-out-btn" onClick={() => void onSignOut()}>
-                Sign Out
+                {t('Sign Out')}
               </Button>
             )}
           </div>
         </div>
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">Sync Status</div>
+            <div className="setting-label">{t('Sync Status')}</div>
             <div className="setting-desc" id="sync-status-desc" role="status" aria-live="polite">{statusText}</div>
           </div>
           <div className="setting-control">
@@ -250,7 +260,7 @@ export function SyncPage() {
               disabled={enabled ? !!s.running || !signedIn : !signedIn}
               onClick={() => void onSyncNow()}
             >
-              Sync Now
+              {t('Sync Now')}
             </Button>
           </div>
         </div>
@@ -263,7 +273,7 @@ export function SyncPage() {
 /** F4 Success-with-warning: a degraded pass converged, so the stamp stands
  *  and the suffix is a warning — never an error rendering. */
 function syncSuffix(s: SyncStatus): string {
-  if (s.degraded) return ' · Partial sync — some items were skipped';
+  if (s.degraded) return ' · ' + t('Partial sync — some items were skipped');
   const err = syncErr(s.last_error);
   return err ? ` · ${err}` : '';
 }
@@ -271,11 +281,11 @@ function syncSuffix(s: SyncStatus): string {
 function syncErr(raw: unknown): string | null {
   if (!raw) return null;
   const m = String(raw).toLowerCase();
-  if (/timeout|network|connection|dns/.test(m)) return 'Connection issue. Will retry automatically';
-  if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return 'Google rate limit reached. Pausing briefly';
-  if (/rejected|exceeds|too large/.test(m)) return 'Sync data exceeds size limits';
-  if (/auth|credential|sign in again/.test(m)) return 'Google Drive access needs reauthorization';
-  return 'Sync error. Will retry';
+  if (/timeout|network|connection|dns/.test(m)) return t('Connection issue. Will retry automatically');
+  if (/rate.?limit|quota|too many requests|\b429\b/.test(m)) return t('Google rate limit reached. Pausing briefly');
+  if (/rejected|exceeds|too large/.test(m)) return t('Sync data exceeds size limits');
+  if (/auth|credential|sign in again/.test(m)) return t('Google Drive access needs reauthorization');
+  return t('Sync error. Will retry');
 }
 
 function formatSyncStamp(ts: string | number): string {

@@ -1,7 +1,7 @@
 // Fluence Windows - System Tray module
 // Sets up the tray icon with context menu and state indicator.
 
-use crate::{audio, settings};
+use crate::{audio, i18n, settings};
 use std::sync::{Mutex, OnceLock};
 use tauri::{
     menu::{CheckMenuItem, Menu, MenuItem, PredefinedMenuItem, Submenu},
@@ -21,7 +21,10 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
         });
 
     let tray = TrayIconBuilder::with_id("fluence-tray")
-        .tooltip("Fluence: AI Voice Typing")
+        .tooltip(i18n::tr(
+            &i18n::resolve(&settings::load_settings().unwrap_or_default().ui_language),
+            "Fluence: AI Voice Typing",
+        ))
         .icon(icon)
         .show_menu_on_left_click(false)
         .on_menu_event(|app, event| match event.id.as_ref() {
@@ -77,12 +80,15 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
 
     let recording = audio::is_recording();
 
+    let current = settings::load_settings().unwrap_or_default();
+    let lang = i18n::resolve(&current.ui_language);
+
     let status = if recording {
         Some(
             MenuItem::with_id(
                 app,
                 "recording_status",
-                "Recording in progress",
+                i18n::tr(&lang, "Recording in progress"),
                 false,
                 None::<&str>,
             )
@@ -93,20 +99,24 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
     };
 
     let open_settings =
-        MenuItem::with_id(app, "open_settings", "Open Settings", true, None::<&str>)
+        MenuItem::with_id(app, "open_settings", i18n::tr(&lang, "Open Settings"), true, None::<&str>)
             .map_err(|e| e.to_string())?;
-    let history_item =
-        MenuItem::with_id(app, "history", "Transcription History", true, None::<&str>)
-            .map_err(|e| e.to_string())?;
+    let history_item = MenuItem::with_id(
+        app,
+        "history",
+        i18n::tr(&lang, "Transcription History"),
+        true,
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let sep1 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     let sep2 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
 
     // Recording mode submenu, checked against the persisted setting
-    let current = settings::load_settings().unwrap_or_default();
     let mode_toggle = CheckMenuItem::with_id(
         app,
         "mode_toggle",
-        "Push-to-Toggle",
+        i18n::tr(&lang, "Push-to-Toggle"),
         true,
         current.recording_mode == "push_to_toggle",
         None::<&str>,
@@ -115,17 +125,21 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
     let mode_hold = CheckMenuItem::with_id(
         app,
         "mode_hold",
-        "Hold-to-Record",
+        i18n::tr(&lang, "Hold-to-Record"),
         true,
         current.recording_mode == "hold_to_record",
         None::<&str>,
     )
     .map_err(|e| e.to_string())?;
-    let mode_submenu =
-        Submenu::with_items(app, "Recording Mode", true, &[&mode_toggle, &mode_hold])
-            .map_err(|e| e.to_string())?;
+    let mode_submenu = Submenu::with_items(
+        app,
+        i18n::tr(&lang, "Recording Mode"),
+        true,
+        &[&mode_toggle, &mode_hold],
+    )
+    .map_err(|e| e.to_string())?;
 
-    let quit = MenuItem::with_id(app, "quit", "Quit Fluence", true, None::<&str>)
+    let quit = MenuItem::with_id(app, "quit", i18n::tr(&lang, "Quit Fluence"), true, None::<&str>)
         .map_err(|e| e.to_string())?;
 
     let menu = if recording {
@@ -158,5 +172,6 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
     };
 
     tray.set_menu(Some(menu)).map_err(|e| e.to_string())?;
+    let _ = tray.set_tooltip(Some(i18n::tr(&lang, "Fluence: AI Voice Typing")));
     Ok(())
 }

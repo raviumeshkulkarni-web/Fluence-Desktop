@@ -4,6 +4,7 @@ import {
   minimizeMainWindow,
   toggleMaximizeMainWindow,
 } from '@/ipc/tauri';
+import { t } from '@/i18n';
 
 // Frameless window controls. Behavior mirrors vanilla setupTitlebar exactly:
 // minimize minimizes, maximize toggles (icon follows the backend result),
@@ -24,17 +25,19 @@ export function Titlebar() {
     }
   };
 
+  const maximizeLabel = maximized ? t('Restore window') : t('Maximize window');
+
   return (
     <div data-tauri-drag-region className="titlebar">
       <div className="titlebar-title" data-tauri-drag-region>
-        Fluence Settings
+        {t('Fluence Settings')}
       </div>
       <div className="titlebar-controls">
         <button
           type="button"
           className="titlebar-button"
           id="titlebar-minimize"
-          aria-label="Minimize window"
+          aria-label={t('Minimize window')}
           onClick={() => void minimizeMainWindow().catch(() => undefined)}
         >
           <svg width="11" height="1" viewBox="0 0 11 1" aria-hidden="true">
@@ -45,8 +48,8 @@ export function Titlebar() {
           type="button"
           className="titlebar-button"
           id="titlebar-maximize"
-          aria-label={maximized ? 'Restore window' : 'Maximize window'}
-          title={maximized ? 'Restore window' : 'Maximize window'}
+          aria-label={maximizeLabel}
+          title={maximizeLabel}
           onClick={() => void onMaximize()}
         >
           {maximized ? (
@@ -64,8 +67,8 @@ export function Titlebar() {
           type="button"
           className="titlebar-button titlebar-close"
           id="titlebar-close"
-          aria-label="Hide to tray"
-          title="Hide to tray"
+          aria-label={t('Hide to tray')}
+          title={t('Hide to tray')}
           onClick={() => void hideMainWindow().catch(() => undefined)}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">

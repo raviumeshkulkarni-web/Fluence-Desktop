@@ -44,6 +44,7 @@ import {
 import { copyText, subscribeHistoryUpdated } from '@/ipc/history';
 import { subscribeSyncStatus } from '@/ipc/sync';
 import { getAccentColor, type AccentTheme, type Theme } from '@/lib/theme';
+import { getLocale, t } from '@/i18n';
 
 const DAY_MS = 86400000;
 
@@ -192,8 +193,8 @@ function sumWindow(
 function spokenLabel(ms: number): string {
   const hours = ms / 3600000;
   return hours >= 1
-    ? hours.toFixed(1) + 'h spoken'
-    : Math.round(hours * 60) + 'm spoken';
+    ? t('{value}h spoken', { value: hours.toFixed(1) })
+    : t('{value}m spoken', { value: Math.round(hours * 60) });
 }
 
 // Re-derive one range view from cached buckets (no IPC): daily points for
@@ -206,7 +207,7 @@ function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
     const spanDays = Math.max(1, Math.round((today - first) / DAY_MS) + 1);
     if (spanDays <= 92) {
       return dailyPoints(buckets, spanDays, (d) =>
-        d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+        d.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' }),
       );
     }
     if (spanDays <= 730) {
@@ -219,7 +220,7 @@ function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
       return [...weeks.entries()]
         .sort((a, b) => a[0] - b[0])
         .map(([monday, totals]) => ({
-          label: new Date(monday).toLocaleDateString(undefined, {
+          label: new Date(monday).toLocaleDateString(getLocale(), {
             month: 'short',
             day: 'numeric',
           }),
@@ -238,7 +239,7 @@ function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
       .sort((a, b) => a[0] - b[0])
       .map(([key, totals]) => ({
         label: new Date(Date.UTC(Math.floor(key / 12), key % 12, 1)).toLocaleDateString(
-          undefined,
+          getLocale(),
           { month: 'short', year: 'numeric' },
         ),
         count: totals.sessions,
@@ -248,8 +249,8 @@ function viewData(buckets: DailyBucket[], range: Range): RangePoint[] {
   const n = range === '7d' ? 7 : range === '30d' ? 30 : 90;
   return dailyPoints(buckets, n, (d) =>
     range === '7d'
-      ? d.toLocaleDateString(undefined, { weekday: 'short' })
-      : d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }),
+      ? d.toLocaleDateString(getLocale(), { weekday: 'short' })
+      : d.toLocaleDateString(getLocale(), { month: 'short', day: 'numeric' }),
   );
 }
 
@@ -295,23 +296,22 @@ interface WeekdayPoint {
 
 // Fixed Monday-first weekday labels derived from a known Monday
 // (2024-01-01) so order is always Mon -> Sun and names stay locale-aware.
-// Module scope: the values are constant for the session.
-const WEEKDAY_LABELS: { short: string[]; full: string[] } = (() => {
+function weekdayLabels(): { short: string[]; full: string[] } {
   const short: string[] = [];
   const full: string[] = [];
   for (let i = 0; i < 7; i += 1) {
     const d = new Date(Date.UTC(2024, 0, 1 + i));
-    short.push(d.toLocaleDateString(undefined, { weekday: 'short', timeZone: 'UTC' }));
-    full.push(d.toLocaleDateString(undefined, { weekday: 'long', timeZone: 'UTC' }));
+    short.push(d.toLocaleDateString(getLocale(), { weekday: 'short', timeZone: 'UTC' }));
+    full.push(d.toLocaleDateString(getLocale(), { weekday: 'long', timeZone: 'UTC' }));
   }
   return { short, full };
-})();
+}
 
 // Additive weekday distribution: folds the same synced DailyBucket[] rows
 // into exactly seven Monday-first buckets (never sorted by value).
 // O(days), never O(events); no new IPC, no history reads.
 function weekdayData(buckets: DailyBucket[], range: Range): WeekdayPoint[] {
-  const { short, full } = WEEKDAY_LABELS;
+  const { short, full } = weekdayLabels();
   const points: WeekdayPoint[] = short.map((weekday, i) => ({
     weekday,
     full: full[i],
@@ -395,7 +395,8 @@ function TrendBadge({
   const delta = current.sessions - prior.sessions;
   const variant = delta > 0 ? 'success' : delta < 0 ? 'destructive' : 'secondary';
   const Icon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
-  const text = `${delta > 0 ? '+' : delta < 0 ? '-' : '±'}${delta !== 0 ? Math.abs(delta) : '0'} vs prior ${span}d`;
+  const deltaLabel = `${delta > 0 ? '+' : delta < 0 ? '-' : '±'}${delta !== 0 ? Math.abs(delta) : '0'}`;
+  const text = t('{delta} vs prior {days}d', { delta: deltaLabel, days: span });
   return (
     <Badge variant={variant}>
       <Icon size={12} aria-hidden="true" />
@@ -570,38 +571,52 @@ export function DashboardPage({
   }, [buckets]);
 
   const kpis = useMemo((): DashboardKpi[] => {
+    const scope =
+      range === '7d'
+        ? t('in last 7 days')
+        : range === '30d'
+          ? t('in last 30 days')
+          : range === '90d'
+            ? t('in last 90 days')
+            : t('all time');
     const totals =
       range === '7d'
-        ? { ...summary.last7, scope: 'in last 7 days' }
+        ? summary.last7
         : range === '30d'
-          ? { ...summary.last30, scope: 'in last 30 days' }
+          ? summary.last30
           : range === '90d'
-            ? { ...summary.last90, scope: 'in last 90 days' }
-            : { ...summary.lifetime, scope: 'all time' };
+            ? summary.last90
+            : summary.lifetime;
     return [
       {
         id: 'stat-total-words',
-        title: 'Words Transcribed',
+        title: t('Words Transcribed'),
         value: formatTotalWords(totals.words),
-        foot: `${totals.sessions.toLocaleString()} sessions, ${totals.scope}`,
+        foot: t('{count} sessions, {scope}', {
+          count: totals.sessions.toLocaleString(),
+          scope,
+        }),
       },
       {
         id: 'stat-time-saved',
-        title: 'Typing Time Saved',
+        title: t('Typing Time Saved'),
         value: formatDurationMs((totals.words / 40) * 60000),
-        foot: `at 40 WPM, ${totals.scope}`,
+        foot: t('at 40 WPM, {scope}', { scope }),
       },
       {
         id: 'stat-dictation-time',
-        title: 'Dictation Time',
+        title: t('Dictation Time'),
         value: formatDurationMs(totals.durationMs),
-        foot: `${spokenLabel(totals.durationMs)}, ${totals.scope}`,
+        foot: t('{spoken}, {scope}', {
+          spoken: spokenLabel(totals.durationMs),
+          scope,
+        }),
       },
       {
         id: 'stat-sessions',
-        title: 'Sessions',
+        title: t('Sessions'),
         value: totals.sessions.toLocaleString(),
-        foot: totals.scope === 'all time' ? 'all time' : `in last ${range === '7d' ? 7 : range === '30d' ? 30 : 90} days`,
+        foot: scope,
       },
     ];
   }, [summary, range]);
@@ -619,15 +634,27 @@ export function DashboardPage({
     weekdayValue(p) > weekdayValue(best) ? p : best,
   );
   const rangeLabel =
-    range === '7d' ? 'Last 7 days' : range === '30d' ? 'Last 30 days' : range === '90d' ? 'Last 90 days' : 'All time';
+    range === '7d'
+      ? t('Last 7 days')
+      : range === '30d'
+        ? t('Last 30 days')
+        : range === '90d'
+          ? t('Last 90 days')
+          : t('All time');
   const weekdayUnit = (v: number) =>
-    metric === 'sessions' ? `session${v === 1 ? '' : 's'}` : `word${v === 1 ? '' : 's'}`;
+    metric === 'sessions' ? (v === 1 ? t('session') : t('sessions')) : v === 1 ? t('word') : t('words');
   const weekdayPeakShare =
     weekdayTotal > 0 ? Math.round((weekdayValue(weekdayPeak) / weekdayTotal) * 100) : 0;
   const weekdaySummary =
     weekdayTotal === 0
-      ? `No activity in this range yet`
-      : `Peak ${weekdayPeak.full} ${weekdayPeakShare}% · ${weekdayValue(weekdayPeak).toLocaleString()} ${weekdayUnit(weekdayValue(weekdayPeak))} · ${rangeLabel.toLowerCase()}`;
+      ? t('No activity in this range yet')
+      : t('Peak {day} {percent}% · {count} {unit} · {range}', {
+          day: weekdayPeak.full,
+          percent: weekdayPeakShare,
+          count: weekdayValue(weekdayPeak).toLocaleString(),
+          unit: weekdayUnit(weekdayValue(weekdayPeak)),
+          range: rangeLabel,
+        });
   // Slice fills use the selected accent; depend on stable choices, not the
   // rebuilt duo object.
   const weekdayFills = useMemo(
@@ -659,8 +686,8 @@ export function DashboardPage({
   const ringSweep = todayRatio == null ? 0 : Math.min(1, todayRatio);
   const todaySummary =
     todayRatio == null
-      ? `No baseline yet — dictate to build your average`
-      : `${todayRatio.toFixed(1)}× your daily average`;
+      ? t('No baseline yet — dictate to build your average')
+      : t('{ratio}× your daily average', { ratio: todayRatio.toFixed(1) });
   // Recharts does not auto-size the axis: 4-digit counts overflow a 32px
   // gutter and the SVG viewport clips their leading digit.
   const yWidth = points.some((p) => activeValue(p) >= 1000) ? 44 : 32;
@@ -750,15 +777,15 @@ export function DashboardPage({
   })();
 
   const copyValue = (value: string) => {
-    copyText(value).then(() => toast('Copied to clipboard', 'success'));
+    copyText(value).then(() => toast(t('Copied to clipboard'), 'success'));
   };
 
   return (
     <section className="page active" id="page-dashboard">
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--spacing-md)' }}>
         <div>
-          <h1 className="page-title" tabIndex={-1}>Dashboard</h1>
-          <p className="page-subtitle">Your transcription activity at a glance</p>
+          <h1 className="page-title" tabIndex={-1}>{t('Dashboard')}</h1>
+          <p className="page-subtitle">{t('Your transcription activity at a glance')}</p>
         </div>
         <Tooltip>
           <TooltipTrigger asChild>
@@ -766,14 +793,14 @@ export function DashboardPage({
               variant="ghost"
               size="sm"
               id="dashboard-refresh-btn"
-              aria-label="Refresh dashboard"
+              aria-label={t('Refresh dashboard')}
               onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
             >
               <RefreshCw size={14} aria-hidden="true" />
-              Refresh
+              {t('Refresh')}
             </Button>
           </TooltipTrigger>
-          <TooltipContent>Refresh dashboard</TooltipContent>
+          <TooltipContent>{t('Refresh dashboard')}</TooltipContent>
         </Tooltip>
       </div>
 
@@ -801,7 +828,7 @@ export function DashboardPage({
                       <Button
                         variant="ghost"
                         size="xs"
-                        aria-label={`${kpi.title} options`}
+                        aria-label={t('{title} options', { title: kpi.title })}
                       >
                         <MoreHorizontal size={14} aria-hidden="true" />
                       </Button>
@@ -809,7 +836,7 @@ export function DashboardPage({
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem onSelect={() => copyValue(kpi.value)}>
                         <Copy size={14} aria-hidden="true" />
-                        Copy value
+                        {t('Copy value')}
                       </DropdownMenuItem>
                     </DropdownMenuContent>
                   </DropdownMenu>
@@ -847,9 +874,9 @@ export function DashboardPage({
         <Card className="chart-fill">
           <CardHeader>
             <div>
-              <CardTitle>Activity</CardTitle>
+              <CardTitle>{t('Activity')}</CardTitle>
               <CardDescription>
-                {metric === 'sessions' ? 'Transcription sessions' : 'Words transcribed'}
+                {metric === 'sessions' ? t('Transcription sessions') : t('Words transcribed')}
               </CardDescription>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--spacing-sm)' }}>
@@ -860,10 +887,10 @@ export function DashboardPage({
               onValueChange={(v) => {
                 if (v) setMetric(v as Metric);
               }}
-              aria-label="Chart metric"
+              aria-label={t('Chart metric')}
             >
-              <ToggleGroupItem value="sessions" className="tabs-trigger">Sessions</ToggleGroupItem>
-              <ToggleGroupItem value="words" className="tabs-trigger">Words</ToggleGroupItem>
+              <ToggleGroupItem value="sessions" className="tabs-trigger">{t('Sessions')}</ToggleGroupItem>
+              <ToggleGroupItem value="words" className="tabs-trigger">{t('Words')}</ToggleGroupItem>
             </ToggleGroup>
             <ToggleGroup
               type="single"
@@ -872,19 +899,19 @@ export function DashboardPage({
               onValueChange={(v) => {
                 if (v) setRange(v as Range);
               }}
-              aria-label="Activity range"
+              aria-label={t('Activity range')}
             >
-              <ToggleGroupItem value="7d" className="tabs-trigger">Last 7 days</ToggleGroupItem>
-              <ToggleGroupItem value="30d" className="tabs-trigger">Last 30 days</ToggleGroupItem>
-              <ToggleGroupItem value="90d" className="tabs-trigger">Last 90 days</ToggleGroupItem>
-              <ToggleGroupItem value="all" className="tabs-trigger">All time</ToggleGroupItem>
+              <ToggleGroupItem value="7d" className="tabs-trigger">{t('Last 7 days')}</ToggleGroupItem>
+              <ToggleGroupItem value="30d" className="tabs-trigger">{t('Last 30 days')}</ToggleGroupItem>
+              <ToggleGroupItem value="90d" className="tabs-trigger">{t('Last 90 days')}</ToggleGroupItem>
+              <ToggleGroupItem value="all" className="tabs-trigger">{t('All time')}</ToggleGroupItem>
             </ToggleGroup>
             </div>
           </CardHeader>
           <CardContent>
             {loaded && rangeTotal === 0 ? (
               <div className="chart-empty" id="chart-empty">
-                No activity in this range yet. Press your hotkey to dictate.
+                {t('No activity in this range yet. Press your hotkey to dictate.')}
               </div>
             ) : (
               <div
@@ -998,8 +1025,12 @@ export function DashboardPage({
                     <span className="chart-tooltip-value">
                       {activeValue(hovered).toLocaleString()}{' '}
                       {metric === 'sessions'
-                        ? `session${activeValue(hovered) === 1 ? '' : 's'}`
-                        : `word${activeValue(hovered) === 1 ? '' : 's'}`}{', '}
+                        ? activeValue(hovered) === 1
+                          ? t('session')
+                          : t('sessions')
+                        : activeValue(hovered) === 1
+                          ? t('word')
+                          : t('words')}{', '}
                     </span>
                     <span className="chart-tooltip-label">{hovered.label}</span>
                   </div>
@@ -1020,16 +1051,17 @@ export function DashboardPage({
         <Card style={{ flex: '2 1 340px', minWidth: 0 }}>
           <CardHeader>
             <div>
-              <CardTitle>By weekday</CardTitle>
+              <CardTitle>{t('By weekday')}</CardTitle>
               <CardDescription>
-                {metric === 'sessions' ? 'Sessions share by weekday' : 'Words share by weekday'} · {weekdaySummary}
+                {metric === 'sessions' ? t('Sessions share by weekday') : t('Words share by weekday')}{' '}
+                · {weekdaySummary}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
             {weekdayTotal === 0 ? (
               <div className="chart-empty">
-                No activity in this range yet. Press your hotkey to dictate.
+                {t('No activity in this range yet. Press your hotkey to dictate.')}
               </div>
             ) : (
               <figure style={{ margin: 0 }}>
@@ -1119,7 +1151,9 @@ export function DashboardPage({
                           {weekdayTotal.toLocaleString()}
                         </span>
                         <span style={{ fontSize: 11, color: 'var(--color-on-surface-variant)' }}>
-                          {metric === 'sessions' ? 'sessions' : 'words'} total
+                          {t('{unit} total', {
+                            unit: metric === 'sessions' ? t('sessions') : t('words'),
+                          })}
                         </span>
                       </>
                     )}
@@ -1138,11 +1172,11 @@ export function DashboardPage({
                     </colgroup>
                     <TableHeader>
                       <TableRow>
-                        <TableHead style={{ padding: '7px 10px' }}>Day</TableHead>
+                        <TableHead style={{ padding: '7px 10px' }}>{t('Day')}</TableHead>
                         <TableHead style={{ padding: '7px 10px', textAlign: 'right' }}>
-                          {metric === 'sessions' ? 'Sessions' : 'Words'}
+                          {metric === 'sessions' ? t('Sessions') : t('Words')}
                         </TableHead>
-                        <TableHead style={{ padding: '7px 10px', textAlign: 'right' }}>Share</TableHead>
+                        <TableHead style={{ padding: '7px 10px', textAlign: 'right' }}>{t('Share')}</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1191,16 +1225,17 @@ export function DashboardPage({
         <Card style={{ flex: '1 1 240px', minWidth: 0 }}>
           <CardHeader>
             <div>
-              <CardTitle>Today</CardTitle>
+              <CardTitle>{t('Today')}</CardTitle>
               <CardDescription>
-                {metric === 'sessions' ? 'Sessions vs daily average' : 'Words vs daily average'} · {todaySummary}
+                {metric === 'sessions' ? t('Sessions vs daily average') : t('Words vs daily average')}{' '}
+                · {todaySummary}
               </CardDescription>
             </div>
           </CardHeader>
           <CardContent>
             {todayRatio == null ? (
               <div className="chart-empty">
-                No baseline yet. Press your hotkey to dictate.
+                {t('No baseline yet. Press your hotkey to dictate.')}
               </div>
             ) : (
               <figure style={{ margin: 0 }}>
@@ -1254,7 +1289,7 @@ export function DashboardPage({
                     style={{ fill: 'var(--color-on-surface-variant)' }}
                     fontSize={11}
                   >
-                    of avg
+                    {t('of avg')}
                   </text>
                 </svg>
                 <div
@@ -1266,7 +1301,12 @@ export function DashboardPage({
                     fontVariantNumeric: 'tabular-nums',
                   }}
                 >
-                  {todayValue.toLocaleString()} {weekdayUnit(todayValue)} today · {trailAvg.toFixed(1)} avg · last {trailDays}d
+                  {t('{count} {unit} today · {avg} avg · last {days}d', {
+                    count: todayValue.toLocaleString(),
+                    unit: weekdayUnit(todayValue),
+                    avg: trailAvg.toFixed(1),
+                    days: trailDays,
+                  })}
                 </div>
               </figure>
             )}

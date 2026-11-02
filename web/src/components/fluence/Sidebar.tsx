@@ -44,6 +44,7 @@ import { getAppVersion } from '@/ipc/tauri';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 import type { ThemeChoice } from '@/lib/theme';
 import type { Route } from '@/App';
+import { t, tr, type TranslationKey } from '@/i18n';
 
 // Sidebar theme control cycles Dark → Light → System (follows the OS live).
 // The icon + label always show the active choice, never the target.
@@ -53,13 +54,13 @@ const THEME_CYCLE: Record<ThemeChoice, ThemeChoice> = {
   auto: 'dark',
 };
 
-const THEME_META: Record<ThemeChoice, { label: string; Icon: ReactNode }> = {
+const THEME_META: Record<ThemeChoice, { label: TranslationKey; Icon: ReactNode }> = {
   dark: { label: 'Dark', Icon: <Moon className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
   light: { label: 'Light', Icon: <Sun className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
   auto: { label: 'System', Icon: <Monitor className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
 };
 
-const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
+const NAV: { page: Route; label: TranslationKey; icon: LucideIcon }[] = [
   { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { page: 'history', label: 'History', icon: History },
   { page: 'general', label: 'General', icon: Settings2 },
@@ -122,13 +123,18 @@ export function Sidebar({
       variant="ghost"
       className="sidebar-theme-btn"
       aria-label={collapsed
-        ? `Theme: ${THEME_META[themeChoice].label}. Activate for ${THEME_META[THEME_CYCLE[themeChoice]].label}.`
-        : `Theme: ${THEME_META[themeChoice].label} (Ctrl+Shift+L toggles dark and light)`}
-      title={collapsed ? undefined : `Theme: ${THEME_META[themeChoice].label}. Click to cycle`}
+        ? t('Theme: {theme}. Activate for {next}.', {
+            theme: t(THEME_META[themeChoice].label),
+            next: t(THEME_META[THEME_CYCLE[themeChoice]].label),
+          })
+        : t('Theme: {theme} (Ctrl+Shift+L toggles dark and light)', {
+            theme: t(THEME_META[themeChoice].label),
+          })}
+      title={collapsed ? undefined : t('Theme: {theme}. Click to cycle', { theme: t(THEME_META[themeChoice].label) })}
       onClick={onCycleTheme}
     >
       {THEME_META[themeChoice].Icon}
-      {!collapsed && <span className="sidebar-theme-label">{THEME_META[themeChoice].label}</span>}
+      {!collapsed && <span className="sidebar-theme-label">{t(THEME_META[themeChoice].label)}</span>}
     </Button>
   );
 
@@ -151,7 +157,7 @@ export function Sidebar({
   return (
     <SidebarPrimitive
       role="navigation"
-      aria-label="Settings navigation"
+      aria-label={t('Settings navigation')}
       collapsible="icon"
     >
       <SidebarHeader>
@@ -172,20 +178,20 @@ export function Sidebar({
             </svg>
             <span className="logo-text">
               flu<span style={{ color: 'var(--color-logo-cyan)' }}>ence</span>
-              <span className="logo-tagline">Transcribe</span>
+              <span className="logo-tagline">{t('Transcribe')}</span>
             </span>
           </div>
           <Tooltip>
             <TooltipTrigger asChild>
               <SidebarTrigger
-                aria-label={collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+                aria-label={collapsed ? t('Expand sidebar (Ctrl+B)') : t('Collapse sidebar (Ctrl+B)')}
                 aria-expanded={!collapsed}
               >
                 {collapsed ? <PanelLeftOpen data-icon="inline-start" aria-hidden="true" /> : <PanelLeftClose data-icon="inline-start" aria-hidden="true" />}
               </SidebarTrigger>
             </TooltipTrigger>
             <TooltipContent side="right">
-              {collapsed ? 'Expand sidebar (Ctrl+B)' : 'Collapse sidebar (Ctrl+B)'}
+              {collapsed ? t('Expand sidebar (Ctrl+B)') : t('Collapse sidebar (Ctrl+B)')}
             </TooltipContent>
           </Tooltip>
         </div>
@@ -194,7 +200,7 @@ export function Sidebar({
 
       <SidebarContent>
         <SidebarGroup>
-          <SidebarGroupLabel className="nav-section-label">Home</SidebarGroupLabel>
+          <SidebarGroupLabel className="nav-section-label">{t('Home')}</SidebarGroupLabel>
           <SidebarMenu>
             {NAV.slice(0, 2).map((item) => (
               <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
@@ -202,7 +208,7 @@ export function Sidebar({
           </SidebarMenu>
         </SidebarGroup>
         <SidebarGroup className="sidebar-config-group">
-          <SidebarGroupLabel className="nav-section-label">Configuration</SidebarGroupLabel>
+          <SidebarGroupLabel className="nav-section-label">{t('Configuration')}</SidebarGroupLabel>
           <SidebarMenu>
             {NAV.slice(2).map((item) => (
               <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
@@ -216,7 +222,7 @@ export function Sidebar({
         {collapsed ? (
           <Tooltip>
             <TooltipTrigger asChild>{themeButton}</TooltipTrigger>
-            <TooltipContent side="right">{`Theme: ${THEME_META[themeChoice].label}`}</TooltipContent>
+            <TooltipContent side="right">{t('Theme: {theme}', { theme: t(THEME_META[themeChoice].label) })}</TooltipContent>
           </Tooltip>
         ) : (
           themeButton
@@ -235,7 +241,7 @@ export function Sidebar({
             id="sidebar-update-progress-bar"
             className="sidebar-update-progress-bar"
             role="progressbar"
-            aria-label="Update download progress"
+            aria-label={t('Update download progress')}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={updater.progress}
@@ -268,43 +274,43 @@ export function Sidebar({
       case 'checking':
         return {
           label: `v${version}`, labelClass: 'sidebar-version-label',
-          status: 'Checking for updates…', showProgress: false,
-          btnText: 'Checking…', btnClass: 'sidebar-update-btn', btnDisabled: true, onAction: check,
+          status: t('Checking for updates…'), showProgress: false,
+          btnText: t('Checking…'), btnClass: 'sidebar-update-btn', btnDisabled: true, onAction: check,
         };
       case 'available':
         return {
-          label: 'Update Available', labelClass: 'sidebar-version-label highlight-update',
-          status: `v${updater.version} ready to download`, showProgress: false,
-          btnText: `Download v${updater.version}`, btnClass: 'sidebar-update-btn btn-has-update',
+          label: t('Update Available'), labelClass: 'sidebar-version-label highlight-update',
+          status: t('v{version} ready to download', { version: updater.version ?? '' }), showProgress: false,
+          btnText: t('Download v{version}', { version: updater.version ?? '' }), btnClass: 'sidebar-update-btn btn-has-update',
           btnDisabled: false, onAction: download,
         };
       case 'downloading':
         return {
-          label: 'Downloading Update', labelClass: 'sidebar-version-label highlight-update',
-          status: `Downloading ${updater.progress}%`, showProgress: true,
-          btnText: `Downloading ${updater.progress}%`, btnClass: 'sidebar-update-btn',
+          label: t('Downloading Update'), labelClass: 'sidebar-version-label highlight-update',
+          status: t('Downloading {progress}%', { progress: updater.progress }), showProgress: true,
+          btnText: t('Downloading {progress}%', { progress: updater.progress }), btnClass: 'sidebar-update-btn',
           btnDisabled: true, onAction: check,
         };
       case 'ready':
         return {
-          label: 'Update Ready', labelClass: 'sidebar-version-label highlight-ready',
-          status: 'Restart to apply update', showProgress: false,
-          btnText: 'Restart Fluence', btnClass: 'sidebar-update-btn btn-ready',
+          label: t('Update Ready'), labelClass: 'sidebar-version-label highlight-ready',
+          status: t('Restart to apply update'), showProgress: false,
+          btnText: t('Restart Fluence'), btnClass: 'sidebar-update-btn btn-ready',
           btnDisabled: false, onAction: restart,
         };
       case 'failed':
         return {
           label: `v${version}`, labelClass: 'sidebar-version-label',
-          status: updater.error ?? 'Update check failed', showProgress: false,
-          btnText: 'Try Again', btnClass: 'sidebar-update-btn',
+          status: updater.error ? tr(updater.error) : t('Update check failed'), showProgress: false,
+          btnText: t('Try Again'), btnClass: 'sidebar-update-btn',
           btnDisabled: false, onAction: check,
         };
       case 'idle':
       default:
         return {
           label: `v${version}`, labelClass: 'sidebar-version-label',
-          status: upToDate ? '✓ Up to date' : null, showProgress: false,
-          btnText: 'Check for Updates', btnClass: 'sidebar-update-btn',
+          status: upToDate ? t('✓ Up to date') : null, showProgress: false,
+          btnText: t('Check for Updates'), btnClass: 'sidebar-update-btn',
           btnDisabled: false, onAction: check,
         };
     }
@@ -325,14 +331,14 @@ function NavButton({
     <SidebarMenuItem>
       <SidebarMenuButton
         isActive={active}
-        tooltip={item.label}
+        tooltip={t(item.label)}
         data-page={item.page}
         id={`nav-${item.page}`}
         aria-current={active ? 'page' : undefined}
         onClick={() => onNavigate(item.page)}
       >
         <Icon className="nav-icon" aria-hidden="true" />
-        <span className="nav-item-label">{item.label}</span>
+        <span className="nav-item-label">{t(item.label)}</span>
       </SidebarMenuButton>
     </SidebarMenuItem>
   );

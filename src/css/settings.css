@@ -41,6 +41,10 @@ body.is-maximized {
  * in both dark and light themes. */
 body:has(.app-shell) {
   border: none;
+  /* With the native window shadow disabled the CSS shadow can only paint
+   * inside the transparent window; it leaks through the anti-aliased
+   * corner arcs as a dark 1px rim tracing the rounding. */
+  box-shadow: none;
 }
 
 body:has(.app-shell) .titlebar {
@@ -786,9 +790,11 @@ body:has(.app-shell) .titlebar {
 
 .history-group-header {
   position: sticky;
-  /* 32px floating titlebar overlay: without the offset the pinned header
-   * lands under the strip and its collapse click hits the drag region. */
-  top: 32px;
+  /* Pins to the top of its own scrollport (#history-list), which sits
+   * below the search/filter chrome - nowhere near the floating titlebar.
+   * A 32px offset here opened a see-through band above the pinned
+   * header with rows scrolling through it. */
+  top: 0;
   z-index: 2;
   display: flex;
   align-items: center;

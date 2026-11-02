@@ -1,16 +1,16 @@
-## A window without its picture frame, and a clipboard that keeps your words
+## Two rough edges from 1.33.0, smoothed
 
-### A unified window at last
+### History day headers sit flush again
 
-The Fluence window no longer reads as "a browser window with the app running inside it". The hairline border around the window and the separate title strip with its separator bar are gone. The window title and the three window buttons now sit directly on the app: over the sidebar the title bar takes the sidebar's color, and over the main content it continues with the content's color, in both dark and light themes. The rounded corners are truly transparent now - you see your desktop through them, so the small dark spots that appeared at the window corners are fixed.
+Scrolling the History list no longer opens a gap between the pinned day heading ("Today", "Yesterday", and so on) and the search and filter bar above it. The heading stays attached directly below the chrome, with rows passing cleanly underneath it instead of showing through the empty band above it.
 
-### Your dictated words stay on the clipboard
+### Clean window corners
 
-A new toggle in General settings (on by default): after each dictation, your dictated text and agent results stay on the clipboard even if the paste fails, so you can simply press Ctrl+V to paste them again anywhere. Turn the toggle off if you prefer to keep whatever you had copied earlier instead. This preference is stored on this device only and is not part of sync.
+The window's rounded corners no longer carry a faint dark hairline tracing their edge. When the native window shadow was disabled in 1.33.0, a leftover shadow inside the window kept bleeding through the transparent corner cutouts. It is now removed, so the corners blend cleanly into whatever is behind them in both dark and light themes.
 
 ### What stays the same
 
-Your audio detection, dictation shortcuts, language models, history, snippets, agents, styles, settings, and sync data are completely unaffected. The onboarding wizard, the floating overlay, and all commands behave exactly as before.
+Everything else from 1.33.0 is unchanged: the unified window with its integrated title bar, the clipboard auto-copy toggle in General settings, and your audio detection, shortcuts, language models, history, snippets, agents, styles, settings, and sync data. The onboarding wizard, the floating overlay, and all commands behave exactly as before.
 
 ### Known limitations
 
@@ -19,4 +19,4 @@ Your audio detection, dictation shortcuts, language models, history, snippets, a
 - Text goes wherever your cursor is when transcription finishes; switching apps while dictating pastes into whichever app you end up in.
 - With the clipboard toggle on, the app no longer brings back what you had copied before dictating, so your earlier copied content is not recoverable after a dictation. Turn the toggle off to restore that behavior.
 - An image or file list on your clipboard is replaced by a paste and cannot be restored afterwards. You are told when this happens.
-- During route changes in the settings window, scrolling content can briefly slide under the floating title bar for a moment, as in any modern window with an integrated title bar.
+- The window has no drop shadow, and scrolling content can briefly slide under the floating title bar during route changes, as in any modern window with an integrated title bar.

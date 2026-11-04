@@ -16,6 +16,19 @@
     <span class="app-pill-name" id="app-pill-name"></span>
   </div>
 
+  <div class="agent-picker" id="agent-picker" hidden>
+    <button class="agent-picker-trigger" id="agent-picker-trigger" type="button"
+      aria-label="Choose agent for this turn" aria-haspopup="listbox" aria-expanded="false"
+      aria-controls="agent-picker-card">
+      <span class="agent-picker-mark" aria-hidden="true"></span>
+      <span class="agent-picker-name" id="agent-picker-name"></span>
+      <svg class="agent-picker-chevron" width="12" height="12" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+        <path d="m3 4.5 3 3 3-3" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round" />
+      </svg>
+    </button>
+    <div class="agent-picker-card" id="agent-picker-card" role="listbox" aria-label="Choose an agent" aria-hidden="true"></div>
+  </div>
+
   <div class="overlay-root" id="overlay-root">
 
     <!-- Row 1: Metadata - REC indicator + mode badge -->

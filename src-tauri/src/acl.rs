@@ -39,6 +39,7 @@
 // | execute_agent_command                | main,wizard          | main+wizard (raw-key)    |
 // | execute_agent_command_secure         | main,overlay         | server-side key          |
 // | get_agents                           | main,overlay         | open (needs differ)      |
+// | set_agent_picker_geometry            | overlay              | window bounds only       |
 // | save/delete_agent                    | main                 | main only                |
 // | set_default_agent                    | main                 | main only                |
 // | claim_legacy_agent                   | main                 | main only                |

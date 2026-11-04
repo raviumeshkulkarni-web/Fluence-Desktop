@@ -24,6 +24,9 @@ fn overlay_window_size(style: &str) -> (f64, f64) {
     }
 }
 
+const AGENT_PICKER_WINDOW_WIDTH: f64 = 300.0;
+const AGENT_PICKER_MAX_EXTRA_HEIGHT: f64 = 256.0;
+
 /// Resize + move the overlay window so the tier stays glued to its docked
 /// corner. Called while hidden at summon (no flicker) and on style change.
 fn place_overlay_window(
@@ -238,6 +241,54 @@ pub fn set_overlay_style(
     place_overlay_window(&win, &monitor, &position, &style)?;
     log::debug!("set_overlay_style placed: {} (HWND resized to tier)", style);
     Ok(())
+}
+
+#[tauri::command]
+pub fn set_agent_picker_geometry(
+    window: tauri::Window,
+    app: AppHandle,
+    expanded: bool,
+    extra_height: f64,
+    style: String,
+    position: String,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::OVERLAY_WINDOW])?;
+    if !matches!(style.as_str(), "full" | "compact" | "bubble") {
+        return Err("Unknown overlay style".to_string());
+    }
+    if !matches!(
+        position.as_str(),
+        "bottom_left" | "bottom_right" | "center" | "top_left" | "top_center" | "top_right"
+    ) {
+        return Err("Unknown overlay position".to_string());
+    }
+
+    if !extra_height.is_finite() {
+        return Err("Invalid agent picker height".to_string());
+    }
+    let extra_height = extra_height.clamp(0.0, AGENT_PICKER_MAX_EXTRA_HEIGHT);
+    let win = get_overlay_window(&app).ok_or("Overlay window not found")?;
+    let monitor = win
+        .current_monitor()
+        .map_err(|e| e.to_string())?
+        .or_else(|| win.primary_monitor().ok().flatten())
+        .ok_or("No monitor found")?;
+    let (base_width, base_height) = overlay_window_size(&style);
+    let win_width = if expanded {
+        base_width.max(AGENT_PICKER_WINDOW_WIDTH)
+    } else {
+        base_width
+    };
+
+    // Use the same atomic position+size commit as tier changes. Bottom docks
+    // grow upward and top docks grow downward without an intermediate frame.
+    place_overlay_window_sized(
+        &win,
+        &monitor,
+        &position,
+        win_width,
+        base_height + extra_height,
+    )
 }
 
 #[tauri::command]

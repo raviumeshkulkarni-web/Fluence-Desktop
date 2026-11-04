@@ -638,15 +638,15 @@ body {
 }
 
 /* ── Agent placement model (edge-anchored) ─────────────────────────────── */
-/* The OS window is sized to the tier and never resized during a session, so
-   the island's resting spot is decided purely by which screen edge the window
-   is docked to:
+/* The collapsed OS window is sized to the tier. The dock decides which side
+   the agent group opens toward, while the expanded window grows into that
+   space without moving the island:
 
      above (bottom dock) → bottom-anchored at a constant per-tier offset
      below (top dock)    → top-anchored 46px at a constant per-tier offset
 
-   Neither offset depends on the window height, so the island and the app pill
-   sit in exactly the same place for every dock. */
+   The CSS anchors use the collapsed dimensions; the expanded dimensions only
+   provide room for the menu. */
 body.agent-placement-above {
   /* Vertical mirror of the below placement: bottom-anchor the island to the
      window edge at a constant per-tier offset (base - stack-top - bubble-height). */
@@ -660,13 +660,33 @@ body.agent-placement-below {
   padding-top: var(--agent-stack-top);
 }
 
-/* Rendered bubble height + window height per tier, declared in CSS so nothing
-   has to be measured at runtime (reading offsetHeight here used to catch the
-   bubble mid-entry and pin an intermediate height for the whole session).
-   Keep in sync with overlay.rs::overlay_window_size. */
-body.style-full { --agent-bubble-height: 96px; --agent-base-height: 190px; }
-body.style-compact { --agent-bubble-height: 36px; --agent-base-height: 130px; }
-body.style-bubble { --agent-bubble-height: 44px; --agent-base-height: 140px; }
+/* Rendered bubble height + base window height per tier, declared in CSS so
+   nothing has to be measured mid-entry. The native window may grow around the
+   agent menu; these values remain its collapsed tier dimensions. */
+body.style-full {
+  --agent-bubble-height: 96px;
+  --agent-base-height: 190px;
+  --agent-base-width: 400px;
+  --agent-root-width: 320px;
+  --agent-card-width: 280px;
+  --agent-trigger-width: 176px;
+}
+body.style-compact {
+  --agent-bubble-height: 36px;
+  --agent-base-height: 130px;
+  --agent-base-width: 180px;
+  --agent-root-width: 118px;
+  --agent-card-width: 240px;
+  --agent-trigger-width: 164px;
+}
+body.style-bubble {
+  --agent-bubble-height: 44px;
+  --agent-base-height: 140px;
+  --agent-base-width: 130px;
+  --agent-root-width: 44px;
+  --agent-card-width: 240px;
+  --agent-trigger-width: 114px;
+}
 
 body.agent-placement-below .app-pill {
   top: var(--agent-pill-top);
@@ -679,6 +699,310 @@ body.agent-placement-below .app-pill {
 body.agent-placement-above .app-pill {
   top: auto;
   bottom: calc(var(--agent-base-height) - var(--agent-pill-top) - 24px);
+}
+
+/* One-turn agent picker. The OS window is staged ONCE per agent turn - sized
+   for the fully-open menu while hidden at summon - and never resized while
+   visible, so no native resize frame can land on top of these transitions
+   (the resize was the source of the janky expansion). Anchors below are all
+   constant, which keeps the app pill and island at their transcription-mode
+   screen coordinates in every window state: the closed trigger slots in
+   above the pill, and opening the menu animates only the card itself. */
+body.agent-mode-ui {
+  display: block;
+  align-items: initial;
+  justify-content: initial;
+  padding: 0;
+}
+
+body.agent-mode-ui.agent-placement-below {
+  --agent-root-top: 46px;
+  --agent-picker-top: calc(var(--agent-root-top) + var(--agent-bubble-height) + 4px);
+}
+
+body.agent-mode-ui.agent-placement-above {
+  /* Island at transcription parity (bottom-relative stack-top offset); the
+     closed trigger rides 4px above the island top (base - 42). */
+  --agent-root-bottom: calc(var(--agent-base-height) - 46px - var(--agent-bubble-height));
+  --agent-picker-bottom: calc(var(--agent-base-height) - 42px);
+}
+
+/* With the app pill shown, the closed trigger slots in right above the pill
+   (pill sits at base - pill-top - 24). The staged window grows by the menu +
+   the 32px trigger slot, so island and pill stay where transcription put
+   them while the card animates inside the reserved headroom. */
+body.agent-mode-ui.agent-placement-above.agent-app-pill-visible {
+  --agent-picker-bottom: calc(var(--agent-base-height) - 4px);
+}
+
+body.agent-mode-ui .overlay-root {
+  position: absolute;
+  top: var(--agent-root-top, auto);
+  bottom: var(--agent-root-bottom, auto);
+}
+
+body.agent-mode-ui.overlay-position-left .overlay-root,
+body.agent-mode-ui.overlay-position-left .app-pill,
+body.agent-mode-ui.overlay-position-left .agent-picker {
+  left: calc(var(--agent-base-width) / 2);
+  right: auto;
+}
+
+body.agent-mode-ui.overlay-position-center .overlay-root,
+body.agent-mode-ui.overlay-position-center .app-pill,
+body.agent-mode-ui.overlay-position-center .agent-picker {
+  left: 50%;
+  right: auto;
+}
+
+body.agent-mode-ui.overlay-position-right .overlay-root,
+body.agent-mode-ui.overlay-position-right .app-pill,
+body.agent-mode-ui.overlay-position-right .agent-picker {
+  left: calc(100% - var(--agent-base-width) / 2);
+  right: auto;
+}
+
+body.agent-mode-ui .overlay-root,
+body.agent-mode-ui .app-pill,
+body.agent-mode-ui .agent-picker {
+  transform: translateX(-50%);
+}
+
+body.agent-mode-ui .app-pill {
+  transform: translateX(-50%) translateY(-4px);
+}
+
+body.agent-mode-ui.agent-app-pill-visible .app-pill.visible {
+  transform: translateX(-50%) translateY(0);
+}
+
+body.agent-mode-ui .agent-picker {
+  position: absolute;
+  top: var(--agent-picker-top, auto);
+  bottom: var(--agent-picker-bottom, auto);
+  width: var(--agent-trigger-width);
+  z-index: 7;
+  transform: translateX(-50%);
+  /* The trigger fades on the same ramp as the island instead of a
+     display:none pop; pointer-events ride visibility, so the invisible
+     trigger never swallows clicks. */
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 150ms ease-out, visibility 0s linear 150ms, pointer-events 0s linear 150ms;
+}
+
+body.agent-picker-shown .agent-picker {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition: opacity 150ms ease-out, visibility 0s, pointer-events 0s;
+}
+
+.agent-picker[hidden] {
+  display: none;
+}
+
+.agent-picker-trigger {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  width: 100%;
+  height: 28px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 999px;
+  background: var(--color-overlay-surface);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.3), inset 0 1px 0 rgba(255, 255, 255, 0.06);
+  color: var(--color-on-surface);
+  font: 600 11px/1 var(--font-body), system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 140ms ease, border-color 140ms ease, opacity 140ms ease;
+}
+
+.agent-picker-trigger:hover:not(:disabled) {
+  background: rgba(28, 28, 31, 0.98);
+  border-color: rgba(11, 214, 227, 0.4);
+}
+
+.agent-picker-trigger:focus-visible,
+.agent-option:focus-visible {
+  outline: 2px solid var(--color-brand-cyan);
+  outline-offset: 2px;
+}
+
+.agent-picker-trigger:disabled {
+  opacity: 0.72;
+  cursor: wait;
+}
+
+.agent-picker-mark {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--color-brand-cyan);
+}
+
+.agent-picker-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-picker-chevron {
+  flex: none;
+  color: var(--color-brand-cyan);
+  transition: transform 160ms var(--ease-premium);
+}
+
+body.agent-picker-expanded .agent-picker-chevron {
+  transform: rotate(180deg);
+}
+
+.agent-picker-card {
+  position: absolute;
+  width: var(--agent-card-width);
+  height: 0;
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 14px;
+  background: var(--color-overlay-surface);
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  backdrop-filter: blur(16px) saturate(125%);
+  -webkit-backdrop-filter: blur(16px) saturate(125%);
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity 130ms ease, height 180ms var(--ease-premium), transform 160ms var(--ease-premium), visibility 0s linear 180ms;
+  -webkit-app-region: no-drag;
+}
+
+body.agent-placement-below .agent-picker-card {
+  top: calc(100% + 4px);
+  transform: translateY(-4px);
+}
+
+body.agent-placement-above .agent-picker-card {
+  bottom: 100%;
+  transform: translateY(4px);
+}
+
+body.overlay-position-left .agent-picker-card {
+  left: calc((var(--agent-trigger-width) - var(--agent-root-width)) / 2);
+}
+
+body.overlay-position-center .agent-picker-card {
+  left: 50%;
+  transform: translate(-50%, -4px);
+}
+
+body.overlay-position-center.agent-placement-above .agent-picker-card {
+  transform: translate(-50%, 4px);
+}
+
+body.overlay-position-right .agent-picker-card {
+  right: calc((var(--agent-trigger-width) - var(--agent-root-width)) / 2);
+}
+
+body.agent-picker-expanded .agent-picker-card {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  height: var(--agent-menu-target);
+  transform: translateY(0);
+  transition: opacity 130ms ease, height 180ms var(--ease-premium), transform 160ms var(--ease-premium), visibility 0s;
+}
+
+body.agent-picker-expanded.overlay-position-center .agent-picker-card {
+  transform: translate(-50%, 0);
+}
+
+.agent-picker-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(255, 255, 255, 0.24) transparent;
+}
+
+.agent-picker-list::-webkit-scrollbar { width: 5px; }
+.agent-picker-list::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.agent-option {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 0 30px;
+  width: 100%;
+  min-width: 0;
+  height: 30px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-on-surface);
+  font: 500 11px/1 var(--font-body), system-ui, sans-serif;
+  text-align: left;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.agent-option:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.agent-option[aria-selected="true"] {
+  background: rgba(11, 214, 227, 0.12);
+  border-color: rgba(11, 214, 227, 0.22);
+}
+
+.agent-option-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agent-option-default {
+  flex: none;
+  color: var(--overlay-text-dim);
+  font-size: 10px;
+}
+
+.agent-option-check {
+  width: 13px;
+  height: 13px;
+  flex: none;
+  color: var(--color-brand-cyan);
+}
+
+body.agent-picker-expanded .app-pill,
+body.agent-picker-expanded .overlay-root {
+  pointer-events: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-picker-card,
+  .agent-picker-trigger,
+  .agent-picker-chevron {
+    transition: none;
+  }
 }
 
 /* ── Metadata Left Group (REC) ─────────────────────────────────── */

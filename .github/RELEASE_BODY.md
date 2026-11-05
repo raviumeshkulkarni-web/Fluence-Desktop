@@ -1,16 +1,24 @@
-## Two rough edges from 1.33.0, smoothed
+## Agent overlay picker, error sanitization, and setup wizard hardening
 
-### History day headers sit flush again
+### Agent overlay picker with pre-staged geometry
 
-Scrolling the History list no longer opens a gap between the pinned day heading ("Today", "Yesterday", and so on) and the search and filter bar above it. The heading stays attached directly below the chrome, with rows passing cleanly underneath it instead of showing through the empty band above it.
+You can now switch active agents directly from the floating overlay. The agent picker card expands and docks smoothly without window reflow or geometry jitter, matching your active overlay tier and screen placement.
 
-### Clean window corners
+### Error sanitization and privacy hardening
 
-The window's rounded corners no longer carry a faint dark hairline tracing their edge. When the native window shadow was disabled in 1.33.0, a leftover shadow inside the window kept bleeding through the transparent corner cutouts. It is now removed, so the corners blend cleanly into whatever is behind them in both dark and light themes.
+Diagnostic dumps, file paths, model filenames, thread panics, and internal operating system error codes no longer leak into user-facing notifications or dialogs. Error states across the Dashboard, History, and Providers views now provide clear, actionable descriptions and in-place retry options.
+
+### First-run wizard data preservation
+
+Completing or re-running setup now reads existing configuration first and safely merges your changes, preventing custom sync, cleaner provider, audio ducking, and waveform settings from being reset to defaults. Closing the wizard with unfinished setup now prompts for confirmation instead of exiting silently.
+
+### Overlay status indicators and recovery layout
+
+The overlay now cleanly reports `DONE` upon completion and `ERROR` on failure rather than remaining stuck on `LISTENING`. In the compact bubble tier, an accessible circular retry affordance is available on failure, and full-tier recovery actions (Copy and Retry) are neatly aligned side by side.
 
 ### What stays the same
 
-Everything else from 1.33.0 is unchanged: the unified window with its integrated title bar, the clipboard auto-copy toggle in General settings, and your audio detection, shortcuts, language models, history, snippets, agents, styles, settings, and sync data. The onboarding wizard, the floating overlay, and all commands behave exactly as before.
+Your dictation shortcuts, language models, history, snippets, custom agents, custom prompt styles, theme choices, and sync data remain fully intact.
 
 ### Known limitations
 

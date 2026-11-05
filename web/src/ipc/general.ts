@@ -5,6 +5,7 @@ import {
   registerPersistHook,
 } from '@/ipc/settings';
 import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 
 // Command names + argument shapes reproduced exactly from vanilla
 // (setupHotkeyRecorders/applyHotkeyChanges/applyAutostartChange,
@@ -54,11 +55,17 @@ async function applyHotkeyChanges(): Promise<void> {
   ) {
     return;
   }
+  const previous = lastAppliedHotkeys;
   lastAppliedHotkeys = desired;
   try {
     await updateHotkeys(desired);
   } catch (err) {
-    toast('Failed to update hotkeys: ' + String(err), 'error');
+    // register_hotkeys unregisters the current pair before registering the new
+    // one. Restore the last-known-good pair so a failed save cannot leave the
+    // user without shortcuts until restart.
+    if (previous) await updateHotkeys(previous).catch(() => undefined);
+    lastAppliedHotkeys = previous;
+    toast('Could not update hotkeys. ' + describeError(err), 'error');
   }
 }
 

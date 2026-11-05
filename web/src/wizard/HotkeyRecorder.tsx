@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { WIZARD_MODIFIER_TOKENS, buildWizardHotkey } from './hotkey';
+import {
+  WIZARD_MODIFIER_TOKENS,
+  buildWizardHotkey,
+  displayHotkey,
+  isAllowedWizardHotkey,
+} from './hotkey';
 
 interface HotkeyRecorderProps {
   value: string;
@@ -14,6 +19,7 @@ interface HotkeyRecorderProps {
 export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: HotkeyRecorderProps) {
   const [recording, setRecording] = useState(false);
   const [pending, setPending] = useState('');
+  const [hint, setHint] = useState('');
   const recordingRef = useRef(false);
   recordingRef.current = recording;
   const pendingRef = useRef('');
@@ -24,9 +30,12 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
   notifyRef.current = onRecordingChange;
 
   const stop = (commit: boolean) => {
-    if (commit && pendingRef.current) onChangeRef.current(pendingRef.current);
+    if (commit && pendingRef.current && isAllowedWizardHotkey(pendingRef.current)) {
+      onChangeRef.current(pendingRef.current);
+    }
     pendingRef.current = '';
     setPending('');
+    setHint('');
     setRecording(false);
     notifyRef.current(false);
   };
@@ -35,6 +44,7 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
     if (recordingRef.current) return;
     pendingRef.current = '';
     setPending('');
+    setHint('');
     setRecording(true);
     notifyRef.current(true);
   };
@@ -52,13 +62,19 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
       if (parts) {
         pendingRef.current = parts;
         setPending(parts);
+        setHint('');
       }
     };
     const onKeyUp = () => {
       if (!recordingRef.current) return;
       const current = pendingRef.current;
-      if (current && !current.split('+').every((t) => WIZARD_MODIFIER_TOKENS.has(t))) {
+      if (!current) return;
+      if (current.split('+').every((t) => WIZARD_MODIFIER_TOKENS.has(t))) return;
+      if (isAllowedWizardHotkey(current)) {
         stop(true);
+      } else {
+        // Keep recording so the next attempt can replace the unsafe shortcut.
+        setHint('Add Ctrl, Alt, Shift, or Win. Function keys (F1–F24) can be used alone.');
       }
     };
     const onClick = (e: MouseEvent) => {
@@ -78,6 +94,7 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
   }, [recording, active]);
 
   return (
+    <>
     <div className="form-row" style={{ alignItems: 'center' }}>
       <label id="wiz-hotkey-label">Recording Shortcut</label>
       <div
@@ -86,6 +103,7 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
         role="button"
         tabIndex={0}
         aria-labelledby="wiz-hotkey-label wiz-hotkey-text"
+        aria-describedby={recording ? 'wiz-hotkey-hint' : undefined}
         className={`hotkey-display${recording ? ' recording' : ''}`}
         onClick={start}
         onBlur={() => {
@@ -100,8 +118,16 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
           }
         }}
       >
-        <span id="wiz-hotkey-text">{recording ? pending || 'Press your shortcut…' : value}</span>
+        <span id="wiz-hotkey-text">
+          {recording ? displayHotkey(pending) || 'Press your shortcut…' : displayHotkey(value)}
+        </span>
       </div>
     </div>
+    {recording && (
+      <p id="wiz-hotkey-hint" className="hotkey-hint" role="status">
+        {hint || 'Use at least one modifier (Ctrl, Alt, Shift, or Win).'}
+      </p>
+    )}
+    </>
   );
 }

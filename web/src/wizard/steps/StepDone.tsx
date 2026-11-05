@@ -1,86 +1,142 @@
+import { useState } from 'react';
 import { Check } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { describeError } from '@/lib/errors';
 import type { WizardData } from '../Wizard';
-import type { WizardSettings } from '../ipc';
-import { invokeCmd } from '@/ipc/tauri';
-import { closeWizard, showMainWindow, updateHotkeys, updateSettings } from '../ipc';
+import type { AppSettings } from '../ipc';
+import { closeWizard, getSettings, showMainWindow, updateHotkeys, updateSettings } from '../ipc';
+import { displayHotkey } from '../hotkey';
 
 interface StepDoneProps {
   data: WizardData;
 }
 
-// Step 9: summary + finish actions. saveWizardSettings reproduces the
-// vanilla settings blob and hotkey registration verbatim.
-// The wizard blob is partial on purpose, but the clipboard opt-out must
-// not be reset by a wizard re-run: read it before saving.
-async function getStoredCopyTranscript(): Promise<{ copy_transcript_to_clipboard: boolean }> {
-  try {
-    const prev = await invokeCmd<{ copy_transcript_to_clipboard?: boolean }>('get_settings');
-    return { copy_transcript_to_clipboard: prev.copy_transcript_to_clipboard ?? true };
-  } catch {
-    return { copy_transcript_to_clipboard: true };
-  }
-}
+class SetupError extends Error {}
 
+// Step 9: summary + finish actions. The stored settings are read first and
+// only the fields the wizard owns are overridden — the backend replaces the
+// whole object, so a partial payload would reset unrelated preferences
+// (waveform, ducking, sync, cleaner provider, clipboard opt-out, ...).
 export function StepDone({ data }: StepDoneProps) {
-  const save = async () => {
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const persist = async () => {
+    const current = await getSettings();
+    const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
+    // The settings shell follows the stored choice live — 'auto' tracks
+    // the OS with no restart. The backend blob only speaks dark|light, so
+    // it records the currently-resolved value for consistency.
+    const storedTheme: string =
+      data.themeMode === 'light' || data.themeMode === 'auto' ? data.themeMode : 'dark';
+    const resolvedTheme =
+      storedTheme === 'light' ||
+      (storedTheme === 'auto' &&
+        window.matchMedia?.('(prefers-color-scheme: light)').matches)
+        ? 'light'
+        : 'dark';
     try {
-      const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
-      // The settings shell follows the stored choice live — 'auto' tracks
-      // the OS with no restart. The backend blob only speaks dark|light, so
-      // it records the currently-resolved value for consistency.
-      const storedTheme: string =
-        data.themeMode === 'light' || data.themeMode === 'auto' ? data.themeMode : 'dark';
-      const resolvedTheme =
-        storedTheme === 'light' ||
-        (storedTheme === 'auto' &&
-          window.matchMedia?.('(prefers-color-scheme: light)').matches)
-          ? 'light'
-          : 'dark';
-      try {
-        window.localStorage.setItem('fluence_theme', storedTheme);
-      } catch {
-        // Backend blob below still carries the resolved choice.
-      }
-      const settings: WizardSettings = {
-        hotkey: data.hotkey,
-        recording_mode: data.recordingMode,
-        overlay_position: data.overlayPosition,
-        overlay_style: data.overlayStyle || 'full',
-        stt_provider: {
-          preset: usingOffline ? 'Local Offline' : data.provider,
-          base_url: usingOffline ? '' : data.baseUrl,
-          model: usingOffline ? 'sensevoice' : data.model,
-          api_key_saved: !usingOffline,
-        },
-        llm_provider: {
-          preset: data.provider === 'Local Offline' ? 'groq' : data.provider,
-          base_url: data.provider === 'Local Offline' ? '' : data.baseUrl,
-          model: data.provider === 'Local Offline' ? '' : data.llmModel,
-          api_key_saved: !usingOffline,
-        },
-        auto_start: false,
-        sound_on_complete: true,
-        agent_mode_threshold_ms: 800,
-        language: 'en',
-        agent_hotkey: 'Ctrl+Shift+A',
-        agent_recording_mode: 'push_to_toggle',
-        ai_polish_style: 'none',
-        auto_grab_highlight: true,
-        audio_device_id: null,
-        theme: resolvedTheme,
-        first_run: false,
-        ...(await getStoredCopyTranscript()),
+      window.localStorage.setItem('fluence_theme', storedTheme);
+    } catch {
+      // Backend blob below still carries the resolved choice.
+    }
+
+    const next: AppSettings = {
+      ...current,
+      hotkey: data.hotkey,
+      recording_mode: data.recordingMode,
+      overlay_position: data.overlayPosition,
+      overlay_style: data.overlayStyle || 'full',
+      theme: resolvedTheme,
+      first_run: false,
+    };
+
+    if (usingOffline) {
+      next.stt_provider = {
+        preset: 'Local Offline',
+        base_url: '',
+        model: 'sensevoice',
+        api_key_saved: false,
       };
-      await updateSettings(settings);
+    } else {
+      next.stt_provider = {
+        preset: data.provider,
+        base_url: data.baseUrl,
+        model: data.model,
+        api_key_saved: true,
+      };
+      // The key is opt-in for the LLM side: leaving this unchecked keeps the
+      // user's existing AI cleanup / Agent Mode provider untouched.
+      if (data.useKeyForAgent) {
+        next.llm_provider = {
+          preset: data.provider,
+          base_url: data.baseUrl,
+          model: data.llmModel,
+          api_key_saved: true,
+        };
+      }
+    }
+
+    const previousHotkeys = {
+      transcriptionShortcut: current.hotkey,
+      transcriptionMode: current.recording_mode,
+      agentShortcut: current.agent_hotkey,
+      agentMode: current.agent_recording_mode,
+    };
+
+    // Register first (registration does not persist settings). A conflict or
+    // invalid shortcut must abort before first_run is cleared.
+    try {
       await updateHotkeys({
         transcriptionShortcut: data.hotkey,
         transcriptionMode: data.recordingMode,
-        agentShortcut: 'Ctrl+Shift+A',
-        agentMode: 'push_to_toggle',
+        agentShortcut: current.agent_hotkey,
+        agentMode: current.agent_recording_mode,
       });
     } catch (err) {
-      console.error('Failed to save wizard settings:', err);
+      // register_hotkeys unregisters the current pair before registering the
+      // new one, so a conflict or invalid agent shortcut can leave both dead.
+      // Restore the saved pair before surfacing the failure.
+      await updateHotkeys(previousHotkeys).catch(() => undefined);
+      throw new SetupError(
+        `The shortcut "${displayHotkey(data.hotkey)}" could not be registered. ${describeError(err)}`,
+      );
+    }
+
+    try {
+      await updateSettings(next);
+    } catch (err) {
+      // Roll the global shortcut back to the last saved one: settings were not
+      // written, so leaving the new shortcut active would only last until quit.
+      await updateHotkeys(previousHotkeys).catch(() => undefined);
+      throw new SetupError(`Your setup could not be saved. ${describeError(err)}`);
+    }
+  };
+
+  const finish = async (openSettings: boolean) => {
+    if (saving) return;
+    setSaving(true);
+    setError(null);
+    try {
+      await persist();
+    } catch (err) {
+      setError(
+        err instanceof SetupError
+          ? err.message
+          : `Setup could not be completed. ${describeError(err)}`,
+      );
+      setSaving(false);
+      return;
+    }
+    try {
+      // Open the destination first so a failure is still visible in the
+      // wizard; only hide the wizard once there is somewhere to land.
+      if (openSettings) await showMainWindow();
+      await closeWizard();
+    } catch (err) {
+      setError(`Your setup was saved, but Fluence could not finish opening. ${describeError(err)}`);
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -90,36 +146,32 @@ export function StepDone({ data }: StepDoneProps) {
         <Check size={40} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       </div>
       <h1 className="step-title" tabIndex={-1}>
-        You&apos;re All Set!
+        Finish Setup
       </h1>
       <p className="step-desc">
-        Fluence is running in your system tray. Press{' '}
-        <span className="done-hotkey-chip">{data.hotkey}</span> anywhere to start voice typing.
+        Your choices are ready. Finishing saves them and keeps{' '}
+        <span className="done-hotkey-chip">{displayHotkey(data.hotkey)}</span> available anywhere.
       </p>
+      {error && (
+        <div className="wizard-save-error" role="alert">
+          {error}
+        </div>
+      )}
       <div className="done-actions">
         <Button
           style={{ width: '100%', padding: 12 }}
-          onClick={() =>
-            void (async () => {
-              await save();
-              await closeWizard();
-              await showMainWindow();
-            })()
-          }
+          disabled={saving}
+          onClick={() => void finish(true)}
         >
-          Open Settings
+          {saving ? 'Saving…' : 'Save and Open Settings'}
         </Button>
         <Button
           variant="ghost"
           style={{ width: '100%' }}
-          onClick={() =>
-            void (async () => {
-              await save();
-              await closeWizard();
-            })()
-          }
+          disabled={saving}
+          onClick={() => void finish(false)}
         >
-          Close Wizard
+          Save and Close
         </Button>
       </div>
     </>

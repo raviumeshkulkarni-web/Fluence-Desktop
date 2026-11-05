@@ -1210,6 +1210,67 @@ body {
   box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25), 0 0 0 5px rgba(0, 0, 0, 0.08);
 }
 
+/* Offline setup: no key/test surfaces, just the local-engine contract. */
+.wizard-offline-note {
+  padding: 12px 14px;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+  font-size: var(--text-label-sm);
+  line-height: 1.5;
+  color: var(--color-on-surface-variant);
+}
+
+.wizard-offline-note strong {
+  color: var(--color-on-surface);
+}
+
+.wizard-save-error {
+  width: 100%;
+  max-width: 440px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-container);
+  color: var(--color-error);
+  font-size: var(--text-label-sm);
+  line-height: 1.5;
+}
+
+.wizard-check-row {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--spacing-sm);
+  cursor: pointer;
+}
+
+.wizard-check-row .checkbox {
+  margin-top: 2px;
+  flex: none;
+}
+
+.wizard-check-title {
+  display: block;
+  font-size: var(--text-label-sm);
+  color: var(--color-on-surface);
+}
+
+.wizard-check-hint {
+  display: block;
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  line-height: 1.4;
+}
+
+.hotkey-hint {
+  width: 100%;
+  max-width: 440px;
+  margin: calc(var(--spacing-xs) * -1) 0 0;
+  font-size: var(--text-label-xs);
+  line-height: 1.4;
+  color: var(--color-on-surface-variant);
+}
+
 /* Reduced motion: steps cut instantly, stagger and orb pulses collapse to
  * static. The frozen global guard already shortens transitions; this kills
  * the rise/pulse loops that guard cannot reach by name. */

@@ -17,6 +17,7 @@ import { Progress } from '@/components/ui/progress';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 import {
   CustomProviderIcon,
   DownloadIcon,
@@ -188,7 +189,11 @@ function LlmProviderSection({
               <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
             )}
           </Field>
-          <Field label="API Key" htmlFor={`${idPrefix}-api-key`}>
+          <Field
+            label="API Key"
+            htmlFor={`${idPrefix}-api-key`}
+            hint="Testing uses the key in this field. Select Save Key to store it."
+          >
             <div className="input-with-btn">
               <Input
                 type="password"
@@ -235,7 +240,14 @@ function LlmProviderSection({
             </div>
           </Field>
           <div className="provider-test-row">
-            <Button variant="secondary" id={`${idPrefix}-test-btn`} onClick={() => void onTest(kind)}>Test Connection</Button>
+            <Button
+              variant="secondary"
+              id={`${idPrefix}-test-btn`}
+              title="Uses the key in the field, or the saved key if the field is empty"
+              onClick={() => void onTest(kind)}
+            >
+              Test Connection
+            </Button>
             <div className="connection-status" id={`${idPrefix}-status`} role="status">
               <div className={status.dot}></div>
               <span id={`${idPrefix}-status-text`}>{status.text}</span>
@@ -543,7 +555,7 @@ export function ProvidersPage() {
           if (!silent) toast(`Loaded ${models.length} models`, 'success');
         }
       } catch (err) {
-        if (!silent) toast('Failed to fetch models: ' + String(err), 'error');
+        if (!silent) toast('Could not fetch models. ' + describeError(err), 'error');
       } finally {
         if (kind === 'stt') setSttFetching(false);
         else if (kind === 'llm') setLlmFetching(false);
@@ -654,7 +666,7 @@ export function ProvidersPage() {
   useEffect(() => {
     const onSave = () => {
       saveSettingsNow().catch((err) =>
-        toast('Failed to save settings: ' + String(err), 'error'),
+        toast('Could not save provider settings. ' + describeError(err), 'error'),
       );
     };
     window.addEventListener('fluence:save-page', onSave);
@@ -688,7 +700,11 @@ export function ProvidersPage() {
       toast('Offline model downloaded and installed successfully', 'success');
       void refreshOfflineStatus();
     } else if (status === 'error') {
-      toast('Offline download failed: ' + payload.errorMessage, 'error');
+      toast(
+        'Offline download failed. ' +
+          describeError(payload.errorMessage, 'Please try again.'),
+        'error',
+      );
       void refreshOfflineStatus();
     } else if (status === 'cancelled') {
       toast('Offline download cancelled', 'info');
@@ -737,18 +753,31 @@ export function ProvidersPage() {
       setForm(kind, { ...f, apiKey: '' });
       toast(`${f.preset} API key saved securely`, 'success');
     } catch (err) {
-      toast('Failed to save key: ' + String(err), 'error');
+      toast('Could not save the key. ' + describeError(err), 'error');
     }
   };
 
   const onTest = async (kind: ProviderKind) => {
     const f = forms.current[kind];
     const baseUrl = f.baseUrl.trim();
-    const apiKey = await getApiKey(keyTarget(kind, f.preset)).catch(() => '');
     const setStatus =
       kind === 'stt' ? setSttStatus : kind === 'llm' ? setLlmStatus : setCleanerStatus;
+    if (kind === 'stt' && f.preset === 'Local Offline') {
+      setStatus({
+        dot: 'dot dot-idle',
+        text: 'Offline transcription runs locally. No connection test is needed.',
+      });
+      return;
+    }
     if (!isAllowedEndpointUrl(baseUrl)) {
       setStatus({ dot: 'dot dot-error', text: 'Use https:// (http only for localhost).' });
+      return;
+    }
+    // Test what the user is looking at: the typed key wins, and the saved key
+    // is only a fallback when the field is empty.
+    const apiKey = f.apiKey.trim() || (await getApiKey(keyTarget(kind, f.preset)).catch(() => ''));
+    if (!apiKey) {
+      setStatus({ dot: 'dot dot-error', text: 'Enter an API key, or save one first.' });
       return;
     }
     setStatus({ dot: 'dot dot-idle', text: 'Testing…' });
@@ -759,7 +788,7 @@ export function ProvidersPage() {
           : await testLlmConnection(baseUrl, apiKey, f.model);
       setStatus({ dot: 'dot dot-success', text: msg });
     } catch (err) {
-      setStatus({ dot: 'dot dot-error', text: String(err).replace('Error: ', '') });
+      setStatus({ dot: 'dot dot-error', text: describeError(err) });
     }
   };
 
@@ -767,7 +796,7 @@ export function ProvidersPage() {
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Failed to save settings: ' + String(err), 'error');
+      toast('Could not save provider settings. ' + describeError(err), 'error');
       return;
     }
     toast('Provider settings saved', 'success');
@@ -790,7 +819,7 @@ export function ProvidersPage() {
     try {
       await cfg.downloadCmd();
     } catch (err) {
-      toast('Failed to start download: ' + String(err), 'error');
+      toast('Could not start the download. ' + describeError(err), 'error');
       void refreshOfflineStatus();
     }
   };
@@ -802,7 +831,7 @@ export function ProvidersPage() {
       toast(`${cfg.delName} model deleted. Freed ${mbFreed} MB`, 'success');
       void refreshOfflineStatus();
     } catch (err) {
-      toast('Failed to delete model files: ' + String(err), 'error');
+      toast('Could not delete the model files. ' + describeError(err), 'error');
     }
   };
 
@@ -871,7 +900,11 @@ export function ProvidersPage() {
                 <p className="field-warning">Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.</p>
               )}
             </Field>
-            <Field label="API Key" htmlFor="stt-api-key">
+            <Field
+              label="API Key"
+              htmlFor="stt-api-key"
+              hint="Testing uses the key in this field. Select Save Key to store it."
+            >
               <div className="input-with-btn">
                 <Input
                   type="password"
@@ -918,7 +951,14 @@ export function ProvidersPage() {
               </div>
             </Field>
             <div className="provider-test-row">
-              <Button variant="secondary" id="stt-test-btn" onClick={() => void onTest('stt')}>Test Connection</Button>
+              <Button
+                variant="secondary"
+                id="stt-test-btn"
+                title="Uses the key in the field, or the saved key if the field is empty"
+                onClick={() => void onTest('stt')}
+              >
+                Test Connection
+              </Button>
               <div className="connection-status" id="stt-status" role="status">
                 <div className={sttStatus.dot}></div>
                 <span id="stt-status-text">{sttStatus.text}</span>

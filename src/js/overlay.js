@@ -1715,8 +1715,16 @@ function setState(state, updateVisibility = true) {
         // Quiet neutral state - the status notice carries the message
         recLabel.textContent = '';
         break;
+      case 'success':
+        // Terminal states must never keep announcing LISTENING.
+        recLabel.textContent = 'DONE';
+        break;
+      case 'error':
+        recLabel.textContent = 'ERROR';
+        break;
+      case 'idle':
       default:
-        recLabel.textContent = 'LISTENING';
+        recLabel.textContent = '';
     }
   }
 

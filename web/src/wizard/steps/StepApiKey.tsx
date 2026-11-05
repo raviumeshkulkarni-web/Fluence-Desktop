@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -15,6 +16,7 @@ import {
 } from '@/components/ui/select';
 import type { WizardData } from '../Wizard';
 import { fetchModels, fetchSttModels, getApiKey, testSttConnection } from '../ipc';
+import { describeError } from '@/lib/errors';
 
 const PROVIDER_PRESETS: Record<string, { url: string; model: string; llmModel: string }> = {
   groq: {
@@ -49,6 +51,7 @@ interface StepApiKeyProps {
 // rejects them); the trigger then shows blank exactly as vanilla's
 // appended empty <option> does.
 export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApiKeyProps) {
+  const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
   const [sttModels, setSttModels] = useState<string[]>([data.model]);
   const [llmModels, setLlmModels] = useState<string[]>([data.llmModel]);
   const [fetching, setFetching] = useState(false);
@@ -98,6 +101,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
 
   useEffect(() => {
     const t = window.setTimeout(async () => {
+      if (dataRef.current.skipApiKey || dataRef.current.provider === 'Local Offline') return;
       const key = await getApiKey('Fluence/STT_ApiKey').catch(() => null);
       if (key) {
         onPatchRef.current({ apiKey: key });
@@ -112,15 +116,17 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
 
   const onProvider = (preset: string) => {
     if (preset === 'Local Offline') {
-      onPatch({ provider: preset, skipApiKey: true, baseUrl: '', model: 'sensevoice', llmModel: '' });
+      onPatch({ provider: preset, skipApiKey: true, apiKey: '', baseUrl: '', model: 'sensevoice', llmModel: '' });
       setSttModels((prev) => withCurrent(prev, 'sensevoice'));
       onError(null);
       return;
     }
     const p = PROVIDER_PRESETS[preset];
+    // Never carry a key typed for another provider into the new one.
     onPatch({
       provider: preset,
       skipApiKey: false,
+      apiKey: '',
       baseUrl: p.url,
       model: p.model,
       llmModel: p.llmModel,
@@ -150,7 +156,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
       const msg = await testSttConnection(baseUrl, apiKey);
       setTest({ kind: 'ok', text: msg });
     } catch (err) {
-      setTest({ kind: 'err', text: String(err).replace('Error: ', '') });
+      setTest({ kind: 'err', text: describeError(err) });
     }
   };
 
@@ -166,7 +172,9 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         Connect Your API Key
       </h1>
       <p className="step-desc">
-        Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.
+        {usingOffline
+          ? 'Offline transcription runs on this PC. No API key or account is needed.'
+          : 'Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.'}
       </p>
       <div className="step-content">
         <Field label="Provider">
@@ -198,6 +206,14 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             />
           </Field>
         )}
+        {usingOffline ? (
+          <div className="wizard-offline-note" role="status">
+            <strong>No API key needed.</strong> Fluence will use the local
+            SenseVoice engine. You can download more engines or switch to a
+            cloud provider later in Settings → Providers.
+          </div>
+        ) : (
+        <>
         <Field label="API Key" htmlFor="wiz-api-key" error={error ?? undefined}>
           <div className="input-with-btn">
             <Input
@@ -218,6 +234,19 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             />
           </div>
         </Field>
+        <label className="wizard-check-row" htmlFor="wiz-use-agent-key">
+          <Checkbox
+            id="wiz-use-agent-key"
+            checked={data.useKeyForAgent}
+            onCheckedChange={(v) => onPatch({ useKeyForAgent: v === true })}
+          />
+          <span>
+            <span className="wizard-check-title">Also use this key for AI Cleanup and Agent Mode</span>
+            <span className="wizard-check-hint">
+              Uncheck to keep your current AI provider and key.
+            </span>
+          </span>
+        </label>
         <div className="wizard-two-col">
           <Field label="Transcription Model" htmlFor="wiz-model-select">
             <div className="input-with-btn">
@@ -300,6 +329,8 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             Continue without a key: use offline transcription
           </button>
         </div>
+        </>
+        )}
       </div>
     </>
   );

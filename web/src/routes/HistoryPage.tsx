@@ -49,6 +49,7 @@ import {
 import { SearchField } from '@/components/fluence/SearchField';
 import { acceptSuggestion, buildConfirmDetail } from '@/ipc/dictionary';
 import { cn } from '@/lib/cn';
+import { describeError } from '@/lib/errors';
 import {
   clearHistory,
   consumeHistorySearchFocus,
@@ -410,6 +411,7 @@ export function HistoryPage() {
   const [confirmClear, setConfirmClear] = useState(false);
   const [confirmAcceptMark, setConfirmAcceptMark] = useState<{ id: string; detail: string } | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
   // P2 filters/sort: all derived locally from loaded rows (category B —
   // no new commands, no schema). Non-default controls trigger a full paging
   // pass with the existing get_history; the paged view returns when cleared.
@@ -509,6 +511,7 @@ export function HistoryPage() {
         // Stale guard: a newer load started while this one flew — applying
         // these results would overwrite fresher data, so drop them.
         if (seq !== loadSeq.current) return null;
+        setLoadError(null);
         setMarkers(marks);
         if (reset) {
           setEntries(list);
@@ -521,7 +524,9 @@ export function HistoryPage() {
         return list.length;
       } catch (err) {
         if (seq !== loadSeq.current) return null;
-        toast('Failed to load history: ' + String(err), 'error');
+        const message = describeError(err, 'Could not load your history. Try again.');
+        setLoadError(message);
+        toast('Could not load history. ' + message, 'error');
         return null;
       } finally {
         if (inflightRef.current?.promise === work) inflightRef.current = null;
@@ -703,9 +708,9 @@ export function HistoryPage() {
   }, []);
 
   const copyItem = useCallback((text: string, id: string) => {
+    // The row flash is the single success signal; a toast here duplicated it.
     // Verbatim vanilla: no rejection handler; failures stay silent.
     copyText(text).then(() => {
-      toast('Copied to clipboard', 'success');
       setFlashId(id);
       if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
       flashTimer.current = window.setTimeout(() => setFlashId(null), 400);
@@ -757,7 +762,7 @@ export function HistoryPage() {
         'success',
       );
     } catch (err) {
-      toast('Failed to delete: ' + String(err), 'error');
+      toast('Could not delete that entry. ' + describeError(err), 'error');
       void load(true);
       // Resync the filtered working set if one is active.
       setFullBump((n) => n + 1);
@@ -793,7 +798,7 @@ export function HistoryPage() {
       await acceptSuggestion(id);
       toast('Added to dictionary', 'success');
     } catch (err) {
-      toast('Failed to accept: ' + String(err), 'error');
+      toast('Could not accept that correction. ' + describeError(err), 'error');
       return;
     }
     await loadPendingSuggestionMap(true);
@@ -852,7 +857,7 @@ export function HistoryPage() {
       setAllEntries([]);
       void load(true);
     } catch (err) {
-      toast('Failed to clear history: ' + String(err), 'error');
+      toast('Could not clear history. ' + describeError(err), 'error');
     }
   };
 
@@ -977,8 +982,9 @@ export function HistoryPage() {
   // the server returned, so server-empty short-circuits to the base states
   // and the filter-empty state only fires on a non-empty server page.
   const baseEmpty = entries.length === 0 && page === 0;
-  const showEmpty = baseEmpty && !query;
-  const showNoResults = baseEmpty && !!query;
+  const showLoadError = baseEmpty && !!loadError;
+  const showEmpty = baseEmpty && !query && !showLoadError;
+  const showNoResults = baseEmpty && !!query && !showLoadError;
   const showFilterEmpty =
     !baseEmpty &&
     hasActiveFilter &&
@@ -1220,6 +1226,22 @@ export function HistoryPage() {
               <Skeleton style={{ height: 64 }} />
               <Skeleton style={{ height: 64 }} />
             </div>
+          )}
+          {!initialLoading && showLoadError && (
+            <Empty id="history-load-error" role="alert">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <X strokeWidth={1.5} aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle>Couldn&apos;t load history</EmptyTitle>
+                <EmptyDescription>{loadError}</EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button variant="secondary" size="sm" onClick={() => void load(true)}>
+                  Try again
+                </Button>
+              </EmptyContent>
+            </Empty>
           )}
           {!initialLoading && showEmpty && (
             <Empty id="history-empty">

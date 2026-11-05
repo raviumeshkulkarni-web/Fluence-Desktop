@@ -1,8 +1,12 @@
 import { closeWizard, minimizeWizard } from './ipc';
 
+interface WizardTitlebarProps {
+  onRequestClose?: () => void;
+}
+
 // Wizard frameless controls: minimize + close only (no maximize on the
 // 680×620 fixed window). Same inline glyphs as vanilla src/wizard.html.
-export function WizardTitlebar() {
+export function WizardTitlebar({ onRequestClose }: WizardTitlebarProps) {
   return (
     <div data-tauri-drag-region className="titlebar">
       <div className="titlebar-title" data-tauri-drag-region>
@@ -25,7 +29,10 @@ export function WizardTitlebar() {
           className="titlebar-button titlebar-close"
           id="titlebar-close"
           aria-label="Close window"
-          onClick={() => void closeWizard().catch(() => undefined)}
+          onClick={() => {
+            if (onRequestClose) onRequestClose();
+            else void closeWizard().catch(() => undefined);
+          }}
         >
           <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
             <path

@@ -45,6 +45,7 @@ import {
   type CustomAgent,
 } from '@/ipc/agents';
 import { describeClaimOutcome } from '@/lib/claim';
+import { describeError } from '@/lib/errors';
 
 // Agents board. Same visual language as Android AgentsScreen: one card
 // container, BUILT IN + CUSTOM AGENTS sections, plain rows with dividers.
@@ -67,7 +68,7 @@ export function AgentsPage() {
       setView(await getAgents());
       setError(null);
     } catch (err) {
-      const message = String(err).replace(/^Error:\s*/, '');
+      const message = describeError(err);
       setError(message);
       toast('Failed to load agents: ' + message, 'error');
     } finally {
@@ -94,7 +95,7 @@ export function AgentsPage() {
       setView((prev) => (prev ? { ...prev, default_id: id } : prev));
       toast('Default agent updated', 'success');
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     }
   };
 
@@ -129,7 +130,7 @@ export function AgentsPage() {
       setEditing(null);
       toast('Agent saved', 'success');
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -142,7 +143,7 @@ export function AgentsPage() {
       await load();
       toast('Agent deleted', 'success');
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setPendingDelete(null);
     }
@@ -163,7 +164,7 @@ export function AgentsPage() {
       const message = describeClaimOutcome(outcome, 'agent');
       toast(message.text, message.kind);
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setClaimingId(null);
     }

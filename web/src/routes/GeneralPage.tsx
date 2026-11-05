@@ -32,6 +32,7 @@ import {
   setHotkeyRecording,
 } from '@/ipc/general';
 import { ACCENT_THEMES, type AccentTheme } from '@/lib/theme';
+import { describeError } from '@/lib/errors';
 
 type HotkeyKey = 'hotkey' | 'agent_hotkey';
 
@@ -214,7 +215,7 @@ export function GeneralPage({
   useEffect(() => {
     const onSave = () => {
       saveSettingsNow().catch((err) =>
-        toast('Failed to save settings: ' + String(err), 'error'),
+        toast('Could not save settings. ' + describeError(err), 'error'),
       );
     };
     window.addEventListener('fluence:save-page', onSave);
@@ -265,7 +266,7 @@ export function GeneralPage({
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Failed to save settings: ' + String(err), 'error');
+      toast('Could not save settings. ' + describeError(err), 'error');
       return;
     }
     toast('Settings saved', 'success');

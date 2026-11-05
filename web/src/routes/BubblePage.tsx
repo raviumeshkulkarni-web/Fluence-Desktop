@@ -13,6 +13,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { OverlayPreview, type OverlayTier } from '@/components/fluence/OverlayPreview';
 import { WaveformStage } from '@/components/fluence/WaveformStage';
@@ -100,7 +101,7 @@ export function BubblePage() {
 
   useEffect(() => {
     const onSave = () => {
-      saveSettingsNow().catch((err) => toast('Failed to save settings: ' + String(err), 'error'));
+      saveSettingsNow().catch((err) => toast('Could not save settings. ' + describeError(err), 'error'));
     };
     window.addEventListener('fluence:save-page', onSave);
     return () => window.removeEventListener('fluence:save-page', onSave);
@@ -147,7 +148,7 @@ export function BubblePage() {
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Failed to save settings: ' + String(err), 'error');
+      toast('Could not save settings. ' + describeError(err), 'error');
       return;
     }
     toast('Settings saved', 'success');

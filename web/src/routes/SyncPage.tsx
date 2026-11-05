@@ -5,6 +5,7 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/components/fluence/Toasts';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { describeSignInError } from '@/lib/signinError';
+import { describeError } from '@/lib/errors';
 import {
   getSyncStatus,
   setSyncEnabled,
@@ -22,13 +23,9 @@ import {
 //   routes are not migrated yet and own no React state to refresh.
 // - the sync-status event is subscribed per-mount instead of globally;
 //   visible behavior is identical.
-// S7 audit note: the two toasts that still render `String(err)` (here and in
-// `onToggle`) are deliberately left raw. Neither command can return sign-in or
-// provider content — `sync_get_status` fails only on the ACL gate, and
-// `sync_toggle` fails on that gate or on a local settings read/write — so
-// routing them through `describeSignInError` would change user-visible copy
-// without closing a provider-string leak. A local io error (a settings.json
-// path) is still surfaced; that is a known residual, not an oversight.
+// Local failures here go through `describeError`: it keeps the actionable
+// cause but drops filesystem paths and raw error prefixes, so a settings.json
+// io error no longer leaks a full local path into a toast.
 export function SyncPage() {
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [pendingEnabled, setPendingEnabled] = useState<boolean | null>(null);
@@ -38,7 +35,7 @@ export function SyncPage() {
     try {
       setStatus(await getSyncStatus());
     } catch (err) {
-      toast('Failed to load sync status: ' + String(err), 'error');
+      toast('Could not load sync status. ' + describeError(err), 'error');
     }
   }, []);
 
@@ -73,10 +70,7 @@ export function SyncPage() {
       );
       await load();
     } catch (err) {
-      toast(
-        'Failed to update sync: ' + String(err).replace(/^Error:\s*/, ''),
-        'error',
-      );
+      toast('Could not update sync. ' + describeError(err), 'error');
     } finally {
       setPendingEnabled(null);
     }

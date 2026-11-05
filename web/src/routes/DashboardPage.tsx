@@ -44,6 +44,7 @@ import {
 import { copyText, subscribeHistoryUpdated } from '@/ipc/history';
 import { subscribeSyncStatus } from '@/ipc/sync';
 import { getAccentColor, type AccentTheme, type Theme } from '@/lib/theme';
+import { describeError } from '@/lib/errors';
 
 const DAY_MS = 86400000;
 
@@ -419,6 +420,7 @@ export function DashboardPage({
   const [buckets, setBuckets] = useState<DailyBucket[]>(cachedBuckets ?? []);
   const [loaded, setLoaded] = useState(dashboardLoaded);
   const [skeleton, setSkeleton] = useState(!skeletonCleared);
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [range, setRange] = useState<Range>('7d');
   const [metric, setMetric] = useState<Metric>(readMetric);
 
@@ -477,6 +479,7 @@ export function DashboardPage({
     lastFetchRef.current = Date.now();
     dashboardLoaded = true;
     setLoaded(true);
+    setLoadError(null);
   }, []);
 
   const topUp = useCallback(async () => {
@@ -490,7 +493,19 @@ export function DashboardPage({
     lastFetchRef.current = Date.now();
     dashboardLoaded = true;
     setLoaded(true);
+    setLoadError(null);
   }, []);
+
+  const reportLoadError = useCallback((err: unknown) => {
+    console.error('Failed to load dashboard stats:', err);
+    setLoadError(describeError(err, 'Could not load your activity. Try again.'));
+  }, []);
+
+  const retryLoad = useCallback(() => {
+    lastFetchRef.current = 0;
+    setLoadError(null);
+    void fullLoad().catch(reportLoadError);
+  }, [fullLoad, reportLoadError]);
 
   // 30s freshness TTL + in-flight coalescing: focus/event/refresh storms
   // collapse into at most one request per window.
@@ -503,7 +518,7 @@ export function DashboardPage({
       return;
     }
     const p = topUp().catch((err) => {
-      console.error('Failed to load dashboard stats:', err);
+      reportLoadError(err);
     });
     inflightRef.current = p;
     try {
@@ -511,12 +526,12 @@ export function DashboardPage({
     } finally {
       if (inflightRef.current === p) inflightRef.current = null;
     }
-  }, [topUp]);
+  }, [topUp, reportLoadError]);
 
   useEffect(() => {
     let cancelled = false;
     fullLoad()
-      .catch((err) => console.error('Failed to load dashboard stats:', err))
+      .catch(reportLoadError)
       .finally(() => {
         skeletonCleared = true;
         if (!cancelled) setSkeleton(false);
@@ -540,9 +555,7 @@ export function DashboardPage({
         cachedBuckets = null;
         setBuckets([]);
         lastFetchRef.current = 0;
-        void fullLoad().catch((err) =>
-          console.error('Failed to load dashboard stats:', err),
-        );
+        void fullLoad().catch(reportLoadError);
       } else {
         void refresh();
       }
@@ -558,7 +571,7 @@ export function DashboardPage({
       window.removeEventListener('focus', onFocus);
       window.removeEventListener('fluence:refresh-dashboard', onRefresh);
     };
-  }, [fullLoad, refresh]);
+  }, [fullLoad, refresh, reportLoadError]);
 
   const summary = useMemo(() => {
     const today = utcDayStart(Date.now());
@@ -776,6 +789,30 @@ export function DashboardPage({
           <TooltipContent>Refresh dashboard</TooltipContent>
         </Tooltip>
       </div>
+
+      {loadError && (
+        <div
+          role="alert"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 'var(--spacing-sm)',
+            padding: '10px 14px',
+            marginBottom: 'var(--spacing-md)',
+            border: '1px solid var(--color-error)',
+            borderRadius: 'var(--radius-sm)',
+            background: 'var(--color-error-container)',
+            color: 'var(--color-error)',
+            fontSize: 'var(--text-label-sm)',
+          }}
+        >
+          <span>{loadError}</span>
+          <Button variant="secondary" size="xs" onClick={retryLoad}>
+            Try again
+          </Button>
+        </div>
+      )}
 
       <div className="kpi-grid">
         {skeleton && buckets.length === 0

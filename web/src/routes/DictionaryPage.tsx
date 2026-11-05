@@ -27,6 +27,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ConfirmDialog } from '@/components/ui/dialog';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 import {
   acceptSuggestion,
   addDictionaryEntry,
@@ -107,7 +108,7 @@ export function DictionaryPage() {
       }
       setAutoAdded(keys);
     } catch (err) {
-      toast('Failed to load dictionary: ' + String(err), 'error');
+      toast('Could not load the dictionary. ' + describeError(err), 'error');
     }
   }, []);
 
@@ -176,7 +177,7 @@ export function DictionaryPage() {
       closeAdd();
       toast('Entry added', 'success');
     } catch (err) {
-      toast('Failed to add entry: ' + String(err), 'error');
+      toast('Could not add the entry. ' + describeError(err), 'error');
     }
   };
 
@@ -187,7 +188,7 @@ export function DictionaryPage() {
       await loadSugg(); // delete→dismiss linkage may dismiss a suggestion row
       toast('Entry deleted', 'success');
     } catch (err) {
-      toast('Failed to delete: ' + String(err), 'error');
+      toast('Could not delete the entry. ' + describeError(err), 'error');
     }
   };
 
@@ -209,7 +210,7 @@ export function DictionaryPage() {
       }
       await loadDict();
     } catch (err) {
-      toast('Import failed: ' + String(err), 'error');
+      toast('Could not import the dictionary. ' + describeError(err), 'error');
     }
   };
 
@@ -217,7 +218,7 @@ export function DictionaryPage() {
     try {
       downloadDictionaryJson(await exportDictionaryJson());
     } catch (err) {
-      toast('Export failed: ' + String(err), 'error');
+      toast('Could not export the dictionary. ' + describeError(err), 'error');
     }
   };
 
@@ -236,7 +237,7 @@ export function DictionaryPage() {
       await loadSugg();
       await loadDict();
     } catch (err) {
-      toast('Failed to accept: ' + String(err), 'error');
+      toast('Could not accept that suggestion. ' + describeError(err), 'error');
     }
   };
 
@@ -246,7 +247,7 @@ export function DictionaryPage() {
       toast('Suggestion dismissed', 'success');
       await loadSugg();
     } catch (err) {
-      toast('Failed to dismiss: ' + String(err), 'error');
+      toast('Could not dismiss that suggestion. ' + describeError(err), 'error');
     }
   };
 
@@ -262,7 +263,7 @@ export function DictionaryPage() {
         'success',
       );
     } catch (err) {
-      toast('Failed to dismiss selected: ' + String(err), 'error');
+      toast('Could not dismiss the selected suggestions. ' + describeError(err), 'error');
     } finally {
       setSelected(new Set());
       await loadSugg();

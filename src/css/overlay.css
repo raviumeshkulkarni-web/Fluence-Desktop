@@ -346,9 +346,40 @@ body {
   color: var(--color-error);
 }
 
-.overlay-root.style-bubble .status-msg,
-.overlay-root.style-bubble .status-retry {
+.overlay-root.style-bubble .status-msg {
   display: none !important;
+}
+
+/* The bubble still needs recovery: show Retry as a circular affordance and
+   drop the discard X while a terminal state owns the surface, so there is
+   exactly one control instead of two competing crosses. */
+.overlay-root.style-bubble.state-error .status-retry:not([hidden]) {
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-on-surface);
+  font-size: 0;
+  opacity: 1;
+  pointer-events: all;
+}
+
+.overlay-root.style-bubble.state-error .status-retry::after {
+  content: '↻';
+  font-size: 20px;
+  line-height: 1;
+}
+
+.overlay-root.style-bubble.state-error .card-footer,
+.overlay-root.style-bubble.state-success .card-footer {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
 .overlay-root.style-bubble .status-icon {
@@ -1254,6 +1285,18 @@ body.agent-picker-expanded .overlay-root {
 .overlay-root.state-error .status-copy:not([hidden]) {
   opacity: 1;
   pointer-events: all;
+}
+
+/* Full tier: a recoverable failure can offer both Copy and Retry. Stacking
+   them at 72%/84% made the pills overlap; place them side by side instead. */
+.overlay-root.state-error:not(.style-compact):not(.style-bubble):has(.status-copy:not([hidden])) .status-copy {
+  left: calc(50% - 38px);
+  top: 84%;
+}
+
+.overlay-root.state-error:not(.style-compact):not(.style-bubble):has(.status-copy:not([hidden])) .status-retry {
+  left: calc(50% + 38px);
+  top: 84%;
 }
 
 /* The minimal bubble/compact tiers have no room for the copy pill; the

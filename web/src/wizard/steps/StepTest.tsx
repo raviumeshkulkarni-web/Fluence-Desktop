@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Mic, Square } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { describeError } from '@/lib/errors';
 import type { WizardData } from '../Wizard';
 import { startRecording, stopRecording, transcribeAudio } from '../ipc';
+import { displayHotkey } from '../hotkey';
 
 interface StepTestProps {
   data: WizardData;
@@ -15,6 +17,7 @@ type Phase = 'idle' | 'recording' | 'transcribing';
 // disabled-while-transcribing, same orb icon swap via the icon-mic/icon-stop
 // classes (lucide Mic + filled Square stand in for the vanilla inline SVGs).
 export function StepTest({ data }: StepTestProps) {
+  const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
   const [phase, setPhase] = useState<Phase>('idle');
   const [label, setLabel] = useState('Start Recording');
   const [result, setResult] = useState({ text: 'Your transcription will appear here…', placeholder: true });
@@ -30,7 +33,7 @@ export function StepTest({ data }: StepTestProps) {
       } catch (err) {
         setPhase('idle');
         setLabel('Start Recording');
-        setResult({ text: 'Failed to start: ' + String(err), placeholder: false });
+        setResult({ text: 'Could not start recording. ' + describeError(err), placeholder: false });
       }
       return;
     }
@@ -49,7 +52,7 @@ export function StepTest({ data }: StepTestProps) {
         });
         setResult({ text: text || '(empty transcription)', placeholder: false });
       } catch (err) {
-        setResult({ text: 'Error: ' + String(err), placeholder: false });
+        setResult({ text: describeError(err, 'The test transcription failed. Please try again.'), placeholder: false });
       } finally {
         setPhase('idle');
         setLabel('Try Again');
@@ -63,7 +66,18 @@ export function StepTest({ data }: StepTestProps) {
       <h1 className="step-title" tabIndex={-1}>
         Test Your Setup
       </h1>
-      <p className="step-desc">Let&apos;s make sure everything is working. Click the button and say something.</p>
+      <p className="step-desc">
+        {usingOffline
+          ? 'Offline transcription is ready. The local model runs on this PC, so there is nothing to test online.'
+          : "Let's make sure everything is working. Click the button and say something."}
+      </p>
+      {usingOffline ? (
+        <div className="wizard-offline-note" role="status">
+          <strong>No online test needed.</strong> Finish setup, then press{' '}
+          <span className="done-hotkey-chip">{displayHotkey(data.hotkey)}</span> in any app to
+          try the local model.
+        </div>
+      ) : (
       <div className="test-area">
         <Button
           variant="ghost"
@@ -86,6 +100,7 @@ export function StepTest({ data }: StepTestProps) {
           {result.text}
         </div>
       </div>
+      )}
     </>
   );
 }

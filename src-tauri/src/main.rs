@@ -80,6 +80,13 @@ pub fn run() {
         .on_window_event(|window, event| {
             match event {
                 tauri::WindowEvent::CloseRequested { api, .. } => {
+                    if window.label() == "wizard" {
+                        // Never hide an unfinished wizard silently: ask the UI,
+                        // which offers Keep Setting Up / Skip Setup.
+                        let _ = window.emit_to("wizard", "wizard-close-requested", ());
+                        api.prevent_close();
+                        return;
+                    }
                     // Pause canvas animations before hiding window
                     let _ = window.emit("window-visibility", false);
                     let _ = window.hide();

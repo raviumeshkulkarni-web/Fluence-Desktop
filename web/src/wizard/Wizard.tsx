@@ -2,8 +2,20 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { listenEvent } from '@/ipc/tauri';
+import { describeError } from '@/lib/errors';
 import { WizardTitlebar } from './WizardTitlebar';
-import { saveApiKey } from './ipc';
+import { closeWizard, saveApiKey } from './ipc';
 import { StepWelcome } from './steps/StepWelcome';
 import { StepFeatures } from './steps/StepFeatures';
 import { StepApiKey } from './steps/StepApiKey';
@@ -28,6 +40,7 @@ export interface WizardData {
   overlayStyle: string;
   themeMode: string;
   skipApiKey: boolean;
+  useKeyForAgent: boolean;
 }
 
 export const DEFAULT_WIZARD_DATA: WizardData = {
@@ -42,6 +55,7 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
   overlayStyle: 'full',
   themeMode: 'auto',
   skipApiKey: false,
+  useKeyForAgent: true,
 };
 
 const STEP_TITLES = [
@@ -75,6 +89,7 @@ export function Wizard() {
   const [apiError, setApiError] = useState<string | null>(null);
   const [nextGlow, setNextGlow] = useState(false);
   const [recordingHotkey, setRecordingHotkey] = useState(false);
+  const [closeConfirm, setCloseConfirm] = useState(false);
   const timers = useRef<number[]>([]);
   const stepRef = useRef(1);
   stepRef.current = step;
@@ -92,6 +107,21 @@ export function Wizard() {
     const pending = timers.current;
     return () => {
       pending.forEach((t) => window.clearTimeout(t));
+    };
+  }, []);
+
+  // The backend intercepts the wizard's native close (Alt+F4 / taskbar) and
+  // re-emits it here so closing always asks instead of hiding silently.
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listenEvent('wizard-close-requested', () => setCloseConfirm(true)).then((u) => {
+      if (disposed) u();
+      else unlisten = u;
+    });
+    return () => {
+      disposed = true;
+      unlisten?.();
     };
   }, []);
 
@@ -189,9 +219,11 @@ export function Wizard() {
       patchData({ apiKey: key, baseUrl: baseUrl || d.baseUrl });
       try {
         await saveApiKey('Fluence/STT_ApiKey', key);
-        await saveApiKey('Fluence/LLM_ApiKey', key);
+        // Saving the same key for AI cleanup / Agent Mode is an explicit
+        // choice in StepApiKey; unchecked leaves that provider untouched.
+        if (d.useKeyForAgent) await saveApiKey('Fluence/LLM_ApiKey', key);
       } catch (err) {
-        setApiError('Failed to save API key: ' + String(err));
+        setApiError('The API key could not be saved. ' + describeError(err));
         flashNext();
         return;
       }
@@ -201,7 +233,7 @@ export function Wizard() {
 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      if (recordingRef.current) return;
+      if (recordingRef.current || closeConfirm) return;
       const s = stepRef.current;
       if (s < 1 || s > TOTAL_STEPS) return;
       const target = e.target instanceof Element ? e.target : null;
@@ -226,7 +258,9 @@ export function Wizard() {
       }
       if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
         e.preventDefault();
-        if (s < TOTAL_STEPS) goTo(s + 1);
+        // Forward navigation goes through the same gate as Next/Enter. A bare
+        // goTo here walked past the API-key step's validation.
+        void validateAndNext();
       } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
         e.preventDefault();
         if (s > 1) goTo(s - 1);
@@ -237,7 +271,7 @@ export function Wizard() {
     };
     document.addEventListener('keydown', onKeyDown);
     return () => document.removeEventListener('keydown', onKeyDown);
-  }, [goTo, validateAndNext]);
+  }, [closeConfirm, goTo, validateAndNext]);
 
   const dir = leaving?.dir ?? 1;
   const stepClass = (i: number): string => {
@@ -252,7 +286,7 @@ export function Wizard() {
   return (
     <TooltipProvider>
       <div className="wizard-page">
-      <WizardTitlebar />
+      <WizardTitlebar onRequestClose={() => setCloseConfirm(true)} />
       <div className="wizard-shell" role="dialog" aria-modal="true" aria-label="Fluence setup wizard">
         <div id="wiz-step-announcer" className="sr-only" role="status" aria-live="polite" />
         <Progress
@@ -331,6 +365,27 @@ export function Wizard() {
           )}
         </div>
       </div>
+      <AlertDialog open={closeConfirm} onOpenChange={setCloseConfirm}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Skip setup?</AlertDialogTitle>
+            <AlertDialogDescription>
+              Your choices so far are not saved. Fluence keeps running in the
+              system tray and will show this setup again next time you start it.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel asChild>
+              <Button variant="secondary">Keep Setting Up</Button>
+            </AlertDialogCancel>
+            <AlertDialogAction asChild>
+              <Button variant="destructive" onClick={() => void closeWizard()}>
+                Skip Setup
+              </Button>
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
     </TooltipProvider>
   );

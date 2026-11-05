@@ -24,6 +24,7 @@ import {
 } from '@/components/ui/table';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 import {
   addSnippet,
   deleteSnippet,
@@ -51,7 +52,7 @@ export function SnippetsPage() {
       setEnabled(store.enabled);
       setEntries(store.snippets || []);
     } catch (err) {
-      toast('Failed to load snippets: ' + String(err), 'error');
+      toast('Could not load snippets. ' + describeError(err), 'error');
     } finally {
       setLoading(false);
     }
@@ -83,7 +84,7 @@ export function SnippetsPage() {
         'success',
       );
     } catch (err) {
-      toast('Failed to update: ' + String(err), 'error');
+      toast('Could not update the snippet. ' + describeError(err), 'error');
     }
   };
 
@@ -100,7 +101,7 @@ export function SnippetsPage() {
       closeAdd();
       toast('Snippet added', 'success');
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     }
   };
 
@@ -110,7 +111,7 @@ export function SnippetsPage() {
       setEntries((prev) => prev.filter((s) => s.id !== id));
       toast('Snippet deleted', 'success');
     } catch (err) {
-      toast('Failed to delete: ' + String(err), 'error');
+      toast('Could not delete the snippet. ' + describeError(err), 'error');
     }
   };
 

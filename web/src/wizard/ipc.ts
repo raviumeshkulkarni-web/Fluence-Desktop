@@ -40,13 +40,23 @@ export interface TranscribeReq {
 export const transcribeAudio = (req: TranscribeReq) =>
   invokeCmd<string>('transcribe_audio', { req });
 
-export interface WizardSettings {
+export interface ProviderSettings {
+  preset: string;
+  base_url: string;
+  model: string;
+  api_key_saved: boolean;
+}
+
+// The backend deserializes the FULL AppSettings. A wizard payload that only
+// carries the fields the wizard collects silently resets everything else to
+// serde defaults, so callers must spread the stored object before overriding.
+export interface AppSettings {
   hotkey: string;
   recording_mode: string;
   overlay_position: string;
   overlay_style: string;
-  stt_provider: { preset: string; base_url: string; model: string; api_key_saved: boolean };
-  llm_provider: { preset: string; base_url: string; model: string; api_key_saved: boolean };
+  stt_provider: ProviderSettings;
+  llm_provider: ProviderSettings;
   auto_start: boolean;
   sound_on_complete: boolean;
   agent_mode_threshold_ms: number;
@@ -58,12 +68,13 @@ export interface WizardSettings {
   audio_device_id: string | null;
   theme: string;
   first_run: boolean;
-  // Carried from the existing settings so a wizard re-run does not reset
-  // an explicit opt-out back to the default (issue #10 field).
   copy_transcript_to_clipboard: boolean;
+  [key: string]: unknown;
 }
 
-export const updateSettings = (settings: WizardSettings) =>
+export const getSettings = () => invokeCmd<AppSettings>('get_settings');
+
+export const updateSettings = (settings: AppSettings) =>
   invokeCmd<void>('update_settings', { settings });
 
 export const updateHotkeys = (args: {

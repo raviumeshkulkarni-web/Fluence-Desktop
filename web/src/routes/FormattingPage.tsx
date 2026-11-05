@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, Check, RefreshCw } from 'lucide-react';
 import { describeClaimOutcome } from '@/lib/claim';
+import { describeError } from '@/lib/errors';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -244,7 +245,7 @@ export function FormattingPage() {
     try {
       setPrompts(await getPrompts());
     } catch (err) {
-      toast('Failed to load AI styles: ' + String(err), 'error');
+      toast('Could not load AI styles. ' + describeError(err), 'error');
     }
   }, []);
 
@@ -317,7 +318,7 @@ export function FormattingPage() {
         toast('AI post processing disabled', 'success');
       }
     } catch (err) {
-      toast('Failed to update: ' + String(err), 'error');
+      toast('Could not update the AI style. ' + describeError(err), 'error');
     }
   };
 
@@ -383,7 +384,7 @@ export function FormattingPage() {
       }
       await loadPrompts();
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     }
   };
 
@@ -429,7 +430,7 @@ export function FormattingPage() {
       toast(`${appNameOf(pickerExe)} updated`, 'success');
       closePicker();
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     }
   };
 
@@ -460,7 +461,7 @@ export function FormattingPage() {
       setEditing(null);
       toast('Style saved', 'success');
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setSaving(false);
     }
@@ -478,7 +479,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       const message = describeClaimOutcome(outcome, 'style');
       toast(message.text, message.kind);
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setClaimingStyleId(null);
     }
@@ -504,7 +505,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
         'success',
       );
     } catch (err) {
-      toast(String(err).replace(/^Error:\s*/, ''), 'error');
+      toast(describeError(err), 'error');
     } finally {
       setPendingDelete(null);
     }

@@ -16,76 +16,46 @@ const js = () => readFileSync(overlayJsPath, 'utf8');
 const css = () => readFileSync(overlayCssPath, 'utf8');
 const rs = () => readFileSync(overlayRsPath, 'utf8');
 
-// ── The expandable card is fully out of the release ────────────────────
+// ── Agent overlay picker markup and geometry IPC ───────────────────────
 
-test('no picker or card markup remains in the overlay document', () => {
+test('picker and card markup is present in the overlay document', () => {
   const html = readFileSync(overlayHtmlPath, 'utf8');
-  for (const id of ['agent-picker', 'agent-strip', 'agent-card', 'agent-list', 'agent-strip-name', 'agent-strip-chevron']) {
-    assert.ok(!html.includes(id), `#${id} still present in overlay.html`);
+  for (const id of ['agent-picker', 'agent-picker-trigger', 'agent-picker-card', 'agent-picker-name']) {
+    assert.ok(html.includes(id), `#${id} missing in overlay.html`);
   }
-  assert.ok(!html.includes('agent-picker'), 'agent-picker still present in overlay.html');
-  // The bubble and the app pill are the whole overlay surface now.
   assert.match(html, /id="overlay-root"/);
   assert.match(html, /id="app-pill"/);
 });
 
-test('the card window-resize IPC is removed from the frontend and backend', () => {
-  assert.ok(!js().includes('set_agent_picker_height'), 'overlay.js still invokes set_agent_picker_height');
+test('the window-resize IPC uses the atomic geometry command', () => {
+  assert.ok(!js().includes('set_agent_picker_height'), 'overlay.js must not invoke legacy set_agent_picker_height');
+  assert.ok(js().includes('set_agent_picker_geometry'), 'overlay.js must invoke set_agent_picker_geometry');
   const rust = rs();
-  assert.ok(!rust.includes('set_agent_picker_height'), 'overlay.rs still defines set_agent_picker_height');
-  assert.ok(!rust.includes('AGENT_PICKER_WINDOW_WIDTH'), 'overlay.rs still defines AGENT_PICKER_WINDOW_WIDTH');
+  assert.ok(!rust.includes('fn set_agent_picker_height'), 'overlay.rs must not define legacy set_agent_picker_height');
+  assert.ok(rust.includes('fn set_agent_picker_geometry'), 'overlay.rs must define set_agent_picker_geometry');
+  assert.ok(rust.includes('AGENT_PICKER_WINDOW_WIDTH'), 'overlay.rs must define AGENT_PICKER_WINDOW_WIDTH');
   assert.ok(
-    !readFileSync(mainRsPath, 'utf8').includes('set_agent_picker_height'),
-    'main.rs still registers set_agent_picker_height',
+    readFileSync(mainRsPath, 'utf8').includes('set_agent_picker_geometry'),
+    'main.rs must register set_agent_picker_geometry',
   );
 });
 
-test('no card-only CSS, variables or keyframes remain', () => {
+test('picker CSS and variables are declared', () => {
   const sheet = css();
-  for (const token of [
-    '--agent-picker-card-height',
-    '--agent-picker-extra',
-    '--agent-picker-gap',
-    '--agent-ref-top',
-    '--agent-base-width',
-    '--agent-bubble-shift-x',
-  ]) {
-    assert.ok(!sheet.includes(token), `${token} still declared in overlay.css`);
+  for (const selector of ['.agent-picker', '.agent-picker-trigger', '.agent-picker-card', '.agent-picker-name', '.agent-option']) {
+    assert.ok(sheet.includes(selector), `${selector} missing in overlay.css`);
   }
-  for (const selector of ['.agent-picker', '.agent-strip', '.agent-card', '.agent-list', '.agent-row-btn', '.agent-card-title']) {
-    assert.ok(!sheet.includes(selector), `${selector} still present in overlay.css`);
-  }
-  assert.ok(!/agent-strip-in|agent-card-in|agent-strip-out|agent-card-out/.test(sheet), 'picker keyframes remain');
-  assert.ok(!sheet.includes('agent-measuring'), '.agent-card.agent-measuring remains');
 });
 
-test('no card-only JavaScript remains in the overlay frontend', () => {
+test('picker JavaScript logic is present in the overlay frontend', () => {
   const source = js();
   for (const fn of [
     'setAgentPickerExpanded',
-    'measureAgentCardHeightStable',
-    'computeAgentPickerExpansion',
-    'renderAgentPicker',
-    'toggleAgentCard',
-    'setAgentPickerLayout',
-    'setAgentBubbleShiftX',
-    'readAgentTierCssPx',
-    'computeAgentPickerGeometry',
-    'applyAgentPickerGeometry',
-    'applyAgentPickerPlacement',
-    'clearAgentPickerTimers',
-    'queueAgentPickerHeight',
-    'waitForRenderFrame',
-    'showAgentPicker',
-    'hideAgentPicker',
-    'loadAgentPicker',
-    'preloadAgents',
-    'agentDisplayName',
+    'renderAgentPickerOptions',
+    'syncAgentPickerVisibility',
+    'resolveDefaultAgentId',
   ]) {
-    assert.ok(!source.includes(fn), `${fn} still present in overlay.js`);
-  }
-  for (const state of ['agentPickerExpanded', 'agentPickerVisible', 'agentPickerPhase', 'agentPickerGen', 'AGENT_STRIP_EXTRA']) {
-    assert.ok(!source.includes(state), `${state} still present in overlay.js`);
+    assert.ok(source.includes(fn), `${fn} missing in overlay.js`);
   }
 });
 
@@ -94,7 +64,7 @@ test('no card-only JavaScript remains in the overlay frontend', () => {
 test('agent mode seeds the active agent from the persisted default', async () => {
   const resolve = extractFunction(overlayJsPath, 'resolveDefaultAgentId');
   assert.match(resolve, /invoke\('get_agents'\)/);
-  assert.match(resolve, /if \(!activeAgentId\) activeAgentId = defaultId;/);
+  assert.match(resolve, /if \(!activeAgentId \|\| !options\.some\(option => option\.id === activeAgentId\)\) activeAgentId = defaultAgentId;/);
   // Fail-closed: a store read error leaves activeAgentId null, which the
   // backend resolves to the built-in agent.
   assert.match(resolve, /catch \(err\)/);

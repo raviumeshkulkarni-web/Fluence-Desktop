@@ -898,7 +898,7 @@ body.agent-picker-expanded .agent-picker-chevron {
 
 .agent-picker-card {
   position: absolute;
-  width: var(--agent-card-width);
+  width: var(--agent-card-width, 240px);
   height: 0;
   padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.12);

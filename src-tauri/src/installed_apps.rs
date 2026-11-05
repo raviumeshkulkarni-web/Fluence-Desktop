@@ -109,9 +109,12 @@ fn collect_installed_apps(dirs: &[PathBuf]) -> Vec<InstalledApp> {
                 return;
             }
         }
+        #[cfg(target_os = "windows")]
         let icon_data_url = crate::app_icon::load_exe_icon(&target)
             .ok()
             .and_then(|icon| crate::app_icon::icon_to_data_url(icon).ok());
+        #[cfg(not(target_os = "windows"))]
+        let icon_data_url: Option<String> = None;
         apps.push(InstalledApp {
             exe,
             name,
@@ -163,7 +166,8 @@ fn collect_lnk_files(dir: &Path, depth: u8, visit: &mut impl FnMut(&Path)) {
 }
 
 fn lnk_display_name(lnk_path: &Path) -> String {
-    lnk_path
+    let normalized = lnk_path.to_string_lossy().replace('\\', "/");
+    Path::new(&normalized)
         .file_stem()
         .map(|s| s.to_string_lossy().trim().to_string())
         .filter(|s| !s.is_empty())

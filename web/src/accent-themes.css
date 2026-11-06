@@ -10,7 +10,6 @@
 [data-theme='light'] {
   --color-brand-cyan: var(--fluence-accent-light, #0E7490);
   --color-accent-rgb: var(--fluence-accent-light-rgb, 14, 116, 144);
-  --color-logo-cyan: #0E7490;
 }
 
 [data-theme='light'][data-accent='fluence'] {

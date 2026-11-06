@@ -120,6 +120,7 @@
   --color-brand-cyan:            #0BD6E3;
   --color-brand-amethyst-soft:   rgba(139, 69, 216, 0.8);
   --color-brand-cyan-soft:       rgba(11, 214, 227, 0.8);
+  --color-logo-cyan:             #0BD6E3;
 
   /* Brand Signature Gradients — DEPRECATED for surfaces (anti-slop lock).
    * Kept only because the logo-mark SVG gradient stops reference these hues.

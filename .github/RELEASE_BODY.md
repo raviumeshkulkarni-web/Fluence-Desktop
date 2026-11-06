@@ -1,16 +1,13 @@
-## High-definition brand icon suite and crystal-clear Windows logo rendering
+## Brand Logo Invariance Across Themes & Presets
 
-### Crystal-clear brand icons across Windows
+### Immutable Fluence Wordmark & Brand Colors
 
-The Windows desktop application now uses the canonical high-definition Fluence icon suite synchronized with the Fluence brand kit and Fluence Capture Desktop:
+The Fluence brand wordmark and logo marks now remain constant across all UI themes, light/dark modes, and accent theme presets:
 
-- **Windows Taskbar & Alt-Tab**: Deployed dedicated multi-frame `.ico` containing crisp, tailored assets for all Windows display scale factors (16×16, 20×20, 24×24, 32×32, 40×40, 48×48, 64×64, 128×128, 256×256), eliminating blurriness on standard and high-DPI displays.
-- **System Tray**: Now displays the high-contrast, transparent system tray mark with sharp edges across dark and light taskbars.
-- **In-App Branding**: Rendered with exact vector geometry and `shapeRendering="geometricPrecision"` across the Sidebar, About view, and First-Run Wizard, using the official brand typography and canonical colors.
-
-### Build pipeline resource synchronization
-
-Added `rerun-if-changed` triggers to the Rust build pipeline (`build.rs`) ensuring icon resource updates are always re-compiled into `resource.lib` without stale binary cache re-linking.
+- **Canonical Brand Cyan Lock**: The `"ence"` letters in the Fluence wordmark are now strictly locked to the brand's canonical cyan (`#0BD6E3`) across all surfaces, including the Sidebar header, First-Run Wizard, and About view.
+- **Accent Theme Separation**: Accent theme presets (Fluence Original, Orange, Olive Green, Yellow, Rose, Monochrome) and appearance modes (Dark, Light, System) now exclusively skin functional accent roles (interactive buttons, switches, selection cards, focus rings) without altering the brand logo wordmark.
+- **Token Invariance**: Added `--color-logo-cyan` as an immutable brand token in `:root` and removed light-mode overrides that previously altered the logo's appearance.
+- **Automated Regression Protection**: Added `tests/logo-theme-invariance.test.mjs` verifying that the brand logo and wordmark styling cannot regress in future builds.
 
 ### What stays the same
 

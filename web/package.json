@@ -1,7 +1,7 @@
 {
   "name": "fluence-web",
-  "version": "1.35.1",
-  "description": "Fluence Windows main-window UI \u2014 React + TypeScript + Vite migration (incremental, vanilla preserved in ../src)",
+  "version": "1.35.2",
+  "description": "Fluence Windows main-window UI — React + TypeScript + Vite migration (incremental, vanilla preserved in ../src)",
   "license": "AGPL-3.0-only",
   "private": true,
   "type": "module",

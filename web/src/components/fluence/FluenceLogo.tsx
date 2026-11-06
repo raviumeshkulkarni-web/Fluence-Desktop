@@ -84,8 +84,10 @@ export interface FluenceWordmarkProps {
 }
 
 /**
- * Canonical Fluence wordmark: "flu" (white) + "ence" (cyan #0BD6E3).
+ * Canonical Fluence wordmark: "flu" (white/on-surface) + "ence" (cyan #0BD6E3).
  * Rendered using the official display typography (Sora / Hanken Grotesk).
+ * "ence" (the last 4 letters) remains permanently constant (#0BD6E3) across
+ * all themes and accent presets (owner brand rule).
  */
 export function FluenceWordmark({
   fontSize = 22,
@@ -104,7 +106,7 @@ export function FluenceWordmark({
         color: 'var(--color-on-surface, #FFFFFF)',
       }}
     >
-      flu<span style={{ color: 'var(--color-brand-cyan, #0BD6E3)' }}>ence</span>
+      flu<span style={{ color: 'var(--color-logo-cyan, #0BD6E3)' }}>ence</span>
     </span>
   );
 }

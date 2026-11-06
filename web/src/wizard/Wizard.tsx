@@ -60,7 +60,7 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
 
 const STEP_TITLES = [
   '',
-  'Welcome to Fluence Transcribe',
+  'Welcome to Fluence',
   'Choose Your Theme',
   'What Fluence Can Do',
   'Connect Your API Key',

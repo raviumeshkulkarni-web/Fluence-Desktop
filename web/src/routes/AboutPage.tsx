@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getAppVersion } from '@/ipc/tauri';
+import { FluenceSymbol, FluenceWordmark } from '@/components/fluence/FluenceLogo';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 
 // Faithful port of the vanilla About surface (src/index.html #page-about +
@@ -28,23 +29,11 @@ export function AboutPage({ onDownloadUpdate }: { onDownloadUpdate: () => void }
       <div className="settings-section settings-section--unboxed">
         <div style={{ padding: 'var(--spacing-xl)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-lg)', textAlign: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-12)' }}>
-            <svg width="48" height="48" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-about)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-about)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-about)" strokeWidth="2.2" strokeDasharray="2 2" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-about)" />
-              <defs>
-                <linearGradient id="logo-grad-about" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stopColor="#8B45D8" />
-                  <stop offset="50%" stopColor="#8B45D8" />
-                  <stop offset="100%" stopColor="#0BD6E3" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <div className="text-headline-md" style={{ fontWeight: 600, fontSize: 24, letterSpacing: '-0.03em', display: 'inline-flex', alignItems: 'baseline' }}>
-              flu<span style={{ color: 'var(--color-logo-cyan)' }}>ence</span>
-              <span style={{ fontFamily: "'Allura',cursive", fontWeight: 400, fontSize: 22, marginLeft: 7, lineHeight: 1, color: 'var(--color-on-surface-variant)' }}>Transcribe</span>
-            </div>
+            <FluenceSymbol
+              size={48}
+              gradientId="logo-grad-about"
+            />
+            <FluenceWordmark fontSize={26} />
           </div>
           <div className="text-muted text-body-md" style={{ marginTop: 'var(--spacing-xs)' }}>
             Version <span id="about-version">{appVersion}</span>

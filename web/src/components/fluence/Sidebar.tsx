@@ -26,6 +26,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
+import { FluenceSymbol, FluenceWordmark } from './FluenceLogo';
 import {
   Sidebar as SidebarPrimitive,
   SidebarContent,
@@ -159,23 +160,12 @@ export function Sidebar({
       <SidebarHeader>
         <div className="sidebar-logo">
           <div className="sidebar-brand">
-            <svg className="sidebar-logo-mark" width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <circle cx="16" cy="16" r="13" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="1.8 3" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="9" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 3" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="5" stroke="url(#logo-grad-sidebar)" strokeWidth="2.2" strokeDasharray="2 2" strokeLinecap="round" />
-              <circle cx="16" cy="16" r="1.5" fill="url(#logo-grad-sidebar)" />
-              <defs>
-                <linearGradient id="logo-grad-sidebar" x1="0" y1="0" x2="32" y2="32" gradientUnits="userSpaceOnUse">
-                  <stop offset="0%" stopColor="#8B45D8" />
-                  <stop offset="50%" stopColor="#8B45D8" />
-                  <stop offset="100%" stopColor="#0BD6E3" />
-                </linearGradient>
-              </defs>
-            </svg>
-            <span className="logo-text">
-              flu<span style={{ color: 'var(--color-logo-cyan)' }}>ence</span>
-              <span className="logo-tagline">Transcribe</span>
-            </span>
+            <FluenceSymbol
+              size={32}
+              gradientId="logo-grad-sidebar"
+              className="sidebar-logo-mark"
+            />
+            <FluenceWordmark />
           </div>
           <Tooltip>
             <TooltipTrigger asChild>

@@ -2,6 +2,9 @@ use std::path::{Path, PathBuf};
 
 fn main() {
     tauri_build::build();
+    println!("cargo:rerun-if-changed=icons/icon.ico");
+    println!("cargo:rerun-if-changed=icons/tray-icon-64.png");
+    println!("cargo:rerun-if-changed=icons/tray-icon.png");
 
     // Moonshine v2 sidecar integrity (experiment branch, opt-in engines only).
     //

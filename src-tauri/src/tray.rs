@@ -14,7 +14,7 @@ static TRAY: OnceLock<Mutex<Option<tauri::tray::TrayIcon>>> = OnceLock::new();
 
 pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
     // Load the tray icon explicitly from the embedded 128x128.png file
-    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/128x128.png"))
+    let icon = tauri::image::Image::from_bytes(include_bytes!("../icons/tray-icon.png"))
         .unwrap_or_else(|e| {
             log::error!("Failed to load tray icon: {}", e);
             app.default_window_icon().cloned().unwrap()

@@ -202,21 +202,49 @@ body {
   display: none !important;
 }
 
-.overlay-root.style-compact .status-retry {
-  top: 68%;
-  padding: 2px 10px;
-  font-size: 10px;
+/* Compact error: a transient failure turns the whole pill into one clear
+   Retry control. Permanent failures keep the centered error X instead. */
+.overlay-root.style-compact.state-error .card-footer {
+  opacity: 0 !important;
+  pointer-events: none !important;
 }
 
-.overlay-root.style-compact.state-error .status-icon {
-  top: 36%;
+.overlay-root.style-compact.state-error .status-icon.error-icon {
+  top: 50%;
   scale: 0.65;
 }
 
+.overlay-root.style-compact.state-error:has(.status-retry:not([hidden])) .status-icon {
+  opacity: 0;
+}
+
 .overlay-root.style-compact.state-error .status-retry:not([hidden]) {
-  display: block !important;
+  position: absolute;
+  inset: 0;
+  left: 0;
+  top: 0;
+  translate: none;
+  display: inline-flex !important;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: none;
+  border-radius: 9999px;
+  background: transparent;
+  box-shadow: none;
+  gap: 6px;
+  font-size: 10px;
   opacity: 1;
   pointer-events: all;
+}
+
+.overlay-root.style-compact.state-error .status-retry:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.overlay-root.style-compact.state-error .status-retry:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 
 .overlay-root.style-compact .status-icon {
@@ -350,30 +378,53 @@ body {
   display: none !important;
 }
 
-/* The bubble still needs recovery: show Retry as a circular affordance and
-   drop the discard X while a terminal state owns the surface, so there is
-   exactly one control instead of two competing crosses. */
+/* Bubble error: a transient failure turns the whole 44px orb into the Retry
+   target. Permanent failures keep the centered error X and hide the control. */
+.overlay-root.style-bubble.state-error:has(.status-retry:not([hidden])) .status-icon,
+.overlay-root.style-bubble.state-error:has(.status-retry:not([hidden])) .card-footer {
+  opacity: 0 !important;
+  pointer-events: none !important;
+}
+
 .overlay-root.style-bubble.state-error .status-retry:not([hidden]) {
-  display: flex !important;
+  display: inline-flex !important;
   align-items: center;
   justify-content: center;
   position: absolute;
   inset: 0;
+  left: 0;
+  top: 0;
+  translate: none;
   width: 100%;
   height: 100%;
   padding: 0;
   border: none;
+  border-radius: 50%;
   background: transparent;
+  box-shadow: none;
   color: var(--color-on-surface);
-  font-size: 0;
+  gap: 0;
   opacity: 1;
   pointer-events: all;
 }
 
-.overlay-root.style-bubble.state-error .status-retry::after {
-  content: '↻';
-  font-size: 20px;
-  line-height: 1;
+.overlay-root.style-bubble.state-error .status-retry-label {
+  display: none;
+}
+
+.overlay-root.style-bubble.state-error .status-retry-icon {
+  width: 18px;
+  height: 18px;
+  opacity: 1;
+}
+
+.overlay-root.style-bubble.state-error .status-retry:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.overlay-root.style-bubble.state-error .status-retry:focus-visible {
+  outline: 2px solid var(--color-border-focus);
+  outline-offset: -2px;
 }
 
 .overlay-root.style-bubble.state-error .card-footer,
@@ -1217,32 +1268,69 @@ body.agent-picker-expanded .overlay-root {
 .status-retry {
   position: absolute;
   left: 50%;
-  top: 84%;
+  top: 88%;
   translate: -50% -50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 22px;
+  padding: 0 12px 0 10px;
   font-family: var(--font-body), system-ui, sans-serif;
   font-size: 11px;
   font-weight: 600;
+  line-height: 1;
   letter-spacing: 0.06em;
   text-transform: uppercase;
+  white-space: nowrap;
   color: var(--color-on-surface);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.14);
   border-radius: 999px;
-  padding: 4px 14px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.06);
   cursor: pointer;
   opacity: 0;
   pointer-events: none;
-  transition: opacity 150ms ease, background 150ms ease;
+  transition:
+    opacity 150ms ease,
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms var(--ease-premium);
   -webkit-app-region: no-drag;
 }
 
+.status-retry[hidden] {
+  display: none;
+}
+
+.status-retry-icon {
+  width: 12px;
+  height: 12px;
+  flex: none;
+  opacity: 0.75;
+  transition: opacity 150ms ease;
+}
+
+.status-retry-label {
+  display: inline;
+}
+
 .status-retry:hover {
-  background: rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.10);
+  border-color: rgba(255, 255, 255, 0.22);
+}
+
+.status-retry:hover .status-retry-icon {
+  opacity: 1;
 }
 
 .status-retry:focus-visible {
   outline: 1.5px solid var(--color-border-focus);
   outline-offset: 2px;
+}
+
+.status-retry:active {
+  transform: scale(0.97);
 }
 
 .overlay-root.state-error .status-retry:not([hidden]) {
@@ -1291,12 +1379,12 @@ body.agent-picker-expanded .overlay-root {
    them at 72%/84% made the pills overlap; place them side by side instead. */
 .overlay-root.state-error:not(.style-compact):not(.style-bubble):has(.status-copy:not([hidden])) .status-copy {
   left: calc(50% - 38px);
-  top: 84%;
+  top: 88%;
 }
 
 .overlay-root.state-error:not(.style-compact):not(.style-bubble):has(.status-copy:not([hidden])) .status-retry {
   left: calc(50% + 38px);
-  top: 84%;
+  top: 88%;
 }
 
 /* The minimal bubble/compact tiers have no room for the copy pill; the
@@ -1448,16 +1536,6 @@ body.agent-picker-expanded .overlay-root {
 .overlay-root.active.state-transcribing:not(.style-compact):not(.style-bubble) .card-waveform,
 .overlay-root.active.state-agent_transcribing:not(.style-compact):not(.style-bubble) .card-waveform {
   opacity: 0.6;
-}
-
-/* Retry as real pill button */
-.status-retry {
-  padding: 6px 16px;
-  transition: opacity 180ms ease, background 150ms ease, transform 150ms var(--ease-premium);
-}
-
-.status-retry:active {
-  transform: scale(0.97);
 }
 
 /* ── Reduced motion - keep the processing spinner perceivable ──── */

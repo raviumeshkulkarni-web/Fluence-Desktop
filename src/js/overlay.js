@@ -1382,8 +1382,9 @@ async function stopAndTranscribe(agentMode, sessionId) {
       setStatusMessage('Failed');
       scheduleAutoDismiss(8000);
     } else {
-      setStatusMessage('Transcription failed');
-      showRetry();
+      const { label, retryable } = mapSttErrorToStatus(err);
+      setStatusMessage(label);
+      if (retryable) showRetry();
       scheduleAutoDismiss(8000);
     }
   }
@@ -1460,8 +1461,9 @@ async function runSttFlow(sessionId, retry = false) {
     console.error('Transcription error:', err);
     if (!isSessionActive(sessionId)) return;
     setState('error');
-    setStatusMessage('Transcription failed');
-    showRetry();
+    const { label, retryable } = mapSttErrorToStatus(err);
+    setStatusMessage(label);
+    if (retryable) showRetry();
     scheduleAutoDismiss(8000);
   }
 }
@@ -1506,6 +1508,80 @@ function mapAgentErrorToStatus(err) {
   if (msg.includes('Action parse error') || msg.includes('Empty response')) return { label: 'Agent parse failed', retryable: true };
   if (msg.includes('Clipboard') || msg.includes('No speech')) return { label: 'No selection', retryable: false };
   return { label: 'Agent failed', retryable: true };
+}
+
+// STT error -> status label + whether Retry can actually help (pure function,
+// unit-tested in Node). Retrying re-sends the same retained audio, so config,
+// auth, model, and input-limit failures stay buttonless. Only transient
+// provider/network/sidecar failures offer Retry.
+function mapSttErrorToStatus(err) {
+  const msg = String(err || '');
+  if (msg.includes('No API key found') || msg.includes('Missing API key')) {
+    return { label: 'Missing STT key', retryable: false };
+  }
+  if (
+    msg.includes('Invalid URL') ||
+    msg.includes('HTTP is only allowed') ||
+    msg.includes('Unsupported URL scheme') ||
+    msg.includes('embedded credentials') ||
+    msg.includes('valid hostname')
+  ) {
+    return { label: 'Check STT URL', retryable: false };
+  }
+  if (msg.includes('Recording too long') || msg.includes('too long') || msg.includes('too large')) {
+    return { label: 'Recording too long', retryable: false };
+  }
+  if (msg.includes('No captured audio')) {
+    return { label: 'Nothing to retry', retryable: false };
+  }
+
+  const status = msg.match(/API error\s+(\d{3})/i);
+  if (status) {
+    const code = Number(status[1]);
+    if (code === 408) return { label: 'Network error', retryable: true };
+    if (code === 429) return { label: 'Rate limited. Retry', retryable: true };
+    if (code >= 500) return { label: 'STT unavailable', retryable: true };
+    if (code === 401 || code === 403) return { label: 'STT auth failed', retryable: false };
+    if (code >= 400) return { label: 'Check STT model', retryable: false };
+  }
+
+  if (
+    msg.includes('not installed') ||
+    msg.includes('is missing') ||
+    msg.includes('sidecar not found') ||
+    msg.includes('Sidecar not found') ||
+    msg.includes('cannot find') ||
+    msg.includes('integrity check failed') ||
+    msg.includes('start-up handshake') ||
+    msg.includes('predates the auth-token protocol')
+  ) {
+    return { label: 'Offline setup missing', retryable: false };
+  }
+
+  if (msg.includes('rate limit')) {
+    return { label: 'Rate limited. Retry', retryable: true };
+  }
+  if (
+    msg.includes('Network error') ||
+    msg.includes('timed out') ||
+    msg.includes('Timed out') ||
+    msg.includes('timeout') ||
+    msg.includes('connection') ||
+    msg.includes('Connection') ||
+    msg.includes('socket') ||
+    msg.includes('busy') ||
+    msg.includes('capacity') ||
+    msg.includes('server failed to start') ||
+    msg.includes('Failed to spawn ASR server') ||
+    msg.includes('Failed to deliver auth token')
+  ) {
+    return { label: 'Network error', retryable: true };
+  }
+  if (msg.includes('JSON parse error') || msg.includes('Empty response')) {
+    return { label: 'STT response failed', retryable: true };
+  }
+  if (msg.includes('model')) return { label: 'Check STT model', retryable: false };
+  return { label: 'Transcription failed', retryable: false };
 }
 
 async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSelection, sessionId, retryAgentId) {

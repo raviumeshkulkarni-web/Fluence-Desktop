@@ -200,7 +200,11 @@ pub async fn transcribe_audio_bytes(
         parse_start.elapsed()
     );
 
-    Ok(result.text)
+    // Whisper-family providers often return padding whitespace around the
+    // transcription (a vocabulary-hint prompt starts the recognition as a
+    // continuation). Trim at the provider boundary so pasted transcripts
+    // never begin or end with whitespace.
+    Ok(result.text.trim().to_string())
 }
 
 /// Build the Whisper vocabulary hint from dictionary entries.
@@ -325,8 +329,9 @@ pub async fn transcribe_mp3_bytes(
         .await
         .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    // Apply dictionary corrections, then snippet expansion
-    let corrected = crate::snippets::process_transcript(&result.text);
+    // Same boundary trim as transcribe_audio_bytes: providers may return a
+    // leading space, and corrections/expansion must not inherit it.
+    let corrected = crate::snippets::process_transcript(result.text.trim());
 
     log::info!(
         "transcribe_mp3_bytes performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
@@ -424,11 +429,13 @@ pub async fn transcribe_mp3_bytes_with_raw(
         .await
         .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    // Capture raw text before dictionary corrections
-    let raw_text = result.text.clone();
+    // Capture raw text after the provider-boundary trim (same reason as
+    // transcribe_audio_bytes: a prompt-led Whisper response starts with a
+    // space).
+    let raw_text = result.text.trim().to_string();
 
     // Apply dictionary corrections, then snippet expansion
-    let corrected_text = crate::snippets::process_transcript(&result.text);
+    let corrected_text = crate::snippets::process_transcript(&raw_text);
 
     log::info!(
         "transcribe_mp3_bytes_with_raw performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",

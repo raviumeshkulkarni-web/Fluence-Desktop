@@ -115,6 +115,7 @@ export function buildHotkeyString(e: {
   shiftKey: boolean;
   metaKey: boolean;
   key: string;
+  code?: string;
 }): string {
   const parts: string[] = [];
   if (e.ctrlKey) parts.push('Ctrl');
@@ -122,9 +123,10 @@ export function buildHotkeyString(e: {
   if (e.shiftKey) parts.push('Shift');
   if (e.metaKey) parts.push('Meta');
   if (!MODIFIER_KEYS.has(e.key)) {
-    parts.push(
-      e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key,
-    );
+    // The main plus key is Shift+'='; numpad plus has its own backend token.
+    const key =
+      e.code === 'NumpadAdd' ? 'NumpadAdd' : e.key === '+' ? '=' : e.key;
+    parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
   }
   return parts.join('+');
 }

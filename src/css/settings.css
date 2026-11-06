@@ -962,7 +962,14 @@ body:has(.app-shell) .titlebar {
 }
 
 /* ── View Transitions ──────────────────────────────────────────── */
-/* The snapshot tree loses ancestor clipping, so the full-height
+/* The window is frameless and transparent (tauri.conf.json), and live
+ * painting is suppressed for the whole duration of a view transition.
+ * Snapshot pairs that both fade would dip in opacity and reveal the
+ * desktop behind the window, so every snapshot is always composited
+ * over something opaque: the root pair stays fully static below, and
+ * the animated content-area group carries a canvas backdrop.
+ *
+ * The snapshot tree loses ancestor clipping, so the full-height
  * content-area snapshot would fill the rounded top-right window corner
  * with canvas color during each route crossfade. Right corners only -
  * rounding the left edge would notch against the sidebar surface. */
@@ -970,13 +977,39 @@ body:has(.app-shell) .titlebar {
   overflow: clip;
   border-top-right-radius: var(--radius-lg);
   border-bottom-right-radius: var(--radius-lg);
+  background-color: var(--color-canvas);
 }
 
+/* UA default crossfades the root pair (old fades out while new fades
+ * in), dipping composite opacity to ~75% - enough to flash the desktop
+ * through the transparent window. Keep both root snapshots opaque so
+ * the sidebar/titlebar never flicker; the content-area pair is the only
+ * thing that moves. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+}
+
+/* Directional handoff choreography: the outgoing page leaves quickly on
+ * an accelerating curve while the incoming page enters slightly later on
+ * a long deceleration (shared-axis feel). Pages never both sit at ~50%
+ * opacity at once - the mid-crossfade double exposure looked flashy. The
+ * group backdrop above keeps the gap canvas-solid for the transparent
+ * window. */
 ::view-transition-old(content-area),
 ::view-transition-new(content-area) {
-  animation-duration: 0.18s;
-  animation-fill-mode: both;
-  animation-timing-function: var(--ease-standard);
+  animation-fill-mode: both; /* holds from{opacity:0} through the entry delay */
+}
+
+::view-transition-old(content-area) {
+  animation-duration: 0.14s;
+  animation-timing-function: var(--ease-exit);
+}
+
+::view-transition-new(content-area) {
+  animation-delay: 0.07s;
+  animation-duration: 0.28s;
+  animation-timing-function: var(--ease-premium);
 }
 
 html.nav-forward ::view-transition-old(content-area) { animation-name: fade-out-up; }
@@ -988,23 +1021,30 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
 ::view-transition-new(content-area) { animation-name: fade-in-up; }
 
 @keyframes fade-in-up {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-out-up {
   from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-8px); }
+  to { opacity: 0; transform: translateY(-10px); }
 }
 
 @keyframes fade-in-down {
-  from { opacity: 0; transform: translateY(-8px); }
+  from { opacity: 0; transform: translateY(-16px); }
   to { opacity: 1; transform: translateY(0); }
 }
 
 @keyframes fade-out-down {
   from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(8px); }
+  to { opacity: 0; transform: translateY(10px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-old(content-area),
+  ::view-transition-new(content-area) {
+    animation: none;
+  }
 }
 
 /* Page Staggered Entrances */
@@ -1024,6 +1064,13 @@ html.nav-backward ::view-transition-new(content-area) { animation-name: fade-in-
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@supports (view-transition-name: none) {
+  .page,
+  .page.active > * {
+    animation: none;
   }
 }
 

@@ -153,9 +153,9 @@ async function loadSettings() {
 
 function populateUI(s) {
   // General tab
-  setText('hotkey-display-text', s.hotkey || 'Ctrl+Shift+Space');
+  setText('hotkey-display-text', displayHotkey(s.hotkey || 'Ctrl+Shift+Space'));
   setSelectValue('recording-mode-select', s.recording_mode || 'push_to_toggle');
-  setText('agent-hotkey-display-text', s.agent_hotkey || 'Ctrl+Shift+A');
+  setText('agent-hotkey-display-text', displayHotkey(s.agent_hotkey || 'Ctrl+Shift+A'));
   setSelectValue('agent-recording-mode-select', s.agent_recording_mode || 'push_to_toggle');
   setSelectValue('overlay-position-select', s.overlay_position || 'bottom_right');
   setSelectValue('overlay-style-select', s.overlay_style || 'full');
@@ -309,7 +309,7 @@ function setupHotkeyRecorders() {
 
     pendingHotkeyKeys.add(e.key);
     const parts = buildHotkeyString(e);
-    setText(activeRecorder.textId, parts || 'Press keys…');
+    setText(activeRecorder.textId, parts ? displayHotkey(parts) : 'Press keys…');
     pendingHotkey = parts;
   });
 
@@ -389,13 +389,13 @@ function stopHotkeyRecording(apply) {
   activeRecorder.displayEl?.classList.remove('recording');
 
   if (apply && pendingHotkey) {
-    setText(activeRecorder.textId, pendingHotkey);
+    setText(activeRecorder.textId, displayHotkey(pendingHotkey));
     if (currentSettings) {
       currentSettings[activeRecorder.settingsKey] = pendingHotkey;
       queuePersist('hotkeys');
     }
   } else {
-    setText(activeRecorder.textId, currentSettings?.[activeRecorder.settingsKey] || 'Ctrl+Shift+Space');
+    setText(activeRecorder.textId, displayHotkey(currentSettings?.[activeRecorder.settingsKey] || 'Ctrl+Shift+Space'));
   }
   activeRecorder = null;
   pendingHotkeyKeys = new Set();
@@ -409,9 +409,14 @@ function buildHotkeyString(e) {
   if (e.metaKey)  parts.push('Meta');
 
   if (!MODIFIER_KEYS.has(e.key)) {
-    parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    const key = e.code === 'NumpadAdd' ? 'NumpadAdd' : e.key === '+' ? '=' : e.key;
+    parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
   }
   return parts.join('+');
+}
+
+function displayHotkey(hotkey) {
+  return hotkey.replace(/\bMeta\b/g, 'Win').replace(/\bNumpadAdd\b/g, 'NumPlus');
 }
 
 // ── Provider Cards ───────────────────────────────────────────────

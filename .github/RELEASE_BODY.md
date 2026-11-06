@@ -1,20 +1,24 @@
-## Agent overlay picker, error sanitization, and setup wizard hardening
+## Update notes review dialog, STT retry classification, and Windows hotkey enhancements
 
-### Agent overlay picker with pre-staged geometry
+### Release notes review dialog
 
-You can now switch active agents directly from the floating overlay. The agent picker card expands and docks smoothly without window reflow or geometry jitter, matching your active overlay tier and screen placement.
+You can now review complete release notes before downloading and staging an update. Clicking "Review update" in the sidebar or About view opens a clean modal dialog with structured highlights and changes instead of crowded inline text.
 
-### Error sanitization and privacy hardening
+### Smart STT error classification and retry affordances
 
-Diagnostic dumps, file paths, model filenames, thread panics, and internal operating system error codes no longer leak into user-facing notifications or dialogs. Error states across the Dashboard, History, and Providers views now provide clear, actionable descriptions and in-place retry options.
+Transcription failures now cleanly distinguish between transient network/server issues and permanent configuration or authentication errors. Retrying is only offered when re-sending audio can succeed, preventing dead retry loops on missing API keys or invalid URLs. In compact and bubble overlay styles, the retry target is larger, fully keyboard-accessible, and easier to activate.
 
-### First-run wizard data preservation
+### Windows hotkey normalization and input protection
 
-Completing or re-running setup now reads existing configuration first and safely merges your changes, preventing custom sync, cleaner provider, audio ducking, and waveform settings from being reset to defaults. Closing the wizard with unfinished setup now prompts for confirmation instead of exiting silently.
+Shortcuts now natively support Numpad Plus (`NumPlus`), Windows key combinations (`Win`), and equal/plus key bindings. The hotkey recorder now validates input to prevent accidental bare-key bindings that could capture normal typing.
 
-### Overlay status indicators and recovery layout
+### Flicker-free view transitions and animation optimization
 
-The overlay now cleanly reports `DONE` upon completion and `ERROR` on failure rather than remaining stuck on `LISTENING`. In the compact bubble tier, an accessible circular retry affordance is available on failure, and full-tier recovery actions (Copy and Retry) are neatly aligned side by side.
+Page navigations on frameless transparent windows now transition smoothly without desktop background flicker. Outgoing and incoming views use shared-axis directional motion and respect the system reduced-motion preference. Chart rendering performance has been improved by eliminating redundant animations on re-renders.
+
+### Whitespace trimming on speech-to-text output
+
+Whisper prompt-seeded leading and trailing whitespace is now cleaned at the provider boundary, ensuring pasted dictations never insert unwanted spaces.
 
 ### What stays the same
 

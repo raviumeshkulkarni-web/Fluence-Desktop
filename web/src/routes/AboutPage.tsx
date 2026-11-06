@@ -8,7 +8,7 @@ import { updaterStore, useUpdater } from '@/ipc/updater';
 // the About-card branch of setupUpdaterUI). Same DOM ids/classes, same copy,
 // same 6 updater states. The action button is the shadcn Button primitive
 // wearing the exact vanilla classes.
-export function AboutPage() {
+export function AboutPage({ onDownloadUpdate }: { onDownloadUpdate: () => void }) {
   const [appVersion, setAppVersion] = useState('1.0.0');
   const updater = useUpdater();
 
@@ -67,9 +67,8 @@ export function AboutPage() {
               </div>
             </div>
             <div
-              style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)', display: card.desc ? 'block' : 'none', textAlign: card.descAlign, lineHeight: 1.4, ...(card.descNotes ? { maxHeight: 180, overflowY: 'auto', width: '100%', boxSizing: 'border-box', padding: 'var(--spacing-10) var(--spacing-md)', background: 'var(--color-surface-secondary)', border: '1px solid var(--color-border-structural)', borderRadius: 'var(--radius-sm)' } : {}) }}
+              style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)', display: card.desc ? 'block' : 'none', textAlign: card.descAlign, lineHeight: 1.4 }}
               id="update-status-desc"
-              className={card.descNotes ? 'update-notes' : undefined}
             >
               {card.desc ?? ''}
             </div>
@@ -108,14 +107,13 @@ export function AboutPage() {
     title: string;
     desc?: string;
     descAlign?: 'left' | 'center';
-    descNotes?: boolean;
     btnText: string;
     btnDisabled: boolean;
     btnPrimary: boolean;
     onAction: () => void;
   } {
     const check = () => void updaterStore.checkForUpdates(true);
-    const download = () => void updaterStore.startDownloadAndInstall();
+    const download = onDownloadUpdate;
     const restart = () => void updaterStore.restartApp();
     switch (updater.state) {
       case 'checking':
@@ -123,23 +121,23 @@ export function AboutPage() {
       case 'available':
         return {
           title: `New Version Available (v${updater.version})`,
-          desc: updater.body ? updater.body.trim() : 'Bug fixes and performance improvements.',
-          descAlign: 'left' as const, descNotes: true,
-          btnText: 'Download Update', btnDisabled: false, btnPrimary: true, onAction: download,
+          desc: 'Review what’s included before downloading.',
+          descAlign: 'center' as const,
+          btnText: 'Review update', btnDisabled: false, btnPrimary: true, onAction: download,
         };
       case 'downloading':
         return { title: 'Downloading Update…', btnText: `Downloading ${updater.progress}%`, btnDisabled: true, btnPrimary: true, onAction: check };
       case 'ready':
         return {
           title: 'Update Downloaded & Staged', desc: 'Restart Fluence to apply the update.',
-          descAlign: 'center' as const, descNotes: false,
+          descAlign: 'center' as const,
           btnText: 'Restart Fluence', btnDisabled: false, btnPrimary: true, onAction: restart,
         };
       case 'failed':
         return {
           title: "Couldn't check for updates",
           desc: updater.error ?? 'Please check your internet connection or try again later.',
-          descAlign: 'center' as const, descNotes: false,
+          descAlign: 'center' as const,
           btnText: 'Try Again', btnDisabled: false, btnPrimary: false, onAction: check,
         };
       case 'idle':

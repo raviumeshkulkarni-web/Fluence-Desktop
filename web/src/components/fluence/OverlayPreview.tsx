@@ -113,7 +113,12 @@ function markupFor(tier: OverlayTier, glowOn: boolean, position: string, pillOn:
         </svg>
       </div>
       <div class="status-msg" role="status" aria-live="polite">Inserted</div>
-      <button class="status-retry" type="button" tabindex="-1" hidden>Retry</button>
+      <button class="status-retry" type="button" aria-label="Retry" tabindex="-1" hidden>
+        <svg class="status-retry-icon" width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M13 5.5A5.5 5.5 0 1 0 13.5 8M13 2.5v3h-3" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        <span class="status-retry-label">Retry</span>
+      </button>
     </div>
   </div>`;
 }

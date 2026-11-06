@@ -78,11 +78,13 @@ export function Sidebar({
   onNavigate,
   themeChoice,
   onCycleTheme,
+  onDownloadUpdate,
 }: {
   route: Route;
   onNavigate: (page: Route) => void;
   themeChoice: ThemeChoice;
   onCycleTheme: () => void;
+  onDownloadUpdate: () => void;
 }) {
   const { state: sidebarState } = useSidebar();
   const collapsed = sidebarState === 'collapsed';
@@ -262,7 +264,7 @@ export function Sidebar({
 
   function renderWidget(version: string, upToDate: boolean) {
     const check = () => void updaterStore.checkForUpdates(true);
-    const download = () => void updaterStore.startDownloadAndInstall();
+    const download = onDownloadUpdate;
     const restart = () => void updaterStore.restartApp();
     switch (updater.state) {
       case 'checking':
@@ -275,7 +277,7 @@ export function Sidebar({
         return {
           label: 'Update Available', labelClass: 'sidebar-version-label highlight-update',
           status: `v${updater.version} ready to download`, showProgress: false,
-          btnText: `Download v${updater.version}`, btnClass: 'sidebar-update-btn btn-has-update',
+          btnText: 'Review update', btnClass: 'sidebar-update-btn btn-has-update',
           btnDisabled: false, onAction: download,
         };
       case 'downloading':

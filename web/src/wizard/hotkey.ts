@@ -7,6 +7,7 @@ export function buildWizardHotkey(e: {
   shiftKey: boolean;
   metaKey: boolean;
   key: string;
+  code?: string;
 }): string {
   const parts: string[] = [];
   if (e.ctrlKey) parts.push('Ctrl');
@@ -15,7 +16,10 @@ export function buildWizardHotkey(e: {
   if (e.metaKey) parts.push('Meta');
   const mods = new Set(['Control', 'Alt', 'Shift', 'Meta']);
   if (!mods.has(e.key)) {
-    parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    // The main plus key is Shift+'='; numpad plus has its own backend token.
+    const key =
+      e.code === 'NumpadAdd' ? 'NumpadAdd' : e.key === '+' ? '=' : e.key;
+    parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
   }
   return parts.join('+');
 }
@@ -24,9 +28,9 @@ export const WIZARD_MODIFIER_TOKENS = new Set(['Ctrl', 'Alt', 'Shift', 'Meta']);
 
 export const WIZARD_DEFAULT_HOTKEY = 'Ctrl+Shift+Space';
 
-// The backend speaks "Meta" (the Windows key); show users "Win" everywhere.
+// The backend speaks "Meta" and "NumpadAdd"; show users familiar labels.
 export function displayHotkey(hotkey: string): string {
-  return hotkey.replace(/\bMeta\b/g, 'Win');
+  return hotkey.replace(/\bMeta\b/g, 'Win').replace(/\bNumpadAdd\b/g, 'NumPlus');
 }
 
 // A global shortcut must not steal plain typing. Require at least one

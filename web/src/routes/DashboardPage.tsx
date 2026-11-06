@@ -1089,8 +1089,7 @@ export function DashboardPage({
                         outerRadius="88%"
                         paddingAngle={2}
                         strokeWidth={0}
-                        isAnimationActive={!reduced}
-                        animationDuration={225}
+                        isAnimationActive={false}
                         shape={weekdaySectorShape}
                         onMouseEnter={(_, i) => setActiveWeekday(i)}
                         onMouseLeave={() => setActiveWeekday(null)}

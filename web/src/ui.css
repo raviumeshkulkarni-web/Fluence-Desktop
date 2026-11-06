@@ -670,6 +670,42 @@
   color: var(--color-on-surface-variant);
   line-height: var(--leading-body-md);
 }
+.update-notes-dialog {
+  width: min(560px, calc(100vw - 48px));
+}
+.update-notes-scroll {
+  max-height: min(360px, 48vh);
+  overflow-y: auto;
+  padding: var(--spacing-sm) var(--spacing-md);
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-structural);
+  border-radius: var(--radius-sm);
+}
+.update-notes-section + .update-notes-section {
+  margin-top: var(--spacing-md);
+}
+.update-notes-section h3 {
+  margin: 0 0 var(--spacing-xs);
+  color: var(--color-on-surface);
+  font-size: var(--text-label-lg);
+  font-weight: 600;
+}
+.update-notes-section ul {
+  margin: 0;
+  padding-left: 1.25rem;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label-md);
+  line-height: var(--leading-body-md);
+}
+.update-notes-section li + li {
+  margin-top: var(--spacing-xs);
+}
+.update-notes-empty {
+  margin: 0;
+  color: var(--color-on-surface-variant);
+  font-size: var(--text-label-md);
+  line-height: var(--leading-body-md);
+}
 .dialog-footer {
   display: flex;
   align-items: center;

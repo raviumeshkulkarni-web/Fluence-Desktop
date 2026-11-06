@@ -428,7 +428,11 @@ function cancelHotkeyRecording() {
   isRecordingHotkey = false;
   document.getElementById('wiz-hotkey-display')?.classList.remove('recording');
   const textEl = document.getElementById('wiz-hotkey-text');
-  if (textEl) textEl.textContent = wizardData.hotkey;
+  if (textEl) textEl.textContent = displayWizardHotkey(wizardData.hotkey);
+}
+
+function displayWizardHotkey(hotkey) {
+  return hotkey.replace(/\bMeta\b/g, 'Win').replace(/\bNumpadAdd\b/g, 'NumPlus');
 }
 
 function setupStep3() {
@@ -477,8 +481,12 @@ function setupStep3() {
     if (e.ctrlKey)  parts.push('Ctrl');
     if (e.altKey)   parts.push('Alt');
     if (e.shiftKey) parts.push('Shift');
+    if (e.metaKey)  parts.push('Meta');
     const mods = new Set(['Control','Alt','Shift','Meta']);
-    if (!mods.has(e.key)) parts.push(e.key === ' ' ? 'Space' : e.key.length === 1 ? e.key.toUpperCase() : e.key);
+    if (!mods.has(e.key)) {
+      const key = e.code === 'NumpadAdd' ? 'NumpadAdd' : e.key === '+' ? '=' : e.key;
+      parts.push(key === ' ' ? 'Space' : key.length === 1 ? key.toUpperCase() : key);
+    }
 
     if (parts.length > 0) {
       document.getElementById('wiz-hotkey-text').textContent = parts.join('+');
@@ -497,7 +505,7 @@ function setupStep3() {
       wizardData.hotkey = current;
       isRecordingHotkey = false;
       display?.classList.remove('recording');
-      document.getElementById('done-hotkey').textContent = current;
+      document.getElementById('done-hotkey').textContent = displayWizardHotkey(current);
     }
   });
 

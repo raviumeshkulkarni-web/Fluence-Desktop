@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { Titlebar } from '@/components/fluence/Titlebar';
 import { Sidebar } from '@/components/fluence/Sidebar';
+import { UpdateNotesDialog } from '@/components/fluence/UpdateNotesDialog';
 import { AboutPage } from '@/routes/AboutPage';
 import { AgentsPage } from '@/routes/AgentsPage';
 import { BubblePage } from '@/routes/BubblePage';
@@ -67,6 +69,7 @@ function readSidebarCollapsed(): boolean {
 export function App() {
   const [route, setRoute] = useState<Route>('dashboard');
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const [updateNotesOpen, setUpdateNotesOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsed);
   const { theme, choice: themeChoice, cycleTheme, toggleTheme } = useTheme();
   const { accentTheme, setAccentTheme } = useAccentTheme();
@@ -166,7 +169,7 @@ export function App() {
       const html = document.documentElement;
       html.classList.add(`nav-${direction}`);
       const apply = () => {
-        setRoute(page);
+        flushSync(() => setRoute(page));
         // Focus lands after paint so screen readers announce the new page.
         requestAnimationFrame(() => {
           document
@@ -218,10 +221,11 @@ export function App() {
               onNavigate={navigateTo}
               themeChoice={themeChoice}
               onCycleTheme={cycleTheme}
+              onDownloadUpdate={() => setUpdateNotesOpen(true)}
             />
             <main className="content-area" role="main">
               {route === 'about' ? (
-                <AboutPage />
+                <AboutPage onDownloadUpdate={() => setUpdateNotesOpen(true)} />
               ) : route === 'dashboard' ? (
                 <DashboardPage theme={theme} accentTheme={accentTheme} />
               ) : route === 'sync' ? (
@@ -247,6 +251,7 @@ export function App() {
           </div>
         </SidebarProvider>
         <Toaster />
+        <UpdateNotesDialog open={updateNotesOpen} onOpenChange={setUpdateNotesOpen} />
         <CommandPalette
           open={paletteOpen}
           onOpenChange={setPaletteOpen}

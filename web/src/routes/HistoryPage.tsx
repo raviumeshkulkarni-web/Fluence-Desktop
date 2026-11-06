@@ -524,7 +524,7 @@ export function HistoryPage() {
         return list.length;
       } catch (err) {
         if (seq !== loadSeq.current) return null;
-        const message = describeError(err, 'Could not load your history. Try again.');
+        const message = describeError(err, 'Try again.');
         setLoadError(message);
         toast('Could not load history. ' + message, 'error');
         return null;

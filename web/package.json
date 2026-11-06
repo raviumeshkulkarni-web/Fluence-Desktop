@@ -1,6 +1,6 @@
 {
   "name": "fluence-web",
-  "version": "1.34.0",
+  "version": "1.35.0",
   "description": "Fluence Windows main-window UI — React + TypeScript + Vite migration (incremental, vanilla preserved in ../src)",
   "license": "AGPL-3.0-only",
   "private": true,
@@ -10,7 +10,7 @@
     "build": "tsc -b && vite build",
     "watch": "vite build --watch",
     "typecheck": "tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.test.json",
-    "test": "node --import ./test-setup.mjs --test \"src/lib/claim.test.ts\" \"src/lib/errors.test.ts\" \"src/lib/signinError.test.ts\" \"src/ipc/claim-boundary.test.ts\" \"src/ipc/sync-boundary.test.ts\" \"src/ipc/dictionary-boundary.test.ts\" \"src/test-manifest.test.ts\" \"src/components/fluence/waveform.test.ts\""
+    "test": "node --import ./test-setup.mjs --test \"src/lib/claim.test.ts\" \"src/lib/errors.test.ts\" \"src/lib/signinError.test.ts\" \"src/ipc/claim-boundary.test.ts\" \"src/ipc/sync-boundary.test.ts\" \"src/ipc/dictionary-boundary.test.ts\" \"src/test-manifest.test.ts\" \"src/components/fluence/waveform.test.ts\" \"src/lib/release-notes.test.ts\" \"src/wizard/hotkey.test.ts\" \"../tests/stt-retry-mapping.test.mjs\""
   },
   "dependencies": {
     "@radix-ui/react-alert-dialog": "^1.1.23",

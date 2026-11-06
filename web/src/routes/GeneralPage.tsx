@@ -33,6 +33,7 @@ import {
 } from '@/ipc/general';
 import { ACCENT_THEMES, type AccentTheme } from '@/lib/theme';
 import { describeError } from '@/lib/errors';
+import { displayHotkey, isAllowedWizardHotkey as isAllowedHotkey } from '@/wizard/hotkey';
 
 type HotkeyKey = 'hotkey' | 'agent_hotkey';
 
@@ -116,6 +117,10 @@ export function GeneralPage({
     const key = recordingRef.current;
     const value = pendingHotkey.current;
     if (!key || !value) return;
+    if (!isAllowedHotkey(value)) {
+      setPendingText('Add Ctrl, Alt, Shift, or Win');
+      return;
+    }
     setHotkeyValue(key, value);
     if (getCachedSettings()) {
       setSettingField(key, value);
@@ -313,7 +318,7 @@ export function GeneralPage({
                   }}
                 >
                   <span id="hotkey-display-text">
-                    {recording === 'hotkey' ? pendingText : hotkey}
+                    {displayHotkey(recording === 'hotkey' ? pendingText : hotkey)}
                   </span>
                 </button>
                 <Button
@@ -387,7 +392,7 @@ export function GeneralPage({
                   }}
                 >
                   <span id="agent-hotkey-display-text">
-                    {recording === 'agent_hotkey' ? pendingText : agentHotkey}
+                    {displayHotkey(recording === 'agent_hotkey' ? pendingText : agentHotkey)}
                   </span>
                 </button>
                 <Button

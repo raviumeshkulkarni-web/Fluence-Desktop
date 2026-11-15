@@ -106,6 +106,9 @@ async fn transcribe_audio_request(req: TranscribeRequest) -> Result<String, Stri
         &req.model,
         mp3_bytes,
         req.language.as_deref(),
+        crate::settings::load_settings()
+            .map(|s| s.spoken_formatting_enabled)
+            .unwrap_or(false),
     )
     .await?;
 
@@ -261,6 +264,7 @@ pub async fn transcribe_mp3_bytes(
     model: &str,
     mp3_bytes: Vec<u8>,
     language: Option<&str>,
+    spoken_formatting: bool,
 ) -> Result<String, String> {
     check_audio_bytes_len(mp3_bytes.len())?;
     let start_time = std::time::Instant::now();
@@ -331,7 +335,7 @@ pub async fn transcribe_mp3_bytes(
 
     // Same boundary trim as transcribe_audio_bytes: providers may return a
     // leading space, and corrections/expansion must not inherit it.
-    let corrected = crate::snippets::process_transcript(result.text.trim());
+    let corrected = crate::snippets::process_transcript(result.text.trim(), spoken_formatting);
 
     log::info!(
         "transcribe_mp3_bytes performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",
@@ -363,6 +367,7 @@ pub async fn transcribe_mp3_bytes_with_raw(
     model: &str,
     mp3_bytes: &[u8],
     language: Option<&str>,
+    spoken_formatting: bool,
 ) -> Result<TranscriptionWithRaw, String> {
     check_audio_bytes_len(mp3_bytes.len())?;
     let start_time = std::time::Instant::now();
@@ -435,7 +440,7 @@ pub async fn transcribe_mp3_bytes_with_raw(
     let raw_text = result.text.trim().to_string();
 
     // Apply dictionary corrections, then snippet expansion
-    let corrected_text = crate::snippets::process_transcript(&raw_text);
+    let corrected_text = crate::snippets::process_transcript(&raw_text, spoken_formatting);
 
     log::info!(
         "transcribe_mp3_bytes_with_raw performance: total = {:?}, network = {:?}, parse = {:?}, multipart = {:?}",

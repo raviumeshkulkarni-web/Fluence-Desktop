@@ -72,6 +72,8 @@ export function GeneralPage({
   // Seeded with the backend default (ON) so a slow/failing settings load
   // never displays a misleading OFF for the copy-transcript retention.
   const [copyTranscript, setCopyTranscript] = useState(true);
+  // Opt-in: command words ("period") also occur in normal speech.
+  const [spokenFormatting, setSpokenFormatting] = useState(false);
 
   // One concern visible at a time (Providers pattern): shortcuts for the
   // hotkeys, audio for input/language/feedback, system for OS behavior.
@@ -152,6 +154,7 @@ export function GeneralPage({
         setAutoGrab(s.auto_grab_highlight !== false);
         setSound((s.sound_on_complete as boolean) ?? true);
         setCopyTranscript(s.copy_transcript_to_clipboard ?? true);
+        setSpokenFormatting(s.spoken_formatting_enabled === true);
         const storedDevice =
           typeof s.audio_device_id === 'string' ? s.audio_device_id : '';
         setAudioDevice(storedDevice);
@@ -281,13 +284,13 @@ export function GeneralPage({
     <section className="page active" id="page-general">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>General</h1>
-        <p className="page-subtitle">Hotkey, recording mode, audio, and system preferences</p>
+        <p className="page-subtitle">Hotkey, dictation, audio, and system preferences</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as GeneralTab)}>
         <TabsList aria-label="General settings area">
           <TabsTrigger value="shortcuts">Shortcuts</TabsTrigger>
-          <TabsTrigger value="audio">Audio</TabsTrigger>
+          <TabsTrigger value="audio">Dictation</TabsTrigger>
           <TabsTrigger value="system">System</TabsTrigger>
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
         </TabsList>
@@ -558,6 +561,40 @@ export function GeneralPage({
               </Field>
             </div>
           </div>
+          </CardContent>
+        </Card>
+
+        <SettingsSectionHeader
+          title="Spoken Formatting"
+          description="Turn spoken command words into punctuation and line breaks"
+        />
+        <Card className="settings-card">
+          <CardContent className="settings-card-content">
+            <div className="setting-row">
+              <div className="setting-info">
+                <div className="setting-label">Spoken Punctuation</div>
+                <div className="setting-desc">
+                  Say &quot;comma&quot;, &quot;period&quot;, &quot;question
+                  mark&quot;, &quot;exclamation mark&quot;, &quot;colon&quot;,
+                  &quot;semicolon&quot;, &quot;new line&quot;, or &quot;new
+                  paragraph&quot; to format the transcript. Off by default
+                  because these words also appear in normal speech.
+                </div>
+              </div>
+              <div className="setting-control">
+                <Field>
+                  <Switch
+                    id="spoken-formatting-cb"
+                    aria-label="Convert spoken punctuation commands"
+                    checked={spokenFormatting}
+                    onCheckedChange={bindCheck(
+                      setSpokenFormatting,
+                      'spoken_formatting_enabled',
+                    )}
+                  />
+                </Field>
+              </div>
+            </div>
           </CardContent>
         </Card>
       </TabsContent>

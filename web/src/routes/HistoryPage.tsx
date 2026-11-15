@@ -46,6 +46,7 @@ import {
   ContextMenuItem,
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
+import { HistoryExportDialog } from '@/components/fluence/HistoryExportDialog';
 import { SearchField } from '@/components/fluence/SearchField';
 import { acceptSuggestion, buildConfirmDetail } from '@/ipc/dictionary';
 import { cn } from '@/lib/cn';
@@ -409,6 +410,7 @@ export function HistoryPage() {
   const [loadingMore, setLoadingMore] = useState(false);
   const [flashId, setFlashId] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showExport, setShowExport] = useState(false);
   const [confirmAcceptMark, setConfirmAcceptMark] = useState<{ id: string; detail: string } | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1131,6 +1133,14 @@ export function HistoryPage() {
             onChange={(e) => onSearchInput(e.target.value)}
           />
           <Button
+            variant="secondary"
+            size="sm"
+            id="export-history-btn"
+            onClick={() => setShowExport(true)}
+          >
+            Export
+          </Button>
+          <Button
             variant="destructive"
             size="sm"
             id="clear-history-btn"
@@ -1391,6 +1401,7 @@ export function HistoryPage() {
         </div>
       </div>
 
+      <HistoryExportDialog open={showExport} onOpenChange={setShowExport} />
       <ConfirmDialog
         open={confirmClear}
         onOpenChange={setConfirmClear}

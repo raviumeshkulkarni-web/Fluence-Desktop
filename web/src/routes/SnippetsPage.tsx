@@ -165,7 +165,12 @@ export function SnippetsPage() {
               onChange={(e) => setTrigger(e.target.value)}
             />
           </Field>
-          <Field label="Expansion Text" htmlFor="snippet-expansion-input" className="snippet-add-field-wide">
+          <Field
+            label="Expansion Text"
+            htmlFor="snippet-expansion-input"
+            className="snippet-add-field-wide"
+            hint="Use {date}, {time}, {datetime}, {day}, or {year} to insert the current date or time. Placeholders expand on this device; other devices insert the text as-is."
+          >
             <Input
               type="text"
               id="snippet-expansion-input"

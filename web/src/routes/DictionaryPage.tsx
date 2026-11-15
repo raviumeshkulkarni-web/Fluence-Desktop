@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen, Lightbulb } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
@@ -24,7 +24,17 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ConfirmDialog } from '@/components/ui/dialog';
+import {
+  ConfirmDialog,
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
+import { TERM_PACKS } from '@/lib/termPacks';
+import { addTermPacks } from '@/lib/termPackAdd';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
 import { describeError } from '@/lib/errors';
@@ -77,6 +87,9 @@ export function DictionaryPage() {
   const [autoAdded, setAutoAdded] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
+  const [showPacks, setShowPacks] = useState(false);
+  const [packsSaving, setPacksSaving] = useState(false);
+  const [selectedPacks, setSelectedPacks] = useState<Set<string>>(new Set());
   const [spoken, setSpoken] = useState('');
   const [corrected, setCorrected] = useState('');
   const spokenRef = useRef<HTMLInputElement>(null);
@@ -222,6 +235,51 @@ export function DictionaryPage() {
     }
   };
 
+  const togglePack = (id: string, on: boolean) =>
+    setSelectedPacks((prev) => {
+      const next = new Set(prev);
+      if (on) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+
+  const onAddPacks = async () => {
+    const chosen = TERM_PACKS.filter((pack) => selectedPacks.has(pack.id));
+    if (chosen.length === 0) {
+      toast('Choose a term pack first', 'error');
+      return;
+    }
+    setPacksSaving(true);
+    try {
+      const result = await addTermPacks(
+        chosen,
+        entries.map((entry) => entry.spoken),
+        (spoken, corrected) => addDictionaryEntry(spoken, corrected),
+      );
+      // Always refresh: entries may have been persisted before a failure.
+      await loadDict();
+      const summary = `Added ${result.added} ${
+        result.added === 1 ? 'term' : 'terms'
+      }${result.skipped > 0 ? `, skipped ${result.skipped} already present` : ''}`;
+      if (result.failed > 0) {
+        toast(
+          `${summary}; ${result.failed} could not be added. ` +
+            describeError(result.firstError),
+          'error',
+        );
+        return;
+      }
+      setShowPacks(false);
+      setSelectedPacks(new Set());
+      toast(summary, result.added > 0 ? 'success' : 'info');
+    } catch (err) {
+      await loadDict();
+      toast('Could not add the term pack. ' + describeError(err), 'error');
+    } finally {
+      setPacksSaving(false);
+    }
+  };
+
   const onAccept = (id: string) => {
     const s = suggestions.find((x) => x.id === id);
     setConfirmAccept({
@@ -280,6 +338,23 @@ export function DictionaryPage() {
 
   const toggleSelectAll = (on: boolean) =>
     setSelected(on ? new Set(suggestions.map((s) => s.id)) : new Set());
+
+  // Net-new count: pack entries whose spoken key is not already saved. The
+  // button reflects what would actually be added (backend uniqueness is the
+  // spoken key), so a fully-duplicate selection disables instead of no-op.
+  const selectedNewCount = useMemo(() => {
+    const existing = new Set(
+      entries.map((entry) => entry.spoken.trim().toLowerCase()),
+    );
+    let count = 0;
+    for (const pack of TERM_PACKS) {
+      if (!selectedPacks.has(pack.id)) continue;
+      for (const term of pack.entries) {
+        if (!existing.has(term.spoken.trim().toLowerCase())) count += 1;
+      }
+    }
+    return count;
+  }, [entries, selectedPacks]);
 
   return (
     <section className="page active" id="page-dictionary">
@@ -344,6 +419,7 @@ export function DictionaryPage() {
           description="Saved replacements applied automatically after dictation"
         >
           <div className="dict-header-actions">
+            <Button variant="ghost" size="sm" id="dict-pack-btn" onClick={() => setShowPacks(true)}>Add Pack</Button>
             <Button variant="ghost" size="sm" id="import-dict-btn" onClick={() => void onImport()}>Import</Button>
             <Button variant="ghost" size="sm" id="export-dict-btn" onClick={() => void onExport()}>Export</Button>
             <Button variant="default" size="sm" id="add-dict-btn" onClick={openAdd}>Add Entry</Button>
@@ -542,6 +618,69 @@ export function DictionaryPage() {
         </div>
       </TabsContent>
       </Tabs>
+
+      <Dialog
+        open={showPacks}
+        onOpenChange={(open) => {
+          if (!open && !packsSaving) setShowPacks(false);
+        }}
+      >
+        <DialogContent aria-label="Add term pack">
+          <DialogHeader>
+            <DialogTitle>Add a term pack</DialogTitle>
+            <DialogDescription>
+              Adds common corrections grouped by topic. Entries you already have
+              are skipped. Every saved correction applies to transcripts; only
+              the first ~890 characters of vocabulary fit in the speech model
+              prompt.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="app-picker-list">
+            {TERM_PACKS.map((pack) => (
+              <div className="setting-row" key={pack.id}>
+                <div className="setting-info">
+                  <label className="setting-label" htmlFor={`pack-${pack.id}`}>
+                    {pack.name}
+                  </label>
+                  <div className="setting-desc">
+                    {pack.description} · {pack.entries.length} terms
+                  </div>
+                </div>
+                <div className="setting-control">
+                  <Field>
+                    <Checkbox
+                      id={`pack-${pack.id}`}
+                      aria-label={`Add ${pack.name}`}
+                      checked={selectedPacks.has(pack.id)}
+                      onCheckedChange={(v) => togglePack(pack.id, v === true)}
+                    />
+                  </Field>
+                </div>
+              </div>
+            ))}
+          </div>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => setShowPacks(false)}
+              disabled={packsSaving}
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={() => void onAddPacks()}
+              disabled={packsSaving || selectedNewCount === 0}
+            >
+              {packsSaving
+                ? 'Adding…'
+                : selectedNewCount > 0
+                  ? `Add selected (${selectedNewCount})`
+                  : 'Already in dictionary'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       <ConfirmDialog
         open={confirmAccept !== null}
         onOpenChange={(open) => { if (!open) setConfirmAccept(null); }}

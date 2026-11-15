@@ -693,4 +693,15 @@ mod tests {
         // gates reject the pair -> nothing to learn (OQ-5).
         assert!(extract_corrections("hello world", "Hello World", &no_known()).is_empty());
     }
+
+    #[test]
+    fn test_extract_spoken_formatting_commands_not_learned() {
+        // Spoken formatting rewrites raw text before this path sees it, so
+        // the raw/transformed diff is punctuation, not a correction.
+        assert!(extract_corrections("hello comma", "hello,", &no_known()).is_empty());
+        assert!(extract_corrections("done period", "done.", &no_known()).is_empty());
+        assert!(
+            extract_corrections("first new line second", "first\nsecond", &no_known()).is_empty()
+        );
+    }
 }

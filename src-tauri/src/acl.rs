@@ -8,7 +8,7 @@
 // transparent to the frontend (Tauri injects it; `invoke()` args unchanged).
 //
 // Caller inventory (verified against src-tauri/src/*.rs + src/js/*.js +
-// src/*.html, app version 1.27.1 from src-tauri/Cargo.toml; table refreshed
+// src/*.html, app version 1.36.0 from src-tauri/Cargo.toml; table refreshed
 // when the last open IPC surface outside the deliberately-open set was
 // gated):
 //
@@ -67,6 +67,7 @@
 // | get/save_history                     | main,overlay         | open (overlay saves)     |
 // | get_history_stats                    | main                 | main only (Package B)    |
 // | get_weekly_activity                  | main                 | main only (Package B)    |
+// | save_export_file                     | main                 | main only (native save)  |
 // | start/stop/is_recording              | all                  | open                     |
 // | stop_and_transcribe/finish/retry     | overlay              | overlay only             |
 // | inject_text                          | overlay              | overlay only (+target    |

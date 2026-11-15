@@ -116,6 +116,11 @@ pub struct AppSettings {
     pub auto_accept_enabled: bool,
     #[serde(default = "default_false")]
     pub duck_enabled: bool,
+    /// Spoken formatting commands ("comma", "new paragraph", ...) in the
+    /// final transcript. Opt-in because command words also occur in normal
+    /// speech. Device-local: intentionally NOT in the settings sync allowlist.
+    #[serde(default = "default_false")]
+    pub spoken_formatting_enabled: bool,
     #[serde(default = "default_duck_level")]
     pub duck_level: f32,
     #[serde(default = "default_offline_engine")]
@@ -240,6 +245,7 @@ impl Default for AppSettings {
             auto_learn_enabled: default_true(),
             auto_accept_enabled: default_false(),
             duck_enabled: default_false(),
+            spoken_formatting_enabled: default_false(),
             duck_level: default_duck_level(),
             offline_engine: default_offline_engine(),
             stt_streaming_enabled: default_false(),

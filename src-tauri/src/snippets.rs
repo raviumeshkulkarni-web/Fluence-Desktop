@@ -311,11 +311,21 @@ pub(crate) fn active_snippet_expansion_keys_from(
     keys
 }
 
-/// Post-transcription pipeline: dictionary corrections first, then
-/// snippet expansion (only when the master toggle is enabled).
+/// Post-transcription pipeline: spoken formatting (opt-in) first, then
+/// dictionary corrections, then snippet expansion (only when the master
+/// toggle is enabled).
 /// This runs on the final text only - never on the STT prompt.
-pub fn process_transcript(text: &str) -> String {
-    let corrected = crate::dictionary::apply_corrections(text);
+pub fn process_transcript(text: &str, spoken_formatting_enabled: bool) -> String {
+    // Spoken formatting (opt-in) runs first so command phrases become
+    // punctuation before dictionary/snippet matching sees the text. The
+    // flag is threaded in by the caller (already inside a settings-bearing
+    // flow) so this hot path never re-reads settings.json.
+    let formatted = if spoken_formatting_enabled {
+        crate::spoken_format::apply(text)
+    } else {
+        text.to_string()
+    };
+    let corrected = crate::dictionary::apply_corrections(&formatted);
     let store = cached_store();
     if !store.enabled {
         return corrected;
@@ -343,6 +353,40 @@ fn is_word_boundary(chars: &[char], start: usize, end: usize) -> bool {
     let before_ok = start == 0 || !chars[start - 1].is_alphanumeric();
     let after_ok = end >= chars.len() || !chars[end].is_alphanumeric();
     before_ok && after_ok
+}
+
+/// Replace `{date}`, `{time}`, `{datetime}`, `{day}`, `{year}` in expansion
+/// text. Unknown placeholders are left verbatim. Date/time are local.
+fn expand_placeholders_at(text: &str, now: &chrono::DateTime<chrono::Local>) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut rest = text;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        let Some(end) = after.find('}') else {
+            out.push_str(after);
+            return out;
+        };
+        let replacement = match &after[1..end] {
+            "date" => Some(now.format("%Y-%m-%d").to_string()),
+            "time" => Some(now.format("%H:%M").to_string()),
+            "datetime" => Some(now.format("%Y-%m-%d %H:%M").to_string()),
+            "day" => Some(now.format("%A").to_string()),
+            "year" => Some(now.format("%Y").to_string()),
+            _ => None,
+        };
+        match replacement {
+            Some(value) => out.push_str(&value),
+            None => out.push_str(&after[..=end]),
+        }
+        rest = &after[end + 1..];
+    }
+    out.push_str(rest);
+    out
+}
+
+fn expand_placeholders(text: &str) -> String {
+    expand_placeholders_at(text, &chrono::Local::now())
 }
 
 /// Deterministic text-in/text-out expansion of the final transcript.
@@ -431,7 +475,7 @@ pub fn expand_with(raw_text: &str, snippets: &[Snippet]) -> String {
         for &c in &chars[cursor..m.start] {
             out.push(c);
         }
-        out.push_str(&snippets[m.snippet].expansion);
+        out.push_str(&expand_placeholders(&snippets[m.snippet].expansion));
         cursor = m.end;
     }
     for &c in &chars[cursor..] {
@@ -873,6 +917,39 @@ mod tests {
         assert_eq!(expand_with("MY LINKEDIN", &snippets), "url");
         assert_eq!(expand_with("My LinkedIn", &snippets), "url");
         assert_eq!(expand_with("my linkedin", &snippets), "url");
+    }
+
+    #[test]
+    fn expansion_placeholders_use_local_time() {
+        use chrono::TimeZone;
+        let now = chrono::Local
+            .with_ymd_and_hms(2026, 3, 9, 14, 5, 0)
+            .unwrap();
+        assert_eq!(
+            expand_placeholders_at("{date}|{time}|{datetime}|{day}|{year}", &now),
+            "2026-03-09|14:05|2026-03-09 14:05|Monday|2026"
+        );
+        assert_eq!(
+            expand_placeholders_at("{unknown} {date}", &now),
+            "{unknown} 2026-03-09"
+        );
+        assert_eq!(
+            expand_placeholders_at("no placeholders", &now),
+            "no placeholders"
+        );
+        assert_eq!(
+            expand_placeholders_at("unclosed {date", &now),
+            "unclosed {date"
+        );
+    }
+
+    #[test]
+    fn placeholders_expand_only_in_matched_expansions() {
+        let snippets = vec![snippet("1", "today", "Date: {date}")];
+        let expanded = expand_with("today please", &snippets);
+        assert!(expanded.starts_with("Date: 20"));
+        assert!(expanded.ends_with(" please"));
+        assert_eq!(expand_with("{date} please", &snippets), "{date} please");
     }
 
     #[test]

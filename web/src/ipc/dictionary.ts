@@ -1,4 +1,5 @@
 import { invokeCmd } from '@/ipc/tauri';
+import { saveTextFile } from '@/lib/historyExport';
 
 export interface DictEntry {
   id: string;
@@ -100,13 +101,14 @@ export async function importDictionaryFile(): Promise<DictionaryImportResult | n
   return importDictionaryJson(json);
 }
 
-/** Vanilla export flow: backend JSON → browser download. */
-export function downloadDictionaryJson(json: string) {
-  const blob = new Blob([json], { type: 'application/json' });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = 'fluence-dictionary.json';
-  a.click();
-  URL.revokeObjectURL(url);
+/** Vanilla export flow: backend JSON → native save dialog (browser fallback).
+ *  The blob-anchor download silently failed in WebView2 for some users, so
+ *  this shares saveTextFile with the history export. Cancelling the dialog
+ *  is a silent no-op. */
+export async function downloadDictionaryJson(json: string) {
+  await saveTextFile(
+    json,
+    'fluence-dictionary.json',
+    'application/json',
+  );
 }

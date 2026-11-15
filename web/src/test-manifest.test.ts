@@ -45,6 +45,14 @@ test('the test glob matches the test files that exist', () => {
     'shared error sanitization tests are missing from the glob',
   );
   assert.ok(
+    names.some((n) => n.endsWith('lib/historyExport.test.ts')),
+    'history export formatting tests are missing from the glob',
+  );
+  assert.ok(
+    names.some((n) => n.endsWith('lib/termPackAdd.test.ts')),
+    'term pack import tests are missing from the glob',
+  );
+  assert.ok(
     names.some((n) => n.endsWith('ipc/claim-boundary.test.ts')),
     'claim IPC boundary tests are missing from the glob',
   );

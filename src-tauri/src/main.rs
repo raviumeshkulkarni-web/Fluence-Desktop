@@ -22,6 +22,7 @@ mod clipboard;
 mod credentials;
 mod dictionary;
 mod ducking;
+mod file_export;
 mod foreground;
 mod history;
 mod hotkey;
@@ -33,6 +34,7 @@ mod overlay;
 mod prompts;
 mod settings;
 mod snippets;
+mod spoken_format;
 mod suggestion;
 // Sync layer. The Phase 7 scheduler, stores, and commands are live; the
 // remaining dead-code seams (user resolution of quarantine, the future
@@ -245,6 +247,8 @@ pub fn run() {
             history::clear_history,
             history::get_history_stats,
             history::get_weekly_activity,
+            // Native text exports (history + dictionary)
+            file_export::save_export_file,
             // Foreground app icon (overlay chip)
             app_icon::get_foreground_app_icon,
             // Installed apps enumeration (AI Post Processing picker)

@@ -42,6 +42,17 @@ enum PendingAudio {
 static PENDING_AUDIO: Lazy<Mutex<Option<PendingAudio>>> = Lazy::new(|| Mutex::new(None));
 static PENDING_AUDIO_GENERATION: AtomicU64 = AtomicU64::new(0);
 
+/// Offline text gets spoken formatting only; dictionary/snippet
+/// post-processing remains an online-only path.
+fn offline_transcript_pair(text: String, spoken_formatting_enabled: bool) -> (String, String) {
+    let corrected = if spoken_formatting_enabled {
+        crate::spoken_format::apply(&text)
+    } else {
+        text.clone()
+    };
+    (corrected, text)
+}
+
 async fn transcribe_pending_audio(
     settings: &crate::settings::AppSettings,
 ) -> Result<(String, String, std::time::Duration), String> {
@@ -58,7 +69,7 @@ async fn transcribe_pending_audio(
         PendingAudio::Offline { samples, engine } => {
             crate::offline_transcribe::transcribe_samples(samples, *engine)
                 .await
-                .map(|text| (text.clone(), text))
+                .map(|text| offline_transcript_pair(text, settings.spoken_formatting_enabled))
                 .map_err(|e| format!("Offline transcription error: {}", e))
         }
         PendingAudio::Online { mp3_bytes } => {
@@ -70,6 +81,7 @@ async fn transcribe_pending_audio(
                     &settings.stt_provider.model,
                     mp3_bytes,
                     Some(settings.language.as_str()),
+                    settings.spoken_formatting_enabled,
                 )
                 .await
                 .map(|result| (result.corrected_text, result.raw_text)),
@@ -585,6 +597,17 @@ pub async fn retry_transcription_flow(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn offline_spoken_formatting_applies_only_when_enabled() {
+        let (corrected, raw) = offline_transcript_pair("hello comma world".into(), true);
+        assert_eq!(corrected, "hello, world");
+        assert_eq!(raw, "hello comma world");
+
+        let (plain, raw) = offline_transcript_pair("hello comma world".into(), false);
+        assert_eq!(plain, "hello comma world");
+        assert_eq!(plain, raw);
+    }
 
     #[test]
     fn retryable_status_covers_429_and_5xx_only() {

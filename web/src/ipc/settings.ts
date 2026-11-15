@@ -13,6 +13,7 @@ export interface FluenceSettings {
   auto_learn_enabled?: boolean;
   auto_accept_enabled?: boolean;
   copy_transcript_to_clipboard?: boolean;
+  spoken_formatting_enabled?: boolean;
   [key: string]: unknown;
 }
 

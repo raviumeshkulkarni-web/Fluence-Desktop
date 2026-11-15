@@ -158,6 +158,7 @@ const labels = [
   ['workflow.rs', 'stop_and_transcribe_recording', [O]],
   ['workflow.rs', 'finish_transcription_flow', [O]],
   ['workflow.rs', 'retry_transcription_flow', [O]],
+  ['file_export.rs', 'save_export_file', [M]],
   ['app_icon.rs', 'get_foreground_app_icon', [O]],
   ['overlay.rs', 'show_overlay', [O]],
   ['overlay.rs', 'hide_overlay', [O]],

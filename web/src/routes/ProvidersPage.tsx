@@ -55,6 +55,7 @@ import {
   type OfflineDownloadProgress,
   type ProviderKind,
 } from '@/ipc/providers';
+import { t, tr, type TranslationKey } from '@/i18n';
 
 const STT_PRESETS: Record<string, { base_url: string; model: string }> = {
   groq: { base_url: 'https://api.groq.com/openai', model: 'whisper-large-v3' },
@@ -171,13 +172,13 @@ function LlmProviderSection({
                 id={`${idPrefix}-${preset}`}
               >
                 <LlmIcon preset={preset} />
-                <span className="provider-name">{LLM_NAMES[preset]}</span>
+                <span className="provider-name">{tr(LLM_NAMES[preset])}</span>
               </button>
             </RadioGroupItem>
           ))}
         </RadioGroup>
         <div className="provider-form-fields">
-          <Field label="API Endpoint" htmlFor={`${idPrefix}-base-url`}>
+          <Field label={t('API Endpoint')} htmlFor={`${idPrefix}-base-url`}>
             <Input
               type="url"
               id={`${idPrefix}-base-url`}
@@ -186,13 +187,13 @@ function LlmProviderSection({
               onChange={(e) => onSetForm(kind, { ...form, baseUrl: e.target.value })}
             />
             {isCustomHttpsEndpoint(form.baseUrl) && (
-              <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
+              <p className="field-warning">{t('Custom endpoint: prompts, context and bearer credentials may be sent to this server.')}</p>
             )}
           </Field>
           <Field
-            label="API Key"
+            label={t('API Key')}
             htmlFor={`${idPrefix}-api-key`}
-            hint="Testing uses the key in this field. Select Save Key to store it."
+            hint={t('Testing uses the key in this field. Select Save Key to store it.')}
           >
             <div className="input-with-btn">
               <Input
@@ -203,10 +204,10 @@ function LlmProviderSection({
                 value={form.apiKey}
                 onChange={(e) => onKeyInput(kind, e.target.value)}
               />
-              <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>Save Key</Button>
+              <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>{t('Save Key')}</Button>
             </div>
           </Field>
-          <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
+          <Field label={t('Model')} htmlFor={`${idPrefix}-model-select`}>
             <div className="input-with-btn">
               <Select
                 value={form.model}
@@ -229,13 +230,13 @@ function LlmProviderSection({
                     variant="ghost"
                     id={`${idPrefix}-fetch-models-btn`}
                     className={fetching ? 'animate-spin' : undefined}
-                    aria-label="Fetch language models from API"
+                    aria-label={t('Fetch language models from API')}
                     onClick={() => void onFetchModels(kind, form, false)}
                   >
                     <RefreshIcon />
                   </Button>
                 </TooltipTrigger>
-                <TooltipContent>Fetch models from API</TooltipContent>
+                <TooltipContent>{t('Fetch models from API')}</TooltipContent>
               </Tooltip>
             </div>
           </Field>
@@ -243,14 +244,14 @@ function LlmProviderSection({
             <Button
               variant="secondary"
               id={`${idPrefix}-test-btn`}
-              title="Uses the key in the field, or the saved key if the field is empty"
+              title={t('Uses the key in the field, or the saved key if the field is empty')}
               onClick={() => void onTest(kind)}
             >
-              Test Connection
+              {t('Test Connection')}
             </Button>
             <div className="connection-status" id={`${idPrefix}-status`} role="status">
               <div className={status.dot}></div>
-              <span id={`${idPrefix}-status-text`}>{status.text}</span>
+              <span id={`${idPrefix}-status-text`}>{tr(status.text)}</span>
             </div>
           </div>
         </div>
@@ -262,15 +263,15 @@ function LlmProviderSection({
 interface EngineCfg {
   engine: string;
   cardId: string;
-  title: string;
-  desc: string;
-  badge?: string;
+  title: TranslationKey;
+  desc: TranslationKey;
+  badge?: TranslationKey;
   speed: number;
   accuracy: number;
   downloadBtnId: string;
   deleteBtnId: string;
   delSize: string;
-  delName: string;
+  delName: TranslationKey;
   statusCmd: () => Promise<boolean>;
   downloadCmd: () => Promise<void>;
   deleteCmd: () => Promise<number>;
@@ -436,7 +437,7 @@ export function ProvidersPage() {
   const [installed, setInstalled] = useState<Record<string, boolean>>({});
   const [downloading, setDownloading] = useState<string | null>(null);
   const [progressVisible, setProgressVisible] = useState(false);
-  const [progressStatus, setProgressStatus] = useState('Downloading ASR Engine…');
+  const [progressStatus, setProgressStatus] = useState(() => t('Downloading ASR Engine…'));
   const [progressPct, setProgressPct] = useState(0);
   const [progressBytes, setProgressBytes] = useState('0 / 0 MB');
   const [deleteTarget, setDeleteTarget] = useState<EngineCfg | null>(null);
@@ -517,11 +518,11 @@ export function ProvidersPage() {
       }
       const baseUrl = f.baseUrl.trim();
       if (!baseUrl || !apiKey || apiKey.length < 8) {
-        if (!silent) toast('Please enter endpoint and API key first', 'error');
+        if (!silent) toast(t('Please enter endpoint and API key first'), 'error');
         return;
       }
       if (!isAllowedEndpointUrl(baseUrl)) {
-        if (!silent) toast('Use https:// (http only for localhost).', 'error');
+        if (!silent) toast(t('Use https:// (http only for localhost).'), 'error');
         return;
       }
       if (kind === 'stt') setSttFetching(true);
@@ -533,29 +534,33 @@ export function ProvidersPage() {
           const res = await fetchSttModels(baseUrl, apiKey, current || null);
           const models = res.models || [];
           if (!models.length) {
-            if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
+            if (!silent) toast(t('No models found on this endpoint, keeping current list'), 'error');
             return;
           }
           setModelList(kind, models, current);
           if (!silent) {
             toast(
               res.filtered !== false
-                ? `Loaded ${models.length} models`
-                : `Loaded ${models.length} models (unrecognized endpoint - showing all)`,
+                ? t('Loaded {count} models', { count: models.length })
+                : t('Loaded {count} models (unrecognized endpoint - showing all)', {
+                    count: models.length,
+                  }),
               'success',
             );
           }
         } else {
           const models = await fetchModels(baseUrl, apiKey);
           if (!models.length) {
-            if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
+            if (!silent) toast(t('No models found on this endpoint, keeping current list'), 'error');
             return;
           }
           setModelList(kind, models, current);
-          if (!silent) toast(`Loaded ${models.length} models`, 'success');
+          if (!silent)
+            toast(t('Loaded {count} models', { count: models.length }), 'success');
         }
       } catch (err) {
-        if (!silent) toast('Could not fetch models. ' + describeError(err), 'error');
+        if (!silent)
+          toast(t('Failed to fetch models: {error}', { error: describeError(err) }), 'error');
       } finally {
         if (kind === 'stt') setSttFetching(false);
         else if (kind === 'llm') setLlmFetching(false);
@@ -666,7 +671,7 @@ export function ProvidersPage() {
   useEffect(() => {
     const onSave = () => {
       saveSettingsNow().catch((err) =>
-        toast('Could not save provider settings. ' + describeError(err), 'error'),
+        toast(t('Failed to save settings: {error}', { error: describeError(err) }), 'error'),
       );
     };
     window.addEventListener('fluence:save-page', onSave);
@@ -687,27 +692,28 @@ export function ProvidersPage() {
     const status = payload.status;
     if (status === 'downloading') {
       setProgressVisible(true);
-      setProgressStatus(`Downloading: ${payload.currentFile}`);
+      setProgressStatus(t('Downloading: {file}', { file: payload.currentFile ?? '' }));
       setProgressPct(progress);
       const downloadedMb = ((payload.bytesDownloaded ?? 0) / (1024 * 1024)).toFixed(1);
       const totalMb = ((payload.totalBytes ?? 0) / (1024 * 1024)).toFixed(1);
       setProgressBytes(`${downloadedMb} / ${totalMb} MB`);
     } else if (status === 'extracting') {
       setProgressVisible(true);
-      setProgressStatus('Extracting model files…');
+      setProgressStatus(t('Extracting model files…'));
       setProgressPct(progress);
     } else if (status === 'completed') {
-      toast('Offline model downloaded and installed successfully', 'success');
+      toast(t('Offline model downloaded and installed successfully'), 'success');
       void refreshOfflineStatus();
     } else if (status === 'error') {
       toast(
-        'Offline download failed. ' +
-          describeError(payload.errorMessage, 'Please try again.'),
+        t('Offline download failed: {error}', {
+          error: describeError(payload.errorMessage, t('Please try again.')),
+        }),
         'error',
       );
       void refreshOfflineStatus();
     } else if (status === 'cancelled') {
-      toast('Offline download cancelled', 'info');
+      toast(t('Offline download cancelled'), 'info');
       void refreshOfflineStatus();
     }
   };
@@ -745,15 +751,21 @@ export function ProvidersPage() {
     const f = forms.current[kind];
     const key = f.apiKey.trim();
     if (!key) {
-      toast('Please enter an API key', 'error');
+      toast(t('Please enter an API key'), 'error');
       return;
     }
     try {
       await saveApiKey(keyTarget(kind, f.preset), key);
       setForm(kind, { ...f, apiKey: '' });
-      toast(`${f.preset} API key saved securely`, 'success');
+      const name = kind === 'stt' ? STT_NAMES[f.preset] : LLM_NAMES[f.preset];
+      toast(
+        t('{provider} API key saved securely', {
+          provider: tr(name ?? f.preset),
+        }),
+        'success',
+      );
     } catch (err) {
-      toast('Could not save the key. ' + describeError(err), 'error');
+      toast(t('Failed to save key: {error}', { error: describeError(err) }), 'error');
     }
   };
 
@@ -770,17 +782,17 @@ export function ProvidersPage() {
       return;
     }
     if (!isAllowedEndpointUrl(baseUrl)) {
-      setStatus({ dot: 'dot dot-error', text: 'Use https:// (http only for localhost).' });
+      setStatus({ dot: 'dot dot-error', text: t('Use https:// (http only for localhost).') });
       return;
     }
     // Test what the user is looking at: the typed key wins, and the saved key
     // is only a fallback when the field is empty.
     const apiKey = f.apiKey.trim() || (await getApiKey(keyTarget(kind, f.preset)).catch(() => ''));
     if (!apiKey) {
-      setStatus({ dot: 'dot dot-error', text: 'Enter an API key, or save one first.' });
+      setStatus({ dot: 'dot dot-error', text: t('Enter an API key, or save one first.') });
       return;
     }
-    setStatus({ dot: 'dot dot-idle', text: 'Testing…' });
+    setStatus({ dot: 'dot dot-idle', text: t('Testing…') });
     try {
       const msg =
         kind === 'stt'
@@ -796,10 +808,10 @@ export function ProvidersPage() {
     try {
       await saveSettingsNow();
     } catch (err) {
-      toast('Could not save provider settings. ' + describeError(err), 'error');
+      toast(t('Failed to save settings: {error}', { error: describeError(err) }), 'error');
       return;
     }
-    toast('Provider settings saved', 'success');
+    toast(t('Provider settings saved'), 'success');
   };
 
   const selectEngine = (name: string) => {
@@ -813,13 +825,13 @@ export function ProvidersPage() {
   const onDownload = async (cfg: EngineCfg) => {
     setDownloading(cfg.engine);
     setProgressVisible(true);
-    setProgressStatus('Downloading ASR Engine…');
+    setProgressStatus(t('Downloading ASR Engine…'));
     setProgressPct(0);
     setProgressBytes('0 / 0 MB');
     try {
       await cfg.downloadCmd();
     } catch (err) {
-      toast('Could not start the download. ' + describeError(err), 'error');
+      toast(t('Failed to start download: {error}', { error: describeError(err) }), 'error');
       void refreshOfflineStatus();
     }
   };
@@ -828,10 +840,16 @@ export function ProvidersPage() {
     try {
       const bytesFreed = await cfg.deleteCmd();
       const mbFreed = (bytesFreed / (1024 * 1024)).toFixed(1);
-      toast(`${cfg.delName} model deleted. Freed ${mbFreed} MB`, 'success');
+      toast(
+        t('{model} model deleted. Freed {size} MB', {
+          model: t(cfg.delName),
+          size: mbFreed,
+        }),
+        'success',
+      );
       void refreshOfflineStatus();
     } catch (err) {
-      toast('Could not delete the model files. ' + describeError(err), 'error');
+      toast(t('Failed to delete model files: {error}', { error: describeError(err) }), 'error');
     }
   };
 
@@ -848,21 +866,21 @@ export function ProvidersPage() {
   return (
     <section className="page active" id="page-providers">
       <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Providers</h1>
-        <p className="page-subtitle">Configure dictation, agent mode, and AI cleanup</p>
+        <h1 className="page-title" tabIndex={-1}>{t('Providers')}</h1>
+        <p className="page-subtitle">{t('Configure dictation, agent mode, and AI cleanup')}</p>
       </div>
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as ProvidersTab)}>
-        <TabsList aria-label="Provider area">
-          <TabsTrigger value="dictation">Dictation</TabsTrigger>
-          <TabsTrigger value="agent">Agent mode</TabsTrigger>
-          <TabsTrigger value="cleaner">AI cleaner</TabsTrigger>
+        <TabsList aria-label={t('Provider area')}>
+          <TabsTrigger value="dictation">{t('Dictation')}</TabsTrigger>
+          <TabsTrigger value="agent">{t('Agent mode')}</TabsTrigger>
+          <TabsTrigger value="cleaner">{t('AI cleaner')}</TabsTrigger>
         </TabsList>
 
       <TabsContent value="dictation">
       <SettingsSectionHeader
-        title="Speech-to-Text (STT)"
-        description="Choose the engine used to transcribe your live microphone input"
+        title={t('Speech-to-Text (STT)')}
+        description={t('Choose the engine used to transcribe your live microphone input')}
       />
       <div className="settings-card provider-card-container">
         <RadioGroup
@@ -870,7 +888,7 @@ export function ProvidersPage() {
           id="stt-provider-grid"
           value={stt.preset}
           onValueChange={(preset) => void selectCard('stt', preset)}
-          aria-label="Speech-to-text provider"
+          aria-label={t('Speech-to-text provider')}
         >
           {STT_ORDER.map((preset) => (
             <RadioGroupItem key={preset} value={preset} asChild>
@@ -881,14 +899,14 @@ export function ProvidersPage() {
                 id={STT_IDS[preset]}
               >
                 <SttIcon preset={preset} />
-                <span className="provider-name">{STT_NAMES[preset]}</span>
+                <span className="provider-name">{tr(STT_NAMES[preset])}</span>
               </button>
             </RadioGroupItem>
           ))}
         </RadioGroup>
         <div className="provider-form-fields">
           <div id="stt-credentials-wrapper" className={`provider-credentials${isOffline ? ' hidden' : ''}`}>
-            <Field label="API Endpoint" htmlFor="stt-base-url">
+            <Field label={t('API Endpoint')} htmlFor="stt-base-url">
               <Input
                 type="url"
                 id="stt-base-url"
@@ -897,13 +915,13 @@ export function ProvidersPage() {
                 onChange={(e) => setForm('stt', { ...forms.current.stt, baseUrl: e.target.value })}
               />
               {isCustomHttpsEndpoint(stt.baseUrl) && (
-                <p className="field-warning">Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.</p>
+                <p className="field-warning">{t('Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.')}</p>
               )}
             </Field>
             <Field
-              label="API Key"
+              label={t('API Key')}
               htmlFor="stt-api-key"
-              hint="Testing uses the key in this field. Select Save Key to store it."
+              hint={t('Testing uses the key in this field. Select Save Key to store it.')}
             >
               <div className="input-with-btn">
                 <Input
@@ -914,10 +932,10 @@ export function ProvidersPage() {
                   value={stt.apiKey}
                   onChange={(e) => onKeyInput('stt', e.target.value)}
                 />
-                <Button variant="secondary" id="stt-save-key-btn" className="provider-save-key" onClick={() => void onSaveKey('stt')}>Save Key</Button>
+                <Button variant="secondary" id="stt-save-key-btn" className="provider-save-key" onClick={() => void onSaveKey('stt')}>{t('Save Key')}</Button>
               </div>
             </Field>
-            <Field label="Model" htmlFor="stt-model-select">
+            <Field label={t('Model')} htmlFor="stt-model-select">
               <div className="input-with-btn">
                 <Select
                   value={stt.model}
@@ -940,13 +958,13 @@ export function ProvidersPage() {
                       variant="ghost"
                       id="stt-fetch-models-btn"
                       className={sttFetching ? 'animate-spin' : undefined}
-                      aria-label="Fetch speech-to-text models from API"
+                      aria-label={t('Fetch speech-to-text models from API')}
                       onClick={() => void doFetchModels('stt', forms.current.stt, false)}
                     >
                       <RefreshIcon />
                     </Button>
                   </TooltipTrigger>
-                  <TooltipContent>Fetch models from API</TooltipContent>
+                  <TooltipContent>{t('Fetch models from API')}</TooltipContent>
                 </Tooltip>
               </div>
             </Field>
@@ -954,14 +972,14 @@ export function ProvidersPage() {
               <Button
                 variant="secondary"
                 id="stt-test-btn"
-                title="Uses the key in the field, or the saved key if the field is empty"
+                title={t('Uses the key in the field, or the saved key if the field is empty')}
                 onClick={() => void onTest('stt')}
               >
-                Test Connection
+                {t('Test Connection')}
               </Button>
               <div className="connection-status" id="stt-status" role="status">
                 <div className={sttStatus.dot}></div>
-                <span id="stt-status-text">{sttStatus.text}</span>
+                <span id="stt-status-text">{tr(sttStatus.text)}</span>
               </div>
             </div>
           </div>
@@ -969,17 +987,17 @@ export function ProvidersPage() {
           <div id="stt-offline-downloader" className={`offline-downloader${isOffline ? '' : ' hidden'}`}>
             <div className="offline-downloader-title">
               <DownloadIcon />
-              Offline Model Manager
+              {t('Offline Model Manager')}
             </div>
             <div className="offline-downloader-sub">
-              <span className="text-body-md offline-downloader-heading">Choose a model</span>
-              <span className="text-muted offline-downloader-hint">Pick the option that fits how you dictate. You can change this any time.</span>
+              <span className="text-body-md offline-downloader-heading">{t('Choose a model')}</span>
+              <span className="text-muted offline-downloader-hint">{t('Pick the option that fits how you dictate. You can change this any time.')}</span>
             </div>
             <RadioGroup
               value={engine}
               onValueChange={(v) => selectEngine(v)}
               className="offline-model-list"
-              aria-label="Offline speech recognition model"
+              aria-label={t('Offline speech recognition model')}
             >
               {OFFLINE_ENGINES.map((cfg) => {
                 const selected = engine === cfg.engine;
@@ -995,25 +1013,33 @@ export function ProvidersPage() {
                       <button
                         type="button"
                         className="offline-model-select"
-                        aria-label={`Select ${cfg.title} model`}
+                        aria-label={t('Select {model} model', { model: t(cfg.title) })}
                       >
                         <span className="offline-model-card-top">
                           <span className="offline-radio" aria-hidden="true" />
-                          <span className="text-body-md offline-model-title">{cfg.title}</span>
-                          {cfg.badge && <span className="offline-badge">{cfg.badge}</span>}
+                          <span className="text-body-md offline-model-title">{t(cfg.title)}</span>
+                          {cfg.badge && <span className="offline-badge">{t(cfg.badge)}</span>}
                         </span>
-                        <span className="text-muted offline-model-desc">{cfg.desc}</span>
+                        <span className="text-muted offline-model-desc">{t(cfg.desc)}</span>
                         <span className="offline-metrics">
-                          <span className="offline-metric" role="img" aria-label={`Speed ${cfg.speed} out of 5`}>
-                            <span className="offline-metric-label">Speed</span>
+                          <span
+                            className="offline-metric"
+                            role="img"
+                            aria-label={t('Speed {value} out of 5', { value: cfg.speed })}
+                          >
+                            <span className="offline-metric-label">{t('Speed')}</span>
                             <span className="offline-metric-segs">
                               {[1, 2, 3, 4, 5].map((i) => (
                                 <i key={i} className={i <= cfg.speed ? 'on' : undefined} />
                               ))}
                             </span>
                           </span>
-                          <span className="offline-metric" role="img" aria-label={`Accuracy ${cfg.accuracy} out of 5`}>
-                            <span className="offline-metric-label">Accuracy</span>
+                          <span
+                            className="offline-metric"
+                            role="img"
+                            aria-label={t('Accuracy {value} out of 5', { value: cfg.accuracy })}
+                          >
+                            <span className="offline-metric-label">{t('Accuracy')}</span>
                             <span className="offline-metric-segs">
                               {[1, 2, 3, 4, 5].map((i) => (
                                 <i key={i} className={i <= cfg.accuracy ? 'on' : undefined} />
@@ -1031,7 +1057,11 @@ export function ProvidersPage() {
                         disabled={isInstalled || isDownloading}
                         onClick={() => void onDownload(cfg)}
                       >
-                        {isInstalled ? 'Installed' : isDownloading ? 'Connecting…' : 'Download Model'}
+                        {isInstalled
+                          ? t('Installed')
+                          : isDownloading
+                            ? t('Connecting…')
+                            : t('Download Model')}
                       </Button>
                       <Button
                         variant="destructive"
@@ -1039,7 +1069,7 @@ export function ProvidersPage() {
                         className={`offline-model-btn${isInstalled ? '' : ' hidden'}`}
                         onClick={() => setDeleteTarget(cfg)}
                       >
-                        Delete Model
+                        {t('Delete Model')}
                       </Button>
                     </div>
                   </div>
@@ -1053,7 +1083,7 @@ export function ProvidersPage() {
               </div>
               <Progress
                 value={progressPct}
-                aria-label="Offline model download progress"
+                aria-label={t('Offline model download progress')}
                 aria-valuemin={0}
                 aria-valuemax={100}
                 aria-valuenow={Math.round(progressPct)}
@@ -1062,7 +1092,7 @@ export function ProvidersPage() {
               />
               <div className="offline-progress-foot">
                 <span id="offline-progress-bytes">{progressBytes}</span>
-                <Button variant="ghost" size="xs" id="offline-cancel-btn" onClick={() => void onCancelDownload()}>Cancel</Button>
+                <Button variant="ghost" size="xs" id="offline-cancel-btn" onClick={() => void onCancelDownload()}>{t('Cancel')}</Button>
               </div>
             </div>
           </div>
@@ -1077,8 +1107,8 @@ export function ProvidersPage() {
           status={llmStatus}
           fetching={llmFetching}
           idPrefix="llm"
-          title="Language Model (Agent Mode)"
-          description="Choose the model that handles Agent Mode commands and text actions."
+          title={t('Language Model (Agent Mode)')}
+          description={t('Choose the model that handles Agent Mode commands and text actions.')}
           onSelectCard={selectCard}
           onSetForm={setForm}
           onKeyInput={onKeyInput}
@@ -1095,8 +1125,8 @@ export function ProvidersPage() {
           status={cleanerStatus}
           fetching={cleanerFetching}
           idPrefix="cleaner"
-          title="AI Cleaner"
-          description="Choose the model that cleans up your transcriptions after dictation."
+          title={t('AI Cleaner')}
+          description={t('Choose the model that cleans up your transcriptions after dictation.')}
           onSelectCard={selectCard}
           onSetForm={setForm}
           onKeyInput={onKeyInput}
@@ -1108,7 +1138,7 @@ export function ProvidersPage() {
       </Tabs>
 
       <div className="page-actions">
-        <Button variant="default" id="save-providers-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+        <Button variant="default" id="save-providers-btn" onClick={() => void onSaveAll()}>{t('Save Changes')}</Button>
       </div>
 
       <ConfirmDialog
@@ -1116,13 +1146,16 @@ export function ProvidersPage() {
         onOpenChange={(open) => {
           if (!open) setDeleteTarget(null);
         }}
-        title="Delete Model"
+        title={t('Delete Model')}
         body={
           deleteTarget
-            ? `Are you sure you want to delete the ${deleteTarget.delName} model files to free space (${deleteTarget.delSize})?`
+            ? t(
+                'Are you sure you want to delete the {model} model files to free space ({size})?',
+                { model: deleteTarget.delName, size: deleteTarget.delSize },
+              )
             : null
         }
-        confirmLabel="Delete Model"
+        confirmLabel={t('Delete Model')}
         danger
         onConfirm={() => {
           if (deleteTarget) void doDeleteModel(deleteTarget);

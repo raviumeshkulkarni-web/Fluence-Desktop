@@ -8,6 +8,7 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip';
 import { cn } from '@/lib/cn';
+import { t } from '@/i18n';
 
 type SidebarState = 'expanded' | 'collapsed';
 
@@ -243,7 +244,7 @@ function SidebarTrigger({
       {...props}
     >
       {children ?? <PanelLeft data-icon="inline-start" aria-hidden="true" />}
-      <span className="sr-only">Toggle Sidebar</span>
+      <span className="sr-only">{t('Toggle Sidebar')}</span>
     </Button>
   );
 }

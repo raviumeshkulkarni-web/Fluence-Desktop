@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 import { invokeCmd, isRecording } from '@/ipc/tauri';
+import { getLocale, t } from '@/i18n';
 
 // Port of vanilla `UpdateManager` (src/js/update-manager.js): identical
 // 6-state model, identical recording guard, identical 24h localStorage
@@ -39,10 +40,13 @@ function lastCheckedText(): string | null {
   const ts = localStorage.getItem(LAST_CHECK_KEY);
   if (!ts) return null;
   const diff = Date.now() - parseInt(ts, 10);
-  if (diff < 60 * 1000) return 'Just now';
-  if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))}m ago`;
+  if (diff < 60 * 1000) return t('Just now');
+  if (diff < 60 * 60 * 1000)
+    return t('{count}m ago', { count: Math.floor(diff / (60 * 1000)) });
   const date = new Date(parseInt(ts, 10));
-  return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  return t('Today at {time}', {
+    time: date.toLocaleTimeString(getLocale(), { hour: '2-digit', minute: '2-digit' }),
+  });
 }
 
 function updaterPlugin(): {
@@ -121,7 +125,7 @@ class UpdaterStore {
     if (!plugin) {
       if (manualTrigger) {
         this.state = 'failed';
-        this.error = 'Updater plugin not initialized.';
+        this.error = t('Updater plugin not initialized.');
         this.emit();
       }
       return;
@@ -133,8 +137,9 @@ class UpdaterStore {
       if (await this.recording()) {
         if (manualTrigger) {
           this.state = 'failed';
-          this.error =
-            'Cannot check for updates while recording. Please finish recording first.';
+          this.error = t(
+            'Cannot check for updates while recording. Please finish recording first.',
+          );
           this.emit();
         }
         return;
@@ -160,8 +165,8 @@ class UpdaterStore {
       if (manualTrigger) {
         this.state = 'failed';
         this.error = notFound
-          ? 'No release update feed published on GitHub yet (HTTP 404).'
-          : 'Please check your internet connection or try again later.';
+          ? t('No release update feed published on GitHub yet (HTTP 404).')
+          : t('Please check your internet connection or try again later.');
       } else {
         this.updateObj = null;
         this.state = 'idle';
@@ -175,8 +180,9 @@ class UpdaterStore {
     if (!this.updateObj || this.state !== 'available') return;
     if (await this.recording()) {
       this.state = 'failed';
-      this.error =
-        'Cannot update while recording. Please stop recording and try again.';
+      this.error = t(
+        'Cannot update while recording. Please stop recording and try again.',
+      );
       this.emit();
       return;
     }
@@ -201,7 +207,7 @@ class UpdaterStore {
       this.state = 'failed';
       this.error =
         (err as { message?: string } | null)?.message ??
-        'Failed to download update.';
+        t('Failed to download update.');
     }
     this.emit();
   }
@@ -220,8 +226,9 @@ class UpdaterStore {
       }
     } catch {
       this.state = 'failed';
-      this.error =
-        'Failed to restart application automatically. Please restart manually.';
+      this.error = t(
+        'Failed to restart application automatically. Please restart manually.',
+      );
       this.emit();
     }
   }

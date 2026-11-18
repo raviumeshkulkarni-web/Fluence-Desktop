@@ -5,6 +5,8 @@ import {
   displayHotkey,
   isAllowedWizardHotkey,
 } from './hotkey';
+import { t } from '@/i18n';
+import { formatShortcut } from '@/lib/shortcut';
 
 interface HotkeyRecorderProps {
   value: string;
@@ -96,7 +98,7 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
   return (
     <>
     <div className="form-row" style={{ alignItems: 'center' }}>
-      <label id="wiz-hotkey-label">Recording Shortcut</label>
+      <label id="wiz-hotkey-label">{t('Recording Shortcut')}</label>
       <div
         ref={displayRef}
         id="wiz-hotkey-display"
@@ -119,7 +121,9 @@ export function HotkeyRecorder({ value, onChange, active, onRecordingChange }: H
         }}
       >
         <span id="wiz-hotkey-text">
-          {recording ? displayHotkey(pending) || 'Press your shortcut…' : displayHotkey(value)}
+          {recording
+            ? formatShortcut(displayHotkey(pending)) || t('Press your shortcut…')
+            : formatShortcut(displayHotkey(value))}
         </span>
       </div>
     </div>

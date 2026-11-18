@@ -6,6 +6,7 @@ import {
 } from '@/ipc/settings';
 import { toast } from '@/components/fluence/Toasts';
 import { describeError } from '@/lib/errors';
+import { t } from '@/i18n';
 
 // Command names + argument shapes reproduced exactly from vanilla
 // (setupHotkeyRecorders/applyHotkeyChanges/applyAutostartChange,
@@ -65,7 +66,7 @@ async function applyHotkeyChanges(): Promise<void> {
     // user without shortcuts until restart.
     if (previous) await updateHotkeys(previous).catch(() => undefined);
     lastAppliedHotkeys = previous;
-    toast('Could not update hotkeys. ' + describeError(err), 'error');
+    toast(t('Failed to update hotkeys: {error}', { error: describeError(err) }), 'error');
   }
 }
 

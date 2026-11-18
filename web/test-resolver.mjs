@@ -13,7 +13,7 @@ const SRC = new URL('./src/', import.meta.url);
 export async function resolve(specifier, context, next) {
   if (specifier.startsWith('@/')) {
     const rel = specifier.slice(2);
-    const candidates = [rel, `${rel}.ts`, `${rel}.tsx`, `${rel}/index.ts`];
+    const candidates = [`${rel}.ts`, `${rel}.tsx`, `${rel}/index.ts`, rel];
     for (const candidate of candidates) {
       const url = new URL(candidate, SRC);
       if (existsSync(fileURLToPath(url))) {
@@ -21,6 +21,19 @@ export async function resolve(specifier, context, next) {
       }
     }
     return next(pathToFileURL(new URL(rel, SRC).pathname).href, context);
+  }
+  if (
+    (specifier.startsWith('./') || specifier.startsWith('../')) &&
+    context.parentURL?.startsWith(SRC.href)
+  ) {
+    const base = new URL(specifier, context.parentURL);
+    if (!/\.\w+$/.test(base.pathname)) {
+      for (const candidate of [`${base.href}.ts`, `${base.href}.tsx`, `${base.href}/index.ts`]) {
+        if (existsSync(fileURLToPath(candidate))) {
+          return next(candidate, context);
+        }
+      }
+    }
   }
   // Test files import each other with an explicit `.ts` extension (required by
   // Node's type-stripping); leave everything else to the default resolver.

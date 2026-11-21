@@ -973,6 +973,26 @@
   flex: 1;
   min-height: 0;
 }
+/* Card-scoped empty state ("By weekday" / "Today"): the base .chart-empty in
+   the frozen settings.css layer is an absolute overlay sized for the hero
+   chart, and reusing it inside these cards overlapped their content. Reset it
+   to normal flow so the message sits inside its card; min-height keeps the
+   empty card from collapsing to a bare line of text. The #page-dashboard
+   scope also outranks the [data-theme="light"] .chart-empty background
+   override in settings.css, so the transparent background holds in light
+   mode too. */
+#page-dashboard .chart-empty.chart-empty-inline {
+  position: static;
+  margin: 0;
+  padding: 20px 16px;
+  min-height: 132px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
 .chart-container .recharts-wrapper:focus,
 .chart-container .recharts-surface:focus {
   outline: none;

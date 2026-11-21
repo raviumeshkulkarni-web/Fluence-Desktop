@@ -1095,7 +1095,7 @@ export function DashboardPage({
           </CardHeader>
           <CardContent>
             {weekdayTotal === 0 ? (
-              <div className="chart-empty">
+              <div className="chart-empty chart-empty-inline">
                 No activity in this range yet. Press your hotkey to dictate.
               </div>
             ) : (
@@ -1265,7 +1265,7 @@ export function DashboardPage({
           </CardHeader>
           <CardContent>
             {todayRatio == null ? (
-              <div className="chart-empty">
+              <div className="chart-empty chart-empty-inline">
                 No baseline yet. Press your hotkey to dictate.
               </div>
             ) : (

@@ -63,11 +63,17 @@ pub fn run() {
 
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _argv, _cwd| {
-            log::info!("Second instance launched. Showing settings window.");
+            log::info!("Second instance launched.");
+            if let Some(wiz) = app.get_webview_window("wizard") {
+                if wiz.is_visible().unwrap_or(false) {
+                    let _ = wiz.unminimize();
+                    let _ = wiz.set_focus();
+                    return;
+                }
+            }
             if let Some(win) = app.get_webview_window("main") {
                 let _ = win.show();
                 let _ = win.set_focus();
-                // Notify frontend to resume canvas animations
                 let _ = win.emit("window-visibility", true);
             }
         }))
@@ -112,30 +118,32 @@ pub fn run() {
                 log::error!("Failed to set up tray: {}", e);
             }
 
-            // One-time first-run notification that Fluence is running in the tray
-            if let Ok(cfg_dir) = app.path().app_config_dir() {
-                let flag = cfg_dir.join("tray_notified.flag");
-                if !flag.exists() {
-                    if let Err(e) = app
-                        .notification()
-                        .builder()
-                        .title("Fluence is ready")
-                        .body(
-                            "Running in the system tray. Press your hotkey to start voice typing.",
-                        )
-                        .show()
-                    {
-                        log::warn!("Failed to show first-run tray notification: {}", e);
-                    } else if let Err(e) =
-                        std::fs::create_dir_all(&cfg_dir).and_then(|_| std::fs::write(&flag, "1"))
-                    {
-                        log::warn!("Failed to write tray notification flag file: {}", e);
+            // Load settings
+            let app_settings = settings::load_settings().unwrap_or_default();
+
+            // One-time first-run notification that Fluence is running in the tray (after setup is finished)
+            if !app_settings.first_run {
+                if let Ok(cfg_dir) = app.path().app_config_dir() {
+                    let flag = cfg_dir.join("tray_notified.flag");
+                    if !flag.exists() {
+                        if let Err(e) = app
+                            .notification()
+                            .builder()
+                            .title("Fluence is ready")
+                            .body(
+                                "Running in the system tray. Press your hotkey to start voice typing.",
+                            )
+                            .show()
+                        {
+                            log::warn!("Failed to show first-run tray notification: {}", e);
+                        } else if let Err(e) =
+                            std::fs::create_dir_all(&cfg_dir).and_then(|_| std::fs::write(&flag, "1"))
+                        {
+                            log::warn!("Failed to write tray notification flag file: {}", e);
+                        }
                     }
                 }
             }
-
-            // Load settings
-            let app_settings = settings::load_settings().unwrap_or_default();
 
             // Recover any background-app audio left ducked by a prior crash.
             ducking::replay_on_launch();
@@ -195,6 +203,7 @@ pub fn run() {
             dictionary::get_dictionary,
             dictionary::add_dictionary_entry,
             dictionary::update_dictionary_entry,
+            dictionary::set_dictionary_entry_enabled,
             dictionary::delete_dictionary_entry,
             dictionary::import_dictionary,
             dictionary::import_dictionary_report,
@@ -205,6 +214,7 @@ pub fn run() {
             snippets::set_snippets_enabled,
             snippets::add_snippet,
             snippets::update_snippet,
+            snippets::set_snippet_enabled,
             snippets::delete_snippet,
             // Audio
             audio::list_audio_devices,
@@ -316,6 +326,7 @@ pub fn run() {
         // to tray, so this is the only real exit - un-duck before the process leaves.
         if let tauri::RunEvent::ExitRequested { .. } = event {
             ducking::restore();
+            offline_transcribe::shutdown_server();
         }
     });
 }

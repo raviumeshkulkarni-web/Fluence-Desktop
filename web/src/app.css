@@ -1295,3 +1295,14 @@ button.history-group-header {
   text-transform: none;
   letter-spacing: 0.02em;
 }
+
+/* Per-entry enable switch column (Snippets + Dictionary). */
+.dict-table th.toggles-col,
+.dict-table td.toggles-col {
+  width: 56px;
+  min-width: 56px;
+  max-width: 56px;
+  text-align: center;
+  padding: 10px 0;
+  vertical-align: middle;
+}

@@ -106,9 +106,13 @@ pub fn read_credential(target: &str) -> Result<String> {
         }
 
         let cred = &*pcred;
-        let blob =
-            std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
-        let secret = String::from_utf8_lossy(blob).to_string();
+        let secret = if cred.CredentialBlob.is_null() || cred.CredentialBlobSize == 0 {
+            String::new()
+        } else {
+            let blob =
+                std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
+            String::from_utf8_lossy(blob).to_string()
+        };
         CredFree(pcred as *mut _);
         Ok(secret)
     }
@@ -233,9 +237,13 @@ pub fn read_sync_refresh_token_checked() -> Result<SyncRefreshTokenRead> {
         }
 
         let cred = &*pcred;
-        let blob =
-            std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
-        let secret = String::from_utf8_lossy(blob).to_string();
+        let secret = if cred.CredentialBlob.is_null() || cred.CredentialBlobSize == 0 {
+            String::new()
+        } else {
+            let blob =
+                std::slice::from_raw_parts(cred.CredentialBlob, cred.CredentialBlobSize as usize);
+            String::from_utf8_lossy(blob).to_string()
+        };
         CredFree(pcred as *mut _);
         Ok(SyncRefreshTokenRead::Present(secret))
     }

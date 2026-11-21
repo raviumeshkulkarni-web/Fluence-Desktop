@@ -393,6 +393,21 @@ pub fn get_history(
         .map_err(|e| e.to_string())
 }
 
+/// Newest live transcript text, for the tray "Paste Last Transcript" action.
+pub fn latest_transcript_text() -> Result<Option<String>, String> {
+    with_db(|conn| {
+        let mut stmt = conn.prepare(
+            "SELECT text FROM history WHERE deleted_at IS NULL ORDER BY timestamp_ms DESC LIMIT 1",
+        )?;
+        let mut rows = stmt.query([])?;
+        match rows.next()? {
+            Some(row) => Ok(Some(row.get(0)?)),
+            None => Ok(None),
+        }
+    })
+    .map_err(|e| e.to_string())
+}
+
 // Extracted so the window filters are unit-testable against an in-memory
 // connection (production path has the same SQL, no duplication).
 fn query_history(
@@ -479,6 +494,7 @@ pub fn save_history_entry(
     let entry =
         add_history_entry(&text, &mode, duration_ms, &provider).map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
+    let _ = crate::tray::refresh_menu(&app);
     Ok(entry)
 }
 
@@ -491,6 +507,7 @@ pub fn delete_history_entry(
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     delete_history_by_id(&id).map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
+    let _ = crate::tray::refresh_menu(&app);
     Ok(())
 }
 
@@ -510,6 +527,7 @@ pub fn clear_history(window: tauri::Window, app: tauri::AppHandle) -> Result<(),
     crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
     clear_all_history().map_err(|e| e.to_string())?;
     let _ = app.emit("history-updated", ());
+    let _ = crate::tray::refresh_menu(&app);
     Ok(())
 }
 

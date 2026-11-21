@@ -1210,6 +1210,13 @@ body {
   box-shadow: 0 6px 18px rgba(16, 24, 40, 0.25), 0 0 0 5px rgba(0, 0, 0, 0.08);
 }
 
+[data-theme='light'] .wizard-offline-engine-card[data-state='checked'],
+[data-theme='light'] .wizard-offline-engine-card.active {
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+
 /* Offline setup: no key/test surfaces, just the local-engine contract. */
 .wizard-offline-note {
   padding: 12px 14px;
@@ -1223,6 +1230,129 @@ body {
 
 .wizard-offline-note strong {
   color: var(--color-on-surface);
+}
+
+.wizard-offline-box {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-md);
+  width: 100%;
+}
+
+.wizard-offline-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: var(--spacing-sm);
+  width: 100%;
+}
+
+.wizard-offline-engine-card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 12px 14px;
+  background: var(--choice-bg);
+  border: 1px solid var(--choice-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  transition: var(--transition-fast);
+  color: var(--color-on-surface-variant);
+  text-align: left;
+  width: 100%;
+}
+
+.wizard-offline-engine-card:hover {
+  background: var(--choice-hover-bg);
+  border-color: var(--choice-hover-border);
+  color: var(--color-on-surface);
+}
+
+.wizard-offline-engine-card[data-state='checked'],
+.wizard-offline-engine-card.active {
+  background: var(--choice-selected-bg);
+  border-color: var(--choice-selected-border);
+  color: var(--color-on-surface);
+  box-shadow: var(--choice-selected-shadow);
+}
+
+.wizard-offline-engine-card[data-disabled],
+.wizard-offline-engine-card:disabled,
+.provider-card[data-disabled],
+.provider-card:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.wizard-offline-engine-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+}
+
+.wizard-offline-engine-title {
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 600;
+  color: var(--color-on-surface);
+}
+
+.wizard-offline-engine-desc {
+  font-family: var(--font-body);
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  line-height: 1.35;
+}
+
+.wizard-offline-ready {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 10px 14px;
+  background: var(--color-success-container);
+  border: 1px solid var(--color-success);
+  border-radius: var(--radius-sm);
+  color: var(--color-success);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+}
+
+.wizard-offline-ready-icon {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.wizard-offline-progress {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--color-surface-secondary);
+  border: 1px solid var(--color-border-subtle);
+  border-radius: var(--radius-sm);
+}
+
+.wizard-offline-progress-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: var(--text-label-xs);
+  color: var(--color-on-surface-variant);
+  font-weight: 500;
+}
+
+.wizard-offline-error {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--color-error);
+  border-radius: var(--radius-sm);
+  background: var(--color-error-container);
+  color: var(--color-error);
+  font-size: var(--text-label-xs);
+  line-height: 1.4;
 }
 
 .wizard-save-error {

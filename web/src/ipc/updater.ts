@@ -38,11 +38,20 @@ const CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
 function lastCheckedText(): string | null {
   const ts = localStorage.getItem(LAST_CHECK_KEY);
   if (!ts) return null;
-  const diff = Date.now() - parseInt(ts, 10);
+  const at = parseInt(ts, 10);
+  if (!Number.isFinite(at)) return null;
+  const diff = Date.now() - at;
   if (diff < 60 * 1000) return 'Just now';
   if (diff < 60 * 60 * 1000) return `${Math.floor(diff / (60 * 1000))}m ago`;
-  const date = new Date(parseInt(ts, 10));
-  return `Today at ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
+  const date = new Date(at);
+  const time = date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const startOfToday = new Date();
+  startOfToday.setHours(0, 0, 0, 0);
+  if (date >= startOfToday) return `Today at ${time}`;
+  const startOfYesterday = new Date(startOfToday);
+  startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+  if (date >= startOfYesterday) return `Yesterday at ${time}`;
+  return date.toLocaleDateString([], { month: 'short', day: 'numeric' });
 }
 
 function updaterPlugin(): {
@@ -135,8 +144,11 @@ class UpdaterStore {
           this.state = 'failed';
           this.error =
             'Cannot check for updates while recording. Please finish recording first.';
-          this.emit();
+        } else {
+          // Never leave the background policy stuck in `checking`.
+          this.state = 'idle';
         }
+        this.emit();
         return;
       }
       const update = await plugin.check();

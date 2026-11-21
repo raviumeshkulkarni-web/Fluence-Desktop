@@ -17,6 +17,13 @@ static DOWNLOAD_CANCELLED: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false
 // Global downloading flag to prevent concurrent downloads
 static IS_DOWNLOADING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 
+struct DownloadGuard;
+impl Drop for DownloadGuard {
+    fn drop(&mut self) {
+        IS_DOWNLOADING.store(false, Ordering::SeqCst);
+    }
+}
+
 // ── Sherpa manifest ──────────────────────────────────────────────
 // Pinned release version, download URLs, and expected SHA-256 hashes.
 // Update this file (src-tauri/sherpa-manifest.json) when bumping Sherpa.
@@ -194,18 +201,21 @@ pub fn delete_model_files() -> Result<u64> {
 }
 
 pub async fn start_download_task(app: AppHandle) -> Result<()> {
-    if IS_DOWNLOADING.load(Ordering::SeqCst) {
+    if IS_DOWNLOADING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return Err(anyhow!("Download is already in progress"));
     }
-
-    IS_DOWNLOADING.store(true, Ordering::SeqCst);
     DOWNLOAD_CANCELLED.store(false, Ordering::SeqCst);
+    let guard = DownloadGuard;
 
     let app_clone = app.clone();
     tokio::spawn(async move {
+        let guard = guard;
         match perform_download(Some(&app_clone)).await {
             Ok(_) => {
-                IS_DOWNLOADING.store(false, Ordering::SeqCst);
+                drop(guard);
                 emit_progress(
                     Some(&app_clone),
                     DownloadProgressPayload {
@@ -219,7 +229,9 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
                 );
             }
             Err(e) => {
-                IS_DOWNLOADING.store(false, Ordering::SeqCst);
+                // Clean up incomplete temp files before releasing guard or notifying UI
+                let _ = clean_temp_files(&get_offline_dir());
+                drop(guard);
                 let err_msg = e.to_string();
                 log::error!("Offline download failed: {}", err_msg);
 
@@ -240,10 +252,6 @@ pub async fn start_download_task(app: AppHandle) -> Result<()> {
                         error_message: Some(err_msg),
                     },
                 );
-
-                // Clean up incomplete temp files
-                let dir = get_offline_dir();
-                let _ = clean_temp_files(&dir);
             }
         }
     });
@@ -510,6 +518,10 @@ async fn download_file_to_path(
         .unwrap_or(4 * 1024 * 1024 * 1024);
     let mut file_bytes: u64 = 0;
 
+    let mut last_emit = std::time::Instant::now()
+        .checked_sub(std::time::Duration::from_millis(200))
+        .unwrap_or_else(std::time::Instant::now);
+
     while let Some(chunk) = response.chunk().await? {
         if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
             let _ = file.shutdown().await;
@@ -531,19 +543,35 @@ async fn download_file_to_path(
             );
         }
 
-        let progress = (*bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0);
-        emit_progress(
-            app,
-            DownloadProgressPayload {
-                status: "downloading".to_string(),
-                progress,
-                bytes_downloaded: *bytes_downloaded,
-                total_bytes,
-                current_file: file_label.to_string(),
-                error_message: None,
-            },
-        );
+        if last_emit.elapsed() >= std::time::Duration::from_millis(100) {
+            last_emit = std::time::Instant::now();
+            let progress = (*bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0);
+            emit_progress(
+                app,
+                DownloadProgressPayload {
+                    status: "downloading".to_string(),
+                    progress,
+                    bytes_downloaded: *bytes_downloaded,
+                    total_bytes,
+                    current_file: file_label.to_string(),
+                    error_message: None,
+                },
+            );
+        }
     }
+
+    let progress = (*bytes_downloaded as f64 / total_bytes as f64 * 100.0).min(99.0);
+    emit_progress(
+        app,
+        DownloadProgressPayload {
+            status: "downloading".to_string(),
+            progress,
+            bytes_downloaded: *bytes_downloaded,
+            total_bytes,
+            current_file: file_label.to_string(),
+            error_message: None,
+        },
+    );
 
     file.shutdown().await?;
     drop(file);
@@ -608,19 +636,31 @@ pub async fn download_offline_model(
     window: tauri::Window,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     start_download_task(app).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn get_offline_model_status(window: tauri::Window) -> bool {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW]).is_ok()
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )
+    .is_ok()
         && check_model_files_exist()
 }
 
 #[tauri::command]
 pub fn cancel_offline_download(window: tauri::Window) {
-    if crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW]).is_err() {
+    if crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )
+    .is_err()
+    {
         return;
     }
     cancel_download()
@@ -773,21 +813,29 @@ fn emit_v2_download_result(
     label: &str,
     dest_dir: &Path,
     manifest: &MoonshineV2Manifest,
+    guard: DownloadGuard,
 ) {
-    IS_DOWNLOADING.store(false, Ordering::SeqCst);
     match result {
-        Ok(_) => emit_progress(
-            Some(app),
-            DownloadProgressPayload {
-                status: "completed".to_string(),
-                progress: 100.0,
-                bytes_downloaded: 0,
-                total_bytes: 0,
-                current_file: "".to_string(),
-                error_message: None,
-            },
-        ),
+        Ok(_) => {
+            drop(guard);
+            emit_progress(
+                Some(app),
+                DownloadProgressPayload {
+                    status: "completed".to_string(),
+                    progress: 100.0,
+                    bytes_downloaded: 0,
+                    total_bytes: 0,
+                    current_file: "".to_string(),
+                    error_message: None,
+                },
+            );
+        }
         Err(e) => {
+            for f in &manifest.files {
+                let _ = fs::remove_file(dest_dir.join(&f.name));
+            }
+            let _ = clean_temp_files(dest_dir);
+            drop(guard);
             let err_msg = e.to_string();
             log::error!("{label} download failed: {}", err_msg);
             let status = if DOWNLOAD_CANCELLED.load(Ordering::SeqCst) {
@@ -806,10 +854,6 @@ fn emit_v2_download_result(
                     error_message: Some(err_msg),
                 },
             );
-            for f in &manifest.files {
-                let _ = fs::remove_file(dest_dir.join(&f.name));
-            }
-            let _ = clean_temp_files(dest_dir);
         }
     }
 }
@@ -829,14 +873,18 @@ async fn start_moonshine_v2_download_task_for(
     label: &'static str,
     app: AppHandle,
 ) -> Result<()> {
-    if IS_DOWNLOADING.load(Ordering::SeqCst) {
+    if IS_DOWNLOADING
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
         return Err(anyhow!("Download is already in progress"));
     }
-    IS_DOWNLOADING.store(true, Ordering::SeqCst);
     DOWNLOAD_CANCELLED.store(false, Ordering::SeqCst);
+    let guard = DownloadGuard;
 
     let app_clone = app.clone();
     tokio::spawn(async move {
+        let guard = guard;
         let dest_dir = if manifest.arch == "small" {
             get_moonshine_v2_small_dir()
         } else {
@@ -844,7 +892,7 @@ async fn start_moonshine_v2_download_task_for(
         };
         let result =
             perform_moonshine_v2_download(manifest, &dest_dir, label, Some(&app_clone)).await;
-        emit_v2_download_result(&app_clone, result, label, &dest_dir, manifest);
+        emit_v2_download_result(&app_clone, result, label, &dest_dir, manifest, guard);
     });
 
     Ok(())
@@ -855,7 +903,10 @@ pub async fn download_moonshine_v2_small_model(
     window: tauri::Window,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     start_moonshine_v2_small_download_task(app)
         .await
         .map_err(|e| e.to_string())
@@ -863,7 +914,11 @@ pub async fn download_moonshine_v2_small_model(
 
 #[tauri::command]
 pub fn get_moonshine_v2_small_model_status(window: tauri::Window) -> bool {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW]).is_ok()
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )
+    .is_ok()
         && check_moonshine_v2_small_files_exist()
 }
 
@@ -878,7 +933,10 @@ pub async fn download_moonshine_v2_medium_model(
     window: tauri::Window,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     start_moonshine_v2_medium_download_task(app)
         .await
         .map_err(|e| e.to_string())
@@ -886,7 +944,11 @@ pub async fn download_moonshine_v2_medium_model(
 
 #[tauri::command]
 pub fn get_moonshine_v2_medium_model_status(window: tauri::Window) -> bool {
-    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW]).is_ok()
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
+    )
+    .is_ok()
         && check_moonshine_v2_medium_files_exist()
 }
 

@@ -21,9 +21,10 @@ export function StepDone({ data }: StepDoneProps) {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
+
   const persist = async () => {
     const current = await getSettings();
-    const usingOffline = !!data.skipApiKey || data.provider === 'Local Offline';
     // The settings shell follows the stored choice live — 'auto' tracks
     // the OS with no restart. The backend blob only speaks dark|light, so
     // it records the currently-resolved value for consistency.
@@ -55,9 +56,10 @@ export function StepDone({ data }: StepDoneProps) {
       next.stt_provider = {
         preset: 'Local Offline',
         base_url: '',
-        model: 'sensevoice',
+        model: data.offlineEngine || 'moonshine_v2_small',
         api_key_saved: false,
       };
+      next.offline_engine = data.offlineEngine || 'moonshine_v2_small';
     } else {
       next.stt_provider = {
         preset: data.provider,
@@ -68,12 +70,17 @@ export function StepDone({ data }: StepDoneProps) {
       // The key is opt-in for the LLM side: leaving this unchecked keeps the
       // user's existing AI cleanup / Agent Mode provider untouched.
       if (data.useKeyForAgent) {
-        next.llm_provider = {
+        const shared = {
           preset: data.provider,
           base_url: data.baseUrl,
           model: data.llmModel,
           api_key_saved: true,
         };
+        next.llm_provider = { ...shared };
+        // AI cleanup reads cleaner_provider; leaving it untouched while
+        // pointing the LLM provider at the new key would silently break
+        // cleanup until the user visits Providers.
+        next.cleaner_provider = { ...shared };
       }
     }
 
@@ -146,7 +153,7 @@ export function StepDone({ data }: StepDoneProps) {
         <Check size={40} strokeWidth={2.5} strokeLinecap="round" strokeLinejoin="round" />
       </div>
       <h1 className="step-title" tabIndex={-1}>
-        Finish Setup
+        You&apos;re All Set!
       </h1>
       <p className="step-desc">
         Your choices are ready. Finishing saves them and keeps{' '}
@@ -158,21 +165,43 @@ export function StepDone({ data }: StepDoneProps) {
         </div>
       )}
       <div className="done-actions">
-        <Button
-          style={{ width: '100%', padding: 12 }}
-          disabled={saving}
-          onClick={() => void finish(true)}
-        >
-          {saving ? 'Saving…' : 'Save and Open Settings'}
-        </Button>
-        <Button
-          variant="ghost"
-          style={{ width: '100%' }}
-          disabled={saving}
-          onClick={() => void finish(false)}
-        >
-          Save and Close
-        </Button>
+        {usingOffline && !data.offlineInstalled ? (
+          <>
+            <Button
+              style={{ width: '100%', padding: 12 }}
+              disabled={saving}
+              onClick={() => void finish(true)}
+            >
+              {saving ? 'Saving…' : 'Save and Open Settings'}
+            </Button>
+            <Button
+              variant="ghost"
+              style={{ width: '100%' }}
+              disabled={saving}
+              onClick={() => void finish(false)}
+            >
+              Start Using Fluence
+            </Button>
+          </>
+        ) : (
+          <>
+            <Button
+              style={{ width: '100%', padding: 12 }}
+              disabled={saving}
+              onClick={() => void finish(false)}
+            >
+              {saving ? 'Saving…' : 'Start Using Fluence'}
+            </Button>
+            <Button
+              variant="ghost"
+              style={{ width: '100%' }}
+              disabled={saving}
+              onClick={() => void finish(true)}
+            >
+              Save and Open Settings
+            </Button>
+          </>
+        )}
       </div>
     </>
   );

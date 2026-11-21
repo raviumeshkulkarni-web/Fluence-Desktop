@@ -25,10 +25,10 @@
 // | sync_run_now                         | main                 | main only                |
 // | get_account_stats/activity           | main                 | main only                |
 // | get_account_activity                  | main                 | main only (Package B)    |
-// | download_*_model (3)                 | main                 | main only                |
-// | cancel_offline_download (1)          | main                 | main only                |
+// | download_*_model (3)                 | main,wizard          | main+wizard              |
+// | cancel_offline_download (1)          | main,wizard          | main+wizard              |
 // | delete_*_model (3)                   | main                 | main only                |
-// | get_*_model_status (3)               | main                 | main only                |
+// | get_*_model_status (3)               | main,wizard          | main+wizard              |
 // | list_audio_devices                   | main                 | open (device picker)     |
 // | cleanup_debug_recordings             | main                 | main only                |
 // | transcribe_audio                     | main,wizard          | main+wizard (raw-key)    |
@@ -69,7 +69,8 @@
 // | get_weekly_activity                  | main                 | main only (Package B)    |
 // | save_export_file                     | main                 | main only (native save)  |
 // | start/stop/is_recording              | all                  | open                     |
-// | stop_and_transcribe/finish/retry     | overlay              | overlay only             |
+// | stop_and_transcribe_recording        | overlay,wizard       | overlay+wizard           |
+// | finish/retry_transcription_flow      | overlay              | overlay only             |
 // | inject_text                          | overlay              | overlay only (+target    |
 // |                                      |                      |  HWND validation, P0)    |
 // | capture_target_window                | overlay              | overlay only             |

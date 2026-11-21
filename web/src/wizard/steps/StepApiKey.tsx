@@ -4,6 +4,7 @@ import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
 import { Input } from '@/components/ui/input';
+import { Progress } from '@/components/ui/progress';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import {
@@ -14,8 +15,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import type { WizardData } from '../Wizard';
-import { fetchModels, fetchSttModels, getApiKey, testSttConnection } from '../ipc';
+import type { WizardData, WizardOfflineEngine } from '../Wizard';
+import {
+  cancelOfflineDownload,
+  downloadMoonshineV2SmallModel,
+  downloadOfflineModel,
+  fetchModels,
+  fetchSttModels,
+  getApiKey,
+  getMoonshineV2SmallModelStatus,
+  getOfflineModelStatus,
+  subscribeOfflineDownloadProgress,
+  testSttConnection,
+} from '../ipc';
+import { keyTarget } from '@/ipc/providers';
 import { describeError } from '@/lib/errors';
 
 const PROVIDER_PRESETS: Record<string, { url: string; model: string; llmModel: string }> = {
@@ -27,7 +40,7 @@ const PROVIDER_PRESETS: Record<string, { url: string; model: string; llmModel: s
   openai: { url: 'https://api.openai.com', model: 'whisper-1', llmModel: 'gpt-4o' },
   mistral: { url: 'https://api.mistral.ai', model: 'mistral-stt', llmModel: 'mistral-large-latest' },
   custom: { url: '', model: '', llmModel: '' },
-  'Local Offline': { url: '', model: 'sensevoice', llmModel: '' },
+  'Local Offline': { url: '', model: 'moonshine_v2_small', llmModel: '' },
 };
 
 const PROVIDERS = ['groq', 'openai', 'mistral', 'custom', 'Local Offline'] as const;
@@ -59,6 +72,11 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
     kind: 'idle',
     text: 'Not tested',
   });
+  const [downloading, setDownloading] = useState(false);
+  const [progress, setProgress] = useState(0);
+  const [statusText, setStatusText] = useState('');
+  const [dlError, setDlError] = useState<string | null>(null);
+
   const dataRef = useRef(data);
   dataRef.current = data;
   const onPatchRef = useRef(onPatch);
@@ -99,26 +117,117 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
     }
   }, []);
 
+  // Prefill key when provider changes
   useEffect(() => {
+    let cancelled = false;
     const t = window.setTimeout(async () => {
       if (dataRef.current.skipApiKey || dataRef.current.provider === 'Local Offline') return;
-      const key = await getApiKey('Fluence/STT_ApiKey').catch(() => null);
-      if (key) {
+      // Prefer the per-preset slot the backend reads; fall back to the legacy
+      // global slot so re-running setup on an older install still prefills.
+      const presetTarget = keyTarget('stt', dataRef.current.provider);
+      let key = await getApiKey(presetTarget).catch(() => null);
+      if (!key) key = await getApiKey('Fluence/STT_ApiKey').catch(() => null);
+      if (key && !cancelled && !dataRef.current.apiKey) {
         onPatchRef.current({ apiKey: key });
         void doFetchModels(dataRef.current.baseUrl, key);
       }
     }, 500);
-    return () => window.clearTimeout(t);
-  }, [doFetchModels]);
+    return () => {
+      cancelled = true;
+      window.clearTimeout(t);
+    };
+  }, [data.provider, doFetchModels]);
+
+  // Query real install status whenever usingOffline or offlineEngine changes
+  useEffect(() => {
+    if (!usingOffline) return;
+    let cancelled = false;
+    const checkStatus = async () => {
+      try {
+        const engine = dataRef.current.offlineEngine || 'moonshine_v2_small';
+        const installed =
+          engine === 'moonshine_v2_small'
+            ? await getMoonshineV2SmallModelStatus()
+            : await getOfflineModelStatus();
+        if (!cancelled) {
+          onPatchRef.current({ offlineInstalled: installed });
+        }
+      } catch {
+        if (!cancelled) {
+          onPatchRef.current({ offlineInstalled: false });
+        }
+      }
+    };
+    void checkStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [usingOffline, data.offlineEngine]);
+
+  // Subscribe to offline download progress
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void subscribeOfflineDownloadProgress((p) => {
+      if (disposed) return;
+      if (p.status === 'downloading' || p.status === 'extracting') {
+        setDownloading(true);
+        setProgress(p.progress || 0);
+        setStatusText(p.currentFile || 'Downloading…');
+      } else if (p.status === 'completed') {
+        setDownloading(false);
+        setProgress(100);
+        setStatusText('');
+        setDlError(null);
+        onError(null);
+        onPatchRef.current({ offlineInstalled: true, offlineDownloadSkipped: false });
+      } else if (p.status === 'error') {
+        setDownloading(false);
+        setStatusText('');
+        setDlError(describeError(p.errorMessage, 'Download failed. Please try again.'));
+      } else if (p.status === 'cancelled') {
+        setDownloading(false);
+        setStatusText('');
+        setDlError('Download cancelled.');
+      }
+    }).then((u) => {
+      if (disposed) u();
+      else unlisten = u;
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, [onError]);
+
+  const downloadingRef = useRef(false);
+  downloadingRef.current = downloading;
+  useEffect(() => {
+    return () => {
+      if (downloadingRef.current) {
+        void cancelOfflineDownload().catch(() => undefined);
+      }
+    };
+  }, []);
 
   const fetchTimer = useRef(0);
   useEffect(() => () => window.clearTimeout(fetchTimer.current), []);
 
   const onProvider = (preset: string) => {
     if (preset === 'Local Offline') {
-      onPatch({ provider: preset, skipApiKey: true, apiKey: '', baseUrl: '', model: 'sensevoice', llmModel: '' });
-      setSttModels((prev) => withCurrent(prev, 'sensevoice'));
+      const engine = data.offlineEngine || 'moonshine_v2_small';
+      onPatch({
+        provider: preset,
+        skipApiKey: true,
+        apiKey: '',
+        baseUrl: '',
+        model: engine,
+        llmModel: '',
+      });
+      setSttModels((prev) => withCurrent(prev, engine));
       onError(null);
+      setDlError(null);
       return;
     }
     const p = PROVIDER_PRESETS[preset];
@@ -133,6 +242,50 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
     });
     setSttModels((prev) => withCurrent(prev, p.model));
     setLlmModels((prev) => withCurrent(prev, p.llmModel));
+    onError(null);
+    setDlError(null);
+  };
+
+  const onOfflineEngineChange = (val: string) => {
+    const engine = val as WizardOfflineEngine;
+    onPatch({ offlineEngine: engine, model: engine });
+    onError(null);
+    setDlError(null);
+  };
+
+  const onStartDownload = async () => {
+    setDlError(null);
+    onError(null);
+    setDownloading(true);
+    setProgress(0);
+    setStatusText('Starting download…');
+    try {
+      const engine = data.offlineEngine || 'moonshine_v2_small';
+      if (engine === 'moonshine_v2_small') {
+        await downloadMoonshineV2SmallModel();
+      } else {
+        await downloadOfflineModel();
+      }
+    } catch (err) {
+      setDownloading(false);
+      setStatusText('');
+      setDlError(describeError(err, 'Failed to start download.'));
+    }
+  };
+
+  const onCancelDownload = async () => {
+    try {
+      await cancelOfflineDownload();
+    } catch (err) {
+      console.error('Cancel download failed:', err);
+    }
+  };
+
+  const onSkipDownload = () => {
+    onPatch({ offlineDownloadSkipped: true });
+    setDlError(null);
+    onError(null);
+    onAdvance();
   };
 
   const onTest = async () => {
@@ -160,21 +313,15 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
     }
   };
 
-  const onSkip = () => {
-    onPatch({ skipApiKey: true, provider: 'Local Offline', baseUrl: '' });
-    onError(null);
-    onAdvance();
-  };
-
   return (
     <>
       <h1 className="step-title" tabIndex={-1}>
-        Connect Your API Key
+        Choose Your Voice Engine
       </h1>
       <p className="step-desc">
         {usingOffline
           ? 'Offline transcription runs on this PC. No API key or account is needed.'
-          : 'Fluence uses OpenAI-compatible APIs for voice recognition. Add your API key to get started.'}
+          : 'Fluence uses OpenAI-compatible APIs or local on-device models for voice recognition.'}
       </p>
       <div className="step-content">
         <Field label="Provider">
@@ -183,6 +330,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             id="wiz-provider-grid"
             value={data.provider}
             onValueChange={(provider) => onProvider(provider)}
+            disabled={downloading}
             aria-label="Provider"
           >
             {PROVIDERS.map((p) => (
@@ -207,10 +355,86 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
           </Field>
         )}
         {usingOffline ? (
-          <div className="wizard-offline-note" role="status">
-            <strong>No API key needed.</strong> Fluence will use the local
-            SenseVoice engine. You can download more engines or switch to a
-            cloud provider later in Settings → Providers.
+          <div className="wizard-offline-box">
+            <Field label="Offline Model">
+              <RadioGroup
+                className="wizard-offline-grid"
+                value={data.offlineEngine || 'moonshine_v2_small'}
+                onValueChange={onOfflineEngineChange}
+                disabled={downloading}
+                aria-label="Offline Engine"
+              >
+                <RadioGroupItem value="moonshine_v2_small" asChild>
+                  <button
+                    type="button"
+                    className={`choice-surface wizard-offline-engine-card${(data.offlineEngine || 'moonshine_v2_small') === 'moonshine_v2_small' ? ' active' : ''}`}
+                  >
+                    <div className="wizard-offline-engine-info">
+                      <span className="wizard-offline-engine-title">Fast (English, Recommended)</span>
+                      <span className="wizard-offline-engine-desc">~142 MB · On-device streaming model</span>
+                    </div>
+                  </button>
+                </RadioGroupItem>
+                <RadioGroupItem value="sensevoice" asChild>
+                  <button
+                    type="button"
+                    className={`choice-surface wizard-offline-engine-card${data.offlineEngine === 'sensevoice' ? ' active' : ''}`}
+                  >
+                    <div className="wizard-offline-engine-info">
+                      <span className="wizard-offline-engine-title">Multilingual (EN / ZH / JA / KO)</span>
+                      <span className="wizard-offline-engine-desc">~263 MB · Broad language coverage</span>
+                    </div>
+                  </button>
+                </RadioGroupItem>
+              </RadioGroup>
+            </Field>
+
+            {(error || dlError) && (
+              <div className="wizard-offline-error" role="alert">
+                {dlError || error}
+              </div>
+            )}
+
+            {data.offlineInstalled ? (
+              <div className="wizard-offline-ready" role="status">
+                <span className="wizard-offline-ready-icon" aria-hidden="true">✓</span>
+                <span>Model installed and ready on this PC.</span>
+              </div>
+            ) : downloading ? (
+              <div className="wizard-offline-progress">
+                <div className="wizard-offline-progress-header">
+                  <span>{statusText || 'Downloading model…'}</span>
+                  <span>{Math.round(progress)}%</span>
+                </div>
+                <Progress value={progress} aria-label="Offline model download progress" />
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => void onCancelDownload()}
+                  style={{ alignSelf: 'flex-start', marginTop: 4 }}
+                >
+                  Cancel
+                </Button>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+                <Button
+                  onClick={() => void onStartDownload()}
+                  style={{ width: '100%', padding: '12px 16px' }}
+                >
+                  Download Model ({data.offlineEngine === 'sensevoice' ? '~263 MB' : '~142 MB'})
+                </Button>
+                <div style={{ textAlign: 'center' }}>
+                  <button
+                    type="button"
+                    className="skip-offline"
+                    onClick={onSkipDownload}
+                  >
+                    Skip download for now
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         ) : (
         <>
@@ -325,7 +549,11 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
           </div>
         </div>
         <div style={{ marginTop: -4 }}>
-          <button type="button" className="skip-offline" onClick={onSkip}>
+          <button
+            type="button"
+            className="skip-offline"
+            onClick={() => onProvider('Local Offline')}
+          >
             Continue without a key: use offline transcription
           </button>
         </div>

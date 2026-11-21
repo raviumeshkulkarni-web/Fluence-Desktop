@@ -57,7 +57,7 @@ async fn transcribe_pending_audio(
     settings: &crate::settings::AppSettings,
 ) -> Result<(String, String, std::time::Duration), String> {
     let (pending, generation) = {
-        let mut guard = PENDING_AUDIO.lock().map_err(|e| e.to_string())?;
+        let mut guard = PENDING_AUDIO.lock().unwrap_or_else(|e| e.into_inner());
         let pending = guard
             .take()
             .ok_or_else(|| "No captured audio is available to retry".to_string())?;
@@ -97,10 +97,9 @@ async fn transcribe_pending_audio(
         Ok((text, raw_text)) => Ok((text, raw_text, transcribe_start.elapsed())),
         Err(error) => {
             if PENDING_AUDIO_GENERATION.load(Ordering::SeqCst) == generation {
-                if let Ok(mut guard) = PENDING_AUDIO.lock() {
-                    if guard.is_none() {
-                        *guard = Some(pending);
-                    }
+                let mut guard = PENDING_AUDIO.lock().unwrap_or_else(|e| e.into_inner());
+                if guard.is_none() {
+                    *guard = Some(pending);
                 }
                 Err(error)
             } else {
@@ -178,7 +177,8 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
         });
     };
 
-    if let Ok(mut guard) = PENDING_AUDIO.lock() {
+    {
+        let mut guard = PENDING_AUDIO.lock().unwrap_or_else(|e| e.into_inner());
         PENDING_AUDIO_GENERATION.fetch_add(1, Ordering::SeqCst);
         *guard = Some(pending);
     }
@@ -207,9 +207,12 @@ async fn stop_and_transcribe() -> Result<TranscriptionFlowResult, String> {
 pub async fn stop_and_transcribe_recording(
     window: tauri::Window,
 ) -> Result<TranscriptionFlowResult, String> {
-    // The end-to-end transcription workflow drives the overlay session and
-    // the pending-audio pipeline: overlay-only.
-    crate::acl::require_caller(&window, &[crate::acl::OVERLAY_WINDOW])?;
+    // The end-to-end transcription workflow drives the overlay session, the
+    // wizard setup test, and the pending-audio pipeline.
+    crate::acl::require_caller(
+        &window,
+        &[crate::acl::OVERLAY_WINDOW, crate::acl::WIZARD_WINDOW],
+    )?;
     let result = stop_and_transcribe().await?;
 
     if !result.text.is_empty() {
@@ -268,6 +271,14 @@ fn polish_failure_reason(error: &str) -> &'static str {
     }
 }
 
+fn is_loopback_base_url(base_url: &str) -> bool {
+    reqwest::Url::parse(base_url)
+        .ok()
+        .and_then(|u| u.host_str().map(|h| h.to_ascii_lowercase()))
+        .map(|h| matches!(h.as_str(), "localhost" | "127.0.0.1" | "::1" | "[::1]"))
+        .unwrap_or(false)
+}
+
 async fn post_chat_completion(
     base_url: &str,
     api_key: &str,
@@ -276,6 +287,7 @@ async fn post_chat_completion(
     user_content: &str,
     temperature: f32,
 ) -> Result<String, String> {
+    crate::http_client::validate_api_url(base_url)?;
     let url = crate::http_client::build_api_url(base_url, "chat/completions");
 
     let body = serde_json::json!({
@@ -285,7 +297,7 @@ async fn post_chat_completion(
             {"role": "user", "content": user_content}
         ],
         "temperature": temperature,
-        "max_tokens": 1024,
+        "max_tokens": 4096,
     });
 
     // One transient-only retry: 429/5xx responses are worth a single second
@@ -328,10 +340,13 @@ async fn post_chat_completion(
     #[derive(serde::Deserialize)]
     struct Choice {
         message: Message,
+        #[serde(default)]
+        finish_reason: Option<String>,
     }
     #[derive(serde::Deserialize)]
     struct Message {
-        content: String,
+        #[serde(default)]
+        content: Option<String>,
     }
     #[derive(serde::Deserialize)]
     struct ChatResp {
@@ -343,14 +358,25 @@ async fn post_chat_completion(
         .await
         .map_err(|e| format!("JSON parse error: {}", e))?;
 
-    let content = chat_resp
+    let choice = chat_resp
         .choices
         .into_iter()
         .next()
-        .map(|c| c.message.content)
         .ok_or_else(|| "Empty response from LLM".to_string())?;
 
-    Ok(content.trim().to_string())
+    if choice.finish_reason.as_deref() == Some("length") {
+        return Err(
+            "LLM response was truncated at token limit; using raw transcription instead"
+                .to_string(),
+        );
+    }
+
+    let content = choice.message.content.unwrap_or_default();
+    let trimmed = content.trim();
+    if trimmed.is_empty() {
+        return Err("Empty response from LLM".to_string());
+    }
+    Ok(trimmed.to_string())
 }
 
 async fn polish_transcribed_text(
@@ -460,29 +486,38 @@ pub async fn finish_transcription_flow(
     if !crate::prompts::is_legacy_none(&selection) {
         let target = crate::credentials::get_llm_target(&settings.cleaner_provider.preset);
         let llm_key = crate::credentials::read_api_key_target(&target).unwrap_or_default();
-        match polish_with_selection(
-            &settings.cleaner_provider.base_url,
-            &llm_key,
-            &settings.cleaner_provider.model,
-            &result.text,
-            &selection,
-        )
-        .await
-        {
-            Ok(polished) => {
-                log::info!(
-                    "AI polish succeeded: {} -> {} chars",
-                    result.text.chars().count(),
-                    polished.chars().count()
-                );
-                result.text = polished;
-                result.polish_fallback = false;
-                result.polish_reason = None;
-            }
-            Err(e) => {
-                result.polish_fallback = true;
-                result.polish_reason = Some(polish_failure_reason(&e).to_string());
-                log::warn!("AI polish failed: {}, pasting raw transcription instead", e);
+        if llm_key.trim().is_empty() && !is_loopback_base_url(&settings.cleaner_provider.base_url) {
+            result.polish_fallback = true;
+            result.polish_reason = Some("missing_key".to_string());
+            log::info!(
+                "Skipping AI polish: missing API key for '{}' (avoiding unauthenticated remote request)",
+                settings.cleaner_provider.preset
+            );
+        } else {
+            match polish_with_selection(
+                &settings.cleaner_provider.base_url,
+                &llm_key,
+                &settings.cleaner_provider.model,
+                &result.text,
+                &selection,
+            )
+            .await
+            {
+                Ok(polished) => {
+                    log::info!(
+                        "AI polish succeeded: {} -> {} chars",
+                        result.text.chars().count(),
+                        polished.chars().count()
+                    );
+                    result.text = polished;
+                    result.polish_fallback = false;
+                    result.polish_reason = None;
+                }
+                Err(e) => {
+                    result.polish_fallback = true;
+                    result.polish_reason = Some(polish_failure_reason(&e).to_string());
+                    log::warn!("AI polish failed: {}, pasting raw transcription instead", e);
+                }
             }
         }
     }
@@ -490,12 +525,16 @@ pub async fn finish_transcription_flow(
     // Auto-learn: Extract candidates from raw vs final text
     // Only runs when enabled and for deterministic cleanup modes
     if settings.auto_learn_enabled {
+        let transformation_type =
+            if !crate::prompts::is_legacy_none(&selection) && !result.polish_fallback {
+                crate::auto_learn::TransformationType::Rewrite
+            } else {
+                crate::auto_learn::TransformationType::Cleanup
+            };
         let ctx = crate::auto_learn::ExtractionContext {
             original: result.raw_text.clone(),
             transformed: result.text.clone(),
-            transformation_type: crate::auto_learn::TransformationType::from_ai_polish_style(
-                &settings.ai_polish_style,
-            ),
+            transformation_type,
             language: settings.language.clone(),
             provider: settings.stt_provider.preset.clone(),
         };
@@ -542,36 +581,49 @@ pub async fn retry_transcription_flow(
     if !crate::prompts::is_legacy_none(&selection) && !text.trim().is_empty() {
         let target = crate::credentials::get_llm_target(&settings.cleaner_provider.preset);
         let llm_key = crate::credentials::read_api_key_target(&target).unwrap_or_default();
-        match polish_with_selection(
-            &settings.cleaner_provider.base_url,
-            &llm_key,
-            &settings.cleaner_provider.model,
-            &text,
-            &selection,
-        )
-        .await
-        {
-            Ok(polished) => {
-                text = polished;
-            }
-            Err(e) => {
-                polish_fallback = true;
-                polish_reason = Some(polish_failure_reason(&e).to_string());
-                log::warn!(
-                    "AI polish failed on retry: {}, keeping raw transcription",
-                    e
-                );
+        if llm_key.trim().is_empty() && !is_loopback_base_url(&settings.cleaner_provider.base_url) {
+            polish_fallback = true;
+            polish_reason = Some("missing_key".to_string());
+            log::info!(
+                "Skipping AI polish: missing API key for '{}' (avoiding unauthenticated remote request)",
+                settings.cleaner_provider.preset
+            );
+        } else {
+            match polish_with_selection(
+                &settings.cleaner_provider.base_url,
+                &llm_key,
+                &settings.cleaner_provider.model,
+                &text,
+                &selection,
+            )
+            .await
+            {
+                Ok(polished) => {
+                    text = polished;
+                }
+                Err(e) => {
+                    polish_fallback = true;
+                    polish_reason = Some(polish_failure_reason(&e).to_string());
+                    log::warn!(
+                        "AI polish failed on retry: {}, keeping raw transcription",
+                        e
+                    );
+                }
             }
         }
     }
 
     if settings.auto_learn_enabled && !text.is_empty() {
+        let transformation_type =
+            if !crate::prompts::is_legacy_none(&selection) && !polish_fallback {
+                crate::auto_learn::TransformationType::Rewrite
+            } else {
+                crate::auto_learn::TransformationType::Cleanup
+            };
         let ctx = crate::auto_learn::ExtractionContext {
             original: raw_text.clone(),
             transformed: text.clone(),
-            transformation_type: crate::auto_learn::TransformationType::from_ai_polish_style(
-                &settings.ai_polish_style,
-            ),
+            transformation_type,
             language: settings.language.clone(),
             provider: settings.stt_provider.preset.clone(),
         };
@@ -670,5 +722,17 @@ mod tests {
         let value = serde_json::to_value(result).unwrap();
         assert!(value.get("polishFallback").is_none());
         assert!(value.get("polishReason").is_none());
+    }
+
+    #[test]
+    fn test_is_loopback_base_url() {
+        assert!(is_loopback_base_url("http://localhost:8000/v1"));
+        assert!(is_loopback_base_url("http://127.0.0.1:11434"));
+        assert!(is_loopback_base_url("http://[::1]:8080/v1"));
+        assert!(is_loopback_base_url("http://[::1]/v1"));
+        assert!(!is_loopback_base_url("https://api.openai.com/v1"));
+        assert!(!is_loopback_base_url("https://api.groq.com/openai/v1"));
+        assert!(!is_loopback_base_url("http://example.com"));
+        assert!(!is_loopback_base_url("not a url"));
     }
 }

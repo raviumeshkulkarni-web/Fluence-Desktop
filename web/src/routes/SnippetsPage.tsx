@@ -29,7 +29,9 @@ import {
   addSnippet,
   deleteSnippet,
   getSnippets,
+  setSnippetEnabled,
   setSnippetsEnabled,
+  updateSnippet,
   type Snippet,
 } from '@/ipc/snippets';
 
@@ -44,6 +46,9 @@ export function SnippetsPage() {
   const [showAdd, setShowAdd] = useState(false);
   const [trigger, setTrigger] = useState('');
   const [expansion, setExpansion] = useState('');
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editTrigger, setEditTrigger] = useState('');
+  const [editExpansion, setEditExpansion] = useState('');
   const triggerRef = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => {
@@ -115,6 +120,49 @@ export function SnippetsPage() {
     }
   };
 
+  const openEdit = (entry: Snippet) => {
+    setEditingId(entry.id);
+    setEditTrigger(entry.trigger);
+    setEditExpansion(entry.expansion);
+  };
+  const closeEdit = () => {
+    setEditingId(null);
+    setEditTrigger('');
+    setEditExpansion('');
+  };
+  const onSaveEdit = async () => {
+    if (!editingId) return;
+    const t = editTrigger.trim();
+    const e = editExpansion.trim();
+    if (!t || !e) {
+      toast('Please fill in both fields', 'error');
+      return;
+    }
+    try {
+      await updateSnippet(editingId, t, e);
+      setEntries((prev) =>
+        prev.map((s) =>
+          s.id === editingId ? { ...s, trigger: t, expansion: e } : s,
+        ),
+      );
+      closeEdit();
+      toast('Snippet updated', 'success');
+    } catch (err) {
+      toast('Could not update the snippet. ' + describeError(err), 'error');
+    }
+  };
+
+  const onToggleEntry = async (entry: Snippet, on: boolean) => {
+    try {
+      await setSnippetEnabled(entry.id, on);
+      setEntries((prev) =>
+        prev.map((s) => (s.id === entry.id ? { ...s, is_enabled: on } : s)),
+      );
+    } catch (err) {
+      toast('Could not update the snippet. ' + describeError(err), 'error');
+    }
+  };
+
   return (
     <section className="page active" id="page-snippets">
       <div className="page-header">
@@ -163,6 +211,16 @@ export function SnippetsPage() {
               placeholder="e.g. my linkedin"
               value={trigger}
               onChange={(e) => setTrigger(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void onSave();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeAdd();
+                }
+              }}
             />
           </Field>
           <Field
@@ -178,6 +236,16 @@ export function SnippetsPage() {
               placeholder="e.g. https://linkedin.com/in/username"
               value={expansion}
               onChange={(e) => setExpansion(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  void onSave();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  closeAdd();
+                }
+              }}
             />
           </Field>
           <div className="snippet-add-actions">
@@ -194,13 +262,14 @@ export function SnippetsPage() {
             <TableRow>
               <TableHead>Trigger</TableHead>
               <TableHead>Expansion</TableHead>
+              <TableHead className="toggles-col">Enabled</TableHead>
               <TableHead className="actions">Actions</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody id="snippet-table-body">
             {loading && (
               <TableRow>
-                <TableCell colSpan={3}>
+                <TableCell colSpan={4}>
                   <div className="dict-loading">
                     <Skeleton style={{ height: 40 }} />
                     <Skeleton style={{ height: 40 }} />
@@ -211,7 +280,7 @@ export function SnippetsPage() {
             )}
             {!loading && entries.length === 0 && (
               <TableRow id="snippet-empty-row">
-                <TableCell colSpan={3}>
+                <TableCell colSpan={4}>
                   <Empty>
                     <EmptyHeader>
                       <EmptyMedia variant="icon">
@@ -224,23 +293,94 @@ export function SnippetsPage() {
                 </TableCell>
               </TableRow>
             )}
-            {!loading && entries.map((entry) => (
-              <TableRow key={entry.id} data-snippet-id={entry.id}>
-                <TableCell className="spoken-word">{entry.trigger}</TableCell>
-                <TableCell className="corrected-word">{entry.expansion}</TableCell>
-                <TableCell className="actions">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="agent-delete-btn destructive-action"
-                    data-snippet-id={entry.id}
-                    onClick={() => void onDelete(entry.id)}
-                  >
-                    Delete
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
+            {!loading && entries.map((entry) => {
+              const editing = editingId === entry.id;
+              return (
+                <TableRow key={entry.id} data-snippet-id={entry.id}>
+                  <TableCell className="spoken-word">
+                    {editing ? (
+                      <Input
+                        type="text"
+                        maxLength={100}
+                        value={editTrigger}
+                        aria-label="Edit snippet trigger"
+                        onChange={(e) => setEditTrigger(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void onSaveEdit();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            closeEdit();
+                          }
+                        }}
+                      />
+                    ) : (
+                      entry.trigger
+                    )}
+                  </TableCell>
+                  <TableCell className="corrected-word">
+                    {editing ? (
+                      <Input
+                        type="text"
+                        maxLength={500}
+                        value={editExpansion}
+                        aria-label="Edit snippet expansion"
+                        onChange={(e) => setEditExpansion(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            void onSaveEdit();
+                          } else if (e.key === 'Escape') {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            closeEdit();
+                          }
+                        }}
+                      />
+                    ) : (
+                      entry.expansion
+                    )}
+                  </TableCell>
+                  <TableCell className="toggles-col">
+                    <Switch
+                      aria-label={`Enable ${entry.trigger}`}
+                      checked={entry.is_enabled !== false}
+                      disabled={editing}
+                      onCheckedChange={(on) => void onToggleEntry(entry, on)}
+                    />
+                  </TableCell>
+                  <TableCell className="actions">
+                    {editing ? (
+                      <>
+                        <Button variant="default" size="sm" onClick={() => void onSaveEdit()}>
+                          Save
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={closeEdit}>
+                          Cancel
+                        </Button>
+                      </>
+                    ) : (
+                      <>
+                        <Button variant="ghost" size="sm" onClick={() => openEdit(entry)}>
+                          Edit
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="agent-delete-btn destructive-action"
+                          data-snippet-id={entry.id}
+                          onClick={() => void onDelete(entry.id)}
+                        >
+                          Delete
+                        </Button>
+                      </>
+                    )}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>

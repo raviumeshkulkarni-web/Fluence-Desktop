@@ -11,6 +11,12 @@
  * Cyan (agent)      = agent mode
  */
 
+function smoothstep(edge0, edge1, x) {
+  if (edge0 === edge1) return x < edge0 ? 0 : 1;
+  const t = Math.max(0, Math.min(1, (x - edge0) / (edge1 - edge0)));
+  return t * t * (3 - 2 * t);
+}
+
 class AuraVisualizer {
   constructor(canvasId) {
     this.canvas = document.getElementById(canvasId);
@@ -18,7 +24,8 @@ class AuraVisualizer {
     this.overlayRoot = document.getElementById('overlay-root');
     this.currentState = 'idle';
     this.style = 'waves';            // "waves" | "bars"
-    this.smoothedAmplitude = 0;      // 0.0 – 1.0
+    this.targetAmplitude = 0;        // display target from ~30Hz telemetry
+    this.smoothedAmplitude = 0;      // integrated smoothly at the rAF rate
     this.phase = 0;                  // integrated phase (radians)
     this.recordingStartTime = 0;
     this.recordingFramesReceived = 0;
@@ -35,6 +42,10 @@ class AuraVisualizer {
     this.quietStreak = 0;
     this.hist = [];              // fastDb window for envelope-modulation spread
     this.spread = 0;             // dB spread across hist (speech ~modulated)
+    this._barBg = [];
+    this._barFt = [];
+    this._gradCache = new Map();
+    this._gradCacheW = 0;
     this._rafId = null;
     this._isRunning = false;
     this._resize();
@@ -109,6 +120,42 @@ class AuraVisualizer {
     }
     this._logicalW = cssW;
     this._logicalH = cssH;
+    this._gradCache?.clear();
+    this._gradCacheW = cssW;
+  }
+
+  _getWaveGrad(ctx, W, hex, alpha) {
+    if (this._gradCacheW !== W) {
+      this._gradCache.clear();
+      this._gradCacheW = W;
+    }
+    const key = `w:${hex}:${alpha.toFixed(3)}`;
+    let grad = this._gradCache.get(key);
+    if (!grad) {
+      grad = ctx.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, 'transparent');
+      grad.addColorStop(0.5, hexAlpha(hex, alpha));
+      grad.addColorStop(1, 'transparent');
+      this._gradCache.set(key, grad);
+    }
+    return grad;
+  }
+
+  _getBarGrad(ctx, W, hex, alpha) {
+    if (this._gradCacheW !== W) {
+      this._gradCache.clear();
+      this._gradCacheW = W;
+    }
+    const key = `b:${hex}:${alpha.toFixed(3)}`;
+    let grad = this._gradCache.get(key);
+    if (!grad) {
+      grad = ctx.createLinearGradient(0, 0, W, 0);
+      grad.addColorStop(0, hexAlpha(hex, alpha * 0.22));
+      grad.addColorStop(0.5, hexAlpha(hex, alpha));
+      grad.addColorStop(1, hexAlpha(hex, alpha * 0.22));
+      this._gradCache.set(key, grad);
+    }
+    return grad;
   }
 
   setAmplitude(rawAmplitude) {
@@ -194,18 +241,11 @@ class AuraVisualizer {
         // mirrors the live level through a fixed compression (half gain,
         // capped below the gated full scale, with the same calm floor) so
         // the waveform tracks the user's voice from the first frame instead
-        // of idling flat for the ~0.8 s prime window. The mirror passes
-        // through the SAME asymmetric EMA as the gated meter below, so the
-        // pre- and post-prime displays share identical attack/decay
-        // dynamics and the hand-off is invisible. A hotkey chime may
+        // of idling flat for the ~0.8 s prime window. The animation loop applies
+        // attack/decay smoothing at display frame rate. A hotkey chime may
         // briefly flash during this window; the real gate still ignores it,
         // so the meter reference is never misled.
-        const preGate = Math.min(0.6, raw * 0.5);
-        if (preGate > this.smoothedAmplitude) {
-          this.smoothedAmplitude = this.smoothedAmplitude * 0.50 + preGate * 0.50;
-        } else {
-          this.smoothedAmplitude = this.smoothedAmplitude * 0.85 + preGate * 0.15;
-        }
+        this.targetAmplitude = Math.min(0.6, raw * 0.5);
       }
       return;
     }
@@ -292,17 +332,7 @@ class AuraVisualizer {
       normalized = Math.sqrt(rel);
     }
 
-    // Asymmetric EMA smoothing (fast 0.50 attack, smooth 0.15 elastic decay)
-    const prev = this.smoothedAmplitude;
-    if (normalized > prev) {
-      this.smoothedAmplitude = prev * 0.50 + normalized * 0.50;
-    } else {
-      this.smoothedAmplitude = prev * 0.85 + normalized * 0.15;
-    }
-    if (this.smoothedAmplitude < 0.001) {
-      this.smoothedAmplitude = 0;
-    }
-    this.smoothedAmplitude = Math.max(0, Math.min(this.smoothedAmplitude, 1.0));
+    this.targetAmplitude = Math.max(0, Math.min(normalized, 1.0));
   }
 
   setState(state) {
@@ -327,7 +357,12 @@ class AuraVisualizer {
     if (state !== 'idle') this.overlayRoot.classList.add(`state-${state}`);
 
     if (state === 'idle' || state === 'transcribing' || state === 'agent_transcribing') {
-      this.smoothedAmplitude = 0;
+      this.targetAmplitude = 0;
+      if (state === 'idle') {
+        this.smoothedAmplitude = 0;
+        this._barBg = [];
+        this._barFt = [];
+      }
       this.recordingStartTime = 0;
       this.recordingFramesReceived = 0;
       this.lastAmplitudeAt = 0;
@@ -344,7 +379,10 @@ class AuraVisualizer {
     } else if (state === 'recording' || state === 'agent') {
       this.recordingStartTime = performance.now();
       this.recordingFramesReceived = 0;
+      this.targetAmplitude = 0;
       this.smoothedAmplitude = 0;
+      this._barBg = [];
+      this._barFt = [];
       this.lastAmplitudeAt = 0;
       this.fastDb = -75.0;
       this.slowDb = -75.0;
@@ -383,22 +421,30 @@ class AuraVisualizer {
     this._rafId = requestAnimationFrame((t) => this._loop(t));
 
     if (this.lastTime === null) { this.lastTime = timestamp; }
-    const dt = Math.min((timestamp - this.lastTime) / 1000, 0.1);
+    const dt = Math.min(Math.max((timestamp - this.lastTime) / 1000, 0), 0.1);
     this.lastTime = timestamp;
 
     if (this.currentState === 'idle') {
       const heartbeatPeriod = 4000;
       const heartbeatPhase = (timestamp % heartbeatPeriod) / heartbeatPeriod;
-      const heartbeatPulse = Math.sin(heartbeatPhase * Math.PI) * 0.12;
-      this.smoothedAmplitude = heartbeatPulse;
+      this.smoothedAmplitude = Math.sin(heartbeatPhase * Math.PI) * 0.12;
+      this.targetAmplitude = this.smoothedAmplitude;
     } else if (this.currentState === 'recording' || this.currentState === 'agent') {
-      // If amplitude events stall (emit drops, event-loop hiccup), settle the
-      // meter toward a calm baseline instead of latching a stale frame.
-      const sinceEvent = timestamp - this.lastAmplitudeAt;
-      if (sinceEvent > 400) {
-        this.smoothedAmplitude *= 0.88;
-        if (this.smoothedAmplitude < 0.001) this.smoothedAmplitude = 0;
+      // If telemetry stalls, drop the target smoothly instead of latching a
+      // stale amplitude indefinitely.
+      if (this.lastAmplitudeAt > 0 && timestamp - this.lastAmplitudeAt > 350) {
+        this.targetAmplitude = 0;
       }
+      const rate = this.targetAmplitude > this.smoothedAmplitude ? 18.0 : 5.5;
+      const alpha = 1 - Math.exp(-rate * dt);
+      this.smoothedAmplitude += (this.targetAmplitude - this.smoothedAmplitude) * alpha;
+      if (this.smoothedAmplitude < 0.001 && this.targetAmplitude === 0) {
+        this.smoothedAmplitude = 0;
+      }
+    } else if (this.currentState === 'transcribing' || this.currentState === 'agent_transcribing') {
+      const alpha = 1 - Math.exp(-7.0 * dt);
+      this.smoothedAmplitude += (0 - this.smoothedAmplitude) * alpha;
+      if (this.smoothedAmplitude < 0.001) this.smoothedAmplitude = 0;
     }
 
     const speed = 0.48 + this.smoothedAmplitude * 0.82;
@@ -406,14 +452,30 @@ class AuraVisualizer {
     this._lastFrameAt = timestamp;
 
     try {
-      this._draw();
+      this._draw(dt);
     } catch (err) {
       // A canvas/gradient exception must never kill the animation loop.
       console.warn('Waveform draw error:', err);
     }
   }
 
-  _draw() {
+  _traceSmoothWave(ctx, W, step, sampleY) {
+    ctx.beginPath();
+    let prevX = 0;
+    let prevY = sampleY(0);
+    ctx.moveTo(prevX, prevY);
+    for (let x = step; x < W; x += step) {
+      const y = sampleY(x);
+      const midX = (prevX + x) * 0.5;
+      const midY = (prevY + y) * 0.5;
+      ctx.quadraticCurveTo(prevX, prevY, midX, midY);
+      prevX = x;
+      prevY = y;
+    }
+    ctx.quadraticCurveTo(prevX, prevY, W, sampleY(W));
+  }
+
+  _draw(dt) {
     const ctx = this.ctx;
     if (!ctx || !this.canvas) return;
 
@@ -438,117 +500,59 @@ class AuraVisualizer {
     // per-tier scales, so the visualizer only changes paint, never
     // sensing.
     if (this.style === 'bars') {
-      this._drawBars(W, H);
+      this._drawBars(W, H, dt);
       return;
     }
 
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    const isAgent = this.currentState === 'agent' || this.currentState === 'agent_transcribing';
-
-    const isBubble = this.overlayRoot?.classList.contains('style-bubble');
-    const isCompact = this.overlayRoot?.classList.contains('style-compact');
-    // Token-backed colors: agent = --color-brand-cyan (#0BD6E3), STT =
-    // --color-brand-amethyst (#8B45D8) in design-tokens.css. Literal values
-    // are kept in sync with those tokens.
-    const primaryColor = isAgent ? '#0BD6E3' : '#8B45D8';
-    const forefrontColor = isAgent ? '#E6FFFA' : '#F1EAF5';
-    // Lower base alpha on the small pill canvas — it blooms fast there.
-    // Bubble keeps full alpha: presence beats bloom control at 44px.
-    const primaryAlpha = isCompact ? 0.26 : 0.32;
-
+    const s = this._styleFactors(W, H);
     const centerY = H / 2;
-    // Production transcription meter: 6% calm baseline, 40% height headroom,
-    // softer parabolic envelope. Bubble tier is scaled down to keep the wave
-    // inside the 44px orb without clipping the circular edge.
-    const bubbleScale = isBubble ? 0.62 : 1;
-    const activeAmplitude = (this.smoothedAmplitude * 0.88 + 0.06) * (H * 0.40) * bubbleScale;
-
     const phase1 = this.phase;
     const phase2 = -this.phase * 0.7;
-
     const env = (x) => Math.pow(Math.sin((x / W) * Math.PI), 1.22);
-
-    // 1px sampling on tiny canvases keeps the curve smooth where a 2px step
-    // would alias into jagged edges.
     const step = W < 60 ? 1 : 2;
-
-    // Ripple scroll rate matches its carrier wave on any canvas width. The
-    // spatial frequencies stay in absolute pixels (0.1 / 0.15 / 0.08 rad/px,
-    // the original calm ripple shapes), while the width-derived phase
-    // multipliers make the ripple advance at the carrier's rate - otherwise
-    // the ripple outruns the wave on narrow canvases (perceived as churn).
     const vibPhase1 = (0.1 * W) / (2 * Math.PI * 1.5);
     const vibPhase2 = (0.15 * W) / (2 * Math.PI * 2.5);
     const vibPhase3 = (0.08 * W) / (2 * Math.PI * 1.2);
+    const vib = smoothstep(0.03, 0.14, s.level) * s.level;
 
-    // Micro-detail is gated: perfectly clean at silence, subtle at speech.
-    const vib = this.smoothedAmplitude > 0.04 ? this.smoothedAmplitude : 0;
-    // Thinner ink on the pill — 1.9px blooms inside 36px height.
-    // Bubble keeps its original weight.
-    const lwScale = isBubble ? 0.82 : isCompact ? 0.9 : 1;
-
-    // Wave 1: background - thin, airy, low opacity
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += step) {
+    this._traceSmoothWave(ctx, W, step, (x) => {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 1.5 + phase1;
       const vibration = Math.sin(x * 0.1 + phase1 * vibPhase1) * vib * 2.0;
-      const y = centerY + (Math.sin(angle) * activeAmplitude * 0.48 + vibration) * e;
-      ctx.lineTo(x, y);
-    }
-    const grad1 = ctx.createLinearGradient(0, 0, W, 0);
-    grad1.addColorStop(0, 'transparent');
-    grad1.addColorStop(0.5, hexAlpha(primaryColor, primaryAlpha));
-    grad1.addColorStop(1, 'transparent');
-    ctx.strokeStyle = grad1;
-    ctx.lineWidth = 1.35 * lwScale;
+      return centerY + (Math.sin(angle) * s.base * 0.48 + vibration) * e;
+    });
+    ctx.strokeStyle = this._getWaveGrad(ctx, W, s.primaryColor, s.primaryAlpha);
+    ctx.lineWidth = 1.35 * s.lwScale;
     ctx.stroke();
 
-    // Wave 2: mid - the body of the meter, slightly bolder
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += step) {
+    this._traceSmoothWave(ctx, W, step, (x) => {
       const e = env(x);
       const angle = (x / W) * 2 * Math.PI * 2.5 + phase2;
       const vibration = Math.sin(x * 0.15 - phase2 * vibPhase2) * vib * 1.45;
-      const y = centerY + (Math.sin(angle) * activeAmplitude * 0.68 + vibration) * e;
-      ctx.lineTo(x, y);
-    }
-    const grad2 = ctx.createLinearGradient(0, 0, W, 0);
-    grad2.addColorStop(0, 'transparent');
-    grad2.addColorStop(0.5, hexAlpha(primaryColor, primaryAlpha * 1.08));
-    grad2.addColorStop(1, 'transparent');
-    ctx.strokeStyle = grad2;
-    ctx.lineWidth = 1.65 * lwScale;
+      return centerY + (Math.sin(angle) * s.base * 0.68 + vibration) * e;
+    });
+    ctx.strokeStyle = this._getWaveGrad(ctx, W, s.primaryColor, s.primaryAlpha * 1.08);
+    ctx.lineWidth = 1.65 * s.lwScale;
     ctx.stroke();
 
-    // Wave 3: forefront - crisp ink line, soft glow only when loud
-    const glow = this.smoothedAmplitude > 0.28 ? this.smoothedAmplitude * 7 : 0;
-    if (glow > 0) {
-      ctx.shadowColor = hexAlpha(forefrontColor, 0.22);
-      ctx.shadowBlur = glow;
-    }
-    ctx.beginPath();
-    ctx.moveTo(0, centerY);
-    for (let x = 0; x <= W; x += step) {
+    const phase3 = (phase1 - phase2) * 0.5;
+    this._traceSmoothWave(ctx, W, step, (x) => {
       const e = env(x);
-      const angle = (x / W) * 2 * Math.PI * 1.2 + (phase1 - phase2) * 0.5;
-      const vibration = Math.sin(x * 0.08 + (phase1 - phase2) * 0.5 * vibPhase3) * vib * 2.4;
-      const y = centerY + (Math.sin(angle) * activeAmplitude * 0.88 + vibration) * e;
-      ctx.lineTo(x, y);
+      const angle = (x / W) * 2 * Math.PI * 1.2 + phase3;
+      const vibration = Math.sin(x * 0.08 + phase3 * vibPhase3) * vib * 2.4;
+      return centerY + (Math.sin(angle) * s.base * 0.88 + vibration) * e;
+    });
+    if (s.glowStrength > 0.01) {
+      ctx.strokeStyle = this._getWaveGrad(ctx, W, s.forefrontColor, 0.18 * s.glowStrength);
+      ctx.lineWidth = (4.6 + s.glowStrength * 1.8) * s.lwScale;
+      ctx.stroke();
     }
-    const grad3 = ctx.createLinearGradient(0, 0, W, 0);
-    grad3.addColorStop(0, 'transparent');
-    grad3.addColorStop(0.5, hexAlpha(forefrontColor, 0.90));
-    grad3.addColorStop(1, 'transparent');
-    ctx.strokeStyle = grad3;
-    ctx.lineWidth = 1.90 * lwScale;
+    ctx.strokeStyle = this._getWaveGrad(ctx, W, s.forefrontColor, 0.90);
+    ctx.lineWidth = 1.90 * s.lwScale;
     ctx.stroke();
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
   }
 
   // ── Bars (additive style) ─────────────────────────────────────────
@@ -570,22 +574,11 @@ class AuraVisualizer {
     const level = this.smoothedAmplitude;
     // Identical production meter: 6% calm baseline, 40% height headroom.
     const base = (level * 0.88 + 0.06) * (H * 0.40) * bubbleScale;
-    const glow = level > 0.28 ? level * 7 : 0;
-    return { primaryColor, forefrontColor, primaryAlpha, lwScale, bubbleScale, level, base, glow };
+    const glowStrength = smoothstep(0.20, 0.72, level);
+    return { primaryColor, forefrontColor, primaryAlpha, lwScale, bubbleScale, level, base, glowStrength };
   }
 
-  // One L-to-R gradient shared by every stroke of a pass. Canvas
-  // gradients resolve per geometry in user space, so edge bars fade
-  // exactly like the waves' parabolic-to-gradient edge treatment.
-  _altGrad(ctx, W, hex, alpha) {
-    const grad = ctx.createLinearGradient(0, 0, W, 0);
-    grad.addColorStop(0, hexAlpha(hex, alpha * 0.22));
-    grad.addColorStop(0.5, hexAlpha(hex, alpha));
-    grad.addColorStop(1, hexAlpha(hex, alpha * 0.22));
-    return grad;
-  }
-
-  _drawBars(W, H) {
+  _drawBars(W, H, dt) {
     const ctx = this.ctx;
     if (!ctx) return;
     ctx.lineCap = 'round';
@@ -598,44 +591,59 @@ class AuraVisualizer {
     const edge = (x) => { const s = Math.pow(Math.sin((x / W) * Math.PI), 0.7); return edgeFloor + (1 - edgeFloor) * s; };
     const clampH = (h) => Math.min(h, H * 0.48);
 
-    // Soft primary bed: taller, fainter, the background role.
-    ctx.strokeStyle = this._altGrad(ctx, W, s.primaryColor, s.primaryAlpha * 1.05);
-    ctx.lineWidth = 2.4 * s.lwScale;
-    for (let i = 0; i < count; i++) {
-      const x = ((i + 0.5) / count) * W;
-      const e = edge(x);
-      const u1 = Math.abs(Math.sin(x * (W < 60 ? 0.16 : 0.11) + this.phase * 1.35));
-      const u2 = Math.abs(Math.sin(x * (W < 60 ? 0.24 : 0.17) - this.phase * 1.05));
-      const hBg = clampH((s.base * (0.34 + 0.52 * Math.min(1, u1 * 0.62 + u2 * 0.38)) + 1.2) * e);
-      ctx.beginPath();
-      ctx.moveTo(x, centerY - hBg);
-      ctx.lineTo(x, centerY + hBg);
-      ctx.stroke();
+    if (this._barBg.length !== count) {
+      this._barBg = new Array(count).fill(0);
+      this._barFt = new Array(count).fill(0);
     }
 
-    // Crisp forefront row: only grows when the speech gate is open, so a
-    // quiet room keeps a calm low rug of bars (same gate as the waves).
-    ctx.strokeStyle = this._altGrad(ctx, W, s.forefrontColor, 0.88);
-    ctx.lineWidth = 1.9 * s.lwScale;
-    if (s.glow > 0) {
-      ctx.shadowColor = hexAlpha(s.forefrontColor, 0.22);
-      ctx.shadowBlur = s.glow;
-    }
+    const attackAlpha = 1 - Math.exp(-22.0 * dt);
+    const decayAlpha = 1 - Math.exp(-7.5 * dt);
+    const freq1 = W < 60 ? 0.16 : 0.11;
+    const freq2 = W < 60 ? 0.24 : 0.17;
+
+    // One batched path for the softer background bed.
+    ctx.beginPath();
     for (let i = 0; i < count; i++) {
       const x = ((i + 0.5) / count) * W;
       const e = edge(x);
-      const u1 = Math.abs(Math.sin(x * (W < 60 ? 0.16 : 0.11) + this.phase * 1.35));
-      const u2 = Math.abs(Math.sin(x * (W < 60 ? 0.24 : 0.17) - this.phase * 1.05));
+      const u1 = Math.abs(Math.sin(x * freq1 + this.phase * 1.35));
+      const u2 = Math.abs(Math.sin(x * freq2 - this.phase * 1.05));
       const shape = Math.min(1, u1 * 0.62 + u2 * 0.38);
-      const hFt = clampH((s.base * (0.10 + 0.62 * shape * Math.max(0.25, s.level)) + 1.6) * e);
-      ctx.beginPath();
+      const targetBg = clampH((s.base * (0.34 + 0.52 * shape) + 1.2) * e);
+      const prevBg = this._barBg[i];
+      const hBg = prevBg + (targetBg - prevBg) * (targetBg > prevBg ? attackAlpha : decayAlpha);
+      this._barBg[i] = hBg;
+      ctx.moveTo(x, centerY - hBg);
+      ctx.lineTo(x, centerY + hBg);
+    }
+    ctx.strokeStyle = this._getBarGrad(ctx, W, s.primaryColor, s.primaryAlpha * 1.05);
+    ctx.lineWidth = 2.4 * s.lwScale;
+    ctx.stroke();
+
+    // One batched forefront path is stroked once for its soft bloom and once
+    // for its crisp center line.
+    ctx.beginPath();
+    for (let i = 0; i < count; i++) {
+      const x = ((i + 0.5) / count) * W;
+      const e = edge(x);
+      const u1 = Math.abs(Math.sin(x * freq1 + this.phase * 1.35));
+      const u2 = Math.abs(Math.sin(x * freq2 - this.phase * 1.05));
+      const shape = Math.min(1, u1 * 0.62 + u2 * 0.38);
+      const targetFt = clampH((s.base * (0.10 + 0.62 * shape * Math.max(0.25, s.level)) + 1.6) * e);
+      const prevFt = this._barFt[i];
+      const hFt = prevFt + (targetFt - prevFt) * (targetFt > prevFt ? attackAlpha : decayAlpha);
+      this._barFt[i] = hFt;
       ctx.moveTo(x, centerY - hFt);
       ctx.lineTo(x, centerY + hFt);
+    }
+    if (s.glowStrength > 0.01) {
+      ctx.strokeStyle = this._getBarGrad(ctx, W, s.forefrontColor, 0.16 * s.glowStrength);
+      ctx.lineWidth = (4.2 + s.glowStrength * 1.4) * s.lwScale;
       ctx.stroke();
     }
-    ctx.shadowBlur = 0;
-    ctx.shadowColor = 'transparent';
-    return;
+    ctx.strokeStyle = this._getBarGrad(ctx, W, s.forefrontColor, 0.88);
+    ctx.lineWidth = 1.9 * s.lwScale;
+    ctx.stroke();
   }
 
 }

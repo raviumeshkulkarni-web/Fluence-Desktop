@@ -5,6 +5,8 @@ export interface DictEntry {
   id: string;
   spoken: string;
   corrected: string;
+  // Per-entry switch; the backend field rides the frozen sync wire as isEnabled.
+  is_enabled?: boolean;
 }
 
 export interface Suggestion {
@@ -32,6 +34,9 @@ export const addDictionaryEntry = (spoken: string, corrected: string) =>
 
 export const deleteDictionaryEntry = (id: string) =>
   invokeCmd<void>('delete_dictionary_entry', { id });
+
+export const setDictionaryEntryEnabled = (id: string, enabled: boolean) =>
+  invokeCmd<void>('set_dictionary_entry_enabled', { id, enabled });
 
 export const getAutoAccepted = () =>
   invokeCmd<AutoAccepted[]>('get_auto_accepted_suggestions');

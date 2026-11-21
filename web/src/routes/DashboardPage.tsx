@@ -139,7 +139,10 @@ interface DashboardKpi {
   title: string;
   value: string;
   foot: string;
+  metric: KpiMetric;
 }
+
+type KpiMetric = 'words' | 'time_saved' | 'duration' | 'sessions';
 
 type Range = '7d' | '30d' | '90d' | 'all';
 
@@ -372,14 +375,26 @@ function makeWeekdaySectorShape(activeIndexRef: { current: number | null }) {
   };
 }
 
-// Session-count momentum badge for the active range. All-time and
-// uncovered prior windows show nothing rather than a fabricated delta.
+function formatSignedDelta(metric: KpiMetric, delta: number): string {
+  const sign = delta > 0 ? '+' : delta < 0 ? '-' : '±';
+  const abs = Math.abs(delta);
+  if (metric === 'words') return `${sign}${formatTotalWords(Math.round(abs))}`;
+  if (metric === 'time_saved' || metric === 'duration') {
+    return delta === 0 ? '±0m' : `${sign}${formatDurationMs(abs)}`;
+  }
+  return `${sign}${Math.round(abs).toLocaleString()}`;
+}
+
+// All-time and uncovered prior windows show nothing rather than a fabricated
+// delta. Each badge reports the same metric as its KPI card.
 function TrendBadge({
   buckets,
   range,
+  metric,
 }: {
   buckets: DailyBucket[];
   range: Range;
+  metric: KpiMetric;
 }) {
   const span = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : 0;
   if (buckets.length === 0 || span === 0) return null;
@@ -393,14 +408,21 @@ function TrendBadge({
     today - (2 * span - 1) * DAY_MS,
     today - (span - 1) * DAY_MS,
   );
-  const delta = current.sessions - prior.sessions;
+  const pick = (window: WindowTotals) =>
+    metric === 'words'
+      ? window.words
+      : metric === 'time_saved'
+        ? (window.words / 40) * 60000
+        : metric === 'duration'
+          ? window.durationMs
+          : window.sessions;
+  const delta = pick(current) - pick(prior);
   const variant = delta > 0 ? 'success' : delta < 0 ? 'destructive' : 'secondary';
   const Icon = delta > 0 ? TrendingUp : delta < 0 ? TrendingDown : Minus;
-  const text = `${delta > 0 ? '+' : delta < 0 ? '-' : '±'}${delta !== 0 ? Math.abs(delta) : '0'} vs prior ${span}d`;
   return (
     <Badge variant={variant}>
       <Icon size={12} aria-hidden="true" />
-      {text}
+      {`${formatSignedDelta(metric, delta)} vs prior ${span}d`}
     </Badge>
   );
 }
@@ -540,7 +562,8 @@ export function DashboardPage({
     window.addEventListener('fluence:refresh-dashboard', onRefresh);
     let unlistenHistory: (() => void) | undefined;
     void subscribeHistoryUpdated(() => void refresh()).then((u) => {
-      unlistenHistory = u;
+      if (cancelled) u();
+      else unlistenHistory = u;
     });
     let unlistenSync: (() => void) | undefined;
     // Account switch: drop the other account's buckets, full reload.
@@ -560,7 +583,8 @@ export function DashboardPage({
         void refresh();
       }
     }).then((u) => {
-      unlistenSync = u;
+      if (cancelled) u();
+      else unlistenSync = u;
     });
     const onFocus = () => void refresh();
     window.addEventListener('focus', onFocus);
@@ -597,24 +621,28 @@ export function DashboardPage({
         title: 'Words Transcribed',
         value: formatTotalWords(totals.words),
         foot: `${totals.sessions.toLocaleString()} sessions, ${totals.scope}`,
+        metric: 'words',
       },
       {
         id: 'stat-time-saved',
         title: 'Typing Time Saved',
         value: formatDurationMs((totals.words / 40) * 60000),
         foot: `at 40 WPM, ${totals.scope}`,
+        metric: 'time_saved',
       },
       {
         id: 'stat-dictation-time',
         title: 'Dictation Time',
         value: formatDurationMs(totals.durationMs),
         foot: `${spokenLabel(totals.durationMs)}, ${totals.scope}`,
+        metric: 'duration',
       },
       {
         id: 'stat-sessions',
         title: 'Sessions',
         value: totals.sessions.toLocaleString(),
         foot: totals.scope === 'all time' ? 'all time' : `in last ${range === '7d' ? 7 : range === '30d' ? 30 : 90} days`,
+        metric: 'sessions',
       },
     ];
   }, [summary, range]);
@@ -707,7 +735,7 @@ export function DashboardPage({
     const w = el.offsetWidth;
     const h = el.offsetHeight;
     setChipBox((prev) => (prev.w === w && prev.h === h ? prev : { w, h }));
-  });
+  }, [hoverIdx, metric, range]);
   const onPlotMove = (e: ReactMouseEvent) => {
     const el = hostRef.current;
     if (el == null || points.length === 0) {
@@ -763,7 +791,9 @@ export function DashboardPage({
   })();
 
   const copyValue = (value: string) => {
-    copyText(value).then(() => toast('Copied to clipboard', 'success'));
+    copyText(value)
+      .then(() => toast('Copied to clipboard', 'success'))
+      .catch((err) => toast('Could not copy. ' + describeError(err), 'error'));
   };
 
   return (
@@ -867,7 +897,7 @@ export function DashboardPage({
                         minHeight: 22,
                       }}
                     >
-                      <TrendBadge buckets={buckets} range={range} />
+                      <TrendBadge buckets={buckets} range={range} metric={kpi.metric} />
                     </span>
                     <div className="kpi-foot">{kpi.foot}</div>
                   </div>
@@ -945,13 +975,13 @@ export function DashboardPage({
                       <stop offset="100%" stopColor={duo.c} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />
+                  <CartesianGrid vertical={false} stroke="var(--color-border-subtle)" />
                   <XAxis
                     dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     minTickGap={24}
-                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tick={{ fill: 'var(--color-on-surface-variant)', fontSize: 12 }}
                   />
                   <YAxis
                     allowDecimals={false}
@@ -959,7 +989,7 @@ export function DashboardPage({
                     domain={[0, yScaleMax]}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tick={{ fill: 'var(--color-on-surface-variant)', fontSize: 12 }}
                     tickFormatter={(v: number) => v.toLocaleString()}
                   />
                   <Area
@@ -983,13 +1013,13 @@ export function DashboardPage({
                       <stop offset="100%" stopColor={duo.c} stopOpacity={0.9} />
                     </linearGradient>
                   </defs>
-                  <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.06)" />
+                  <CartesianGrid vertical={false} stroke="var(--color-border-subtle)" />
                   <XAxis
                     dataKey="label"
                     tickLine={false}
                     axisLine={false}
                     minTickGap={24}
-                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tick={{ fill: 'var(--color-on-surface-variant)', fontSize: 12 }}
                   />
                   <YAxis
                     allowDecimals={false}
@@ -997,7 +1027,7 @@ export function DashboardPage({
                     domain={[0, yScaleMax]}
                     tickLine={false}
                     axisLine={false}
-                    tick={{ fill: '#A0A0A0', fontSize: 12 }}
+                    tick={{ fill: 'var(--color-on-surface-variant)', fontSize: 12 }}
                     tickFormatter={(v: number) => v.toLocaleString()}
                   />
                   <Bar

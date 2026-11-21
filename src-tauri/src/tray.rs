@@ -8,6 +8,7 @@ use tauri::{
     tray::TrayIconBuilder,
     AppHandle, Emitter, Manager,
 };
+use tauri_plugin_notification::NotificationExt;
 
 // Keep the tray icon alive for the app's lifetime so the context menu stays live.
 static TRAY: OnceLock<Mutex<Option<tauri::tray::TrayIcon>>> = OnceLock::new();
@@ -43,6 +44,26 @@ pub fn setup_tray(app: &AppHandle) -> Result<(), Box<dyn std::error::Error>> {
                     let _ = win.emit("navigate-to", "history");
                 }
             }
+            "paste_last_transcript" => match crate::history::latest_transcript_text() {
+                Ok(Some(text)) => {
+                    let app_handle = app.clone();
+                    tauri::async_runtime::spawn(async move {
+                        if let Err(e) = crate::clipboard::copy_text_core(&text).await {
+                            log::warn!("Tray copy last transcript failed: {}", e);
+                        } else if let Err(e) = app_handle
+                            .notification()
+                            .builder()
+                            .title("Fluence")
+                            .body("Last transcript copied to clipboard. Paste with Ctrl+V.")
+                            .show()
+                        {
+                            log::warn!("Failed to show tray notification: {}", e);
+                        }
+                    });
+                }
+                Ok(None) => {}
+                Err(e) => log::warn!("Tray copy last transcript: history unavailable: {}", e),
+            },
             "mode_toggle" | "mode_hold" => {
                 // Emit event to settings window to update mode
                 let new_mode = if event.id.as_ref() == "mode_toggle" {
@@ -98,6 +119,17 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
     let history_item =
         MenuItem::with_id(app, "history", "Transcription History", true, None::<&str>)
             .map_err(|e| e.to_string())?;
+    let paste_last = MenuItem::with_id(
+        app,
+        "paste_last_transcript",
+        "Paste Last Transcript",
+        crate::history::latest_transcript_text()
+            .ok()
+            .flatten()
+            .is_some(),
+        None::<&str>,
+    )
+    .map_err(|e| e.to_string())?;
     let sep1 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
     let sep2 = PredefinedMenuItem::separator(app).map_err(|e| e.to_string())?;
 
@@ -135,6 +167,7 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
                 status.as_ref().unwrap(),
                 &open_settings,
                 &history_item,
+                &paste_last,
                 &sep1,
                 &mode_submenu,
                 &sep2,
@@ -148,6 +181,7 @@ pub fn refresh_menu(app: &AppHandle) -> Result<(), String> {
             &[
                 &open_settings,
                 &history_item,
+                &paste_last,
                 &sep1,
                 &mode_submenu,
                 &sep2,

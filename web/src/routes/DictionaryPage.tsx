@@ -51,6 +51,7 @@ import {
   getDictionary,
   getSuggestions,
   importDictionaryFile,
+  setDictionaryEntryEnabled,
   type DictEntry,
   type Suggestion,
 } from '@/ipc/dictionary';
@@ -202,6 +203,17 @@ export function DictionaryPage() {
       toast('Entry deleted', 'success');
     } catch (err) {
       toast('Could not delete the entry. ' + describeError(err), 'error');
+    }
+  };
+
+  const onToggleEntry = async (entry: DictEntry, on: boolean) => {
+    try {
+      await setDictionaryEntryEnabled(entry.id, on);
+      setEntries((prev) =>
+        prev.map((e) => (e.id === entry.id ? { ...e, is_enabled: on } : e)),
+      );
+    } catch (err) {
+      toast('Could not update the entry. ' + describeError(err), 'error');
     }
   };
 
@@ -436,6 +448,16 @@ export function DictionaryPage() {
                 placeholder="e.g. fluence"
                 value={spoken}
                 onChange={(e) => setSpoken(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void onSave();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeAdd();
+                  }
+                }}
               />
             </Field>
             <Field label="Corrected Form" htmlFor="dict-corrected-input" className="dict-add-field">
@@ -445,6 +467,16 @@ export function DictionaryPage() {
                 placeholder="e.g. Fluence"
                 value={corrected}
                 onChange={(e) => setCorrected(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    void onSave();
+                  } else if (e.key === 'Escape') {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    closeAdd();
+                  }
+                }}
               />
             </Field>
             <div className="dict-add-actions">
@@ -462,13 +494,14 @@ export function DictionaryPage() {
                 <TableHead className="col-word">Spoken</TableHead>
                 <TableHead className="col-word">Corrected</TableHead>
                 <TableHead className="col-meta added-col">Added</TableHead>
+                <TableHead className="toggles-col">Enabled</TableHead>
                 <TableHead className="actions">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody id="dict-table-body">
               {loading && (
                 <TableRow>
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <div className="dict-loading">
                       <Skeleton style={{ height: 40 }} />
                       <Skeleton style={{ height: 40 }} />
@@ -479,7 +512,7 @@ export function DictionaryPage() {
               )}
               {!loading && entries.length === 0 && (
                 <TableRow id="dict-empty-row">
-                  <TableCell colSpan={4}>
+                  <TableCell colSpan={5}>
                     <Empty>
                       <EmptyHeader>
                         <EmptyMedia variant="icon">
@@ -500,6 +533,13 @@ export function DictionaryPage() {
                     {autoAdded.has(pairKey(entry.spoken, entry.corrected)) && (
                       <span className="source-badge">auto</span>
                     )}
+                  </TableCell>
+                  <TableCell className="toggles-col">
+                    <Switch
+                      aria-label={`Enable ${entry.spoken}`}
+                      checked={entry.is_enabled !== false}
+                      onCheckedChange={(on) => void onToggleEntry(entry, on)}
+                    />
                   </TableCell>
                   <TableCell className="actions">
                     <Button variant="ghost" size="sm" className="agent-delete-btn destructive-action" data-dict-id={entry.id} onClick={() => void onDelete(entry.id)}>

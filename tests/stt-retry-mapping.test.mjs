@@ -121,10 +121,12 @@ test('unknown failures stay buttonless rather than offering a dead retry', () =>
   check('', 'Transcription failed', false);
 });
 
-test('both STT failure paths use the mapping before showing Retry', () => {
+test('both STT failure paths use mapped errors and only offer Retry when supported', () => {
+  assert.match(runSttFlowSource, /mapSttErrorToStatus\(err\)/);
+  assert.match(runSttFlowSource, /if \(retryable\) showRetry\(\)/);
+  assert.match(stopAndTranscribeSource, /mapSttErrorToStatus\(err\)/);
+  assert.match(stopAndTranscribeSource, /if \(!agentMode && retryable\) showRetry\(\)/);
   for (const source of [runSttFlowSource, stopAndTranscribeSource]) {
-    assert.match(source, /mapSttErrorToStatus\(err\)/);
-    assert.match(source, /if \(retryable\) showRetry\(\)/);
     assert.doesNotMatch(source, /setStatusMessage\('Transcription failed'\);\s*showRetry\(\)/);
   }
 });

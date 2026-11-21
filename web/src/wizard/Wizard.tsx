@@ -13,20 +13,19 @@ import {
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
 import { listenEvent } from '@/ipc/tauri';
+import { keyTarget } from '@/ipc/providers';
 import { describeError } from '@/lib/errors';
 import { WizardTitlebar } from './WizardTitlebar';
-import { closeWizard, saveApiKey } from './ipc';
+import { cancelOfflineDownload, closeWizard, saveApiKey } from './ipc';
 import { StepWelcome } from './steps/StepWelcome';
-import { StepFeatures } from './steps/StepFeatures';
 import { StepApiKey } from './steps/StepApiKey';
 import { StepHotkey } from './steps/StepHotkey';
-import { StepPosition } from './steps/StepPosition';
-import { StepStyle } from './steps/StepStyle';
-import { StepTheme } from './steps/StepTheme';
 import { StepTest } from './steps/StepTest';
 import { StepDone } from './steps/StepDone';
 
-export const TOTAL_STEPS = 9;
+export const TOTAL_STEPS = 5;
+
+export type WizardOfflineEngine = 'moonshine_v2_small' | 'sensevoice';
 
 export interface WizardData {
   provider: string;
@@ -34,6 +33,9 @@ export interface WizardData {
   apiKey: string;
   model: string;
   llmModel: string;
+  offlineEngine: WizardOfflineEngine;
+  offlineInstalled: boolean;
+  offlineDownloadSkipped: boolean;
   hotkey: string;
   recordingMode: string;
   overlayPosition: string;
@@ -49,6 +51,9 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
   apiKey: '',
   model: 'whisper-large-v3',
   llmModel: 'llama-3.3-70b-versatile',
+  offlineEngine: 'moonshine_v2_small',
+  offlineInstalled: false,
+  offlineDownloadSkipped: false,
   hotkey: 'Ctrl+Shift+Space',
   recordingMode: 'push_to_toggle',
   overlayPosition: 'bottom_right',
@@ -61,12 +66,8 @@ export const DEFAULT_WIZARD_DATA: WizardData = {
 const STEP_TITLES = [
   '',
   'Welcome to Fluence',
-  'Choose Your Theme',
-  'What Fluence Can Do',
-  'Connect Your API Key',
+  'Choose Your Voice Engine',
   'Set Your Hotkey',
-  'Overlay Position',
-  'Choose Your Overlay',
   'Test Your Setup',
   "You're All Set!",
 ];
@@ -203,29 +204,43 @@ export function Wizard() {
   const validateAndNext = useCallback(async () => {
     const s = stepRef.current;
     const d = dataRef.current;
-    if (s === 4 && !d.skipApiKey && d.provider !== 'Local Offline') {
-      const key = d.apiKey.trim();
-      const baseUrl = d.baseUrl.trim();
-      if (d.provider === 'custom' && !baseUrl) {
-        setApiError('Please enter your API endpoint URL');
-        flashNext();
-        return;
-      }
-      if (!key) {
-        setApiError('Enter your API key to continue, or skip to offline transcription below.');
-        flashNext();
-        return;
-      }
-      patchData({ apiKey: key, baseUrl: baseUrl || d.baseUrl });
-      try {
-        await saveApiKey('Fluence/STT_ApiKey', key);
-        // Saving the same key for AI cleanup / Agent Mode is an explicit
-        // choice in StepApiKey; unchecked leaves that provider untouched.
-        if (d.useKeyForAgent) await saveApiKey('Fluence/LLM_ApiKey', key);
-      } catch (err) {
-        setApiError('The API key could not be saved. ' + describeError(err));
-        flashNext();
-        return;
+    if (s === 2) {
+      setApiError(null);
+      if (d.skipApiKey || d.provider === 'Local Offline') {
+        if (!d.offlineInstalled && !d.offlineDownloadSkipped) {
+          setApiError(
+            'Download the offline model so voice typing works right away, or click "Skip download for now" below.',
+          );
+          flashNext();
+          return;
+        }
+      } else {
+        const key = d.apiKey.trim();
+        const baseUrl = d.baseUrl.trim();
+        if (d.provider === 'custom' && !baseUrl) {
+          setApiError('Please enter your API endpoint URL');
+          flashNext();
+          return;
+        }
+        if (!key) {
+          setApiError('Enter your API key to continue, or skip to offline transcription below.');
+          flashNext();
+          return;
+        }
+        patchData({ apiKey: key, baseUrl: baseUrl || d.baseUrl });
+        try {
+          // Credentials are stored per preset (matches the backend's
+          // get_stt_target/get_llm_target lookup); the legacy global slot is
+          // only read as a fallback for installs created before this change.
+          await saveApiKey(keyTarget('stt', d.provider), key);
+          // Saving the same key for AI cleanup / Agent Mode is an explicit
+          // choice in StepApiKey; unchecked leaves that provider untouched.
+          if (d.useKeyForAgent) await saveApiKey(keyTarget('llm', d.provider), key);
+        } catch (err) {
+          setApiError('The API key could not be saved. ' + describeError(err));
+          flashNext();
+          return;
+        }
       }
     }
     if (s < TOTAL_STEPS) goTo(s + 1);
@@ -307,9 +322,7 @@ export function Wizard() {
               aria-current={i === step ? 'step' : undefined}
             >
               {i === 1 && <StepWelcome />}
-              {i === 2 && <StepTheme data={data} onPatch={patchData} />}
-              {i === 3 && <StepFeatures />}
-              {i === 4 && (
+              {i === 2 && (
                 <StepApiKey
                   data={data}
                   onPatch={patchData}
@@ -318,18 +331,16 @@ export function Wizard() {
                   onAdvance={() => goTo(stepRef.current + 1)}
                 />
               )}
-              {i === 5 && (
+              {i === 3 && (
                 <StepHotkey
                   data={data}
                   onPatch={patchData}
-                  active={step === 5}
+                  active={step === 3}
                   onRecordingChange={setRecordingHotkey}
                 />
               )}
-              {i === 6 && <StepPosition data={data} onPatch={patchData} />}
-              {i === 7 && <StepStyle data={data} onPatch={patchData} />}
-              {i === 8 && <StepTest data={data} />}
-              {i === 9 && <StepDone data={data} />}
+              {i === 4 && <StepTest data={data} active={step === 4} />}
+              {i === 5 && <StepDone data={data} />}
             </section>
           ))}
         </div>
@@ -337,7 +348,7 @@ export function Wizard() {
           <Button
             variant="ghost"
             id="prev-btn"
-            style={{ visibility: step > 1 && step < TOTAL_STEPS ? 'visible' : 'hidden' }}
+            style={{ visibility: step > 1 ? 'visible' : 'hidden' }}
             onClick={() => goTo(step - 1)}
           >
             Back
@@ -379,7 +390,13 @@ export function Wizard() {
               <Button variant="secondary">Keep Setting Up</Button>
             </AlertDialogCancel>
             <AlertDialogAction asChild>
-              <Button variant="destructive" onClick={() => void closeWizard()}>
+              <Button
+                variant="destructive"
+                onClick={() => {
+                  void cancelOfflineDownload().catch(() => undefined);
+                  void closeWizard();
+                }}
+              >
                 Skip Setup
               </Button>
             </AlertDialogAction>

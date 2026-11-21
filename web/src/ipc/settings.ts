@@ -1,4 +1,6 @@
 import { invokeCmd } from '@/ipc/tauri';
+import { toast } from '@/components/fluence/Toasts';
+import { describeError } from '@/lib/errors';
 
 // Minimal settings-model port for routes migrated so far.
 //
@@ -83,9 +85,8 @@ async function runFlush(): Promise<void> {
 async function flushSettings() {
   try {
     await runFlush();
-  } catch {
-    // Vanilla shows a toast here; routes surface persistence failures
-    // through their own UI. Kept silent to avoid duplicate toasts.
+  } catch (err) {
+    toast('Could not save settings. ' + describeError(err), 'error');
   }
 }
 

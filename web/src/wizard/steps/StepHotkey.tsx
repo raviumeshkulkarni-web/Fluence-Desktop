@@ -72,7 +72,7 @@ export function StepHotkey({
           </RadioGroup>
         </div>
         <p style={{ fontSize: 'var(--text-label-sm)', color: 'var(--color-on-surface-variant)', margin: 0 }}>
-          <strong>Tip:</strong> Long press (&gt;800ms) activates Agent Mode for AI-powered editing commands
+          <strong>Tip:</strong> Use Ctrl+Shift+A (customizable in Settings) to activate Agent Mode for AI-powered editing commands
         </p>
       </div>
     </>

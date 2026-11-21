@@ -144,10 +144,11 @@ Write-Host "`n=== S8: sync command ACL gates (S1) ===" -ForegroundColor Cyan
 # blanket parity assertion would be false.
 $gatedCommands = @{
     "src-tauri/src/sync/scheduler.rs"   = @("sync_sign_in", "sync_sign_out", "sync_toggle", "sync_run_now", "sync_get_status", "get_account_stats")
-    "src-tauri/src/snippets.rs"  = @("get_snippets", "set_snippets_enabled", "add_snippet", "update_snippet", "delete_snippet")
+    "src-tauri/src/snippets.rs"  = @("get_snippets", "set_snippets_enabled", "set_snippet_enabled", "add_snippet", "update_snippet", "delete_snippet")
     "src-tauri/src/suggestion.rs" = @("get_suggestions", "accept_suggestion_command", "dismiss_suggestion_command", "clear_dismissed_suggestions_command", "get_dismissed_count", "expire_stale_suggestions_command", "get_learning_suggestions", "get_auto_accepted_suggestions", "revert_auto_accepted_suggestion")
     "src-tauri/src/history.rs"          = @("delete_history_entry", "clear_history", "get_history_stats", "get_weekly_activity")
     "src-tauri/src/sync/stores.rs"      = @("get_account_activity")
+    "src-tauri/src/dictionary.rs"       = @("add_dictionary_entry", "update_dictionary_entry", "set_dictionary_entry_enabled", "delete_dictionary_entry", "import_dictionary", "import_dictionary_report", "read_import_file")
 }
 foreach ($path in $gatedCommands.Keys) {
     if (-not (Test-Path $path)) { continue }
@@ -159,6 +160,15 @@ foreach ($path in $gatedCommands.Keys) {
                 $gated = $false
                 for ($k = [Math]::Max(0, $i - 6); $k -lt [Math]::Min($lines.Count, $i + 14); $k++) {
                     if ($lines[$k] -match 'require_caller') { $gated = $true; break }
+                    # Support commands that delegate their ACL check to a shared *_impl function
+                    if ($lines[$k] -match '(\w+_impl)\s*\(') {
+                        $implName = $Matches[1]
+                        $rawSrc = Get-Content $path -Raw
+                        if ($rawSrc -match "(?s)fn\s+$implName[\s\S]{0,400}?require_caller") {
+                            $gated = $true
+                            break
+                        }
+                    }
                 }
                 $found = $true
                 Test-Check "$cmd carries an ACL gate" $gated

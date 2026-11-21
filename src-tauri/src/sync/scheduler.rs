@@ -1127,6 +1127,37 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
     // local binding and still adopt rotated refresh tokens.
     let session_cell = std::rc::Rc::new(std::cell::RefCell::new(session));
     let mut drive = GoogleDriveStore::new(token);
+    // Attach refresh before the first Drive request. Until that request gives
+    // us token-bound identity, fence refresh against the account key observed
+    // at pass entry; after identity is verified, replace it with this pass's
+    // canonical account hash below.
+    let refresh_account_hash = std::rc::Rc::new(std::cell::RefCell::new(
+        persisted_email
+            .as_deref()
+            .map(crate::sync::metadata::account_hash_from_email),
+    ));
+    let initial_pass_email = persisted_email.clone();
+    let refresh_account = std::rc::Rc::clone(&refresh_account_hash);
+    let cell = std::rc::Rc::clone(&session_cell);
+    drive.set_token_refresher(Box::new(move |_| {
+        let settings = crate::settings::load_settings();
+        let current = settings
+            .as_ref()
+            .ok()
+            .and_then(|s| s.sync_account_key.as_deref());
+        let identity_unchanged = settings.is_ok()
+            && match refresh_account.borrow().as_deref() {
+                Some(pass_hash) => pass_account_unchanged(pass_hash, current),
+                None => current == initial_pass_email.as_deref(),
+            };
+        if !identity_unchanged {
+            return Err(SyncError::Retryable(
+                "account changed mid-pass; aborting before credential use".to_string(),
+            ));
+        }
+        let mut session = cell.borrow_mut();
+        refresh_access_token_silently(&mut session)
+    }));
     // STAGE 8 — token-bound identity. The partition key derives from the email
     // Drive attributes to THIS access token, never from the persisted setting
     // alone. A pass that cannot establish the identity aborts BEFORE any partition
@@ -1199,6 +1230,7 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         }
     }
     let account_hash = crate::sync::metadata::account_hash_from_email(&verified_email);
+    *refresh_account_hash.borrow_mut() = Some(account_hash.clone());
     let mut metadata = crate::sync::metadata::SyncMetadata::load();
     // Account switch: update the active-account marker so per-account
     // bookkeeping (lastRev) partitions correctly.
@@ -1211,32 +1243,6 @@ fn run_pass() -> Result<SyncOutcome, SyncError> {
         crate::snippets::invalidate_cache();
     }
     let hash = account_hash;
-
-    {
-        // F6 mid-pass fence (Android PassAccountGuard parity): the silent 401
-        // recovery must not mint for a different account than this pass is
-        // syncing for. A sign-out (persisted sign-in gone) or switch (changed)
-        // mid-pass aborts as Retryable before any credential use — the next
-        // pass runs for the new account (or AuthRequired when signed out).
-        // Unreadable settings fail closed the same way. Residual, shared with
-        // Android: a pass whose in-memory token never hits a 401 completes
-        // without re-checking; tokens are short-lived and the next pass
-        // fences, so the window is one pass, never silent divergence.
-        let cell = std::rc::Rc::clone(&session_cell);
-        let pass_hash = hash.clone();
-        drive.set_token_refresher(Box::new(move |_| {
-            let current = crate::settings::load_settings()
-                .ok()
-                .and_then(|s| s.sync_account_key);
-            if !pass_account_unchanged(&pass_hash, current.as_deref()) {
-                return Err(SyncError::Retryable(
-                    "account changed mid-pass; aborting before credential use".to_string(),
-                ));
-            }
-            let mut session = cell.borrow_mut();
-            refresh_access_token_silently(&mut session)
-        }));
-    }
 
     let mut dict_store = crate::sync::stores::DictionaryDirtyStore;
     let mut snippet_store = crate::sync::stores::SnippetDirtyStore;

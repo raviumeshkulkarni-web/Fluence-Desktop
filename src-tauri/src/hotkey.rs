@@ -392,13 +392,18 @@ pub fn update_hotkeys(
         &window,
         &[crate::acl::MAIN_WINDOW, crate::acl::WIZARD_WINDOW],
     )?;
-    register_hotkeys(
+    let result = register_hotkeys(
         &app,
         &transcription_shortcut,
         &transcription_mode,
         &agent_shortcut,
         &agent_mode,
-    )
+    );
+    if result.is_ok() {
+        // Keep the tray's mode checkmarks in sync with the new shortcuts.
+        let _ = crate::tray::refresh_menu(&app);
+    }
+    result
 }
 
 #[tauri::command]

@@ -205,7 +205,7 @@ export function BubblePage() {
                     </button>
                   </RadioGroupItem>
                   <div className="bubble-live-stage" onClick={(e) => e.stopPropagation()}>
-                    <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} />
+                    <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} waveformStyle={waveformStyle} />
                   </div>
                 </div>
               );
@@ -353,7 +353,7 @@ export function BubblePage() {
       </Tabs>
 
       <div className="page-actions">
-        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>Save Now</Button>
       </div>
     </section>
   );

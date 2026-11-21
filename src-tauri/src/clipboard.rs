@@ -342,7 +342,13 @@ pub async fn inject_text(
     // Text injection simulates paste into the user's applications: the
     // overlay is its only legitimate caller.
     crate::acl::require_caller(&window, &[crate::acl::OVERLAY_WINDOW])?;
-    check_inject_text_len(&text)?;
+    inject_text_core(&text, monitor_auto_learn.unwrap_or(false)).await
+}
+
+/// Shared injection core: the overlay command and the tray "Paste Last
+/// Transcript" action both route through it. Callers own their ACL gate.
+pub async fn inject_text_core(text: &str, monitor_auto_learn: bool) -> Result<bool, String> {
+    check_inject_text_len(text)?;
     #[cfg(target_os = "windows")]
     {
         // Paste goes wherever the user's cursor is when transcription finishes.
@@ -365,7 +371,7 @@ pub async fn inject_text(
 
         let set_start = std::time::Instant::now();
         // Set clipboard to our transcribed text
-        set_clipboard_text(&text).map_err(|e| e.to_string())?;
+        set_clipboard_text(text).map_err(|e| e.to_string())?;
         let fluence_clipboard_sequence = clipboard_sequence_number();
         let set_duration = set_start.elapsed();
 
@@ -403,13 +409,13 @@ pub async fn inject_text(
         // restore still runs.
         let settings = crate::settings::load_settings().ok();
         let should_monitor = paste_ok
-            && monitor_auto_learn.unwrap_or(false)
+            && monitor_auto_learn
             && settings
                 .as_ref()
                 .map(|settings| settings.auto_learn_enabled)
                 .unwrap_or(false);
         if should_monitor {
-            crate::auto_learn::start_post_injection_monitor(text.clone());
+            crate::auto_learn::start_post_injection_monitor(text.to_string());
         }
 
         // copy_transcript_to_clipboard (issue #10): keep the transcribed
@@ -427,7 +433,7 @@ pub async fn inject_text(
             // partial paste so the user's clipboard is returned.
             sleep(Duration::from_millis(200)).await;
             if clipboard_sequence_number() == fluence_clipboard_sequence
-                && get_clipboard_text().as_deref() == Some(text.as_str())
+                && get_clipboard_text().as_deref() == Some(text)
             {
                 if let Some(original) = saved {
                     let _ = set_clipboard_text(&original);
@@ -457,6 +463,18 @@ fn clipboard_sequence_number() -> u32 {
     unsafe { GetClipboardSequenceNumber() }
 }
 
+/// Copy text without window gating (used by system tray).
+pub async fn copy_text_core(text: &str) -> Result<(), String> {
+    check_inject_text_len(text)?;
+    #[cfg(target_os = "windows")]
+    {
+        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
+        set_clipboard_text(text).map_err(|e| e.to_string())
+    }
+    #[cfg(not(target_os = "windows"))]
+    Err("Clipboard operations are not supported on this platform".to_string())
+}
+
 /// Copy text while participating in the same clipboard transaction lock as
 /// text injection and active-selection capture.
 #[tauri::command]
@@ -467,14 +485,7 @@ pub async fn copy_text(window: tauri::Window, text: String) -> Result<(), String
         &window,
         &[crate::acl::OVERLAY_WINDOW, crate::acl::MAIN_WINDOW],
     )?;
-    check_inject_text_len(&text)?;
-    #[cfg(target_os = "windows")]
-    {
-        let _transaction = CLIPBOARD_INJECTION_LOCK.lock().await;
-        set_clipboard_text(&text).map_err(|e| e.to_string())
-    }
-    #[cfg(not(target_os = "windows"))]
-    Err("Clipboard operations are not supported on this platform".to_string())
+    copy_text_core(&text).await
 }
 
 /// Execute a keyboard action from agent mode. Delivery is reported

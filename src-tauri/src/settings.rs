@@ -10,6 +10,11 @@ use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
 
+// Windows can reject concurrent renames to the same existing settings file
+// even when each writer uses its own temporary file. Serialize the final
+// write-and-replace transaction across the UI and background sync writers.
+static SETTINGS_SAVE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProviderConfig {
     #[serde(default = "default_preset")]
@@ -390,6 +395,9 @@ pub fn load_settings() -> Result<AppSettings> {
 }
 
 pub fn save_settings(settings: &AppSettings) -> Result<()> {
+    let _save_guard = SETTINGS_SAVE_LOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     let path = settings_path();
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)?;

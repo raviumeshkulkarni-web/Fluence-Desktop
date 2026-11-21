@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
@@ -89,6 +89,33 @@ static SERVER_INSTANCE: Lazy<Mutex<Option<ServerInstance>>> = Lazy::new(|| Mutex
 static LAST_USED: Lazy<Mutex<Instant>> = Lazy::new(|| Mutex::new(Instant::now()));
 static IDLE_MONITOR_RUNNING: Lazy<AtomicBool> = Lazy::new(|| AtomicBool::new(false));
 static SERVER_START_LOCK: Lazy<tokio::sync::Mutex<()>> = Lazy::new(|| tokio::sync::Mutex::new(()));
+static ACTIVE_TRANSCRIPTIONS: AtomicUsize = AtomicUsize::new(0);
+
+struct ActiveTranscriptionGuard;
+impl ActiveTranscriptionGuard {
+    fn acquire() -> Self {
+        ACTIVE_TRANSCRIPTIONS.fetch_add(1, Ordering::SeqCst);
+        Self
+    }
+}
+impl Drop for ActiveTranscriptionGuard {
+    fn drop(&mut self) {
+        ACTIVE_TRANSCRIPTIONS.fetch_sub(1, Ordering::SeqCst);
+        *LAST_USED.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
+    }
+}
+
+/// Terminate any running local ASR sidecar cleanly on app exit/relaunch
+/// so no orphan process leaks RAM or locks binaries during NSIS updates.
+pub fn shutdown_server() {
+    let mut lock = SERVER_INSTANCE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(mut instance) = lock.take() {
+        log::info!("Shutting down local ASR server on app exit.");
+        let _ = instance.child.kill();
+        let _ = instance.child.wait();
+        forget_sidecar_pid();
+    }
+}
 
 fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
@@ -103,21 +130,23 @@ fn start_idle_monitor() {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(15)).await;
 
-            let last_used = {
-                let lock = LAST_USED.lock().unwrap();
-                *lock
-            };
+            let last_used = *LAST_USED.lock().unwrap_or_else(|e| e.into_inner());
 
-            if last_used.elapsed() > std::time::Duration::from_secs(180) {
-                // 3 minutes
-                log::info!("Idle timeout reached. Shutting down sherpa-onnx server.");
-                let mut lock = SERVER_INSTANCE.lock().unwrap();
-                if let Some(mut instance) = lock.take() {
-                    let _ = instance.child.kill();
-                    forget_sidecar_pid();
+            if ACTIVE_TRANSCRIPTIONS.load(Ordering::SeqCst) == 0
+                && last_used.elapsed() > std::time::Duration::from_secs(180)
+            {
+                if let Ok(_start_lock) = SERVER_START_LOCK.try_lock() {
+                    if ACTIVE_TRANSCRIPTIONS.load(Ordering::SeqCst) == 0 {
+                        log::info!("Idle timeout reached. Shutting down local ASR server.");
+                        let mut lock = SERVER_INSTANCE.lock().unwrap_or_else(|e| e.into_inner());
+                        if let Some(mut instance) = lock.take() {
+                            let _ = instance.child.kill();
+                            forget_sidecar_pid();
+                        }
+                        IDLE_MONITOR_RUNNING.store(false, Ordering::SeqCst);
+                        break;
+                    }
                 }
-                IDLE_MONITOR_RUNNING.store(false, Ordering::SeqCst);
-                break;
             }
         }
     });
@@ -465,13 +494,15 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     let _start_lock = SERVER_START_LOCK.lock().await;
     // Check if an existing server is running with the same engine
     {
-        let mut lock = SERVER_INSTANCE.lock().unwrap();
+        let mut lock = SERVER_INSTANCE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(ref mut instance) = *lock {
             if instance.engine == engine {
                 match instance.child.try_wait() {
                     Ok(None) => {
                         // Still running with same engine, update last used timestamp
-                        *LAST_USED.lock().unwrap() = Instant::now();
+                        *LAST_USED.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
                         return Ok(instance.port);
                     }
                     _ => {
@@ -509,19 +540,26 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     // Moonshine v2 ships in the installer (Tauri externalBin) or a dev
     // build tree - never in the model dir (see resolve_v2_sidecar). The
     // sherpa runtime is still downloaded into its model dir by precedent.
-    let (exe_path, runtime_dir) = match engine.v2_arch() {
+    let (exe_path, dll_dir) = match engine.v2_arch() {
         Some(_) => {
             let resolved = resolve_v2_sidecar()?;
-            let dir = resolved
+            let dll = v2_sidecar_dll_candidates(&resolved)
+                .into_iter()
+                .find(|d| d.is_file())
+                .ok_or_else(|| anyhow!(
+                    "Offline transcription engine is missing {}. Please reinstall Fluence.",
+                    crate::offline_downloader::MOONSHINE_V2_ORT_DLL
+                ))?;
+            let dir = dll
                 .parent()
-                .ok_or_else(|| anyhow!("Resolved sidecar path has no parent directory"))?
+                .ok_or_else(|| anyhow!("Resolved DLL path has no parent directory"))?
                 .to_path_buf();
             (resolved, dir)
         }
         None => (offline_dir.join(exe_name), offline_dir.clone()),
     };
 
-    if !exe_path.exists() || !runtime_dir.join("onnxruntime.dll").exists() {
+    if !exe_path.exists() || !dll_dir.join("onnxruntime.dll").exists() {
         return Err(anyhow!(
             "Offline transcription engine is not installed. Please download it in Settings."
         ));
@@ -653,9 +691,19 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     if spawn_token.is_some() {
         cmd.stdin(Stdio::piped());
     }
+    if exe_path.parent() != Some(dll_dir.as_path()) {
+        let mut path_val = std::ffi::OsString::from(dll_dir.as_os_str());
+        if let Some(existing) = std::env::var_os("PATH") {
+            path_val.push(";");
+            path_val.push(existing);
+        }
+        cmd.env("PATH", path_val);
+    }
 
     {
-        let mut lock = SERVER_INSTANCE.lock().unwrap();
+        let mut lock = SERVER_INSTANCE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow!("Failed to spawn ASR server: {}", e))?;
@@ -682,7 +730,7 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             engine,
             auth_token: spawn_token.clone(),
         });
-        *LAST_USED.lock().unwrap() = Instant::now();
+        *LAST_USED.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
     }
 
     start_idle_monitor();
@@ -745,7 +793,9 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     }
 
     if !ready {
-        let mut lock = SERVER_INSTANCE.lock().unwrap();
+        let mut lock = SERVER_INSTANCE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(mut instance) = lock.take() {
             let _ = instance.child.kill();
             forget_sidecar_pid();
@@ -782,13 +832,16 @@ pub async fn transcribe_samples(samples: &[f32], engine: OfflineEngine) -> Resul
             samples.len() as f64 / 16_000.0 / 60.0
         ));
     }
+    let _active = ActiveTranscriptionGuard::acquire();
     let port = ensure_server_running(engine).await?;
-    *LAST_USED.lock().unwrap() = Instant::now();
+    *LAST_USED.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
 
     // Copy the spawn-shared auth token for this engine instance (None for
     // sherpa). Guarded by the same engine check the server lookup implies.
     let auth_token = {
-        let lock = SERVER_INSTANCE.lock().unwrap();
+        let lock = SERVER_INSTANCE
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         lock.as_ref()
             .filter(|i| i.engine == engine)
             .and_then(|i| i.auth_token.clone())

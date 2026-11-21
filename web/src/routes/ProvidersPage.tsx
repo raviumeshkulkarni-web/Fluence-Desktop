@@ -201,9 +201,22 @@ function LlmProviderSection({
                 placeholder="sk-•••••••••••••••"
                 autoComplete="off"
                 value={form.apiKey}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && form.apiKey.trim()) {
+                    e.preventDefault();
+                    void onSaveKey(kind);
+                  }
+                }}
                 onChange={(e) => onKeyInput(kind, e.target.value)}
               />
-              <Button variant="secondary" id={`${idPrefix}-save-key-btn`} className="provider-save-key" onClick={() => void onSaveKey(kind)}>Save Key</Button>
+              <Button
+                variant={form.apiKey.trim() ? 'primary' : 'secondary'}
+                id={`${idPrefix}-save-key-btn`}
+                className="provider-save-key"
+                onClick={() => void onSaveKey(kind)}
+              >
+                Save Key
+              </Button>
             </div>
           </Field>
           <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
@@ -379,7 +392,7 @@ function formFromSettings(
 // One tab per model job: dictation (STT), Agent Mode (LLM), AI cleaner
 // (dedicated polish provider split out of the LLM slot). Only the active
 // tab's section renders; all three persist through the same debounced
-// auto-apply pipe, same explicit Save Changes flush.
+// auto-apply pipe, same explicit Save Now flush.
 type ProvidersTab = 'dictation' | 'agent' | 'cleaner';
 
 const TAB_STORAGE_KEY = 'fluence:providers-tab';
@@ -402,7 +415,7 @@ function readInitialTab(): ProvidersTab {
 // setupOfflineDownloader/updateOfflineStatus, collectProviderSettings,
 // setupSaveButtons providers branch). Same DOM ids/classes, same copy,
 // same toasts, same debounced auto-apply persistence of the full settings
-// object, same explicit Save Changes flush.
+// object, same explicit Save Now flush.
 export function ProvidersPage() {
   const [tab, setTab] = useState<ProvidersTab>(readInitialTab);
   const [stt, setStt] = useState<FormState>(() => ({
@@ -447,6 +460,7 @@ export function ProvidersPage() {
 
   const forms = useRef({ stt, llm, cleaner });
   forms.current = { stt, llm, cleaner };
+  const fetchSeq = useRef<Record<ProviderKind, number>>({ stt: 0, llm: 0, cleaner: 0 });
 
   // Never persist when the settings load failed: vanilla's flush is a
   // no-op while currentSettings is null, so a partial write must not
@@ -511,10 +525,12 @@ export function ProvidersPage() {
 
   const doFetchModels = useCallback(
     async (kind: ProviderKind, f: FormState, silent: boolean) => {
+      const requestEpoch = fetchSeq.current[kind];
       let apiKey = f.apiKey.trim();
       if (!apiKey) {
         apiKey = await getApiKey(keyTarget(kind, f.preset)).catch(() => '');
       }
+      if (requestEpoch !== fetchSeq.current[kind]) return;
       const baseUrl = f.baseUrl.trim();
       if (!baseUrl || !apiKey || apiKey.length < 8) {
         if (!silent) toast('Please enter endpoint and API key first', 'error');
@@ -524,6 +540,7 @@ export function ProvidersPage() {
         if (!silent) toast('Use https:// (http only for localhost).', 'error');
         return;
       }
+      const seq = ++fetchSeq.current[kind];
       if (kind === 'stt') setSttFetching(true);
       else if (kind === 'llm') setLlmFetching(true);
       else setCleanerFetching(true);
@@ -532,6 +549,7 @@ export function ProvidersPage() {
         if (kind === 'stt') {
           const res = await fetchSttModels(baseUrl, apiKey, current || null);
           const models = res.models || [];
+          if (seq !== fetchSeq.current[kind]) return;
           if (!models.length) {
             if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
             return;
@@ -547,6 +565,7 @@ export function ProvidersPage() {
           }
         } else {
           const models = await fetchModels(baseUrl, apiKey);
+          if (seq !== fetchSeq.current[kind]) return;
           if (!models.length) {
             if (!silent) toast('No models found on this endpoint, keeping current list', 'error');
             return;
@@ -555,11 +574,15 @@ export function ProvidersPage() {
           if (!silent) toast(`Loaded ${models.length} models`, 'success');
         }
       } catch (err) {
-        if (!silent) toast('Could not fetch models. ' + describeError(err), 'error');
+        if (seq === fetchSeq.current[kind] && !silent) {
+          toast('Could not fetch models. ' + describeError(err), 'error');
+        }
       } finally {
-        if (kind === 'stt') setSttFetching(false);
-        else if (kind === 'llm') setLlmFetching(false);
-        else setCleanerFetching(false);
+        if (seq === fetchSeq.current[kind]) {
+          if (kind === 'stt') setSttFetching(false);
+          else if (kind === 'llm') setLlmFetching(false);
+          else setCleanerFetching(false);
+        }
       }
     },
     [setModelList],
@@ -639,17 +662,22 @@ export function ProvidersPage() {
   }, [stt.preset, refreshOfflineStatus]);
 
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void subscribeOfflineDownloadProgress((p: OfflineDownloadProgress) =>
-      onOfflineProgress(p),
+      disposed ? undefined : onOfflineProgress(p),
     ).then((u) => {
-      unlisten = u;
+      if (disposed) u();
+      else unlisten = u;
     });
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Cross-page deep link (e.g. AI Post Processing → AI cleaner tab):
+  // Cross-page deep link (e.g. AI Cleanup → AI cleaner tab):
   // pages dispatch `fluence:providers-tab` and/or stash the tab in
   // session storage (read once in readInitialTab for the fresh-mount
   // case, where this listener is not yet attached).
@@ -700,6 +728,8 @@ export function ProvidersPage() {
       toast('Offline model downloaded and installed successfully', 'success');
       void refreshOfflineStatus();
     } else if (status === 'error') {
+      setProgressVisible(false);
+      setDownloading(null);
       toast(
         'Offline download failed. ' +
           describeError(payload.errorMessage, 'Please try again.'),
@@ -707,12 +737,20 @@ export function ProvidersPage() {
       );
       void refreshOfflineStatus();
     } else if (status === 'cancelled') {
+      setProgressVisible(false);
+      setDownloading(null);
       toast('Offline download cancelled', 'info');
       void refreshOfflineStatus();
     }
   };
 
   const selectCard = async (kind: ProviderKind, preset: string) => {
+    // Invalidate both in-flight model requests and saved-key reads for the
+    // provider being left before any async credential lookup can complete.
+    fetchSeq.current[kind]++;
+    if (kind === 'stt') setSttFetching(false);
+    else if (kind === 'llm') setLlmFetching(false);
+    else setCleanerFetching(false);
     const presets = kind === 'stt' ? STT_PRESETS : LLM_PRESETS;
     const f = forms.current[kind];
     let next = { ...f, preset, apiKey: '' };
@@ -793,6 +831,19 @@ export function ProvidersPage() {
   };
 
   const onSaveAll = async () => {
+    for (const kind of ['stt', 'llm', 'cleaner'] as ProviderKind[]) {
+      const f = forms.current[kind];
+      if (kind === 'stt' && f.preset === 'Local Offline') continue;
+      const typedKey = f.apiKey.trim();
+      if (!typedKey) continue;
+      try {
+        await saveApiKey(keyTarget(kind, f.preset), typedKey);
+        setForm(kind, { ...f, apiKey: '' });
+      } catch (err) {
+        toast(`Could not save ${f.preset} API key. ` + describeError(err), 'error');
+        return;
+      }
+    }
     try {
       await saveSettingsNow();
     } catch (err) {
@@ -819,6 +870,8 @@ export function ProvidersPage() {
     try {
       await cfg.downloadCmd();
     } catch (err) {
+      setProgressVisible(false);
+      setDownloading(null);
       toast('Could not start the download. ' + describeError(err), 'error');
       void refreshOfflineStatus();
     }
@@ -912,9 +965,22 @@ export function ProvidersPage() {
                   placeholder="sk-•••••••••••••••"
                   autoComplete="off"
                   value={stt.apiKey}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && stt.apiKey.trim()) {
+                      e.preventDefault();
+                      void onSaveKey('stt');
+                    }
+                  }}
                   onChange={(e) => onKeyInput('stt', e.target.value)}
                 />
-                <Button variant="secondary" id="stt-save-key-btn" className="provider-save-key" onClick={() => void onSaveKey('stt')}>Save Key</Button>
+                <Button
+                  variant={stt.apiKey.trim() ? 'primary' : 'secondary'}
+                  id="stt-save-key-btn"
+                  className="provider-save-key"
+                  onClick={() => void onSaveKey('stt')}
+                >
+                  Save Key
+                </Button>
               </div>
             </Field>
             <Field label="Model" htmlFor="stt-model-select">
@@ -987,6 +1053,7 @@ export function ProvidersPage() {
                 const isDownloading = downloading === cfg.engine;
                 return (
                   <div
+                    key={cfg.engine}
                     id={cfg.cardId}
                     data-engine={cfg.engine}
                     className={`choice-surface offline-model-card${selected ? ' selected' : ''}`}
@@ -1108,7 +1175,13 @@ export function ProvidersPage() {
       </Tabs>
 
       <div className="page-actions">
-        <Button variant="default" id="save-providers-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+        <Button
+          variant={stt.apiKey.trim() || llm.apiKey.trim() || cleaner.apiKey.trim() ? 'secondary' : 'default'}
+          id="save-providers-btn"
+          onClick={() => void onSaveAll()}
+        >
+          Save Now
+        </Button>
       </div>
 
       <ConfirmDialog

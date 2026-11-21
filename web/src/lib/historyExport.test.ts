@@ -35,7 +35,18 @@ test('historyCsv quotes every cell and doubles embedded quotes', () => {
 });
 
 test('historyCsv neutralizes spreadsheet formula injection', () => {
-  const dangerous = ['=cmd|calc!A0', '+1+cmd', '-2+3', '@SUM(1)', '\tcmd', '\rcmd'];
+  const dangerous = [
+    '=cmd|calc!A0',
+    '+1+cmd',
+    '-2+3',
+    '@SUM(1)',
+    '\tcmd',
+    '\rcmd',
+    '   =cmd|calc!A0',
+    '  +1+cmd',
+    ' -2+3',
+    '   @SUM(1)',
+  ];
   for (const text of dangerous) {
     const rows = historyCsv([entry({ text })]);
     assert.ok(rows.includes(`"'${text}"`), text);

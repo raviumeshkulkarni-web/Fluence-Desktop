@@ -1,4 +1,5 @@
 import {
+  Fragment,
   memo,
   useCallback,
   useEffect,
@@ -49,8 +50,15 @@ import {
 import { HistoryExportDialog } from '@/components/fluence/HistoryExportDialog';
 import { SearchField } from '@/components/fluence/SearchField';
 import { acceptSuggestion, buildConfirmDetail } from '@/ipc/dictionary';
+import { DEFAULT_HOTKEY } from '@/ipc/general';
 import { cn } from '@/lib/cn';
 import { describeError } from '@/lib/errors';
+import { displayHotkey } from '@/wizard/hotkey';
+import {
+  getCachedSettings,
+  loadSettings,
+  subscribeSettings,
+} from '@/ipc/settings';
 import {
   clearHistory,
   consumeHistorySearchFocus,
@@ -401,6 +409,9 @@ const HistoryRow = memo(function HistoryRow({
 
 export function HistoryPage() {
   const [entries, setEntries] = useState<HistoryEntry[]>([]);
+  const [hotkeyLabel, setHotkeyLabel] = useState(() =>
+    displayHotkey(String(getCachedSettings()?.hotkey || DEFAULT_HOTKEY)),
+  );
   const [markers, setMarkers] = useState<Map<string, PendingMark>>(new Map());
   const [searchInput, setSearchInput] = useState(persistedHistorySearch);
   const [query, setQuery] = useState('');
@@ -585,16 +596,41 @@ export function HistoryPage() {
 
   useEffect(() => {
     void load(true).then(() => setInitialLoading(false));
+    let disposed = false;
     let unlisten: (() => void) | undefined;
     void subscribeHistoryUpdated(onHistoryUpdated).then((u) => {
-      unlisten = u;
+      if (disposed) u();
+      else unlisten = u;
     });
     window.addEventListener('focus', onWindowFocus);
     return () => {
+      disposed = true;
       unlisten?.();
       window.removeEventListener('focus', onWindowFocus);
     };
   }, [load, onHistoryUpdated, onWindowFocus]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const syncHotkey = () => {
+      if (cancelled) return;
+      const value = getCachedSettings()?.hotkey;
+      if (typeof value === 'string' && value.trim()) {
+        setHotkeyLabel(displayHotkey(String(value)));
+      }
+    };
+    const unsubscribe = subscribeSettings(syncHotkey);
+    syncHotkey();
+    if (!getCachedSettings()) {
+      void loadSettings().then((s) => {
+        if (!cancelled && s?.hotkey) setHotkeyLabel(displayHotkey(String(s.hotkey)));
+      }).catch(() => undefined);
+    }
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, []);
 
   // Full-set paging for filters/sort (P2): pages 0..n with the applied
   // query through the existing command — always fresh from page 0 so a
@@ -716,7 +752,7 @@ export function HistoryPage() {
       setFlashId(id);
       if (flashTimer.current !== null) window.clearTimeout(flashTimer.current);
       flashTimer.current = window.setTimeout(() => setFlashId(null), 400);
-    });
+    }).catch((err) => toast('Could not copy. ' + describeError(err), 'error'));
   }, []);
 
   // Confirm-first delete (cross-platform parity): destructive deletes go
@@ -775,13 +811,12 @@ export function HistoryPage() {
     const working = fullActive ? allEntries : entries;
     const sel = working.filter((e) => selectedIds.has(e.id));
     if (sel.length === 0) return;
-    // Verbatim single-copy semantics: silent failures stay silent.
     copyText(sel.map((e) => e.text).join('\n\n')).then(() => {
       toast(
         sel.length === 1 ? 'Copied to clipboard' : `Copied ${sel.length} transcriptions`,
         'success',
       );
-    });
+    }).catch((err) => toast('Could not copy. ' + describeError(err), 'error'));
   }, [fullActive, allEntries, entries, selectedIds]);
 
   const acceptMark = useCallback((id: string | undefined, spoken?: string, corrected?: string) => {
@@ -1076,7 +1111,7 @@ export function HistoryPage() {
       if (sel && sel.toString().length > 0) return;
       const row = target?.closest?.('.history-item');
       const rowId = row?.getAttribute?.('data-history-id');
-      const found = entries.find((x) => x.id === rowId);
+      const found = (fullActive ? allEntries : entries).find((x) => x.id === rowId);
       if (!row || !found) return;
       e.preventDefault();
       e.stopPropagation();
@@ -1260,7 +1295,16 @@ export function HistoryPage() {
                   <Mic strokeWidth={1.5} aria-hidden="true" />
                 </EmptyMedia>
                 <EmptyTitle>No transcriptions yet</EmptyTitle>
-                <EmptyDescription>Press <Kbd>Ctrl</Kbd>+<Kbd>Shift</Kbd>+<Kbd>Space</Kbd> to start your first transcription</EmptyDescription>
+                <EmptyDescription>
+                  Press{' '}
+                  {hotkeyLabel.split('+').map((part, idx) => (
+                    <Fragment key={`${part}-${idx}`}>
+                      {idx > 0 ? '+' : null}
+                      <Kbd>{part}</Kbd>
+                    </Fragment>
+                  ))}{' '}
+                  to start your first transcription
+                </EmptyDescription>
               </EmptyHeader>
             </Empty>
           )}
@@ -1392,7 +1436,7 @@ export function HistoryPage() {
               size="xs"
               className="history-pager-btn"
               aria-label="Go to last page"
-              disabled={loadingMore || (totalPages != null && page + 1 >= totalPages)}
+              disabled={loadingMore || totalPages === null || page + 1 >= totalPages}
               onClick={() => void goToPage(Number.POSITIVE_INFINITY)}
             >
               <ChevronsRight data-icon="inline-start" size={14} aria-hidden="true" />

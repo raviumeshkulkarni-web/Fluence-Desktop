@@ -71,6 +71,24 @@ function str(value: unknown, fallback: string): string {
   return typeof value === 'string' && value ? value : fallback;
 }
 
+const LAST_NON_NONE_STYLE_KEY = 'fluence_ai_polish_last_style';
+
+function readLastNonNoneStyle(): string {
+  try {
+    return window.localStorage.getItem(LAST_NON_NONE_STYLE_KEY) || 'default';
+  } catch {
+    return 'default';
+  }
+}
+
+function rememberLastNonNoneStyle(style: string) {
+  try {
+    window.localStorage.setItem(LAST_NON_NONE_STYLE_KEY, style);
+  } catch {
+    // The current page state still works if storage is unavailable.
+  }
+}
+
 function findKey(map: Record<string, string>, exe: string): string | undefined {
   const lower = exe.toLowerCase();
   return Object.keys(map).find((k) => k.toLowerCase() === lower);
@@ -212,7 +230,7 @@ function StyleChoiceCard({
   );
 }
 
-// AI Post Processing hub: one master toggle, one global style, custom
+// AI Cleanup hub: one master toggle, one global style, custom
 // styles, and per-app assignment from the apps installed on this PC.
 // Nothing is pre-categorized: apps with no rule use the global style.
 export function FormattingPage() {
@@ -262,7 +280,12 @@ export function FormattingPage() {
       if (s) {
         const stored = str(s.ai_polish_style, 'none');
         setAiPolish(stored);
-        if (stored !== 'none') setLastNonNone(stored);
+        if (stored !== 'none') {
+          setLastNonNone(stored);
+          rememberLastNonNoneStyle(stored);
+        } else {
+          setLastNonNone(readLastNonNoneStyle());
+        }
       }
       await loadPrompts();
       if (!cancelled) setLoading(false);
@@ -301,6 +324,12 @@ export function FormattingPage() {
       });
   }, []);
 
+  useEffect(() => {
+    if (prompts && Object.keys(prompts.overrides).length > 0 && installed.length === 0) {
+      loadInstalledApps();
+    }
+  }, [prompts, installed.length, loadInstalledApps]);
+
   const enabled = aiPolish !== 'none';
 
   const onToggleCleanup = (on: boolean) => {
@@ -308,14 +337,18 @@ export function FormattingPage() {
       if (on) {
         const restore =
           lastNonNone && lastNonNone !== 'none' ? lastNonNone : 'default';
+        rememberLastNonNoneStyle(restore);
         setAiPolish(restore);
         if (getCachedSettings()) setSettingField('ai_polish_style', restore);
-        toast('AI post processing enabled', 'success');
+        toast('AI cleanup enabled', 'success');
       } else {
-        if (aiPolish !== 'none') setLastNonNone(aiPolish);
+        if (aiPolish !== 'none') {
+          setLastNonNone(aiPolish);
+          rememberLastNonNoneStyle(aiPolish);
+        }
         setAiPolish('none');
         if (getCachedSettings()) setSettingField('ai_polish_style', 'none');
-        toast('AI post processing disabled', 'success');
+        toast('AI cleanup disabled', 'success');
       }
     } catch (err) {
       toast('Could not update the AI style. ' + describeError(err), 'error');
@@ -366,11 +399,15 @@ export function FormattingPage() {
   const setDefaultStyle = (styleId: string) => {
     const next = styleId || 'default';
     setLastNonNone(next);
-    if (enabled) {
-      setAiPolish(next);
-      if (getCachedSettings()) setSettingField('ai_polish_style', next);
-    }
-    toast(`${aiStyleLabel(next)} is now the default`, 'success');
+    rememberLastNonNoneStyle(next);
+    setAiPolish(next);
+    if (getCachedSettings()) setSettingField('ai_polish_style', next);
+    toast(
+      enabled
+        ? `${aiStyleLabel(next)} is now the default`
+        : `${aiStyleLabel(next)} set as default and AI Cleanup enabled`,
+      'success',
+    );
   };
 
   const setExeAiStyle = async (exe: string, value: string) => {
@@ -496,7 +533,10 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
         setAiPolish('default');
         if (getCachedSettings()) setSettingField('ai_polish_style', 'default');
       }
-      if (deletedId === lastNonNone) setLastNonNone('default');
+      if (deletedId === lastNonNone) {
+        setLastNonNone('default');
+        rememberLastNonNoneStyle('default');
+      }
       await loadPrompts();
       toast(
         affected.length > 0
@@ -516,7 +556,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       <section className="page active" id="page-formatting">
         <div className="page-header">
           <h1 className="page-title" tabIndex={-1}>
-            AI Post Processing
+            AI Cleanup
           </h1>
         </div>
         <Skeleton className="route-skeleton" />
@@ -528,7 +568,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
     <section className="page active" id="page-formatting">
       <div className="page-header">
         <h1 className="page-title" tabIndex={-1}>
-          AI Post Processing
+          AI Cleanup
         </h1>
         <p className="page-subtitle">
           Clean up transcripts automatically while keeping your original words. Create custom styles or
@@ -537,13 +577,13 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
       </div>
 
       <SettingsSectionHeader
-        title="AI Post Processing"
+        title="AI Cleanup"
         description="Automatically refine and clean up dictations"
       />
       <Card className="settings-card">
         <div className="setting-row">
           <div className="setting-info">
-            <div className="setting-label">Enable AI Post Processing</div>
+            <div className="setting-label">Enable AI Cleanup</div>
             <div className="setting-desc">
               {enabled
                 ? 'On: transcripts are cleaned up automatically'
@@ -554,7 +594,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
             <Field>
               <Switch
                 id="ai-postprocessing-cb"
-                aria-label="Enable AI post processing"
+                aria-label="Enable AI cleanup"
                 checked={enabled}
                 onCheckedChange={onToggleCleanup}
               />

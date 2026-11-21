@@ -19,8 +19,14 @@ import { TooltipProvider, TOOLTIP_DELAY_MS } from '@/components/ui/tooltip';
 import { SidebarProvider } from '@/components/ui/sidebar';
 import { CommandPalette } from '@/components/fluence/CommandPalette';
 import { updaterStore } from '@/ipc/updater';
-import { hideMainWindow } from '@/ipc/tauri';
-import { isHotkeyRecording } from '@/ipc/general';
+import { hideMainWindow, listenEvent } from '@/ipc/tauri';
+import { isHotkeyRecording, persistGeneral } from '@/ipc/general';
+import {
+  getCachedSettings,
+  loadSettings,
+  saveSettingsNow,
+  setSettingField,
+} from '@/ipc/settings';
 import { requestHistorySearchFocus } from '@/ipc/history';
 import { useAccentTheme, useTheme } from '@/lib/theme';
 
@@ -208,6 +214,50 @@ export function App() {
     };
     window.addEventListener('fluence:navigate', onNav);
     return () => window.removeEventListener('fluence:navigate', onNav);
+  }, [navigateTo]);
+
+  // System tray events (src-tauri/src/tray.rs): `navigate-to` opens a page,
+  // `set-recording-mode` switches the transcription mode. The React shell
+  // replaced the vanilla listeners, so these must be re-attached here.
+  useEffect(() => {
+    let disposed = false;
+    let unlistenNavigate: (() => void) | undefined;
+    let unlistenMode: (() => void) | undefined;
+
+    void listenEvent<unknown>('navigate-to', (page) => {
+      if (disposed) return;
+      if (typeof page === 'string' && (PAGE_ORDER as string[]).includes(page)) {
+        navigateTo(page as Route);
+      }
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else unlistenNavigate = unlisten;
+    });
+
+    void listenEvent<unknown>('set-recording-mode', (mode) => {
+      if (disposed) return;
+      if (mode !== 'push_to_toggle' && mode !== 'hold_to_record') return;
+      void (async () => {
+        try {
+          if (!getCachedSettings()) await loadSettings();
+          if (disposed || !getCachedSettings()) return;
+          setSettingField('recording_mode', mode);
+          persistGeneral('hotkeys');
+          await saveSettingsNow();
+        } catch (err) {
+          console.error('Failed to apply recording mode from tray:', err);
+        }
+      })();
+    }).then((unlisten) => {
+      if (disposed) unlisten();
+      else unlistenMode = unlisten;
+    });
+
+    return () => {
+      disposed = true;
+      unlistenNavigate?.();
+      unlistenMode?.();
+    };
   }, [navigateTo]);
 
   return (

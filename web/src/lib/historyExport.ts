@@ -55,7 +55,10 @@ export function historyCsv(entries: HistoryEntry[]): string {
   const cell = (value: unknown) => {
     let text = String(value ?? '');
     // Spreadsheet apps treat these leading characters as formulas.
-    if (/^[=+\-@\t\r]/.test(text)) text = `'${text}`;
+    const trimmed = text.trimStart();
+    if (/^[=+\-@\t\r]/.test(text) || /^[=+\-@]/.test(trimmed)) {
+      text = `'${text}`;
+    }
     return `"${text.replace(/"/g, '""')}"`;
   };
   const rows = [

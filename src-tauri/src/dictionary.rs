@@ -514,6 +514,59 @@ pub fn update_dictionary_entry(
     Ok(())
 }
 
+/// Toggle one entry's per-entry enabled flag. `isEnabled` rides the frozen
+/// v1.2 wire, so the edit takes the same monotonic sync stamp as an update.
+#[tauri::command]
+pub fn set_dictionary_entry_enabled(
+    window: tauri::Window,
+    id: String,
+    enabled: bool,
+    scheduler: tauri::State<'_, crate::sync::scheduler::Scheduler>,
+) -> Result<(), String> {
+    crate::acl::require_caller(&window, &[crate::acl::MAIN_WINDOW])?;
+    let _io = crate::sync::io_lock::io_lock_guard();
+    let mut entries = load_dictionary_internal().map_err(|e| e.to_string())?;
+    let active_account = crate::sync::metadata::current_account_hash();
+    let pos = entries
+        .iter()
+        .position(|e| e.id == id)
+        .ok_or_else(|| "Dictionary entry not found".to_string())?;
+    if !crate::sync::metadata::belongs_to_account(
+        entries[pos].sync_account.as_deref(),
+        active_account.as_deref(),
+    ) {
+        return Err("Dictionary entry belongs to another account".to_string());
+    }
+    if entries[pos].deleted_at.is_some() {
+        return Err("Cannot edit a deleted entry".to_string());
+    }
+    if entries[pos].is_enabled == enabled {
+        return Ok(());
+    }
+    let mut meta = crate::sync::metadata::SyncMetadata::load();
+    let device_id = meta.ensure_device_id();
+    let account_hash = crate::settings::load_settings()
+        .ok()
+        .and_then(|s| s.sync_account_key)
+        .map(|e| crate::sync::metadata::account_hash_from_email(&e));
+    let max_seen = account_hash
+        .as_deref()
+        .and_then(|h| meta.for_account(h).map(|s| s.max_seen))
+        .unwrap_or(0);
+    let (now, new_max) = crate::sync::clock::monotonic_now(max_seen);
+    if let Some(h) = account_hash {
+        meta.update_max_seen(&h, new_max);
+    }
+    entries[pos].is_enabled = enabled;
+    entries[pos].updated_at = Some(now);
+    entries[pos].device_id = Some(device_id);
+    entries[pos].dirty = true;
+    save_dictionary_internal(&entries).map_err(|e| e.to_string())?;
+    scheduler.command(crate::sync::scheduler::SyncCommand::LocalChange);
+    invalidate_cache();
+    Ok(())
+}
+
 /// Outcome of [`update_dictionary_entry_internal`]: whether the edit kept the
 /// record's sync identity or moved its business key (H3 rename).
 #[derive(Debug, Clone, PartialEq, Eq)]

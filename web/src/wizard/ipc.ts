@@ -1,4 +1,4 @@
-import { invokeCmd } from '@/ipc/tauri';
+import { invokeCmd, listenEvent } from '@/ipc/tauri';
 
 // Wizard IPC wrappers. Command names + argument shapes reproduced exactly
 // from vanilla src/js/wizard.js — no new commands, no reshaping.
@@ -57,6 +57,8 @@ export interface AppSettings {
   overlay_style: string;
   stt_provider: ProviderSettings;
   llm_provider: ProviderSettings;
+  cleaner_provider?: ProviderSettings;
+  offline_engine?: string;
   auto_start: boolean;
   sound_on_complete: boolean;
   agent_mode_threshold_ms: number;
@@ -83,3 +85,36 @@ export const updateHotkeys = (args: {
   agentShortcut: string;
   agentMode: string;
 }) => invokeCmd<void>('update_hotkeys', args);
+
+export interface OfflineDownloadProgress {
+  status: 'idle' | 'downloading' | 'extracting' | 'completed' | 'error' | 'cancelled';
+  progress: number;
+  bytesDownloaded: number;
+  totalBytes: number;
+  currentFile: string;
+  errorMessage?: string | null;
+}
+
+export interface TranscriptionFlowResult {
+  text: string;
+  rawText: string;
+  durationMs: number;
+  provider: string;
+  silenceRejected?: boolean;
+}
+
+export const getOfflineModelStatus = () => invokeCmd<boolean>('get_offline_model_status');
+export const downloadOfflineModel = () => invokeCmd<void>('download_offline_model');
+export const cancelOfflineDownload = () => invokeCmd<void>('cancel_offline_download');
+
+export const getMoonshineV2SmallModelStatus = () =>
+  invokeCmd<boolean>('get_moonshine_v2_small_model_status');
+export const downloadMoonshineV2SmallModel = () =>
+  invokeCmd<void>('download_moonshine_v2_small_model');
+
+export const subscribeOfflineDownloadProgress = (
+  handler: (payload: OfflineDownloadProgress) => void,
+) => listenEvent<OfflineDownloadProgress>('offline-download-progress', handler);
+
+export const stopAndTranscribeRecording = () =>
+  invokeCmd<TranscriptionFlowResult>('stop_and_transcribe_recording');

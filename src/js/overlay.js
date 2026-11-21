@@ -105,14 +105,14 @@ function completeSession(sessionId) {
   if (isSessionActive(sessionId)) activeSessionId = 0;
 }
 
-async function resetTransientUi() {
+async function resetTransientUi(immediate = false) {
   clearAutoDismiss();
   hideRetry();
   hideCopy();
   hideRecHint();
   setStatusMessage('');
   hideAppPill();
-  await hideAgentPicker();
+  await hideAgentPicker(immediate);
   agentPickerLayoutReady = false;
   activeAgentId = null;
   pendingInjection = null;
@@ -143,7 +143,7 @@ async function reconcileWithNativeState() {
         nextSessionId = nativeSessionId;
       }
 
-      await resetTransientUi();
+      await resetTransientUi(true);
       setState(isAgent ? 'agent' : 'recording', false);
       setMode(isAgent ? 'agent' : 'stt');
 
@@ -212,7 +212,7 @@ async function setupEventListeners() {
       ? evt.payload.session_id
       : undefined;
     const sessionId = beginSession(incomingSessionId);
-    await resetTransientUi();
+    await resetTransientUi(true);
     setState('recording', false);
     setMode('stt');
     if (overlayRoot) overlayRoot.classList.remove('active');
@@ -302,7 +302,7 @@ async function setupEventListeners() {
       ? evt.payload.session_id
       : undefined;
     const sessionId = beginSession(incomingSessionId);
-    await resetTransientUi();
+    await resetTransientUi(true);
     setState('agent', false);
     setMode('agent');
     if (overlayRoot) overlayRoot.classList.remove('active');
@@ -739,13 +739,13 @@ function setAgentPickerExpanded(expanded) {
 // never land a window resize on top of a running transition. Resolves after
 // the fade when something was visible, so callers that must stay ordered
 // (turn end) can serialize on it.
-function hideAgentPicker() {
+function hideAgentPicker(immediate = false) {
   const wasShown = document.body.classList.contains('agent-picker-shown') || agentPickerExpanded;
   agentPickerExpanded = false;
   document.body.classList.remove('agent-picker-shown', 'agent-picker-expanded');
   if (agentPickerTrigger) agentPickerTrigger.setAttribute('aria-expanded', 'false');
   if (agentPickerCard) agentPickerCard.setAttribute('aria-hidden', 'true');
-  if (!wasShown) return Promise.resolve();
+  if (!wasShown || immediate) return Promise.resolve();
   const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   return new Promise((resolve) => setTimeout(resolve, reducedMotion ? 0 : 170));
 }
@@ -1161,6 +1161,7 @@ function setupPasteRecovery() {
         await invoke('copy_text', { text: pending.text });
         pendingInjection = null;
         hideCopy();
+        hideRetry();
         setStatusMessage('Copied - paste with Ctrl+V');
         scheduleAutoDismiss(5000);
       } catch (err) {
@@ -1198,28 +1199,29 @@ function playCompletionChime() {
     const Ctx = window.AudioContext || window.webkitAudioContext;
     if (!Ctx) return;
     if (!chimeCtx) chimeCtx = new Ctx();
+    const playTones = () => {
+      if (!chimeCtx || chimeCtx.state !== 'running') return;
+      const t0 = chimeCtx.currentTime;
+      const gain = chimeCtx.createGain();
+      gain.gain.setValueAtTime(0.0001, t0);
+      gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
+      gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
+      gain.connect(chimeCtx.destination);
+      setTimeout(() => { try { gain.disconnect(); } catch {} }, 700);
+      [523.25, 659.25].forEach((freq, i) => {
+        const osc = chimeCtx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, t0 + i * 0.11);
+        osc.connect(gain);
+        osc.start(t0 + i * 0.11);
+        osc.stop(t0 + i * 0.11 + 0.3);
+      });
+    };
     if (chimeCtx.state === 'suspended') {
-      chimeCtx.resume().catch(() => {});
+      chimeCtx.resume().then(playTones).catch(() => {});
+    } else {
+      playTones();
     }
-    if (chimeCtx.state !== 'running') return;
-    const t0 = chimeCtx.currentTime;
-    const gain = chimeCtx.createGain();
-    gain.gain.setValueAtTime(0.0001, t0);
-    gain.gain.exponentialRampToValueAtTime(0.12, t0 + 0.01);
-    gain.gain.exponentialRampToValueAtTime(0.0001, t0 + 0.35);
-    gain.connect(chimeCtx.destination);
-    // BUG-13: disconnect graph after chime to avoid AudioContext node accumulation
-    const cleanupDelayMs = 700;
-    setTimeout(() => { try { gain.disconnect(); } catch {} }, cleanupDelayMs);
-    [523.25, 659.25].forEach((freq, i) => {
-      const osc = chimeCtx.createOscillator();
-      osc.type = 'sine';
-      osc.frequency.setValueAtTime(freq, t0 + i * 0.11);
-      osc.connect(gain);
-      osc.start(t0 + i * 0.11);
-      osc.stop(t0 + i * 0.11 + 0.3);
-      // Nodes are garbage-collected after stop + gain disconnect
-    });
   } catch (err) {
     console.warn('Completion chime failed:', err);
   }
@@ -1339,10 +1341,16 @@ async function stopAndTranscribe(agentMode, sessionId) {
 
   try {
     if (agentMode) {
-      const selectionPromise = invoke('grab_active_selection').catch((err) => {
-        console.warn('Failed to grab active selection early:', err);
-        return null;
-      });
+      // Respect auto_grab_highlight: do not touch the clipboard when the user
+      // has turned selection capture off. The settings fetch below is
+      // authoritative, but cachedSettings is refreshed on every session start.
+      const selectionPromise =
+        cachedSettings?.auto_grab_highlight !== false
+          ? invoke('grab_active_selection').catch((err) => {
+              console.warn('Failed to grab active selection early:', err);
+              return null;
+            })
+          : Promise.resolve(null);
 
       const [result, settings] = await Promise.all([
         invoke('stop_and_transcribe_recording'),
@@ -1378,15 +1386,12 @@ async function stopAndTranscribe(agentMode, sessionId) {
     console.error('Transcription error:', err);
     if (!isSessionActive(sessionId)) return;
     setState('error');
-    if (agentMode) {
-      setStatusMessage('Failed');
-      scheduleAutoDismiss(8000);
-    } else {
-      const { label, retryable } = mapSttErrorToStatus(err);
-      setStatusMessage(label);
-      if (retryable) showRetry();
-      scheduleAutoDismiss(8000);
-    }
+    // Agent mode has no STT retry: show the actionable error, but never the
+    // opaque "Failed" copy the user cannot act on.
+    const { label, retryable } = mapSttErrorToStatus(err);
+    setStatusMessage(label);
+    if (!agentMode && retryable) showRetry();
+    scheduleAutoDismiss(8000);
   }
 }
 
@@ -1598,19 +1603,17 @@ async function handleAgentMode(voiceCommand, settings, durationMs, preGrabbedSel
     // IPC args (Task 4 hardening).
     if (!isSessionActive(sessionId)) return;
 
-    let grabbed = false;
     if (settings.auto_grab_highlight !== false) {
-      if (preGrabbedSelection && preGrabbedSelection.trim()) {
+      if (typeof preGrabbedSelection === 'string' && preGrabbedSelection.trim()) {
         clipboardCtx = preGrabbedSelection;
-        grabbed = true;
-      }
-    }
-
-    if (!grabbed) {
-      try {
-        clipboardCtx = (await invoke('grab_active_selection').catch(() => '')) || '';
-      } catch {
-        // Clipboard read may fail if no permission - proceed without context
+      } else if (preGrabbedSelection === undefined) {
+        // Only a call that never attempted the grab (not one that already
+        // failed) may grab here - avoids the second Ctrl+C for agent mode.
+        try {
+          clipboardCtx = (await invoke('grab_active_selection').catch(() => '')) || '';
+        } catch {
+          // Clipboard read may fail if no permission - proceed without context
+        }
       }
     }
 

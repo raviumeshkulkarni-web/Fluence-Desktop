@@ -267,6 +267,7 @@ pub async fn transcribe_mp3_bytes(
     spoken_formatting: bool,
 ) -> Result<String, String> {
     check_audio_bytes_len(mp3_bytes.len())?;
+    crate::http_client::validate_api_url(base_url)?;
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");
@@ -370,6 +371,7 @@ pub async fn transcribe_mp3_bytes_with_raw(
     spoken_formatting: bool,
 ) -> Result<TranscriptionWithRaw, String> {
     check_audio_bytes_len(mp3_bytes.len())?;
+    crate::http_client::validate_api_url(base_url)?;
     let start_time = std::time::Instant::now();
 
     let url = crate::http_client::build_api_url(base_url, "audio/transcriptions");

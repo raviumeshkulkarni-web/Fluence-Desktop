@@ -20,6 +20,7 @@ import {
   loadSettings,
   saveSettingsNow,
   setSettingField,
+  subscribeSettings,
 } from '@/ipc/settings';
 import {
   buildHotkeyString,
@@ -168,8 +169,20 @@ export function GeneralPage({
         // Audio devices unavailable - silently fail
       }
     })();
+
+    // The tray can change the recording mode from another window; keep the
+    // visible controls in sync with the canonical cached settings.
+    const unsubscribe = subscribeSettings(() => {
+      if (cancelled) return;
+      const s = getCachedSettings();
+      if (!s) return;
+      setRecordingMode(str(s.recording_mode, 'push_to_toggle'));
+      setAgentRecordingMode(str(s.agent_recording_mode, 'push_to_toggle'));
+    });
+
     return () => {
       cancelled = true;
+      unsubscribe();
     };
   }, []);
 
@@ -693,7 +706,7 @@ export function GeneralPage({
 
       {tab !== 'appearance' && (
         <div className="page-actions">
-          <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>Save Changes</Button>
+          <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>Save Now</Button>
         </div>
       )}
     </section>

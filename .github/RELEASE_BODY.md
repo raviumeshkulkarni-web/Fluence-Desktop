@@ -1,34 +1,31 @@
-## Spoken punctuation, dictionary packs, history export, and snippet placeholders
+## 5-step onboarding, in-wizard offline models, and backend security hardening
 
-### Spoken punctuation
+### Streamlined 5-step onboarding
 
-You can now format dictation by speaking punctuation and line-break commands. Turn on **General > Dictation > Spoken Punctuation** and say "comma", "period", "question mark", "exclamation mark", "colon", "semicolon", "new line", or "new paragraph".
+Onboarding is now fast and frictionless, trimmed from 9 screens down to 5:
+1. **Welcome** — Clean and instant start.
+2. **Choose Your Voice Engine** — Pick between Cloud API (Groq, OpenAI, Mistral, Custom) or Local Offline. When offline is selected, choose between Moonshine v2 Small (~142 MB, fast English) and SenseVoice (~263 MB, multilingual) with 1-click download, live progress, and cancellation.
+3. **Set Your Hotkey** — Configure your dictation shortcut and recording mode.
+4. **Test Your Setup** — Live microphone testing with the Record orb for both cloud API and installed local offline models (verifying the real sidecar and audio capture end-to-end).
+5. **You're All Set!** — Direct launch into voice typing with instant tray minimization or optional Settings navigation.
 
-- Works with online and offline transcription.
-- Runs before dictionary corrections and snippet expansion.
-- Normalizes punctuation already added by the speech model, so a spoken comma surrounded by commas no longer becomes `,,,`.
-- Off by default because these command words also occur in normal speech.
+Theme, overlay position, and style configuration are cleanly deferred to Settings.
 
-### Dictionary term packs
+### Local offline transcription enhancements
 
-The Dictionary page now has an **Add Pack** button with curated correction sets for development, AI and data, business, healthcare, and legal terms. Entries already in your dictionary are skipped, and partial failures are reported without hiding the entries that were saved.
+- **In-wizard downloads**: Offline speech models can be downloaded and tested directly during initial setup without running into missing-model errors.
+- **Graceful sidecar termination**: The local ASR sidecar process is cleanly terminated on app exit and auto-update relaunch, preventing orphaned processes, high idle memory usage, and locked binary files.
+- **Safe download state machine**: Model downloads use atomic guards with RAII drop protection, throttled IPC progress emits to prevent UI stutter, and automatic cleanup of partial temp files on failure or cancellation.
+- **Honest testing**: If offline model download is skipped, the test step honestly guides you to Settings → Providers instead of reporting a false ready state.
 
-### History and dictionary export
+### Security and privacy hardening
 
-- History can be exported as TXT, CSV, or JSON from the History page.
-- Exports include every transcription on the device, independent of search and filters.
-- CSV exports quote cells and neutralize spreadsheet formula injection.
-- History and dictionary exports use the native Windows save dialog instead of relying on a WebView download.
-
-### Snippet placeholders
-
-Snippet expansion text can now use `{date}`, `{time}`, `{datetime}`, `{day}`, and `{year}`. Placeholders expand locally when the snippet is inserted; unknown placeholders and plain transcript text are left unchanged.
-
-### Reliability improvements
-
-- Auto-learn no longer treats punctuation changes made by spoken formatting as user corrections.
-- Spoken formatting is device-local and does not sync, so enabling it on one device does not change another device's dictation behavior.
-- Added regression coverage for spoken formatting, term-pack imports, history export, snippet placeholders, and native save behavior.
+- **Credential safety**: Protected credential blob parsing against null pointers and zero-length buffers in Windows Credential Manager, preventing unexpected crashes on empty credential entries.
+- **Strict URL validation**: Hardened production transcription and AI polish HTTP senders with URL validation to reject cleartext HTTP transmissions on non-loopback endpoints.
+- **Privacy leak prevention**: AI polish now prevents sending unauthenticated transcripts over the network when no API key is configured.
+- **LLM completion resilience**: Elevated chat completion limits to 4,096 tokens with fail-closed handling for length truncation and nullable provider responses.
+- **Auto-learn categorization**: Per-app AI cleanup overrides are correctly categorized as rewrites to keep dictionary suggestions clean.
+- **ACL updates**: Expanded command access controls to allow the setup wizard to query and download offline models and run setup mic tests while keeping model deletion restricted to the main window.
 
 ### What stays the same
 
@@ -39,5 +36,4 @@ Your dictation shortcuts, language models, history, snippets, custom agents, cus
 - The installer is **not code-signed**, so Windows SmartScreen may warn the first time you run it. Choose "More info" > "Run anyway". This is unchanged from previous releases.
 - Agent mode carries out its actions without asking first, so a misheard command can act on the window you are in.
 - Text goes wherever your cursor is when transcription finishes; switching apps while dictating pastes into whichever app you end up in.
-- Spoken formatting is opt-in and deterministic: ordinary uses of words such as "period" or "comma" are converted while it is enabled. It collapses repeated copies of the same punctuation, but a different mark supplied by the speech model immediately next to a spoken command may still appear.
 - Only the first portion of vocabulary terms fits in the speech-model prompt; the Dictionary page reports this limit. All saved corrections still apply after transcription.

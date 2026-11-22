@@ -72,6 +72,29 @@ test('offline setup failures are non-retryable', () => {
   );
 });
 
+test('offline sidecar crash diagnostics and missing DLL errors are mapped correctly', () => {
+  check(
+    'Offline transcription error: moonshine-v2 server exited during startup (exit code -1073741515 (0xC0000135))',
+    'Offline DLL missing',
+    false,
+  );
+  check(
+    'Offline transcription error: moonshine-v2 server exited during startup (exit code -1073741515 (0xC0000135)): cannot find onnxruntime.dll',
+    'Offline DLL missing',
+    false,
+  );
+  check(
+    'Offline transcription error: moonshine-v2 server exited during startup (exit code 1 (0x00000001)): failed to load model.onnx',
+    'Offline engine failed',
+    true,
+  );
+  check(
+    'Offline transcription error: sherpa-onnx server exited during startup (exit code 1 (0x00000001))',
+    'Offline engine failed',
+    true,
+  );
+});
+
 test('provider auth and validation failures are non-retryable', () => {
   check('API error 401 Unauthorized: invalid key', 'STT auth failed', false);
   check('API error 403 Forbidden', 'STT auth failed', false);

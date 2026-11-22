@@ -1550,6 +1550,13 @@ function mapSttErrorToStatus(err) {
     if (code >= 400) return { label: 'Check STT model', retryable: false };
   }
 
+  if (msg.includes('0xC0000135')) {
+    return { label: 'Offline DLL missing', retryable: false };
+  }
+  if (msg.includes('exited during startup')) {
+    return { label: 'Offline engine failed', retryable: true };
+  }
+
   if (
     msg.includes('not installed') ||
     msg.includes('is missing') ||

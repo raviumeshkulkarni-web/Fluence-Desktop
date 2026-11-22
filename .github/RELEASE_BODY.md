@@ -3,20 +3,21 @@
 ### Streamlined 5-step onboarding
 
 Onboarding is now fast and frictionless, trimmed from 9 screens down to 5:
-1. **Welcome** — Clean and instant start.
-2. **Choose Your Voice Engine** — Pick between Cloud API (Groq, OpenAI, Mistral, Custom) or Local Offline. When offline is selected, choose between Moonshine v2 Small (~142 MB, fast English) and SenseVoice (~263 MB, multilingual) with 1-click download, live progress, and cancellation.
-3. **Set Your Hotkey** — Configure your dictation shortcut and recording mode.
-4. **Test Your Setup** — Live microphone testing with the Record orb for both cloud API and installed local offline models (verifying the real sidecar and audio capture end-to-end).
-5. **You're All Set!** — Direct launch into voice typing with instant tray minimization or optional Settings navigation.
+1. **Welcome**: Clean and instant start.
+2. **Choose Your Voice Engine**: Pick between Cloud API (Groq, OpenAI, Mistral, Custom) or Local Offline. When offline is selected, choose between Moonshine v2 Small (~142 MB, fast English) and SenseVoice (~263 MB, multilingual) with 1-click download, live progress, and cancellation.
+3. **Set Your Hotkey**: Configure your dictation shortcut and recording mode.
+4. **Test Your Setup**: Live microphone testing with the Record orb for both cloud API and installed local offline models (verifying the real sidecar and audio capture end-to-end).
+5. **You're All Set!**: Direct launch into voice typing with instant tray minimization or optional Settings navigation.
 
 Theme, overlay position, and style configuration are cleanly deferred to Settings.
 
 ### Local offline transcription enhancements
 
+- **Faster sidecar crash diagnostics**: Local ASR startup now drains stderr continuously and fails fast with clear status labels if a runtime DLL or sidecar fails to launch.
 - **In-wizard downloads**: Offline speech models can be downloaded and tested directly during initial setup without running into missing-model errors.
 - **Graceful sidecar termination**: The local ASR sidecar process is cleanly terminated on app exit and auto-update relaunch, preventing orphaned processes, high idle memory usage, and locked binary files.
 - **Safe download state machine**: Model downloads use atomic guards with RAII drop protection, throttled IPC progress emits to prevent UI stutter, and automatic cleanup of partial temp files on failure or cancellation.
-- **Honest testing**: If offline model download is skipped, the test step honestly guides you to Settings → Providers instead of reporting a false ready state.
+- **Honest testing**: If offline model download is skipped, the test step honestly guides you to Settings > Providers instead of reporting a false ready state.
 
 ### Security and privacy hardening
 

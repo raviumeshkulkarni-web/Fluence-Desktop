@@ -5,11 +5,12 @@ use anyhow::{anyhow, Result};
 use futures_util::{SinkExt, StreamExt};
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
-use std::io::Write;
+use std::collections::VecDeque;
+use std::io::{BufRead, BufReader, Write};
 use std::os::windows::process::CommandExt;
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 const CREATE_NO_WINDOW: u32 = 0x08000000;
@@ -121,6 +122,37 @@ fn is_port_available(port: u16) -> bool {
     std::net::TcpListener::bind(("127.0.0.1", port)).is_ok()
 }
 
+/// Continuously drain a sidecar's stderr on a background thread so its pipe
+/// buffer can never fill and deadlock the child, while logging every line and
+/// retaining the most recent lines for startup crash diagnostics.
+fn spawn_stderr_drain(
+    stderr: std::process::ChildStderr,
+    label: &'static str,
+) -> Arc<Mutex<VecDeque<String>>> {
+    let tail = Arc::new(Mutex::new(VecDeque::with_capacity(20)));
+    let tail_clone = Arc::clone(&tail);
+    std::thread::spawn(move || {
+        let reader = BufReader::new(stderr);
+        for line in reader.lines() {
+            match line {
+                Ok(text) => {
+                    let trimmed = text.trim();
+                    if !trimmed.is_empty() {
+                        log::warn!("[{} stderr] {}", label, trimmed);
+                        let mut buf = tail_clone.lock().unwrap_or_else(|e| e.into_inner());
+                        if buf.len() >= 20 {
+                            buf.pop_front();
+                        }
+                        buf.push_back(trimmed.to_string());
+                    }
+                }
+                Err(_) => break,
+            }
+        }
+    });
+    tail
+}
+
 fn start_idle_monitor() {
     if IDLE_MONITOR_RUNNING.swap(true, Ordering::SeqCst) {
         return; // Already running
@@ -138,9 +170,13 @@ fn start_idle_monitor() {
                 if let Ok(_start_lock) = SERVER_START_LOCK.try_lock() {
                     if ACTIVE_TRANSCRIPTIONS.load(Ordering::SeqCst) == 0 {
                         log::info!("Idle timeout reached. Shutting down local ASR server.");
-                        let mut lock = SERVER_INSTANCE.lock().unwrap_or_else(|e| e.into_inner());
-                        if let Some(mut instance) = lock.take() {
+                        let old_instance = {
+                            let mut lock = SERVER_INSTANCE.lock().unwrap_or_else(|e| e.into_inner());
+                            lock.take()
+                        };
+                        if let Some(mut instance) = old_instance {
                             let _ = instance.child.kill();
+                            let _ = instance.child.wait();
                             forget_sidecar_pid();
                         }
                         IDLE_MONITOR_RUNNING.store(false, Ordering::SeqCst);
@@ -493,6 +529,7 @@ fn kill_pid_if_sidecar(_pid: u32) -> bool {
 pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     let _start_lock = SERVER_START_LOCK.lock().await;
     // Check if an existing server is running with the same engine
+    let mut old_instance: Option<ServerInstance> = None;
     {
         let mut lock = SERVER_INSTANCE
             .lock()
@@ -517,14 +554,17 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
                     instance.engine.display_name(),
                     engine.display_name()
                 );
-                let _ = instance.child.kill();
-                forget_sidecar_pid();
-                *lock = None;
+                old_instance = lock.take();
             }
         }
     }
-    // Brief pause to let port release (lock must be dropped before await)
-    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    if let Some(mut instance) = old_instance {
+        let _ = instance.child.kill();
+        let _ = instance.child.wait();
+        forget_sidecar_pid();
+        // Brief pause to let port release (lock dropped before await)
+        tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    }
 
     let offline_dir = dirs::data_local_dir()
         .unwrap_or_else(|| std::path::PathBuf::from("."))
@@ -625,6 +665,9 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         }
     }
 
+    // Reap any orphaned sidecar from a previous run before picking a free port.
+    reap_orphaned_sidecar();
+
     // Find free port
     let mut port = 6006;
     for p in 6006..=6029 {
@@ -633,24 +676,18 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             break;
         }
     }
-    // We have no live sidecar and are about to take a port in the fixed
-    // range, so any process recorded by a PREVIOUS run of the app is an
-    // orphan squatting it. Reaped here rather than at startup: at startup a
-    // double-launch (shortcut twice, autostart plus manual) would run the
-    // reaper before the single-instance plugin had handed off to the running
-    // instance, terminating that instance's live sidecar mid-transcription.
-    // Reaching this point proves we ARE the running instance.
-    reap_orphaned_sidecar();
 
-    let server_label = match engine.v2_arch() {
+    let server_label: &'static str = match engine.v2_arch() {
         Some(_) => "moonshine-v2",
         None => "sherpa-onnx",
     };
     log::info!(
-        "Starting {} websocket server (engine: {}) on port {}",
+        "Starting {} websocket server (engine: {}) on port {} (exe: {}, dll_dir: {})",
         server_label,
         engine.display_name(),
-        port
+        port,
+        exe_path.display(),
+        dll_dir.display()
     );
 
     let port_arg = format!("--port={}", port);
@@ -661,27 +698,21 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     let mut cmd = Command::new(&exe_path);
     cmd.current_dir(&offline_dir);
     cmd.creation_flags(CREATE_NO_WINDOW);
+    cmd.stdout(Stdio::null());
+    cmd.stderr(Stdio::piped());
 
     match engine {
         OfflineEngine::SenseVoice => {
             let model_path = offline_dir.join("model.int8.onnx");
             let tokens_path = offline_dir.join("tokens.txt");
-            let tokens_arg = format!("--tokens={}", tokens_path.display().to_string());
-            let model_arg = format!("--sense-voice-model={}", model_path.display().to_string());
+            let tokens_arg = format!("--tokens={}", tokens_path.display());
+            let model_arg = format!("--sense-voice-model={}", model_path.display());
             cmd.args([&tokens_arg, &model_arg, &port_arg, &threads_arg]);
         }
         OfflineEngine::MoonshineV2Small | OfflineEngine::MoonshineV2Medium => {
-            // Served by our own sidecar: same WS protocol family as the
-            // sherpa server, model dir + streaming arch as CLI args. The
-            // Moonshine core manages its own threading, so no
-            // --num-threads is passed.
             let arch = engine.v2_arch().unwrap_or("small");
             let model_dir_arg = format!("--model-dir={}", offline_dir.display());
             let arch_arg = format!("--arch={arch}");
-            // Fresh shared secret per spawn, delivered over stdin below —
-            // NEVER on the command line, which same-user processes can read
-            // via Win32_Process. Keeps other local processes from consuming
-            // transcripts. No token value is ever logged.
             spawn_token = Some(generate_spawn_token());
             cmd.args([&model_dir_arg, &arch_arg, &port_arg]);
         }
@@ -700,19 +731,18 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
         cmd.env("PATH", path_val);
     }
 
-    {
+    let stderr_tail = {
         let mut lock = SERVER_INSTANCE
             .lock()
             .unwrap_or_else(|e| e.into_inner());
         let mut child = cmd
             .spawn()
             .map_err(|e| anyhow!("Failed to spawn ASR server: {}", e))?;
-        // Private handshake: pipe the fresh token as ONE newline-terminated
-        // line, then close stdin. The sidecar reads it with `read_line` and
-        // trims CR/LF, so the terminator is the actual protocol — do not rely
-        // on the pipe reaching EOF to complete the line. If the pipe fails,
-        // kill the sidecar and fail the start instead of entering a
-        // half-secret state.
+        let stderr_tail = child
+            .stderr
+            .take()
+            .map(|s| spawn_stderr_drain(s, server_label))
+            .unwrap_or_else(|| Arc::new(Mutex::new(VecDeque::new())));
         if let (Some(token), Some(mut stdin)) = (spawn_token.as_deref(), child.stdin.take()) {
             if let Err(e) = stdin
                 .write_all(format!("{token}\n").as_bytes())
@@ -720,6 +750,7 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             {
                 log::error!("Failed to pipe auth token to ASR sidecar: {}", e);
                 let _ = child.kill();
+                let _ = child.wait();
                 return Err(anyhow!("Failed to deliver auth token to the ASR sidecar"));
             }
         }
@@ -731,48 +762,46 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
             auth_token: spawn_token.clone(),
         });
         *LAST_USED.lock().unwrap_or_else(|e| e.into_inner()) = Instant::now();
-    }
+        stderr_tail
+    };
 
     start_idle_monitor();
 
-    // Readiness: a bare TCP connect alone is NOT proof that the spawned
-    // sidecar owns the port; a squatter (or racing process) could hold the
-    // port first and pass a naive check while the real sidecar dies on
-    // bind. For the moonshine sidecar the readiness signal is therefore the
-    // WebSocket handshake + `probe:<token>` reply naming this server.
-    // Sherpa keeps the legacy bare-TCP contract (documented residual risk).
-    //
-    // The moonshine path must call the probe DIRECTLY. Gating it behind a
-    // bare `std::net::TcpStream::connect` connected and immediately dropped a
-    // socket on every poll: the sidecar accepted it, blocked on an HTTP
-    // upgrade request that never came, and logged a spurious
-    // "websocket accept failed: Handshake not finished" per attempt while
-    // each dead connection also burned one of its MAX_CONCURRENT slots.
-    // Budget readiness by deadline, not iteration count. The sidecar reads its
-    // stdin token (up to 10s) and loads the ONNX model BEFORE it binds the
-    // port, so a cold start takes far longer than the old fixed 30x100ms
-    // (~3s) loop allowed - which killed a sidecar that was still loading and
-    // surfaced as "nothing was pasted" with no error on the sidecar side.
     const READY_DEADLINE: Duration = Duration::from_secs(60);
     let give_up_at = Instant::now() + READY_DEADLINE;
     let mut ready = false;
     let mut incompatible = false;
+    let mut early_exit: Option<std::process::ExitStatus> = None;
     loop {
         tokio::time::sleep(Duration::from_millis(300)).await;
+
+        // Fail fast if the sidecar process exited or crashed (e.g. missing DLL
+        // 0xC0000135 or model load error) instead of spinning for 60 seconds.
+        {
+            let mut lock = SERVER_INSTANCE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            if let Some(ref mut instance) = *lock {
+                if let Ok(Some(status)) = instance.child.try_wait() {
+                    early_exit = Some(status);
+                    *lock = None;
+                    forget_sidecar_pid();
+                }
+            }
+        }
+        if early_exit.is_some() {
+            break;
+        }
+
         let ready_now = match spawn_token.as_deref() {
             Some(token) => match probe_moonshine_ready(port, token).await {
                 ProbeOutcome::Ready => true,
-                // Nothing listening yet - normal while the model loads.
                 ProbeOutcome::NotYet => false,
-                // A stale sidecar build will never answer. Retrying for the
-                // full deadline only produced a minute of silent pulsing, so
-                // stop and say why.
                 ProbeOutcome::Incompatible => {
                     incompatible = true;
                     break;
                 }
             },
-            // Sherpa only: legacy bare-TCP readiness contract, unchanged.
             None => tokio::net::TcpStream::connect(("127.0.0.1", port))
                 .await
                 .is_ok(),
@@ -793,12 +822,43 @@ pub async fn ensure_server_running(engine: OfflineEngine) -> Result<u16> {
     }
 
     if !ready {
-        let mut lock = SERVER_INSTANCE
-            .lock()
-            .unwrap_or_else(|e| e.into_inner());
-        if let Some(mut instance) = lock.take() {
+        let dead_instance = {
+            let mut lock = SERVER_INSTANCE
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
+            lock.take()
+        };
+        if let Some(mut instance) = dead_instance {
             let _ = instance.child.kill();
+            let _ = instance.child.wait();
             forget_sidecar_pid();
+        }
+        if let Some(status) = early_exit {
+            tokio::time::sleep(Duration::from_millis(50)).await;
+            let last_err = {
+                let buf = stderr_tail.lock().unwrap_or_else(|e| e.into_inner());
+                buf.back().cloned()
+            };
+            let code_desc = match status.code() {
+                Some(c) => format!("exit code {} (0x{:08X})", c, c as u32),
+                None => "terminated by signal".to_string(),
+            };
+            log::error!(
+                "{} server exited during startup on port {} ({}): {:?}",
+                server_label,
+                port,
+                code_desc,
+                last_err
+            );
+            let detail = last_err
+                .map(|line| format!(": {}", line))
+                .unwrap_or_default();
+            return Err(anyhow!(
+                "{} server exited during startup ({}){}",
+                server_label,
+                code_desc,
+                detail
+            ));
         }
         if incompatible {
             return Err(anyhow!(
@@ -1210,5 +1270,27 @@ mod tests {
             msg.contains("Maximum is 10 minutes"),
             "duration limit must be reported in user units: {msg}"
         );
+    }
+
+    #[test]
+    fn spawn_stderr_drain_captures_and_bounds_lines() {
+        let mut child = Command::new("cmd")
+            .args([
+                "/c",
+                "for /l %i in (1,1,25) do @echo line %i 1>&2",
+            ])
+            .stderr(Stdio::piped())
+            .stdout(Stdio::null())
+            .spawn()
+            .expect("spawn cmd");
+        let stderr = child.stderr.take().expect("piped stderr");
+        let tail = spawn_stderr_drain(stderr, "test");
+        let _ = child.wait();
+        // Give background thread a moment to drain the pipe
+        std::thread::sleep(Duration::from_millis(100));
+        let buf = tail.lock().unwrap();
+        assert_eq!(buf.len(), 20);
+        assert_eq!(buf.back().unwrap(), "line 25");
+        assert_eq!(buf.front().unwrap(), "line 6");
     }
 }

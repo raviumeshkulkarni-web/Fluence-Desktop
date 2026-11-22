@@ -155,7 +155,7 @@ const labels = [
   ['clipboard.rs', 'copy_text', [O, M]],
   ['clipboard.rs', 'execute_keyboard_action', [O]],
   ['clipboard.rs', 'grab_active_selection', [O]],
-  ['workflow.rs', 'stop_and_transcribe_recording', [O]],
+  ['workflow.rs', 'stop_and_transcribe_recording', [O, W]],
   ['workflow.rs', 'finish_transcription_flow', [O]],
   ['workflow.rs', 'retry_transcription_flow', [O]],
   ['file_export.rs', 'save_export_file', [M]],
@@ -170,9 +170,9 @@ const labels = [
   ['overlay.rs', 'show_wizard_window', [M, W]],
   ['overlay.rs', 'minimize_wizard', [W]],
   ['overlay.rs', 'close_wizard', [W]],
-  ['offline_downloader.rs', 'get_offline_model_status', [M]],
-  ['offline_downloader.rs', 'get_moonshine_v2_small_model_status', [M]],
-  ['offline_downloader.rs', 'get_moonshine_v2_medium_model_status', [M]],
+  ['offline_downloader.rs', 'get_offline_model_status', [M, W]],
+  ['offline_downloader.rs', 'get_moonshine_v2_small_model_status', [M, W]],
+  ['offline_downloader.rs', 'get_moonshine_v2_medium_model_status', [M, W]],
 ];
 
 function gateFor(file, fn) {

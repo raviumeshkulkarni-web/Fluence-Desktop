@@ -9,6 +9,6 @@ const agents = readFileSync(path.join(ROOT, 'web/src/routes/AgentsPage.tsx'), 'u
 const css = readFileSync(path.join(ROOT, 'web/src/app.css'), 'utf8');
 
 test('custom agent instructions use a two-line preview instead of expanding the card', () => {
-  assert.match(agents, /className="selection-row-description agent-row-desc"/);
+  assert.match(agents, /(?:className="selection-row-description agent-row-desc"|descriptionClassName="agent-row-desc")/);
   assert.match(css, /\.agent-row-desc\s*\{[^}]*-webkit-line-clamp:\s*2;[^}]*overflow:\s*hidden;/s);
 });

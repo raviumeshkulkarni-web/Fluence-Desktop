@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { AlertCircle, Zap } from 'lucide-react';
-import { Badge } from '@/components/ui/badge';
+import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
@@ -12,28 +11,13 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from '@/components/ui/empty';
-import {
-  Dialog,
-  DialogContent,
-  DialogFooter,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
-import { Field, FieldGroup } from '@/components/ui/field';
-import { Input, Textarea } from '@/components/ui/input';
-import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ConfirmDialog } from '@/components/ui/dialog';
+import { RadioGroup } from '@/components/ui/radio-group';
 import { Skeleton } from '@/components/ui/skeleton';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ChoiceRow } from '@/components/fluence/ChoiceRow';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { PromptEditorDialog } from '@/components/fluence/PromptEditorDialog';
+import { RouteErrorState } from '@/components/fluence/RouteError';
 import { toast } from '@/components/fluence/Toasts';
 import {
   deleteAgent,
@@ -173,9 +157,7 @@ export function AgentsPage() {
   if (loading) {
     return (
       <section className="page active" id="page-agents">
-        <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
-        </div>
+        <PageHeader title="Agents" />
         <Skeleton className="route-skeleton" />
       </section>
     );
@@ -184,43 +166,27 @@ export function AgentsPage() {
   if (error || !view) {
     return (
       <section className="page active" id="page-agents">
-        <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
-          <p className="page-subtitle">Saved agents are temporarily unavailable.</p>
-        </div>
-        <Empty className="agents-empty agents-error" role="alert">
-          <EmptyHeader>
-            <EmptyMedia variant="icon">
-              <AlertCircle className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
-            </EmptyMedia>
-            <EmptyTitle className="agents-empty-title">Unable to load agents</EmptyTitle>
-            <EmptyDescription className="agents-empty-desc">
-              {error || 'Try again to load your saved agents.'}
-            </EmptyDescription>
-          </EmptyHeader>
-          <EmptyContent>
-            <Button variant="default" size="sm" onClick={retryLoad}>
-              Try again
-            </Button>
-          </EmptyContent>
-        </Empty>
+        <PageHeader
+          title="Agents"
+          subtitle="Saved agents are temporarily unavailable."
+        />
+        <RouteErrorState
+          title="Unable to load agents"
+          description={error || 'Try again to load your saved agents.'}
+          onRetry={retryLoad}
+        />
       </section>
     );
   }
 
   const customs = view.custom_agents;
 
-    return (
-      <section className="page active" id="page-agents">
-        <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>Agents</h1>
-          <p className="page-subtitle">
-            Agents are saved instructions that shape how Agent Mode writes for
-            you, e.g. keep my emails short and professional. They only change
-            wording and can never take actions. Select one to make it your
-            default.
-          </p>
-        </div>
+  return (
+    <section className="page active" id="page-agents">
+      <PageHeader
+        title="Agents"
+        subtitle="Agents are saved instructions that shape how Agent Mode writes for you, e.g. keep my emails short and professional. They only change wording and can never take actions. Select one to make it your default."
+      />
 
       <SettingsSectionHeader
         title="Built-in Agent"
@@ -236,16 +202,18 @@ export function AgentsPage() {
             onValueChange={(id) => void onSelectDefault(id)}
             aria-label="Built-in agents"
           >
-            <AgentRow
+            <ChoiceRow
               value={view.builtin_id}
               title={view.builtin_name}
               description={view.builtin_description}
-              isDefault={view.default_id === view.builtin_id}
               selected={view.default_id === view.builtin_id}
-              claimable={false}
-              claiming={false}
-              onClaim={() => {}}
-              onSelect={() => void onSelectDefault(view.builtin_id)}
+              rowClassName="agent-card"
+              unclaimedClassName="agent-card-unclaimed"
+              defaultBadgeClassName="agent-default-badge"
+              unclaimedBadgeClassName="agent-unclaimed-badge"
+              unclaimedNoteClassName="agent-unclaimed-note"
+              descriptionClassName="agent-row-desc"
+              selectAriaLabel={`Set ${view.builtin_name} as default agent`}
             />
           </RadioGroup>
         </CardContent>
@@ -267,251 +235,99 @@ export function AgentsPage() {
       <Card className="settings-card">
         <CardContent className="settings-card-content">
           {customs.length === 0 ? (
-          <Empty className="agents-empty">
-            <EmptyHeader>
-              <EmptyMedia variant="icon">
-                <Zap className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
-              </EmptyMedia>
-              <EmptyTitle className="agents-empty-title">No custom agents yet</EmptyTitle>
-              <EmptyDescription className="agents-empty-desc">
-                Create one that writes the way you want, e.g. a translator
-                that always replies in Hindi
-              </EmptyDescription>
-            </EmptyHeader>
-            <EmptyContent>
-              <Button
-                variant="secondary"
-                size="sm"
-                onClick={openNew}
-              >
-                Create your first agent
-              </Button>
-            </EmptyContent>
-          </Empty>
-        ) : (
-          <RadioGroup
-            className="agent-choice-group"
-            value={view.default_id}
-            onValueChange={(id) => void onSelectDefault(id)}
-            aria-label="Custom agents"
-          >
-            {customs.map((agent) => (
-              <AgentRow
-                key={agent.id}
-                value={agent.id}
-                title={agent.name}
-                description={agent.hint}
-                isDefault={view.default_id === agent.id}
-                selected={view.default_id === agent.id}
-                claimable={Boolean(agent.claimable)}
-                claiming={claimingId === agent.id}
-                onClaim={() => void onClaim(agent)}
-                onSelect={() => void onSelectDefault(agent.id)}
-                onEdit={() => openEdit(agent)}
-                onDelete={() => setPendingDelete(agent)}
-              />
-            ))}
-          </RadioGroup>
-        )}
+            <Empty className="agents-empty">
+              <EmptyHeader>
+                <EmptyMedia variant="icon">
+                  <Zap className="agents-empty-icon" strokeWidth={1.5} aria-hidden="true" />
+                </EmptyMedia>
+                <EmptyTitle className="agents-empty-title">No custom agents yet</EmptyTitle>
+                <EmptyDescription className="agents-empty-desc">
+                  Create one that writes the way you want, e.g. a translator
+                  that always replies in Hindi
+                </EmptyDescription>
+              </EmptyHeader>
+              <EmptyContent>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={openNew}
+                >
+                  Create your first agent
+                </Button>
+              </EmptyContent>
+            </Empty>
+          ) : (
+            <RadioGroup
+              className="agent-choice-group"
+              value={view.default_id}
+              onValueChange={(id) => void onSelectDefault(id)}
+              aria-label="Custom agents"
+            >
+              {customs.map((agent) => (
+                <ChoiceRow
+                  key={agent.id}
+                  value={agent.id}
+                  title={agent.name}
+                  description={agent.hint}
+                  selected={view.default_id === agent.id}
+                  rowClassName="agent-card"
+                  unclaimedClassName="agent-card-unclaimed"
+                  defaultBadgeClassName="agent-default-badge"
+                  unclaimedBadgeClassName="agent-unclaimed-badge"
+                  unclaimedNoteClassName="agent-unclaimed-note"
+                  descriptionClassName="agent-row-desc"
+                  selectAriaLabel={`Set ${agent.name} as default agent`}
+                  claimable={Boolean(agent.claimable)}
+                  claiming={claimingId === agent.id}
+                  onClaim={() => void onClaim(agent)}
+                  onEdit={() => openEdit(agent)}
+                  onDelete={() => setPendingDelete(agent)}
+                />
+              ))}
+            </RadioGroup>
+          )}
         </CardContent>
       </Card>
 
-      <Dialog
+      <PromptEditorDialog
         open={showEditor}
-        onOpenChange={(open) => {
-          if (!open) setShowEditor(false);
-        }}
-      >
-        <DialogContent aria-label={editing ? 'Edit agent' : 'New agent'}>
-          <DialogHeader>
-            <DialogTitle>{editing ? 'Edit agent' : 'New agent'}</DialogTitle>
-            <DialogDescription>
-              {editing
-                ? 'Update the instructions used when this agent responds.'
-                : 'Create reusable instructions for how this agent should respond.'}
-            </DialogDescription>
-          </DialogHeader>
-          <FieldGroup>
-            <Field label="Name (max 30 characters)" htmlFor="agent-name-input">
-              <Input
-                id="agent-name-input"
-                value={name}
-                maxLength={30}
-                placeholder="e.g. Translator"
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
-            <Field
-              label="Instructions (max 1000 characters)"
-              htmlFor="agent-hint-input"
-            >
-              <Textarea
-                id="agent-hint-input"
-                value={hint}
-                maxLength={1000}
-                rows={4}
-                placeholder="e.g. always reply in Hindi, keep it short"
-                onChange={(e) => setHint(e.target.value)}
-              />
-            </Field>
-          </FieldGroup>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              onClick={() => setShowEditor(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void onSave()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setShowEditor}
+        title={editing ? 'Edit agent' : 'New agent'}
+        description={
+          editing
+            ? 'Update the instructions used when this agent responds.'
+            : 'Create reusable instructions for how this agent should respond.'
+        }
+        ariaLabel={editing ? 'Edit agent' : 'New agent'}
+        nameId="agent-name-input"
+        nameValue={name}
+        namePlaceholder="e.g. Translator"
+        nameMaxLength={30}
+        onNameChange={setName}
+        instructionsId="agent-hint-input"
+        instructionsValue={hint}
+        instructionsPlaceholder="e.g. always reply in Hindi, keep it short"
+        instructionsMaxLength={1000}
+        onInstructionsChange={setHint}
+        saving={saving}
+        onSave={() => void onSave()}
+      />
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete custom agent</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `This action cannot be undone. Delete "${pendingDelete.name}"?`
-                : 'This action cannot be undone.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild>
-              <Button variant="secondary">Cancel</Button>
-            </AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button variant="destructive" onClick={() => void onDelete()}>
-                Delete
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Delete custom agent"
+        body={
+          pendingDelete
+            ? `This action cannot be undone. Delete "${pendingDelete.name}"?`
+            : 'This action cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => void onDelete()}
+      />
     </section>
-  );
-}
-
-function AgentRow({
-  value,
-  title,
-  description,
-  isDefault,
-  selected,
-  claimable,
-  claiming,
-  onSelect,
-  onClaim,
-  onEdit,
-  onDelete,
-}: {
-  value: string;
-  title: string;
-  description: string;
-  isDefault: boolean;
-  selected: boolean;
-  claimable: boolean;
-  claiming: boolean;
-  onSelect: () => void;
-  onClaim: () => void;
-  onEdit?: () => void;
-  onDelete?: () => void;
-}) {
-  const isCustom = Boolean(onEdit || onDelete);
-  // An unclaimed record is not owned: it cannot be made the default, edited or
-  // deleted, because all three act on the account store where it does not exist
-  // yet. The only action offered is the explicit claim.
-  const hasActions = claimable || !selected || isCustom;
-
-  return (
-    <div
-      className={`selection-row agent-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}${claimable ? ' agent-card-unclaimed' : ''}`}
-    >
-      {claimable ? (
-        // Not a RadioGroupItem: an unclaimed agent must never enter the default
-        // selection, so it is not offered as a selectable option at all.
-        <div className="selection-row-main selection-row-inert">
-          <span className="selection-radio" aria-hidden="true" />
-          <span className="selection-row-copy">
-            <span className="selection-row-heading">
-              <span className="selection-row-title">{title}</span>
-              <Badge variant="secondary" className="agent-unclaimed-badge">
-                On this device
-              </Badge>
-            </span>
-            <span className="selection-row-description agent-row-desc">{description}</span>
-            <span className="selection-row-description agent-unclaimed-note">
-              Saved on this device before it was linked to an account.
-            </span>
-          </span>
-        </div>
-      ) : (
-        <RadioGroupItem value={value} asChild>
-          <button
-            type="button"
-            className="selection-row-main"
-            aria-label={`Set ${title} as default agent`}
-          >
-            <span className="selection-radio" aria-hidden="true" />
-            <span className="selection-row-copy">
-              <span className="selection-row-heading">
-                <span className="selection-row-title">{title}</span>
-                {isDefault && (
-                  <Badge variant="secondary" className="agent-default-badge">
-                    DEFAULT
-                  </Badge>
-                )}
-              </span>
-              <span className="selection-row-description agent-row-desc">{description}</span>
-            </span>
-          </button>
-        </RadioGroupItem>
-      )}
-      {hasActions && (
-        <div className="selection-row-actions">
-          {claimable ? (
-            <Button
-              variant="secondary"
-              size="xs"
-              onClick={onClaim}
-              disabled={claiming}
-            >
-              {claiming ? 'Adding…' : 'Add to my account'}
-            </Button>
-          ) : (
-            <>
-              {!selected && (
-                <Button variant="secondary" size="xs" onClick={onSelect}>
-                  Set as default
-                </Button>
-              )}
-              {onEdit && (
-                <Button variant="secondary" size="xs" onClick={onEdit}>
-                  Edit
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  onClick={onDelete}
-                >
-                  Delete
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
   );
 }

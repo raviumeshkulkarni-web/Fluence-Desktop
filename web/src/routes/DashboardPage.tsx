@@ -37,6 +37,8 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { toast } from '@/components/fluence/Toasts';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { RouteErrorBanner } from '@/components/fluence/RouteError';
 import {
   getAccountActivity,
   type DailyBucket,
@@ -700,7 +702,7 @@ export function DashboardPage({
   const ringSweep = todayRatio == null ? 0 : Math.min(1, todayRatio);
   const todaySummary =
     todayRatio == null
-      ? `No baseline yet — dictate to build your average`
+      ? `No baseline yet. Dictate to build your average`
       : `${todayRatio.toFixed(1)}× your daily average`;
   // Recharts does not auto-size the axis: 4-digit counts overflow a 32px
   // gutter and the SVG viewport clips their leading digit.
@@ -798,51 +800,31 @@ export function DashboardPage({
 
   return (
     <section className="page active" id="page-dashboard">
-      <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 'var(--spacing-md)' }}>
-        <div>
-          <h1 className="page-title" tabIndex={-1}>Dashboard</h1>
-          <p className="page-subtitle">Your transcription activity at a glance</p>
-        </div>
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="sm"
-              id="dashboard-refresh-btn"
-              aria-label="Refresh dashboard"
-              onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
-            >
-              <RefreshCw size={14} aria-hidden="true" />
-              Refresh
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent>Refresh dashboard</TooltipContent>
-        </Tooltip>
-      </div>
+      <PageHeader
+        title="Dashboard"
+        subtitle="Your transcription activity at a glance"
+        actions={
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="sm"
+                id="dashboard-refresh-btn"
+                aria-label="Refresh dashboard"
+                onClick={() => window.dispatchEvent(new CustomEvent('fluence:refresh-dashboard'))}
+              >
+                <RefreshCw size={14} aria-hidden="true" />
+                Refresh
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>Refresh dashboard</TooltipContent>
+          </Tooltip>
+        }
+      />
 
-      {loadError && (
-        <div
-          role="alert"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            gap: 'var(--spacing-sm)',
-            padding: '10px 14px',
-            marginBottom: 'var(--spacing-md)',
-            border: '1px solid var(--color-error)',
-            borderRadius: 'var(--radius-sm)',
-            background: 'var(--color-error-container)',
-            color: 'var(--color-error)',
-            fontSize: 'var(--text-label-sm)',
-          }}
-        >
-          <span>{loadError}</span>
-          <Button variant="secondary" size="xs" onClick={retryLoad}>
-            Try again
-          </Button>
-        </div>
-      )}
+      {loadError ? (
+        <RouteErrorBanner message={loadError} onRetry={retryLoad} />
+      ) : null}
 
       <div className="kpi-grid">
         {skeleton && buckets.length === 0

@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { getAppVersion } from '@/ipc/tauri';
 import { FluenceSymbol, FluenceWordmark } from '@/components/fluence/FluenceLogo';
+import { PageHeader } from '@/components/fluence/PageHeader';
 import { updaterStore, useUpdater } from '@/ipc/updater';
 
 // Faithful port of the vanilla About surface (src/index.html #page-about +
@@ -21,59 +22,58 @@ export function AboutPage({ onDownloadUpdate }: { onDownloadUpdate: () => void }
 
   return (
     <section className="page active" id="page-about">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>About Fluence</h1>
-        <p className="page-subtitle">Voice typing for Windows</p>
-      </div>
+      <PageHeader title="About Fluence" subtitle="Voice typing for Windows" />
 
       <div className="settings-section settings-section--unboxed">
-        <div style={{ padding: 'var(--spacing-xl)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-lg)', textAlign: 'center' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 'var(--spacing-12)' }}>
+        <div className="about-shell">
+          <div className="about-brand">
             <FluenceSymbol
               size={48}
               gradientId="logo-grad-about"
             />
             <FluenceWordmark fontSize={26} />
           </div>
-          <div className="text-muted text-body-md" style={{ marginTop: 'var(--spacing-xs)' }}>
+          <div className="about-version text-muted text-body-md">
             Version <span id="about-version">{appVersion}</span>
           </div>
-          <div className="text-body-md text-muted" style={{ maxWidth: 400, lineHeight: 1.7 }}>
+          <div className="about-blurb text-body-md text-muted">
             Fluence turns your voice into text in any Windows app. Press your hotkey to dictate, polish it with Agent Mode, and keep every transcript on this device.
           </div>
 
           <div
-            className={updater.state === 'downloading' ? 'update-card downloading' : 'update-card'}
+            className={`update-card about-update-card${updater.state === 'downloading' ? ' downloading' : ''}`}
             id="update-card"
-            style={{ width: '100%', maxWidth: 420, marginTop: 'var(--spacing-12)', padding: 'var(--spacing-md)', borderRadius: 'var(--radius-md)', background: 'var(--color-surface-container)', border: '1px solid var(--color-outline-variant)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-10)' }}
           >
-            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--spacing-xs)' }}>
-              <div style={{ fontSize: 'var(--text-label-lg)', fontWeight: 600, color: 'var(--color-on-surface)' }} id="update-status-title">
+            <div className="about-update-header">
+              <div className="about-update-title" id="update-status-title">
                 {card.title}
               </div>
-              <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-on-surface-variant)' }} id="update-last-checked">
+              <div className="about-update-meta" id="update-last-checked">
                 {updater.lastCheckedText ? `Last checked: ${updater.lastCheckedText}` : ''}
               </div>
             </div>
             <div
-              style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)', display: card.desc ? 'block' : 'none', textAlign: card.descAlign, lineHeight: 1.4 }}
+              className={`about-update-desc${card.desc ? '' : ' hidden'}`}
               id="update-status-desc"
             >
               {card.desc ?? ''}
             </div>
 
-            <div id="update-progress-container" style={{ display: updater.state === 'downloading' ? 'block' : 'none', width: '100%', maxWidth: 280, marginTop: 'var(--spacing-xs)' }}>
+            <div
+              id="update-progress-container"
+              className={`about-update-progress${updater.state === 'downloading' ? '' : ' hidden'}`}
+            >
               <Progress
                 id="update-progress-track"
                 aria-label="Update download progress"
                 value={updater.progress}
               />
-              <div style={{ fontSize: 'var(--text-label-xs)', color: 'var(--color-outline)', textAlign: 'center', marginTop: 'var(--spacing-xs)' }} id="update-progress-text">
+              <div className="about-update-progress-text" id="update-progress-text">
                 {updater.progress}%
               </div>
             </div>
 
-            <div style={{ display: 'flex', gap: 'var(--spacing-sm)', marginTop: 'var(--spacing-xs)' }} id="update-status-actions">
+            <div className="about-update-actions" id="update-status-actions">
               <Button
                 variant={card.btnPrimary ? 'primary' : 'secondary'}
                 size="sm"

@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Field } from '@/components/ui/field';
 import {
   Select,
   SelectContent,
@@ -13,6 +12,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { HotkeyRecorderField } from '@/components/fluence/HotkeyRecorderField';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { SettingRow } from '@/components/fluence/SettingRow';
 import { toast } from '@/components/fluence/Toasts';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import {
@@ -23,18 +25,14 @@ import {
   subscribeSettings,
 } from '@/ipc/settings';
 import {
-  buildHotkeyString,
   DEFAULT_AGENT_HOTKEY,
   DEFAULT_HOTKEY,
   initGeneralApply,
   listAudioDevices,
-  MODIFIER_KEYS,
   persistGeneral,
-  setHotkeyRecording,
 } from '@/ipc/general';
 import { ACCENT_THEMES, type AccentTheme } from '@/lib/theme';
 import { describeError } from '@/lib/errors';
-import { displayHotkey, isAllowedWizardHotkey as isAllowedHotkey } from '@/wizard/hotkey';
 
 type HotkeyKey = 'hotkey' | 'agent_hotkey';
 
@@ -82,55 +80,6 @@ export function GeneralPage({
   const [tab, setTab] = useState<GeneralTab>('shortcuts');
 
   const [recording, setRecording] = useState<HotkeyKey | null>(null);
-  const [pendingText, setPendingText] = useState('Press your shortcut…');
-  const recordingRef = useRef<HotkeyKey | null>(null);
-  recordingRef.current = recording;
-  const pendingKeys = useRef<Set<string>>(new Set());
-  const pendingHotkey = useRef('');
-  const displays = useRef<Record<HotkeyKey, HTMLButtonElement | null>>({
-    hotkey: null,
-    agent_hotkey: null,
-  });
-  const clearBtns = useRef<Record<HotkeyKey, HTMLButtonElement | null>>({
-    hotkey: null,
-    agent_hotkey: null,
-  });
-
-  const setHotkeyValue = useCallback((key: HotkeyKey, value: string) => {
-    if (key === 'hotkey') setHotkey(value);
-    else setAgentHotkey(value);
-  }, []);
-
-  const stopRecordingUi = useCallback(() => {
-    pendingKeys.current = new Set();
-    pendingHotkey.current = '';
-    setRecording(null);
-  }, []);
-
-  const cancelRecording = useCallback(() => {
-    const key = recordingRef.current;
-    if (!key) return;
-    // Vanilla restores the stored shortcut, falling back to the
-    // transcription default for both recorders.
-    setHotkeyValue(key, str(getCachedSettings()?.[key], DEFAULT_HOTKEY));
-    stopRecordingUi();
-  }, [setHotkeyValue, stopRecordingUi]);
-
-  const applyRecording = useCallback(() => {
-    const key = recordingRef.current;
-    const value = pendingHotkey.current;
-    if (!key || !value) return;
-    if (!isAllowedHotkey(value)) {
-      setPendingText('Add Ctrl, Alt, Shift, or Win');
-      return;
-    }
-    setHotkeyValue(key, value);
-    if (getCachedSettings()) {
-      setSettingField(key, value);
-      persistGeneral('hotkeys');
-    }
-    stopRecordingUi();
-  }, [setHotkeyValue, stopRecordingUi]);
 
   // Boot: mirror vanilla populateUI general branch. Controls keep their
   // static-markup defaults when settings fail to load.
@@ -186,52 +135,6 @@ export function GeneralPage({
     };
   }, []);
 
-  // Document-level capture while a recorder is active: mirrors vanilla's
-  // global keydown/keyup/click-outside handlers one-to-one.
-  useEffect(() => {
-    if (!recording) return;
-    setHotkeyRecording(true);
-    const onKeyDown = (e: KeyboardEvent) => {
-      if (!recordingRef.current) return;
-      e.preventDefault();
-      if (e.key === 'Escape') {
-        e.stopImmediatePropagation();
-        cancelRecording();
-        return;
-      }
-      pendingKeys.current.add(e.key);
-      const parts = buildHotkeyString(e);
-      pendingHotkey.current = parts;
-      setPendingText(parts || 'Press keys…');
-    };
-    const onKeyUp = (e: KeyboardEvent) => {
-      if (!recordingRef.current) return;
-      if (MODIFIER_KEYS.has(e.key)) return;
-      if (pendingHotkey.current && pendingKeys.current.size > 0) {
-        applyRecording();
-      }
-    };
-    const onClick = (e: MouseEvent) => {
-      const key = recordingRef.current;
-      if (!key) return;
-      const target = e.target instanceof Element ? e.target : null;
-      if (!target) return;
-      const inside =
-        displays.current[key]?.contains(target) ||
-        clearBtns.current[key]?.contains(target);
-      if (!inside) cancelRecording();
-    };
-    document.addEventListener('keydown', onKeyDown);
-    document.addEventListener('keyup', onKeyUp);
-    document.addEventListener('click', onClick);
-    return () => {
-      document.removeEventListener('keydown', onKeyDown);
-      document.removeEventListener('keyup', onKeyUp);
-      document.removeEventListener('click', onClick);
-      setHotkeyRecording(false);
-    };
-  }, [recording, applyRecording, cancelRecording]);
-
   // Ctrl+S quiet save (vanilla saveGeneral alias: flush, no toast).
   useEffect(() => {
     const onSave = () => {
@@ -242,26 +145,6 @@ export function GeneralPage({
     window.addEventListener('fluence:save-page', onSave);
     return () => window.removeEventListener('fluence:save-page', onSave);
   }, []);
-
-  const startRecording = (key: HotkeyKey) => {
-    if (recordingRef.current === key) {
-      cancelRecording();
-      return;
-    }
-    if (recordingRef.current) cancelRecording();
-    pendingKeys.current = new Set();
-    pendingHotkey.current = '';
-    setPendingText('Press your shortcut…');
-    setRecording(key);
-  };
-
-  const onResetHotkey = (key: HotkeyKey, fallback: string) => {
-    setHotkeyValue(key, fallback);
-    if (getCachedSettings()) {
-      setSettingField(key, fallback);
-      persistGeneral('hotkeys');
-    }
-  };
 
   const bindSelect =
     (setter: (v: string) => void, key: string, ...features: string[]) =>
@@ -295,10 +178,10 @@ export function GeneralPage({
 
   return (
     <section className="page active" id="page-general">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>General</h1>
-        <p className="page-subtitle">Hotkey, dictation, audio, and system preferences</p>
-      </div>
+      <PageHeader
+        title="General"
+        subtitle="Hotkey, dictation, audio, and system preferences"
+      />
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as GeneralTab)}>
         <TabsList aria-label="General settings area">
@@ -308,57 +191,45 @@ export function GeneralPage({
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
         </TabsList>
 
-      <TabsContent value="shortcuts">
-        <SettingsSectionHeader title="Global Shortcut" description="Global hotkey to start and stop speech recording" />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label" id="hotkey-label">Recording Hotkey</div>
-              <div className="setting-desc">Press this key combination to start/stop voice recording from any app</div>
-            </div>
-            <div className="setting-control">
-              <div className="hotkey-recorder">
-                <button
-                  ref={(el) => {
-                    displays.current.hotkey = el;
+        <TabsContent value="shortcuts">
+          <SettingsSectionHeader title="Global Shortcut" description="Global hotkey to start and stop speech recording" />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Recording Hotkey"
+                labelId="hotkey-label"
+                description="Press this key combination to start/stop voice recording from any app"
+              >
+                <HotkeyRecorderField
+                  value={hotkey}
+                  isRecording={recording === 'hotkey'}
+                  labelId="hotkey-label"
+                  displayId="hotkey-display"
+                  displayTextId="hotkey-display-text"
+                  clearBtnId="hotkey-clear-btn"
+                  onStartRecording={() => setRecording('hotkey')}
+                  onStopRecording={() => setRecording((prev) => (prev === 'hotkey' ? null : prev))}
+                  onCommit={(val) => {
+                    setHotkey(val);
+                    if (getCachedSettings()) {
+                      setSettingField('hotkey', val);
+                      persistGeneral('hotkeys');
+                    }
                   }}
-                  type="button"
-                  className={`hotkey-display ui-focus-ring${recording === 'hotkey' ? ' recording' : ''}`}
-                  id="hotkey-display"
-                  aria-pressed={recording === 'hotkey'}
-                  aria-labelledby="hotkey-label hotkey-display-text"
-                  onClick={() => startRecording('hotkey')}
-                  onBlur={() => {
-                    if (recordingRef.current === 'hotkey') cancelRecording();
+                  onReset={() => {
+                    setHotkey(DEFAULT_HOTKEY);
+                    if (getCachedSettings()) {
+                      setSettingField('hotkey', DEFAULT_HOTKEY);
+                      persistGeneral('hotkeys');
+                    }
                   }}
-                >
-                  <span id="hotkey-display-text">
-                    {displayHotkey(recording === 'hotkey' ? pendingText : hotkey)}
-                  </span>
-                </button>
-                <Button
-                  ref={(el) => {
-                    clearBtns.current.hotkey = el;
-                  }}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  id="hotkey-clear-btn"
-                  onClick={() => onResetHotkey('hotkey', DEFAULT_HOTKEY)}
-                >
-                  Reset
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Transcription Mode Behavior</div>
-              <div className="setting-desc">How the hotkey controls recording</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+                />
+              </SettingRow>
+              <SettingRow
+                label="Transcription Mode Behavior"
+                htmlFor="recording-mode-select"
+                description="How the hotkey controls recording"
+              >
                 <Select
                   value={recordingMode}
                   onValueChange={bindSelect(setRecordingMode, 'recording_mode', 'hotkeys')}
@@ -377,62 +248,48 @@ export function GeneralPage({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </Field>
-            </div>
-          </div>
-          </CardContent>
-        </Card>
+              </SettingRow>
+            </CardContent>
+          </Card>
 
-        <SettingsSectionHeader title="Agent Mode Shortcut" description="Dedicated shortcut to activate AI Agent Mode" />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label" id="agent-hotkey-label">Agent Mode Hotkey</div>
-              <div className="setting-desc">Dedicated hotkey to activate AI Agent Mode from any app</div>
-            </div>
-            <div className="setting-control">
-              <div className="hotkey-recorder">
-                <button
-                  ref={(el) => {
-                    displays.current.agent_hotkey = el;
+          <SettingsSectionHeader title="Agent Mode Shortcut" description="Dedicated shortcut to activate AI Agent Mode" />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Agent Mode Hotkey"
+                labelId="agent-hotkey-label"
+                description="Dedicated hotkey to activate AI Agent Mode from any app"
+              >
+                <HotkeyRecorderField
+                  value={agentHotkey}
+                  isRecording={recording === 'agent_hotkey'}
+                  labelId="agent-hotkey-label"
+                  displayId="agent-hotkey-display"
+                  displayTextId="agent-hotkey-display-text"
+                  clearBtnId="agent-hotkey-clear-btn"
+                  onStartRecording={() => setRecording('agent_hotkey')}
+                  onStopRecording={() => setRecording((prev) => (prev === 'agent_hotkey' ? null : prev))}
+                  onCommit={(val) => {
+                    setAgentHotkey(val);
+                    if (getCachedSettings()) {
+                      setSettingField('agent_hotkey', val);
+                      persistGeneral('hotkeys');
+                    }
                   }}
-                  type="button"
-                  className={`hotkey-display ui-focus-ring${recording === 'agent_hotkey' ? ' recording' : ''}`}
-                  id="agent-hotkey-display"
-                  aria-pressed={recording === 'agent_hotkey'}
-                  aria-labelledby="agent-hotkey-label agent-hotkey-display-text"
-                  onClick={() => startRecording('agent_hotkey')}
-                  onBlur={() => {
-                    if (recordingRef.current === 'agent_hotkey') cancelRecording();
+                  onReset={() => {
+                    setAgentHotkey(DEFAULT_AGENT_HOTKEY);
+                    if (getCachedSettings()) {
+                      setSettingField('agent_hotkey', DEFAULT_AGENT_HOTKEY);
+                      persistGeneral('hotkeys');
+                    }
                   }}
-                >
-                  <span id="agent-hotkey-display-text">
-                    {displayHotkey(recording === 'agent_hotkey' ? pendingText : agentHotkey)}
-                  </span>
-                </button>
-                <Button
-                  ref={(el) => {
-                    clearBtns.current.agent_hotkey = el;
-                  }}
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  id="agent-hotkey-clear-btn"
-                  onClick={() => onResetHotkey('agent_hotkey', DEFAULT_AGENT_HOTKEY)}
-                >
-                  Reset
-                </Button>
-              </div>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Agent Mode Behavior</div>
-              <div className="setting-desc">How the agent hotkey controls recording</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+                />
+              </SettingRow>
+              <SettingRow
+                label="Agent Mode Behavior"
+                htmlFor="agent-recording-mode-select"
+                description="How the agent hotkey controls recording"
+              >
                 <Select
                   value={agentRecordingMode}
                   onValueChange={bindSelect(setAgentRecordingMode, 'agent_recording_mode', 'hotkeys')}
@@ -451,24 +308,20 @@ export function GeneralPage({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </Field>
-            </div>
-          </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <TabsContent value="audio">
-        <SettingsSectionHeader title="Audio & Language" description="Select input hardware and speech recognition language" />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Microphone</div>
-              <div className="setting-desc">Select the audio input device for voice recording</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+        <TabsContent value="audio">
+          <SettingsSectionHeader title="Audio & Language" description="Select input hardware and speech recognition language" />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Microphone"
+                htmlFor="audio-device-select"
+                description="Select the audio input device for voice recording"
+              >
                 <Select
                   value={audioDevice || SYSTEM_DEFAULT_DEVICE}
                   onValueChange={(v) =>
@@ -496,16 +349,12 @@ export function GeneralPage({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Transcription Language</div>
-              <div className="setting-desc">Hint to the STT model about the spoken language</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="Transcription Language"
+                htmlFor="language-select"
+                description="Hint to the STT model about the spoken language"
+              >
                 <Select
                   value={language}
                   onValueChange={bindSelect(setLanguage, 'language')}
@@ -539,169 +388,138 @@ export function GeneralPage({
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Play Completion Sound</div>
-              <div className="setting-desc">Play a short chime when a transcription finishes</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="Play Completion Sound"
+                htmlFor="sound-on-complete-cb"
+                description="Play a short chime when a transcription finishes"
+              >
                 <Switch
                   id="sound-on-complete-cb"
                   aria-label="Play a sound when transcription completes"
                   checked={sound}
                   onCheckedChange={bindCheck(setSound, 'sound_on_complete')}
                 />
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Copy Transcription to Clipboard</div>
-              <div className="setting-desc">Your dictated text and agent results stay on the clipboard after each dictation, even if the paste fails, so you can paste them again with Ctrl+V. Turn this off to keep your earlier copied text instead.</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="Copy Transcription to Clipboard"
+                htmlFor="copy-transcript-cb"
+                description="Your dictated text and agent results stay on the clipboard after each dictation, even if the paste fails, so you can paste them again with Ctrl+V. Turn this off to keep your earlier copied text instead."
+              >
                 <Switch
                   id="copy-transcript-cb"
                   aria-label="Keep dictated text on the clipboard"
                   checked={copyTranscript}
                   onCheckedChange={bindCheck(setCopyTranscript, 'copy_transcript_to_clipboard')}
                 />
-              </Field>
-            </div>
-          </div>
-          </CardContent>
-        </Card>
+              </SettingRow>
+            </CardContent>
+          </Card>
 
-        <SettingsSectionHeader
-          title="Spoken Formatting"
-          description="Turn spoken command words into punctuation and line breaks"
-        />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content">
-            <div className="setting-row">
-              <div className="setting-info">
-                <div className="setting-label">Spoken Punctuation</div>
-                <div className="setting-desc">
-                  Say &quot;comma&quot;, &quot;period&quot;, &quot;question
-                  mark&quot;, &quot;exclamation mark&quot;, &quot;colon&quot;,
-                  &quot;semicolon&quot;, &quot;new line&quot;, or &quot;new
-                  paragraph&quot; to format the transcript. Off by default
-                  because these words also appear in normal speech.
-                </div>
-              </div>
-              <div className="setting-control">
-                <Field>
-                  <Switch
-                    id="spoken-formatting-cb"
-                    aria-label="Convert spoken punctuation commands"
-                    checked={spokenFormatting}
-                    onCheckedChange={bindCheck(
-                      setSpokenFormatting,
-                      'spoken_formatting_enabled',
-                    )}
-                  />
-                </Field>
-              </div>
-            </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
+          <SettingsSectionHeader
+            title="Spoken Formatting"
+            description="Turn spoken command words into punctuation and line breaks"
+          />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Spoken Punctuation"
+                htmlFor="spoken-formatting-cb"
+                description="Say &quot;comma&quot;, &quot;period&quot;, &quot;question mark&quot;, &quot;exclamation mark&quot;, &quot;colon&quot;, &quot;semicolon&quot;, &quot;new line&quot;, or &quot;new paragraph&quot; to format the transcript. Off by default because these words also appear in normal speech."
+              >
+                <Switch
+                  id="spoken-formatting-cb"
+                  aria-label="Convert spoken punctuation commands"
+                  checked={spokenFormatting}
+                  onCheckedChange={bindCheck(
+                    setSpokenFormatting,
+                    'spoken_formatting_enabled',
+                  )}
+                />
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </TabsContent>
 
-      <TabsContent value="system">
-        <SettingsSectionHeader title="System Preferences" description="Configure startup and background audio behavior" />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Launch at Windows Startup</div>
-              <div className="setting-desc">Automatically start Fluence when you log in to Windows</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+        <TabsContent value="system">
+          <SettingsSectionHeader title="System Preferences" description="Configure startup and background audio behavior" />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Launch at Windows Startup"
+                htmlFor="autostart-cb"
+                description="Automatically start Fluence when you log in to Windows"
+              >
                 <Switch
                   id="autostart-cb"
                   aria-label="Launch at Windows startup"
                   checked={autostart}
                   onCheckedChange={bindCheck(setAutostart, 'auto_start', 'autostart')}
                 />
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Mute Background Apps</div>
-              <div className="setting-desc">Silence music, videos, and calls while you dictate</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="Mute Background Apps"
+                htmlFor="duck-cb"
+                description="Silence music, videos, and calls while you dictate"
+              >
                 <Switch
                   id="duck-cb"
                   aria-label="Mute background apps while dictating"
                   checked={duck}
                   onCheckedChange={bindCheck(setDuck, 'duck_enabled')}
                 />
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Grab Highlighted Text</div>
-              <div className="setting-desc">Automatically read highlighted text when entering Agent Mode</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="Grab Highlighted Text"
+                htmlFor="auto-grab-cb"
+                description="Automatically read highlighted text when entering Agent Mode"
+              >
                 <Switch
                   id="auto-grab-cb"
                   aria-label="Grab highlighted text when entering Agent Mode"
                   checked={autoGrab}
                   onCheckedChange={bindCheck(setAutoGrab, 'auto_grab_highlight')}
                 />
-              </Field>
-            </div>
-          </div>
-          </CardContent>
-        </Card>
-      </TabsContent>
-      <TabsContent value="appearance">
-        <SettingsSectionHeader title="Accent theme" description="Choose a preset accent for the Fluence settings window" />
-        <Card className="settings-card">
-          <CardContent className="settings-card-content accent-theme-content">
-            <RadioGroup
-              className="accent-preset-grid"
-              value={accentTheme}
-              onValueChange={(value) => onAccentThemeChange(value as AccentTheme)}
-              aria-label="Accent theme"
-              aria-describedby="accent-theme-note"
-            >
-              {ACCENT_THEMES.map((preset) => (
-                <RadioGroupItem
-                  key={preset.value}
-                  asChild
-                  value={preset.value}
-                  className="accent-preset-radio"
-                  style={{
-                    '--preset-accent-dark': preset.dark,
-                    '--preset-accent-light': preset.light,
-                  } as CSSProperties}
-                >
-                  <button type="button" className="accent-preset-card">
-                    <span className="accent-preset-swatch" aria-hidden="true" />
-                    <span className="accent-preset-label">{preset.label}</span>
-                  </button>
-                </RadioGroupItem>
-              ))}
-            </RadioGroup>
-            <p className="accent-theme-note" id="accent-theme-note">
-              Accents adapt for dark and light appearance. Your surfaces, Fluence logo, and floating overlay stay unchanged.
-            </p>
-          </CardContent>
-        </Card>
-      </TabsContent>
+              </SettingRow>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="appearance">
+          <SettingsSectionHeader title="Accent theme" description="Choose a preset accent for the Fluence settings window" />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content accent-theme-content">
+              <RadioGroup
+                className="accent-preset-grid"
+                value={accentTheme}
+                onValueChange={(value) => onAccentThemeChange(value as AccentTheme)}
+                aria-label="Accent theme"
+                aria-describedby="accent-theme-note"
+              >
+                {ACCENT_THEMES.map((preset) => (
+                  <RadioGroupItem
+                    key={preset.value}
+                    asChild
+                    value={preset.value}
+                    className="accent-preset-radio"
+                    style={{
+                      '--preset-accent-dark': preset.dark,
+                      '--preset-accent-light': preset.light,
+                    } as CSSProperties}
+                  >
+                    <button type="button" className="accent-preset-card">
+                      <span className="accent-preset-swatch" aria-hidden="true" />
+                      <span className="accent-preset-label">{preset.label}</span>
+                    </button>
+                  </RadioGroupItem>
+                ))}
+              </RadioGroup>
+              <p className="accent-theme-note" id="accent-theme-note">
+                Accents adapt for dark and light appearance. Your surfaces, Fluence logo, and floating overlay stay unchanged.
+              </p>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {tab !== 'appearance' && (

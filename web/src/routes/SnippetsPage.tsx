@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import {
   Empty,
   EmptyDescription,
@@ -22,6 +23,9 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { RouteErrorBanner } from '@/components/fluence/RouteError';
+import { SettingRow } from '@/components/fluence/SettingRow';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { toast } from '@/components/fluence/Toasts';
 import { describeError } from '@/lib/errors';
@@ -43,6 +47,8 @@ export function SnippetsPage() {
   const [enabled, setEnabled] = useState(false);
   const [entries, setEntries] = useState<Snippet[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<Snippet | null>(null);
   const [showAdd, setShowAdd] = useState(false);
   const [trigger, setTrigger] = useState('');
   const [expansion, setExpansion] = useState('');
@@ -56,7 +62,9 @@ export function SnippetsPage() {
       const store = await getSnippets();
       setEnabled(store.enabled);
       setEntries(store.snippets || []);
+      setLoadError(null);
     } catch (err) {
+      setLoadError(describeError(err, 'Try again.'));
       toast('Could not load snippets. ' + describeError(err), 'error');
     } finally {
       setLoading(false);
@@ -165,32 +173,30 @@ export function SnippetsPage() {
 
   return (
     <section className="page active" id="page-snippets">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Snippets</h1>
-        <p className="page-subtitle">Replace spoken trigger phrases with expansion text in every transcription</p>
-      </div>
+      <PageHeader
+        title="Snippets"
+        subtitle="Replace spoken trigger phrases with expansion text in every transcription"
+      />
 
       <SettingsSectionHeader
         title="Text Expansion"
         description="Configure shorthand triggers that expand into longer text"
       />
       <Card className="settings-card">
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Enable Text Expansion</div>
-            <div className="setting-desc">Dictate a short trigger like &quot;my linkedin&quot; and Fluence pastes your expansion text instead</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="snippets-enabled-cb"
-                aria-label="Enable text expansion"
-                checked={enabled}
-                onCheckedChange={(v) => void onToggle(v)}
-              />
-            </Field>
-          </div>
-        </div>
+        <CardContent className="settings-card-content">
+          <SettingRow
+            label="Enable Text Expansion"
+            htmlFor="snippets-enabled-cb"
+            description="Dictate a short trigger like &quot;my linkedin&quot; and Fluence pastes your expansion text instead"
+          >
+            <Switch
+              id="snippets-enabled-cb"
+              aria-label="Enable text expansion"
+              checked={enabled}
+              onCheckedChange={(v) => void onToggle(v)}
+            />
+          </SettingRow>
+        </CardContent>
       </Card>
 
       <SettingsSectionHeader
@@ -255,6 +261,10 @@ export function SnippetsPage() {
         </div>
       )}
 
+      {loadError ? (
+        <RouteErrorBanner message={loadError} onRetry={() => void load()} />
+      ) : null}
+
       <div className="table-card settings-card">
         <Table className="dict-table snippet-table">
           <TableCaption className="sr-only">Saved text expansion snippets</TableCaption>
@@ -278,7 +288,7 @@ export function SnippetsPage() {
                 </TableCell>
               </TableRow>
             )}
-            {!loading && entries.length === 0 && (
+            {!loading && !loadError && entries.length === 0 && (
               <TableRow id="snippet-empty-row">
                 <TableCell colSpan={4}>
                   <Empty>
@@ -371,7 +381,7 @@ export function SnippetsPage() {
                           size="sm"
                           className="agent-delete-btn destructive-action"
                           data-snippet-id={entry.id}
-                          onClick={() => void onDelete(entry.id)}
+                          onClick={() => setPendingDelete(entry)}
                         >
                           Delete
                         </Button>
@@ -384,6 +394,26 @@ export function SnippetsPage() {
           </TableBody>
         </Table>
       </div>
+
+      <ConfirmDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => {
+          if (!open) setPendingDelete(null);
+        }}
+        title="Delete snippet"
+        body={
+          pendingDelete
+            ? `This action cannot be undone. Delete "${pendingDelete.trigger}"?`
+            : 'This action cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => {
+          const target = pendingDelete;
+          setPendingDelete(null);
+          if (target) void onDelete(target.id);
+        }}
+      />
     </section>
   );
 }

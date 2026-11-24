@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AppWindow, Check, RefreshCw } from 'lucide-react';
 import { describeClaimOutcome } from '@/lib/claim';
 import { describeError } from '@/lib/errors';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import {
   Empty,
   EmptyContent,
@@ -14,7 +13,6 @@ import {
   EmptyTitle,
 } from '@/components/ui/empty';
 import { Field } from '@/components/ui/field';
-import { Input, Textarea } from '@/components/ui/input';
 import { SearchField } from '@/components/fluence/SearchField';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -28,6 +26,10 @@ import {
 import { Skeleton } from '@/components/ui/skeleton';
 import { Switch } from '@/components/ui/switch';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
+import { ChoiceRow } from '@/components/fluence/ChoiceRow';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { PromptEditorDialog } from '@/components/fluence/PromptEditorDialog';
+import { SettingRow } from '@/components/fluence/SettingRow';
 import {
   ConfirmDialog,
   Dialog,
@@ -37,16 +39,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
 import { toast } from '@/components/fluence/Toasts';
 import {
   getCachedSettings,
@@ -117,116 +109,6 @@ function AppGlyph({
       className="app-rule-icon app-rule-icon-fallback"
       aria-hidden="true"
     />
-  );
-}
-
-function StyleChoiceCard({
-  value,
-  title,
-  description,
-  selected,
-  onSetDefault,
-  onEdit,
-  onDelete,
-  claimable,
-  claiming,
-  onClaim,
-}: {
-  value: string;
-  title: string;
-  description: string;
-  selected: boolean;
-  onSetDefault: () => void;
-  onEdit?: () => void;
-  onDelete?: () => void;
-  claimable: boolean;
-  claiming: boolean;
-  onClaim: () => void;
-}) {
-  const hasActions = claimable || !selected || Boolean(onEdit || onDelete);
-
-  return (
-    <div
-      className={`choice-surface selection-row style-card${selected ? ' selected' : ''}${hasActions ? ' has-actions' : ''}${claimable ? ' style-card-unclaimed' : ''}`}
-    >
-      {claimable ? (
-        // Not selectable: an unclaimed style cannot be made the default or bound
-        // to an app, because those act on the account store where it does not
-        // exist yet. The explicit claim is the only action offered.
-        <div className="selection-row-main selection-row-inert">
-          <span className="selection-radio" aria-hidden="true" />
-          <span className="selection-row-copy">
-            <span className="selection-row-heading">
-              <span className="selection-row-title">{title}</span>
-              <Badge variant="secondary" className="style-unclaimed-badge">
-                On this device
-              </Badge>
-            </span>
-            <span className="selection-row-description">{description}</span>
-            <span className="selection-row-description style-unclaimed-note">
-              Saved on this device before it was linked to an account.
-            </span>
-          </span>
-        </div>
-      ) : (
-        <RadioGroupItem value={value} asChild>
-          <button
-            type="button"
-            className="selection-row-main"
-            aria-label={`Set ${title} as default style`}
-          >
-            <span className="selection-radio" aria-hidden="true" />
-            <span className="selection-row-copy">
-              <span className="selection-row-heading">
-                <span className="selection-row-title">{title}</span>
-                {selected && (
-                  <Badge variant="secondary" className="style-default-badge">
-                    Default
-                  </Badge>
-                )}
-              </span>
-              <span className="selection-row-description">{description}</span>
-            </span>
-          </button>
-        </RadioGroupItem>
-      )}
-      {hasActions && (
-        <div className="selection-row-actions">
-          {claimable ? (
-            <Button
-              variant="secondary"
-              size="xs"
-              onClick={onClaim}
-              disabled={claiming}
-            >
-              {claiming ? 'Adding…' : 'Add to my account'}
-            </Button>
-          ) : (
-            <>
-              {!selected && (
-                <Button variant="secondary" size="xs" onClick={onSetDefault}>
-                  Set as default
-                </Button>
-              )}
-              {onEdit && (
-                <Button variant="secondary" size="xs" onClick={onEdit}>
-                  Edit
-                </Button>
-              )}
-              {onDelete && (
-                <Button
-                  variant="destructive"
-                  size="xs"
-                  onClick={onDelete}
-                >
-                  Delete
-                </Button>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
   );
 }
 
@@ -554,11 +436,7 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
   if (loading) {
     return (
       <section className="page active" id="page-formatting">
-        <div className="page-header">
-          <h1 className="page-title" tabIndex={-1}>
-            AI Cleanup
-          </h1>
-        </div>
+        <PageHeader title="AI Cleanup" />
         <Skeleton className="route-skeleton" />
       </section>
     );
@@ -566,41 +444,34 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
 
   return (
     <section className="page active" id="page-formatting">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>
-          AI Cleanup
-        </h1>
-        <p className="page-subtitle">
-          Clean up transcripts automatically while keeping your original words. Create custom styles or
-          assign apps for more control.
-        </p>
-      </div>
+      <PageHeader
+        title="AI Cleanup"
+        subtitle="Clean up transcripts automatically while keeping your original words. Create custom styles or assign apps for more control."
+      />
 
       <SettingsSectionHeader
         title="AI Cleanup"
         description="Automatically refine and clean up dictations"
       />
       <Card className="settings-card">
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Enable AI Cleanup</div>
-            <div className="setting-desc">
-              {enabled
+        <CardContent className="settings-card-content">
+          <SettingRow
+            label="Enable AI Cleanup"
+            htmlFor="ai-postprocessing-cb"
+            description={
+              enabled
                 ? 'On: transcripts are cleaned up automatically'
-                : 'Off: transcripts stay exactly as spoken'}
-            </div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="ai-postprocessing-cb"
-                aria-label="Enable AI cleanup"
-                checked={enabled}
-                onCheckedChange={onToggleCleanup}
-              />
-            </Field>
-          </div>
-        </div>
+                : 'Off: transcripts stay exactly as spoken'
+            }
+          >
+            <Switch
+              id="ai-postprocessing-cb"
+              aria-label="Enable AI cleanup"
+              checked={enabled}
+              onCheckedChange={onToggleCleanup}
+            />
+          </SettingRow>
+        </CardContent>
       </Card>
 
       <SettingsSectionHeader
@@ -623,27 +494,34 @@ const onClaimStyle = async (style: CustomPromptStyle) => {
           onValueChange={(styleId) => void setDefaultStyle(styleId)}
           aria-label="Default cleanup style"
         >
-          <StyleChoiceCard
+          <ChoiceRow
             value="default"
             title="Default cleanup"
             description="Filler words removed, grammar fixed, your words kept."
-selected={effectiveDefault === 'default'}
-            onSetDefault={() => setDefaultStyle('default')}
-            claimable={false}
-            claiming={false}
-            onClaim={() => {}}
+            selected={effectiveDefault === 'default'}
+            rowClassName="style-card"
+            unclaimedClassName="style-card-unclaimed"
+            defaultBadgeClassName="style-default-badge"
+            unclaimedBadgeClassName="style-unclaimed-badge"
+            unclaimedNoteClassName="style-unclaimed-note"
+            selectAriaLabel="Set Default cleanup as default style"
           />
           {customs.map((style) => (
-            <StyleChoiceCard
+            <ChoiceRow
               key={style.id}
               value={style.id}
               title={style.name}
               description={style.hint}
               selected={effectiveDefault === style.id}
+              rowClassName="style-card"
+              unclaimedClassName="style-card-unclaimed"
+              defaultBadgeClassName="style-default-badge"
+              unclaimedBadgeClassName="style-unclaimed-badge"
+              unclaimedNoteClassName="style-unclaimed-note"
+              selectAriaLabel={`Set ${style.name} as default style`}
               claimable={Boolean(style.claimable)}
               claiming={claimingStyleId === style.id}
               onClaim={() => void onClaimStyle(style)}
-              onSetDefault={() => setDefaultStyle(style.id)}
               onEdit={() => openEditStyle(style)}
               onDelete={() => setPendingDelete(style)}
             />
@@ -886,57 +764,29 @@ selected={effectiveDefault === 'default'}
         </DialogContent>
       </Dialog>
 
-      <Dialog
+      <PromptEditorDialog
         open={showEditor}
-        onOpenChange={(open) => {
-          if (!open) setShowEditor(false);
-        }}
-      >
-        <DialogContent aria-label={editing ? 'Edit style' : 'New style'}>
-           <DialogHeader>
-             <DialogTitle>{editing ? 'Edit style' : 'New style'}</DialogTitle>
-             <DialogDescription>
-               {editing
-                 ? 'Update the instructions used when this style is applied.'
-                 : 'Create reusable instructions for how Fluence should clean up text.'}
-             </DialogDescription>
-           </DialogHeader>
-          <Field label="Name (max 30 characters)" htmlFor="style-name-input">
-            <Input
-              id="style-name-input"
-              value={styleName}
-              maxLength={30}
-              placeholder="Translator"
-              onChange={(e) => setStyleName(e.target.value)}
-            />
-          </Field>
-          <Field
-            label="Instructions (max 1000 characters)"
-            htmlFor="style-hint-input"
-          >
-            <Textarea
-              id="style-hint-input"
-              value={styleHint}
-              maxLength={1000}
-              rows={4}
-              placeholder="Always reply in Hindi, keep it short"
-              onChange={(e) => setStyleHint(e.target.value)}
-            />
-          </Field>
-          <DialogFooter>
-            <Button
-              variant="secondary"
-              onClick={() => setShowEditor(false)}
-              disabled={saving}
-            >
-              Cancel
-            </Button>
-            <Button onClick={() => void onSaveStyle()} disabled={saving}>
-              {saving ? 'Saving…' : 'Save'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+        onOpenChange={setShowEditor}
+        title={editing ? 'Edit style' : 'New style'}
+        description={
+          editing
+            ? 'Update the instructions used when this style is applied.'
+            : 'Create reusable instructions for how Fluence should clean up text.'
+        }
+        ariaLabel={editing ? 'Edit style' : 'New style'}
+        nameId="style-name-input"
+        nameValue={styleName}
+        namePlaceholder="Translator"
+        nameMaxLength={30}
+        onNameChange={setStyleName}
+        instructionsId="style-hint-input"
+        instructionsValue={styleHint}
+        instructionsPlaceholder="Always reply in Hindi, keep it short"
+        instructionsMaxLength={1000}
+        onInstructionsChange={setStyleHint}
+        saving={saving}
+        onSave={() => void onSaveStyle()}
+      />
 
       <ConfirmDialog
         open={pendingRemoveExe !== null}
@@ -957,33 +807,21 @@ selected={effectiveDefault === 'default'}
         }}
       />
 
-      <AlertDialog
+      <ConfirmDialog
         open={pendingDelete !== null}
         onOpenChange={(open) => {
           if (!open) setPendingDelete(null);
         }}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete custom style</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete
-                ? `This action cannot be undone. Delete "${pendingDelete.name}"? App styles using it reset to global.`
-                : 'This action cannot be undone.'}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild>
-              <Button variant="secondary">Cancel</Button>
-            </AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button variant="destructive" onClick={() => void onDeleteStyle()}>
-                Delete
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+        title="Delete custom style"
+        body={
+          pendingDelete
+            ? `This action cannot be undone. Delete "${pendingDelete.name}"? App styles using it reset to global.`
+            : 'This action cannot be undone.'
+        }
+        confirmLabel="Delete"
+        danger
+        onConfirm={() => void onDeleteStyle()}
+      />
     </section>
   );
 }

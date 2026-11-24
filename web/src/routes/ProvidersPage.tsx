@@ -18,13 +18,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { toast } from '@/components/fluence/Toasts';
 import { describeError } from '@/lib/errors';
+import { ApiKeyInput } from '@/components/fluence/ApiKeyInput';
+import { ConnectionStatus, type ConnectionDotKind } from '@/components/fluence/ConnectionStatus';
+import { PageHeader } from '@/components/fluence/PageHeader';
 import {
-  CustomProviderIcon,
   DownloadIcon,
-  GroqIcon,
-  MistralIcon,
-  OfflineProviderIcon,
-  OpenAiIcon,
+  ProviderIcon,
   RefreshIcon,
 } from '@/components/fluence/ProviderIcons';
 import {
@@ -97,24 +96,7 @@ const STT_IDS: Record<string, string> = {
   'Local Offline': 'stt-offline',
 };
 
-function SttIcon({ preset }: { preset: string }) {
-  switch (preset) {
-    case 'groq': return <GroqIcon />;
-    case 'openai': return <OpenAiIcon />;
-    case 'mistral': return <MistralIcon />;
-    case 'Local Offline': return <OfflineProviderIcon />;
-    default: return <CustomProviderIcon />;
-  }
-}
 
-function LlmIcon({ preset }: { preset: string }) {
-  switch (preset) {
-    case 'groq': return <GroqIcon />;
-    case 'openai': return <OpenAiIcon />;
-    case 'mistral': return <MistralIcon />;
-    default: return <CustomProviderIcon />;
-  }
-}
 
 interface LlmSectionProps {
   kind: 'llm' | 'cleaner';
@@ -170,7 +152,7 @@ function LlmProviderSection({
                 data-provider={preset}
                 id={`${idPrefix}-${preset}`}
               >
-                <LlmIcon preset={preset} />
+                <ProviderIcon preset={preset} size={28} />
                 <span className="provider-name">{LLM_NAMES[preset]}</span>
               </button>
             </RadioGroupItem>
@@ -189,36 +171,15 @@ function LlmProviderSection({
               <p className="field-warning">Custom endpoint: prompts, context and bearer credentials may be sent to this server.</p>
             )}
           </Field>
-          <Field
-            label="API Key"
-            htmlFor={`${idPrefix}-api-key`}
+          <ApiKeyInput
+            id={`${idPrefix}-api-key`}
+            value={form.apiKey}
+            saved={form.hasSavedKey}
+            saveButtonId={`${idPrefix}-save-key-btn`}
             hint="Testing uses the key in this field. Select Save Key to store it."
-          >
-            <div className="input-with-btn">
-              <Input
-                type="password"
-                id={`${idPrefix}-api-key`}
-                placeholder="sk-•••••••••••••••"
-                autoComplete="off"
-                value={form.apiKey}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && form.apiKey.trim()) {
-                    e.preventDefault();
-                    void onSaveKey(kind);
-                  }
-                }}
-                onChange={(e) => onKeyInput(kind, e.target.value)}
-              />
-              <Button
-                variant={form.apiKey.trim() ? 'primary' : 'secondary'}
-                id={`${idPrefix}-save-key-btn`}
-                className="provider-save-key"
-                onClick={() => void onSaveKey(kind)}
-              >
-                Save Key
-              </Button>
-            </div>
-          </Field>
+            onChange={(v) => onKeyInput(kind, v)}
+            onSaveKey={() => void onSaveKey(kind)}
+          />
           <Field label="Model" htmlFor={`${idPrefix}-model-select`}>
             <div className="input-with-btn">
               <Select
@@ -261,10 +222,12 @@ function LlmProviderSection({
             >
               Test Connection
             </Button>
-            <div className="connection-status" id={`${idPrefix}-status`} role="status">
-              <div className={status.dot}></div>
-              <span id={`${idPrefix}-status-text`}>{status.text}</span>
-            </div>
+            <ConnectionStatus
+              id={`${idPrefix}-status`}
+              textId={`${idPrefix}-status-text`}
+              kind={status.kind}
+              text={status.text}
+            />
           </div>
         </div>
       </div>
@@ -344,14 +307,15 @@ interface FormState {
   model: string;
   models: string[];
   apiKey: string;
+  hasSavedKey: boolean;
 }
 
 interface ConnStatus {
-  dot: string;
+  kind: ConnectionDotKind;
   text: string;
 }
 
-const IDLE: ConnStatus = { dot: 'dot dot-idle', text: 'Not Tested' };
+const IDLE: ConnStatus = { kind: 'idle', text: 'Not Tested' };
 
 function isAllowedEndpointUrl(raw: string): boolean {
   try {
@@ -386,7 +350,7 @@ function formFromSettings(
     typeof provider?.model === 'string' && provider.model
       ? (provider.model as string)
       : fallbackModel;
-  return { preset, baseUrl, model, models: [model], apiKey: '' };
+  return { preset, baseUrl, model, models: [model], apiKey: '', hasSavedKey: false };
 }
 
 // One tab per model job: dictation (STT), Agent Mode (LLM), AI cleaner
@@ -424,6 +388,7 @@ export function ProvidersPage() {
     model: 'whisper-large-v3',
     models: ['whisper-large-v3'],
     apiKey: '',
+    hasSavedKey: false,
   }));
   const [llm, setLlm] = useState<FormState>(() => ({
     preset: 'groq',
@@ -431,6 +396,7 @@ export function ProvidersPage() {
     model: 'llama-3.3-70b-versatile',
     models: ['llama-3.3-70b-versatile'],
     apiKey: '',
+    hasSavedKey: false,
   }));
   const [cleaner, setCleaner] = useState<FormState>(() => ({
     preset: 'groq',
@@ -438,6 +404,7 @@ export function ProvidersPage() {
     model: 'llama-3.3-70b-versatile',
     models: ['llama-3.3-70b-versatile'],
     apiKey: '',
+    hasSavedKey: false,
   }));
   const [sttStatus, setSttStatus] = useState<ConnStatus>(IDLE);
   const [llmStatus, setLlmStatus] = useState<ConnStatus>(IDLE);
@@ -615,9 +582,15 @@ export function ProvidersPage() {
       if (cancelled) return;
       (async () => {
         for (const kind of ['stt', 'llm', 'cleaner'] as ProviderKind[]) {
+          const reqEpoch = fetchSeq.current[kind];
           const f = forms.current[kind];
           const key = await getApiKey(keyTarget(kind, f.preset)).catch(() => null);
           if (cancelled) return;
+          if (reqEpoch !== fetchSeq.current[kind]) continue;
+          const hasKey = Boolean(key);
+          if (kind === 'stt') setStt((prev) => ({ ...prev, hasSavedKey: hasKey }));
+          else if (kind === 'llm') setLlm((prev) => ({ ...prev, hasSavedKey: hasKey }));
+          else setCleaner((prev) => ({ ...prev, hasSavedKey: hasKey }));
           if (key) void doFetchModels(kind, f, true);
         }
       })();
@@ -748,12 +721,13 @@ export function ProvidersPage() {
     // Invalidate both in-flight model requests and saved-key reads for the
     // provider being left before any async credential lookup can complete.
     fetchSeq.current[kind]++;
+    const seq = fetchSeq.current[kind];
     if (kind === 'stt') setSttFetching(false);
     else if (kind === 'llm') setLlmFetching(false);
     else setCleanerFetching(false);
     const presets = kind === 'stt' ? STT_PRESETS : LLM_PRESETS;
     const f = forms.current[kind];
-    let next = { ...f, preset, apiKey: '' };
+    let next: FormState = { ...f, preset, apiKey: '', hasSavedKey: false };
     if (kind === 'stt' ? preset !== 'custom' && preset !== 'Local Offline' : preset !== 'custom') {
       next = {
         ...next,
@@ -765,9 +739,12 @@ export function ProvidersPage() {
       }
     }
     setForm(kind, next);
-    const hasKey = await getApiKey(keyTarget(kind, preset))
-      .then(() => true)
-      .catch(() => false);
+    const key = await getApiKey(keyTarget(kind, preset)).catch(() => null);
+    if (seq !== fetchSeq.current[kind]) return;
+    const hasKey = Boolean(key);
+    if (kind === 'stt') setStt((prev) => ({ ...prev, hasSavedKey: hasKey }));
+    else if (kind === 'llm') setLlm((prev) => ({ ...prev, hasSavedKey: hasKey }));
+    else setCleaner((prev) => ({ ...prev, hasSavedKey: hasKey }));
     if (hasKey) void doFetchModels(kind, next, true);
   };
 
@@ -788,7 +765,7 @@ export function ProvidersPage() {
     }
     try {
       await saveApiKey(keyTarget(kind, f.preset), key);
-      setForm(kind, { ...f, apiKey: '' });
+      setForm(kind, { ...f, apiKey: '', hasSavedKey: true });
       toast(`${f.preset} API key saved securely`, 'success');
     } catch (err) {
       toast('Could not save the key. ' + describeError(err), 'error');
@@ -802,31 +779,31 @@ export function ProvidersPage() {
       kind === 'stt' ? setSttStatus : kind === 'llm' ? setLlmStatus : setCleanerStatus;
     if (kind === 'stt' && f.preset === 'Local Offline') {
       setStatus({
-        dot: 'dot dot-idle',
+        kind: 'idle',
         text: 'Offline transcription runs locally. No connection test is needed.',
       });
       return;
     }
     if (!isAllowedEndpointUrl(baseUrl)) {
-      setStatus({ dot: 'dot dot-error', text: 'Use https:// (http only for localhost).' });
+      setStatus({ kind: 'error', text: 'Use https:// (http only for localhost).' });
       return;
     }
     // Test what the user is looking at: the typed key wins, and the saved key
     // is only a fallback when the field is empty.
     const apiKey = f.apiKey.trim() || (await getApiKey(keyTarget(kind, f.preset)).catch(() => ''));
     if (!apiKey) {
-      setStatus({ dot: 'dot dot-error', text: 'Enter an API key, or save one first.' });
+      setStatus({ kind: 'error', text: 'Enter an API key, or save one first.' });
       return;
     }
-    setStatus({ dot: 'dot dot-idle', text: 'Testing…' });
+    setStatus({ kind: 'idle', text: 'Testing…' });
     try {
       const msg =
         kind === 'stt'
           ? await testSttConnection(baseUrl, apiKey)
           : await testLlmConnection(baseUrl, apiKey, f.model);
-      setStatus({ dot: 'dot dot-success', text: msg });
+      setStatus({ kind: 'success', text: msg });
     } catch (err) {
-      setStatus({ dot: 'dot dot-error', text: describeError(err) });
+      setStatus({ kind: 'error', text: describeError(err) });
     }
   };
 
@@ -838,7 +815,7 @@ export function ProvidersPage() {
       if (!typedKey) continue;
       try {
         await saveApiKey(keyTarget(kind, f.preset), typedKey);
-        setForm(kind, { ...f, apiKey: '' });
+        setForm(kind, { ...f, apiKey: '', hasSavedKey: true });
       } catch (err) {
         toast(`Could not save ${f.preset} API key. ` + describeError(err), 'error');
         return;
@@ -900,10 +877,10 @@ export function ProvidersPage() {
 
   return (
     <section className="page active" id="page-providers">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Providers</h1>
-        <p className="page-subtitle">Configure dictation, agent mode, and AI cleanup</p>
-      </div>
+      <PageHeader
+        title="Providers"
+        subtitle="Configure dictation, agent mode, and AI cleanup"
+      />
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as ProvidersTab)}>
         <TabsList aria-label="Provider area">
@@ -933,7 +910,7 @@ export function ProvidersPage() {
                 data-provider={preset}
                 id={STT_IDS[preset]}
               >
-                <SttIcon preset={preset} />
+                <ProviderIcon preset={preset} size={28} />
                 <span className="provider-name">{STT_NAMES[preset]}</span>
               </button>
             </RadioGroupItem>
@@ -953,36 +930,15 @@ export function ProvidersPage() {
                 <p className="field-warning">Custom endpoint: audio, transcripts, vocabulary and bearer credentials may be sent to this server.</p>
               )}
             </Field>
-            <Field
-              label="API Key"
-              htmlFor="stt-api-key"
+            <ApiKeyInput
+              id="stt-api-key"
+              value={stt.apiKey}
+              saved={stt.hasSavedKey}
+              saveButtonId="stt-save-key-btn"
               hint="Testing uses the key in this field. Select Save Key to store it."
-            >
-              <div className="input-with-btn">
-                <Input
-                  type="password"
-                  id="stt-api-key"
-                  placeholder="sk-•••••••••••••••"
-                  autoComplete="off"
-                  value={stt.apiKey}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' && stt.apiKey.trim()) {
-                      e.preventDefault();
-                      void onSaveKey('stt');
-                    }
-                  }}
-                  onChange={(e) => onKeyInput('stt', e.target.value)}
-                />
-                <Button
-                  variant={stt.apiKey.trim() ? 'primary' : 'secondary'}
-                  id="stt-save-key-btn"
-                  className="provider-save-key"
-                  onClick={() => void onSaveKey('stt')}
-                >
-                  Save Key
-                </Button>
-              </div>
-            </Field>
+              onChange={(v) => onKeyInput('stt', v)}
+              onSaveKey={() => void onSaveKey('stt')}
+            />
             <Field label="Model" htmlFor="stt-model-select">
               <div className="input-with-btn">
                 <Select
@@ -1025,10 +981,12 @@ export function ProvidersPage() {
               >
                 Test Connection
               </Button>
-              <div className="connection-status" id="stt-status" role="status">
-                <div className={sttStatus.dot}></div>
-                <span id="stt-status-text">{sttStatus.text}</span>
-              </div>
+              <ConnectionStatus
+                id="stt-status"
+                textId="stt-status-text"
+                kind={sttStatus.kind}
+                text={sttStatus.text}
+              />
             </div>
           </div>
 

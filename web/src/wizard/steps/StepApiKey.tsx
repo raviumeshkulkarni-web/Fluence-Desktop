@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
+import { ApiKeyInput } from '@/components/fluence/ApiKeyInput';
+import { ConnectionStatus } from '@/components/fluence/ConnectionStatus';
+import { ProviderIcon } from '@/components/fluence/ProviderIcons';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Field } from '@/components/ui/field';
@@ -336,7 +339,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
             {PROVIDERS.map((p) => (
               <RadioGroupItem key={p} value={p} asChild>
                 <button type="button" data-provider={p} className="choice-surface provider-card">
-                  <ProviderIcon preset={p} />
+                  <ProviderIcon preset={p} size={24} className="provider-icon" />
                   <span className="provider-name">{p === 'Local Offline' ? 'Local Offline' : p[0].toUpperCase() + p.slice(1)}</span>
                 </button>
               </RadioGroupItem>
@@ -381,8 +384,8 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                     className={`choice-surface wizard-offline-engine-card${data.offlineEngine === 'sensevoice' ? ' active' : ''}`}
                   >
                     <div className="wizard-offline-engine-info">
-                      <span className="wizard-offline-engine-title">Multilingual (EN / ZH / JA / KO)</span>
-                      <span className="wizard-offline-engine-desc">~263 MB · Broad language coverage</span>
+                      <span className="wizard-offline-engine-title">Fast (Multilingual)</span>
+                      <span className="wizard-offline-engine-desc">~239 MB · EN / ZH / JA / KO on-device model</span>
                     </div>
                   </button>
                 </RadioGroupItem>
@@ -422,7 +425,7 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
                   onClick={() => void onStartDownload()}
                   style={{ width: '100%', padding: '12px 16px' }}
                 >
-                  Download Model ({data.offlineEngine === 'sensevoice' ? '~263 MB' : '~142 MB'})
+                  Download Model ({data.offlineEngine === 'sensevoice' ? '~239 MB' : '~142 MB'})
                 </Button>
                 <div style={{ textAlign: 'center' }}>
                   <button
@@ -438,26 +441,20 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
           </div>
         ) : (
         <>
-        <Field label="API Key" htmlFor="wiz-api-key" error={error ?? undefined}>
-          <div className="input-with-btn">
-            <Input
-              id="wiz-api-key"
-              type="password"
-              placeholder="gsk_••••••••••••••••"
-              autoComplete="off"
-              value={data.apiKey}
-              onChange={(e) => {
-                onPatch({ apiKey: e.target.value });
-                onError(null);
-                window.clearTimeout(fetchTimer.current);
-                const v = e.target.value;
-                fetchTimer.current = window.setTimeout(() => {
-                  void doFetchModels(dataRef.current.baseUrl, v);
-                }, 800);
-              }}
-            />
-          </div>
-        </Field>
+        <ApiKeyInput
+          id="wiz-api-key"
+          placeholder="gsk_••••••••••••••••"
+          value={data.apiKey}
+          error={error ?? undefined}
+          onChange={(v) => {
+            onPatch({ apiKey: v });
+            onError(null);
+            window.clearTimeout(fetchTimer.current);
+            fetchTimer.current = window.setTimeout(() => {
+              void doFetchModels(dataRef.current.baseUrl, v);
+            }, 800);
+          }}
+        />
         <label className="wizard-check-row" htmlFor="wiz-use-agent-key">
           <Checkbox
             id="wiz-use-agent-key"
@@ -541,12 +538,10 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
           <Button variant="secondary" style={{ padding: '8px 16px' }} onClick={() => void onTest()}>
             Test Connection
           </Button>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} role="status">
-            <div className={`dot dot-${test.kind === 'testing' ? 'idle' : test.kind === 'ok' ? 'success' : test.kind === 'err' ? 'error' : 'idle'}`} />
-            <span style={{ fontSize: 'var(--text-label-lg)', color: 'var(--color-on-surface-variant)' }}>
-              {test.text}
-            </span>
-          </div>
+          <ConnectionStatus
+            kind={test.kind === 'ok' ? 'success' : test.kind === 'err' ? 'error' : 'idle'}
+            text={test.text}
+          />
         </div>
         <div style={{ marginTop: -4 }}>
           <button
@@ -561,52 +556,5 @@ export function StepApiKey({ data, onPatch, error, onError, onAdvance }: StepApi
         )}
       </div>
     </>
-  );
-}
-
-function ProviderIcon({ preset }: { preset: string }) {
-  if (preset === 'groq') {
-    return (
-      <svg className="provider-icon groq-icon" width="24" height="24" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect width="100" height="100" rx="16" fill="#F55036" />
-        <path d="M53 20 C 37 20 28 30 28 45 C 28 60 37 70 53 70 C 58 70 63 68 67 65 L 67 71 C 67 82 59 90 47 90 C 40 90 35 87 31 81 L 22 88 C 28 97 37 100 47 100 C 65 100 78 88 78 71 L 78 22 L 67 22 L 67 27 C 63 23 58 20 53 20 Z M 53 60 C 44 60 39 53 39 45 C 39 37 44 30 53 30 C 62 30 67 37 67 45 C 67 53 62 60 53 60 Z" fill="#fff" />
-      </svg>
-    );
-  }
-  if (preset === 'openai') {
-    return (
-      <svg className="provider-icon openai-icon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.9 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.772-4.206 5.99 5.99 0 0 0 3.997-2.9 6.056 6.056 0 0 0-.747-7.073zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.896zm16.597 3.855l-5.843-3.372 2.02-1.163a.076.076 0 0 1 .071 0l4.83 2.786a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.402-.678zm2.01-3.023l-.141-.085-4.774-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135l-2.02-1.164a.08.08 0 0 1-.038-.057V6.075a4.5 4.5 0 0 1 7.375-3.453l-.142.08L8.704 5.46a.795.795 0 0 0-.393.681zm1.097-2.365l2.602-1.5 2.607 1.5v2.999l-2.597 1.5-2.607-1.5z" />
-      </svg>
-    );
-  }
-  if (preset === 'mistral') {
-    return (
-      <svg className="provider-icon mistral-icon" width="24" height="24" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-        <rect x="0" y="0" width="10" height="10" fill="#FCD34D" />
-        <rect x="40" y="0" width="10" height="10" fill="#FCD34D" />
-        <rect x="0" y="10" width="10" height="10" fill="#F59E0B" />
-        <rect x="40" y="10" width="10" height="10" fill="#F59E0B" />
-        <rect x="0" y="20" width="50" height="10" fill="#F97316" />
-        <rect x="0" y="30" width="10" height="10" fill="#EA580C" />
-        <rect x="20" y="30" width="10" height="10" fill="#EA580C" />
-        <rect x="40" y="30" width="10" height="10" fill="#EA580C" />
-        <rect x="0" y="40" width="20" height="10" fill="#DC2626" />
-        <rect x="30" y="40" width="20" height="10" fill="#DC2626" />
-      </svg>
-    );
-  }
-  if (preset === 'custom') {
-    return (
-      <svg className="provider-icon custom-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-        <circle cx="12" cy="12" r="3" />
-        <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
-      </svg>
-    );
-  }
-  return (
-    <svg className="provider-icon offline-icon" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
-      <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" />
-    </svg>
   );
 }

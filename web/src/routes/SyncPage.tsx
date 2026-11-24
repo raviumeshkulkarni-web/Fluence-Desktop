@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
+import { Card, CardContent } from '@/components/ui/card';
 import { Switch } from '@/components/ui/switch';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { SettingRow } from '@/components/fluence/SettingRow';
 import { toast } from '@/components/fluence/Toasts';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
 import { describeSignInError } from '@/lib/signinError';
@@ -167,52 +169,51 @@ export function SyncPage() {
 
   return (
     <section className="page active" id="page-sync">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>Sync</h1>
-        <p className="page-subtitle">
-          Back up your dictionary, snippets, usage stats, and preferences to your private Google Drive app storage. Transcripts and history never leave this device.
-        </p>
-      </div>
+      <PageHeader
+        title="Sync"
+        subtitle="Back up your dictionary, snippets, usage stats, and preferences to your private Google Drive app storage. Transcripts and history never leave this device."
+      />
 
       <SettingsSectionHeader
         title="Cloud Sync"
         description="Configure automatic synchronization with your Google Drive"
       />
-      <div className="settings-card">
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Enable Background Sync</div>
-            <div className="setting-desc">Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder.</div>
-          </div>
-          <div className="setting-control">
-            <Field>
-              <Switch
-                id="sync-enabled-cb"
-                aria-label="Enable background sync"
-                checked={enabled}
-                onCheckedChange={(v) => void onToggle(v)}
-              />
-            </Field>
-          </div>
-        </div>
-      </div>
+      <Card className="settings-card">
+        <CardContent className="settings-card-content">
+          <SettingRow
+            label="Enable Background Sync"
+            htmlFor="sync-enabled-cb"
+            description="Automatically syncs every 15 minutes while signed in. Your data stays private to your account in your personal Drive folder."
+          >
+            <Switch
+              id="sync-enabled-cb"
+              aria-label="Enable background sync"
+              checked={enabled}
+              onCheckedChange={(v) => void onToggle(v)}
+            />
+          </SettingRow>
+        </CardContent>
+      </Card>
 
       <SettingsSectionHeader
         title="Account"
         description="Manage your connected cloud account and sync status"
       />
-      <div className="settings-card">
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label" id="sync-account-label">{accountBlock.label}</div>
-            <div className="setting-desc" id="sync-account-desc">{accountBlock.desc}</div>
-            {showSignInError && (
-              <div id="sync-signin-error" role="alert" className="field-error sync-signin-error">
-                {syncErr(s.last_error)}
-              </div>
-            )}
-          </div>
-          <div className="setting-control">
+      <Card className="settings-card">
+        <CardContent className="settings-card-content">
+          <SettingRow
+            label={accountBlock.label}
+            labelId="sync-account-label"
+            description={accountBlock.desc}
+            descriptionId="sync-account-desc"
+            extraInfo={
+              showSignInError ? (
+                <div id="sync-signin-error" role="alert" className="field-error sync-signin-error">
+                  {syncErr(s.last_error)}
+                </div>
+              ) : null
+            }
+          >
             {accountBlock.signInVisible && (
               <Button
                 variant="default"
@@ -229,14 +230,14 @@ export function SyncPage() {
                 Sign Out
               </Button>
             )}
-          </div>
-        </div>
-        <div className="setting-row">
-          <div className="setting-info">
-            <div className="setting-label">Sync Status</div>
-            <div className="setting-desc" id="sync-status-desc" role="status" aria-live="polite">{statusText}</div>
-          </div>
-          <div className="setting-control">
+          </SettingRow>
+          <SettingRow
+            label="Sync Status"
+            description={statusText}
+            descriptionId="sync-status-desc"
+            descriptionRole="status"
+            descriptionAriaLive="polite"
+          >
             <Button
               variant="ghost"
               size="sm"
@@ -246,9 +247,9 @@ export function SyncPage() {
             >
               Sync Now
             </Button>
-          </div>
-        </div>
-      </div>
+          </SettingRow>
+        </CardContent>
+      </Card>
     </section>
   );
 }
@@ -257,7 +258,7 @@ export function SyncPage() {
 /** F4 Success-with-warning: a degraded pass converged, so the stamp stands
  *  and the suffix is a warning — never an error rendering. */
 function syncSuffix(s: SyncStatus): string {
-  if (s.degraded) return ' · Partial sync — some items were skipped';
+  if (s.degraded) return ' · Partial sync: some items were skipped';
   const err = syncErr(s.last_error);
   return err ? ` · ${err}` : '';
 }

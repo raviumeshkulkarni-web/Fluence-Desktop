@@ -2,16 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from '@/components/ui/alert-dialog';
+import { ConfirmDialog } from '@/components/ui/dialog';
 import { listenEvent } from '@/ipc/tauri';
 import { keyTarget } from '@/ipc/providers';
 import { describeError } from '@/lib/errors';
@@ -365,10 +356,7 @@ export function Wizard() {
           {step < TOTAL_STEPS && (
             <Button
               id="next-btn"
-              style={{
-                minWidth: 120,
-                boxShadow: nextGlow ? '0 0 0 3px rgba(255,100,100,0.4)' : undefined,
-              }}
+              className={nextGlow ? 'wizard-next-btn is-error-flash' : 'wizard-next-btn'}
               onClick={() => void validateAndNext()}
             >
               {nextLabel(step)}
@@ -376,33 +364,18 @@ export function Wizard() {
           )}
         </div>
       </div>
-      <AlertDialog open={closeConfirm} onOpenChange={setCloseConfirm}>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Skip setup?</AlertDialogTitle>
-            <AlertDialogDescription>
-              Your choices so far are not saved. Fluence keeps running in the
-              system tray and will show this setup again next time you start it.
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel asChild>
-              <Button variant="secondary">Keep Setting Up</Button>
-            </AlertDialogCancel>
-            <AlertDialogAction asChild>
-              <Button
-                variant="destructive"
-                onClick={() => {
-                  void cancelOfflineDownload().catch(() => undefined);
-                  void closeWizard();
-                }}
-              >
-                Skip Setup
-              </Button>
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        open={closeConfirm}
+        onOpenChange={setCloseConfirm}
+        title="Skip setup?"
+        body="Your choices so far are not saved. Fluence keeps running in the system tray and will show this setup again next time you start it."
+        confirmLabel="Skip Setup"
+        danger
+        onConfirm={() => {
+          void cancelOfflineDownload().catch(() => undefined);
+          void closeWizard();
+        }}
+      />
     </div>
     </TooltipProvider>
   );

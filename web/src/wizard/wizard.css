@@ -1419,3 +1419,46 @@ body {
     animation: none;
   }
 }
+
+.wizard-next-btn {
+  min-width: 120px;
+}
+
+.wizard-next-btn.is-error-flash {
+  box-shadow: 0 0 0 3px var(--color-error-container);
+  border-color: var(--color-error);
+}
+
+.api-key-input-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+}
+
+.api-key-input-wrap .api-key-input {
+  padding-right: 38px;
+}
+
+.api-key-reveal-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-xs);
+  color: var(--color-on-surface-variant);
+}
+
+.api-key-reveal-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+}
+

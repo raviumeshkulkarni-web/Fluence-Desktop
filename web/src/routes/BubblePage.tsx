@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
+import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
   Select,
@@ -12,6 +12,8 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { SettingRow } from '@/components/fluence/SettingRow';
 import { toast } from '@/components/fluence/Toasts';
 import { describeError } from '@/lib/errors';
 import { SettingsSectionHeader } from '@/components/fluence/SettingsSection';
@@ -156,12 +158,10 @@ export function BubblePage() {
 
   return (
     <section className="page active" id="page-bubble">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>
-          Floating Bubble
-        </h1>
-        <p className="page-subtitle">Preview each style live, then set the appearance and placement</p>
-      </div>
+      <PageHeader
+        title="Floating Bubble"
+        subtitle="Preview each style live, then set the appearance and placement"
+      />
 
       <Tabs className="page-tabs" value={tab} onValueChange={(v) => setTab(v as BubbleTab)}>
         <TabsList aria-label="Floating bubble area">
@@ -169,156 +169,159 @@ export function BubblePage() {
           <TabsTrigger value="appearance">Appearance</TabsTrigger>
         </TabsList>
 
-      <TabsContent value="style">
-        <SettingsSectionHeader
-          title="Overlay Style"
-          description="Choose the floating recording indicator that appears on screen"
-        />
-        <div className="settings-card">
-          <RadioGroup
-            className="bubble-option-list"
-            value={overlayStyle}
-            onValueChange={onStyleChange}
-            aria-label="Overlay style"
-          >
-            {STYLE_OPTIONS.map((option) => {
-              const selected = overlayStyle === option.value;
-              return (
-                <div
-                  key={option.value}
-                  className={`choice-surface selection-row bubble-option${selected ? ' selected' : ''}`}
-                  onClick={() => onStyleChange(option.value)}
-                >
-                  <RadioGroupItem value={option.value} asChild>
-                    <button
-                      type="button"
-                      className="selection-row-main"
-                      aria-label={`Select ${option.title}`}
+        <TabsContent value="style">
+          <SettingsSectionHeader
+            title="Overlay Style"
+            description="Choose the floating recording indicator that appears on screen"
+          />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <RadioGroup
+                className="bubble-option-list"
+                value={overlayStyle}
+                onValueChange={onStyleChange}
+                aria-label="Overlay style"
+              >
+                {STYLE_OPTIONS.map((option) => {
+                  const selected = overlayStyle === option.value;
+                  return (
+                    <div
+                      key={option.value}
+                      className={`choice-surface selection-row bubble-option${selected ? ' selected' : ''}`}
+                      onClick={(e) => {
+                        if ((e.target as Element).closest('button')) return;
+                        onStyleChange(option.value);
+                      }}
                     >
-                      <span className="selection-radio" aria-hidden="true" />
-                      <span className="selection-row-copy">
-                        <span className="selection-row-heading">
-                          <span className="selection-row-title">{option.title}</span>
-                        </span>
-                        <span className="selection-row-description">{option.desc}</span>
-                      </span>
-                    </button>
-                  </RadioGroupItem>
-                  <div className="bubble-live-stage" onClick={(e) => e.stopPropagation()}>
-                    <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} waveformStyle={waveformStyle} />
-                  </div>
-                </div>
-              );
-            })}
-          </RadioGroup>
-        </div>
-        <div className="bubble-legend">
-          <span className="bubble-legend-item">
-            <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-            Transcription mode
-          </span>
-          <span className="bubble-legend-item">
-            <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-            Agent mode
-          </span>
-        </div>
-      </TabsContent>
+                      <RadioGroupItem value={option.value} asChild>
+                        <button
+                          type="button"
+                          className="selection-row-main"
+                          aria-label={`Select ${option.title}`}
+                        >
+                          <span className="selection-radio" aria-hidden="true" />
+                          <span className="selection-row-copy">
+                            <span className="selection-row-heading">
+                              <span className="selection-row-title">{option.title}</span>
+                            </span>
+                            <span className="selection-row-description">{option.desc}</span>
+                          </span>
+                        </button>
+                      </RadioGroupItem>
+                      <div className="bubble-live-stage" onClick={(e) => e.stopPropagation()}>
+                        <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} waveformStyle={waveformStyle} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </RadioGroup>
+            </CardContent>
+          </Card>
+          <div className="bubble-legend">
+            <span className="bubble-legend-item">
+              <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
+              Transcription mode
+            </span>
+            <span className="bubble-legend-item">
+              <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
+              Agent mode
+            </span>
+          </div>
+        </TabsContent>
 
-      <TabsContent value="appearance">
-        <SettingsSectionHeader
-          title="Appearance"
-          description="Visual indicators and glow effects for dictation"
-        />
-        <div className="settings-card">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Halo Glow</div>
-              <div className="setting-desc">Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+        <TabsContent value="appearance">
+          <SettingsSectionHeader
+            title="Appearance"
+            description="Visual indicators and glow effects for dictation"
+          />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Halo Glow"
+                htmlFor="bubble-glow-cb"
+                description="Adds a soft glow around the overlay. Purple while you dictate, teal in Agent mode"
+              >
                 <Switch
                   id="bubble-glow-cb"
                   aria-label="Overlay halo glow"
                   checked={overlayGlow}
                   onCheckedChange={onGlowChange}
                 />
-              </Field>
-            </div>
-          </div>
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">App Pill</div>
-              <div className="setting-desc">Shows the name and icon of the app you are dictating into</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+              </SettingRow>
+              <SettingRow
+                label="App Pill"
+                htmlFor="bubble-app-pill-cb"
+                description="Shows the name and icon of the app you are dictating into"
+              >
                 <Switch
                   id="bubble-app-pill-cb"
                   aria-label="Foreground app pill"
                   checked={showAppPill}
                   onCheckedChange={onAppPillChange}
                 />
-              </Field>
-            </div>
-          </div>
-        </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
 
-        <SettingsSectionHeader
-          title="Waveform Animation"
-          description="The shape of the live recording meter. The selected style animates"
-        />
-        <div className="settings-card">
-          <RadioGroup
-            className="bubble-option-list"
-            value={waveformStyle}
-            onValueChange={onWaveformChange}
-            aria-label="Waveform animation"
-          >
-            {WAVEFORM_STYLE_OPTIONS.map((option) => {
-              const selected = waveformStyle === option.value;
-              return (
-                <div
-                  key={option.value}
-                  className={`choice-surface selection-row bubble-option wave-option${selected ? ' selected' : ''}`}
-                  onClick={() => onWaveformChange(option.value)}
-                >
-                  <RadioGroupItem value={option.value} asChild>
-                    <button
-                      type="button"
-                      className="selection-row-main"
-                      aria-label={`Select ${option.title}`}
+          <SettingsSectionHeader
+            title="Waveform Animation"
+            description="The shape of the live recording meter. The selected style animates"
+          />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <RadioGroup
+                className="bubble-option-list"
+                value={waveformStyle}
+                onValueChange={onWaveformChange}
+                aria-label="Waveform animation"
+              >
+                {WAVEFORM_STYLE_OPTIONS.map((option) => {
+                  const selected = waveformStyle === option.value;
+                  return (
+                    <div
+                      key={option.value}
+                      className={`choice-surface selection-row bubble-option wave-option${selected ? ' selected' : ''}`}
+                      onClick={(e) => {
+                        if ((e.target as Element).closest('button')) return;
+                        onWaveformChange(option.value);
+                      }}
                     >
-                      <span className="selection-radio" aria-hidden="true" />
-                      <span className="selection-row-copy">
-                        <span className="selection-row-heading">
-                          <span className="selection-row-title">{option.title}</span>
-                        </span>
-                        <span className="selection-row-description">{option.desc}</span>
-                      </span>
-                    </button>
-                  </RadioGroupItem>
-                  <div className="bubble-live-stage wave-live-stage" onClick={(e) => e.stopPropagation()}>
-                    <WaveformStage style={option.value} animate={selected} />
-                  </div>
-                </div>
-              );
-            })}
-          </RadioGroup>
-        </div>
+                      <RadioGroupItem value={option.value} asChild>
+                        <button
+                          type="button"
+                          className="selection-row-main"
+                          aria-label={`Select ${option.title}`}
+                        >
+                          <span className="selection-radio" aria-hidden="true" />
+                          <span className="selection-row-copy">
+                            <span className="selection-row-heading">
+                              <span className="selection-row-title">{option.title}</span>
+                            </span>
+                            <span className="selection-row-description">{option.desc}</span>
+                          </span>
+                        </button>
+                      </RadioGroupItem>
+                      <div className="bubble-live-stage wave-live-stage" onClick={(e) => e.stopPropagation()}>
+                        <WaveformStage style={option.value} animate={selected} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </RadioGroup>
+            </CardContent>
+          </Card>
 
-        <SettingsSectionHeader
-          title="Placement"
-          description="Where the floating overlay appears on screen during recording"
-        />
-        <div className="settings-card">
-          <div className="setting-row">
-            <div className="setting-info">
-              <div className="setting-label">Overlay Position</div>
-              <div className="setting-desc">Where the floating overlay appears on screen during recording</div>
-            </div>
-            <div className="setting-control">
-              <Field>
+          <SettingsSectionHeader
+            title="Placement"
+            description="Where the floating overlay appears on screen during recording"
+          />
+          <Card className="settings-card">
+            <CardContent className="settings-card-content">
+              <SettingRow
+                label="Overlay Position"
+                htmlFor="bubble-position-select"
+                description="Where the floating overlay appears on screen during recording"
+              >
                 <Select value={overlayPosition} onValueChange={onPositionChange}>
                   <SelectTrigger id="bubble-position-select" className="select-md" aria-label="Overlay position">
                     <SelectValue />
@@ -334,22 +337,21 @@ export function BubblePage() {
                     </SelectGroup>
                   </SelectContent>
                 </Select>
-              </Field>
-            </div>
-          </div>
-        </div>
+              </SettingRow>
+            </CardContent>
+          </Card>
 
-        <div className="bubble-legend">
-          <span className="bubble-legend-item">
-            <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-            Transcription mode
-          </span>
-          <span className="bubble-legend-item">
-            <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-            Agent mode
-          </span>
-        </div>
-      </TabsContent>
+          <div className="bubble-legend">
+            <span className="bubble-legend-item">
+              <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
+              Transcription mode
+            </span>
+            <span className="bubble-legend-item">
+              <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
+              Agent mode
+            </span>
+          </div>
+        </TabsContent>
       </Tabs>
 
       <div className="page-actions">

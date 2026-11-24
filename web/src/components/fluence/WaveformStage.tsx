@@ -1,5 +1,5 @@
 import { useEffect, useRef } from 'react';
-import { drawWaveformFrame, type WaveformStyle } from './waveform';
+import { drawWaveformFrame, type PreviewMode, type WaveformStyle } from './waveform';
 
 // One live waveform meter for the picker rows, running the mirrored
 // production paints (waveform.ts). Motion budget rule: only the SELECTED
@@ -10,9 +10,11 @@ import { drawWaveformFrame, type WaveformStyle } from './waveform';
 export function WaveformStage({
   style,
   animate,
+  mode = 'transcribe',
 }: {
   style: WaveformStyle;
   animate: boolean;
+  mode?: PreviewMode;
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
@@ -42,7 +44,7 @@ export function WaveformStage({
       // Same phase integrator as the production _loop (speed follows the
       // meter), so hooks like the orb's speak-quicker breathing carry over.
       phase = (phase + (0.48 + level * 0.82) * dt * 2 * Math.PI) % (1000 * Math.PI);
-      drawWaveformFrame(canvas, style, phase, level);
+      drawWaveformFrame(canvas, style, phase, level, 'full', mode);
     };
 
     const stopAndFreeze = (): void => {
@@ -50,7 +52,7 @@ export function WaveformStage({
       raf = 0;
       lastTime = null;
       phase = 0.6;
-      drawWaveformFrame(canvas, style, 0.6, 0.35);
+      drawWaveformFrame(canvas, style, 0.6, 0.35, 'full', mode);
     };
 
     if (animate && !motionQuery.matches) {
@@ -71,7 +73,7 @@ export function WaveformStage({
       raf = 0;
       motionQuery.removeEventListener?.('change', onMotionChange);
     };
-  }, [style, animate]);
+  }, [style, animate, mode]);
 
   return (
     <canvas

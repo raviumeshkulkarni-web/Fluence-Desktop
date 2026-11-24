@@ -3,6 +3,7 @@
 // starting the overlay's animation loop. Keep the production shapes in sync.
 
 export type WaveformStyle = 'waves' | 'bars';
+export type PreviewMode = 'transcribe' | 'agent';
 
 // Same fallback contract as AuraVisualizer.setStyle: unknown or missing
 // values normalize back to "waves", so a hand-edited settings file can
@@ -16,10 +17,10 @@ export const WAVEFORM_STYLE_OPTIONS: { value: WaveformStyle; title: string; desc
   { value: 'bars', title: 'Amp Bars', desc: 'Equalizer bars that track how loud you speak' },
 ];
 
-// Full-tier factors, mirrored from _styleFactors (audio-viz.js) with the
-// transcription-mode paints (preview never shows agent cyan).
-const PRIMARY = '#8B45D8';
-const FOREFRONT = '#F1EAF5';
+const MODE_COLORS: Record<PreviewMode, { primary: string; forefront: string }> = {
+  transcribe: { primary: '#8B45D8', forefront: '#F1EAF5' },
+  agent: { primary: '#0BD6E3', forefront: '#E6FBFC' },
+};
 
 function hexAlpha(hex: string, alpha: number): string {
   const r = parseInt(hex.slice(1, 3), 16);
@@ -38,7 +39,9 @@ export function drawWaveformFrame(
   phase: number,
   level: number,
   tier: 'full' | 'compact' | 'bubble' = 'full',
+  mode: PreviewMode = 'transcribe',
 ): void {
+  const { primary: PRIMARY, forefront: FOREFRONT } = MODE_COLORS[mode] ?? MODE_COLORS.transcribe;
   const dpr = window.devicePixelRatio || 1;
   const cssW = canvas.offsetWidth;
   const cssH = canvas.offsetHeight;

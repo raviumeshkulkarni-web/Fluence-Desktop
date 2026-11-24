@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -22,6 +21,7 @@ import { WaveformStage } from '@/components/fluence/WaveformStage';
 import {
   WAVEFORM_STYLE_OPTIONS,
   normalizeWaveformStyle,
+  type PreviewMode,
   type WaveformStyle,
 } from '@/components/fluence/waveform';
 import {
@@ -44,6 +44,38 @@ function str(value: unknown, fallback: string): string {
   return typeof value === 'string' && value ? value : fallback;
 }
 
+function PreviewModeToggle({
+  mode,
+  onChange,
+}: {
+  mode: PreviewMode;
+  onChange: (next: PreviewMode) => void;
+}) {
+  return (
+    <div className="bubble-legend" role="group" aria-label="Preview mode">
+      <span className="bubble-legend-prefix">Preview:</span>
+      <button
+        type="button"
+        className={`bubble-legend-btn${mode === 'transcribe' ? ' is-active' : ''}`}
+        aria-pressed={mode === 'transcribe'}
+        onClick={() => onChange('transcribe')}
+      >
+        <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
+        Transcription mode
+      </button>
+      <button
+        type="button"
+        className={`bubble-legend-btn${mode === 'agent' ? ' is-active' : ''}`}
+        aria-pressed={mode === 'agent'}
+        onClick={() => onChange('agent')}
+      >
+        <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
+        Agent mode
+      </button>
+    </div>
+  );
+}
+
 // Dedicated Floating Bubble studio — Android BubbleSettingsScreen parity,
 // rebuilt on the frozen Windows tokens.
 // Each style row shows a LIVE preview running the exact production code:
@@ -61,6 +93,7 @@ export function BubblePage() {
   // Waveform animation pick: default boots to the shipped look even before
   // settings arrive, so the row list never flashes the wrong frame.
   const [waveformStyle, setWaveformStyle] = useState<WaveformStyle>('waves');
+  const [previewMode, setPreviewMode] = useState<PreviewMode>('transcribe');
 
   // Style picks the overlay; Appearance tunes how it looks and where it
   // sits. Placement lives with appearance (a one-row tab of its own would
@@ -146,16 +179,6 @@ export function BubblePage() {
     }
   };
 
-  const onSaveAll = async () => {
-    try {
-      await saveSettingsNow();
-    } catch (err) {
-      toast('Could not save settings. ' + describeError(err), 'error');
-      return;
-    }
-    toast('Settings saved', 'success');
-  };
-
   return (
     <section className="page active" id="page-bubble">
       <PageHeader
@@ -209,7 +232,7 @@ export function BubblePage() {
                         </button>
                       </RadioGroupItem>
                       <div className="bubble-live-stage" onClick={(e) => e.stopPropagation()}>
-                        <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} waveformStyle={waveformStyle} />
+                        <OverlayPreview tier={option.value} glowOn={overlayGlow} position={overlayPosition} pillOn={showAppPill} waveformStyle={waveformStyle} mode={previewMode} />
                       </div>
                     </div>
                   );
@@ -217,16 +240,7 @@ export function BubblePage() {
               </RadioGroup>
             </CardContent>
           </Card>
-          <div className="bubble-legend">
-            <span className="bubble-legend-item">
-              <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-              Transcription mode
-            </span>
-            <span className="bubble-legend-item">
-              <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-              Agent mode
-            </span>
-          </div>
+          <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
         </TabsContent>
 
         <TabsContent value="appearance">
@@ -302,7 +316,7 @@ export function BubblePage() {
                         </button>
                       </RadioGroupItem>
                       <div className="bubble-live-stage wave-live-stage" onClick={(e) => e.stopPropagation()}>
-                        <WaveformStage style={option.value} animate={selected} />
+                        <WaveformStage style={option.value} animate={selected} mode={previewMode} />
                       </div>
                     </div>
                   );
@@ -341,21 +355,12 @@ export function BubblePage() {
             </CardContent>
           </Card>
 
-          <div className="bubble-legend">
-            <span className="bubble-legend-item">
-              <span className="bubble-legend-dot bubble-legend-dot-t" aria-hidden="true" />
-              Transcription mode
-            </span>
-            <span className="bubble-legend-item">
-              <span className="bubble-legend-dot bubble-legend-dot-a" aria-hidden="true" />
-              Agent mode
-            </span>
-          </div>
+          <PreviewModeToggle mode={previewMode} onChange={setPreviewMode} />
         </TabsContent>
       </Tabs>
 
-      <div className="page-actions">
-        <Button variant="default" id="save-bubble-btn" onClick={() => void onSaveAll()}>Save Now</Button>
+      <div className="page-actions page-actions-autosave">
+        <p className="autosave-hint">Changes save automatically.</p>
       </div>
     </section>
   );

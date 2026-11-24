@@ -48,6 +48,8 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { HistoryExportDialog } from '@/components/fluence/HistoryExportDialog';
+import { PageHeader } from '@/components/fluence/PageHeader';
+import { RouteErrorState } from '@/components/fluence/RouteError';
 import { SearchField } from '@/components/fluence/SearchField';
 import { acceptSuggestion, buildConfirmDetail } from '@/ipc/dictionary';
 import { DEFAULT_HOTKEY } from '@/ipc/general';
@@ -301,11 +303,12 @@ const HistoryRow = memo(function HistoryRow({
           data-history-id={entry.id}
           data-state={selected ? 'selected' : undefined}
           tabIndex={tabIndex}
-          role="button"
-          aria-expanded={expanded}
-          aria-label={expanded ? 'Collapse transcription' : 'Expand transcription'}
+          role="listitem"
+          aria-label={`Transcription from ${formatHistoryTimestamp(entry.timestamp)}`}
           onFocus={() => onFocusRow(entry.id)}
           onClick={(e) => {
+            const target = e.target instanceof Element ? e.target : null;
+            if (target?.closest('button, [role="checkbox"], .candidate-word')) return;
             if (e.ctrlKey || e.metaKey) {
               onToggleSelect(entry.id);
               return;
@@ -346,7 +349,24 @@ const HistoryRow = memo(function HistoryRow({
               </span>
             </div>
             <div className="history-actions">
-              <Badge variant={entry.mode === 'agent' ? 'secondary' : 'success'}>{entry.mode}</Badge>
+              <Badge variant={entry.mode === 'agent' ? 'default' : 'outline'}>{entry.mode}</Badge>
+              <Button
+                variant="ghost"
+                size="xs"
+                className="history-expand-btn"
+                aria-label={expanded ? 'Collapse transcription' : 'Expand transcription'}
+                aria-expanded={expanded}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onToggleExpand(entry.id);
+                }}
+              >
+                <ChevronDown
+                  size={12}
+                  aria-hidden="true"
+                  className={expanded ? 'is-expanded' : undefined}
+                />
+              </Button>
               <Button
                 variant="ghost"
                 size="xs"
@@ -1151,10 +1171,31 @@ export function HistoryPage() {
 
   return (
     <section className="page active" id="page-history">
-      <div className="page-header">
-        <h1 className="page-title" tabIndex={-1}>History</h1>
-        <p className="page-subtitle">Browse and search every transcription on this device</p>
-      </div>
+      <PageHeader
+        title="History"
+        subtitle="Browse and search every transcription on this device"
+        actions={
+          <>
+            <Button
+              id="export-history-btn"
+              variant="secondary"
+              size="sm"
+              onClick={() => setShowExport(true)}
+            >
+              Export
+            </Button>
+            <Button
+              id="clear-history-btn"
+              variant="ghost"
+              size="sm"
+              className="destructive-action"
+              onClick={() => setConfirmClear(true)}
+            >
+              Clear All
+            </Button>
+          </>
+        }
+      />
 
       <div className="settings-card history-card" id="history-container">
         <div className="history-search-row">
@@ -1167,22 +1208,6 @@ export function HistoryPage() {
             value={searchInput}
             onChange={(e) => onSearchInput(e.target.value)}
           />
-          <Button
-            variant="secondary"
-            size="sm"
-            id="export-history-btn"
-            onClick={() => setShowExport(true)}
-          >
-            Export
-          </Button>
-          <Button
-            variant="destructive"
-            size="sm"
-            id="clear-history-btn"
-            onClick={() => setConfirmClear(true)}
-          >
-            Clear All
-          </Button>
         </div>
         <div className="history-filter-bar">
           <ToggleGroup
@@ -1262,31 +1287,25 @@ export function HistoryPage() {
         )}
         <div
           id="history-list"
+          role="list"
+          aria-label="Transcription history"
           className={groups.length <= 1 ? 'single-day' : undefined}
           onKeyDown={onListKeyDown}
         >
           {initialLoading && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--spacing-sm)', padding: 'var(--spacing-md)' }}>
-              <Skeleton style={{ height: 64 }} />
-              <Skeleton style={{ height: 64 }} />
-              <Skeleton style={{ height: 64 }} />
+            <div className="history-loading">
+              <Skeleton />
+              <Skeleton />
+              <Skeleton />
             </div>
           )}
           {!initialLoading && showLoadError && (
-            <Empty id="history-load-error" role="alert">
-              <EmptyHeader>
-                <EmptyMedia variant="icon">
-                  <X strokeWidth={1.5} aria-hidden="true" />
-                </EmptyMedia>
-                <EmptyTitle>Couldn&apos;t load history</EmptyTitle>
-                <EmptyDescription>{loadError}</EmptyDescription>
-              </EmptyHeader>
-              <EmptyContent>
-                <Button variant="secondary" size="sm" onClick={() => void load(true)}>
-                  Try again
-                </Button>
-              </EmptyContent>
-            </Empty>
+            <RouteErrorState
+              id="history-load-error"
+              title="Couldn't load history"
+              description={loadError || 'Try again.'}
+              onRetry={() => void load(true)}
+            />
           )}
           {!initialLoading && showEmpty && (
             <Empty id="history-empty">

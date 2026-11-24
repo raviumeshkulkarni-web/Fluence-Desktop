@@ -1,7 +1,7 @@
 import { useEffect, useRef } from 'react';
 import overlayCssRaw from '../../../../src/css/overlay.css?raw';
 import tokensCssRaw from '../../../../src/css/design-tokens.css?raw';
-import { drawWaveformFrame, type WaveformStyle } from './waveform';
+import { drawWaveformFrame, type PreviewMode, type WaveformStyle } from './waveform';
 
 export type OverlayTier = 'full' | 'compact' | 'bubble';
 
@@ -64,12 +64,13 @@ const FRAME_CSS = `
 // with its Tauri IPC, rAF loop, and watchdog — is deliberately NOT loaded
 // here (same call as Android's static preview: exact paints, zero service
 // dependency, no 60fps recomposition inside settings).
-function markupFor(tier: OverlayTier, glowOn: boolean, position: string, pillOn: boolean): string {
+function markupFor(tier: OverlayTier, glowOn: boolean, position: string, pillOn: boolean, mode: PreviewMode = 'transcribe'): string {
   const styleClass = tier === 'full' ? '' : ` style-${tier}`;
   // Absence of `.no-glow` means glow ON — same contract as overlay.js, so
   // pre-toggle settings files keep the halo in both product and preview.
   const glowClass = glowOn === false ? ' no-glow' : '';
   const cornerClass = cornerClassFor(position);
+  const modeClass = mode === 'agent' ? ' state-agent' : '';
   // Demo pill content ("Chrome", blank icon chip): production shows the real
   // foreground app here when one is detected; markup, placement, and
   // typography are exact, only the content is illustrative (same license as
@@ -81,7 +82,7 @@ function markupFor(tier: OverlayTier, glowOn: boolean, position: string, pillOn:
   return `
   <div class="ovpv-frame${pillOn ? ' has-pill' : ''}" inert aria-hidden="true">
     ${pill}
-    <div class="overlay-root active ${cornerClass}${styleClass}${glowClass}">
+    <div class="overlay-root active ${cornerClass}${styleClass}${glowClass}${modeClass}">
       <div class="card-meta">
         <div class="card-meta-left">
           <div class="card-rec">
@@ -92,7 +93,7 @@ function markupFor(tier: OverlayTier, glowOn: boolean, position: string, pillOn:
             </span>
           </div>
         </div>
-        <span class="mode-badge">Transcribe</span>
+        <span class="mode-badge">${mode === 'agent' ? 'Agent' : 'Transcribe'}</span>
       </div>
       <div class="card-waveform">
         <canvas id="waveform-canvas"></canvas>
@@ -141,12 +142,14 @@ export function OverlayPreview({
   position = 'bottom_right',
   pillOn = false,
   waveformStyle = 'waves',
+  mode = 'transcribe',
 }: {
   tier: OverlayTier;
   glowOn?: boolean;
   position?: string;
   pillOn?: boolean;
   waveformStyle?: WaveformStyle;
+  mode?: PreviewMode;
 }) {
   const hostRef = useRef<HTMLDivElement>(null);
 
@@ -160,7 +163,7 @@ export function OverlayPreview({
       const style = document.createElement('style');
       style.textContent = DARK_TOKENS_CSS + OVERLAY_CSS + FRAME_CSS;
       const frame = document.createElement('div');
-      frame.innerHTML = markupFor(tier, glowOn, position, pillOn);
+      frame.innerHTML = markupFor(tier, glowOn, position, pillOn, mode);
       shadow.append(style, frame);
       shadow.addEventListener('click', (e) => {
         if ((e.target as Element | null)?.closest?.('button')) e.preventDefault();
@@ -170,6 +173,9 @@ export function OverlayPreview({
     // Glow + corner follow their live prefs with targeted class updates —
     // same remove-then-add order as overlay.js, no rebuild needed.
     root?.classList.toggle('no-glow', glowOn === false);
+    root?.classList.toggle('state-agent', mode === 'agent');
+    const badge = shadow.querySelector('.mode-badge');
+    if (badge) badge.textContent = mode === 'agent' ? 'Agent' : 'Transcribe';
     if (root) {
       root.classList.remove(...CORNER_CLASSES);
       root.classList.add(cornerClassFor(position));
@@ -199,7 +205,7 @@ export function OverlayPreview({
     const canvas = shadow.querySelector('canvas');
     if (!canvas) return;
     let raf = 0;
-    const draw = () => drawWaveformFrame(canvas, waveformStyle, 0.6, 0.35, tier);
+    const draw = () => drawWaveformFrame(canvas, waveformStyle, 0.6, 0.35, tier, mode);
     raf = requestAnimationFrame(draw);
     const ro = 'ResizeObserver' in window ? new ResizeObserver(draw) : null;
     ro?.observe(canvas);
@@ -207,7 +213,7 @@ export function OverlayPreview({
       cancelAnimationFrame(raf);
       ro?.disconnect();
     };
-  }, [tier, glowOn, position, pillOn, waveformStyle]);
+  }, [tier, glowOn, position, pillOn, waveformStyle, mode]);
 
   return (
     <div

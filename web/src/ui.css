@@ -1324,7 +1324,7 @@
 .command-item[aria-selected='true'] {
   background: var(--color-surface-elevated);
   border-color: var(--color-border-structural);
-  color: #FFFFFF;
+  color: var(--color-on-surface-emphasis);
   font-weight: 600;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
 }
@@ -1341,7 +1341,7 @@
 }
 .command-item[data-selected='true'] .command-item-icon,
 .command-item[aria-selected='true'] .command-item-icon {
-  color: #FFFFFF;
+  color: var(--color-on-surface-emphasis);
 }
 .command-item[data-current='true'] .command-item-icon {
   color: var(--color-brand-cyan);
@@ -1412,7 +1412,7 @@
  * additive states keep that layout intact while giving the React shell a
  * compact, keyboard-accessible navigation mode. */
 .sidebar {
-  overflow-x: hidden;
+  overflow: hidden;
   transition: width 0.18s var(--ease-standard);
 }
 .sidebar:not(.collapsed) {
@@ -1574,6 +1574,10 @@
 }
 
 .sidebar-header,
+.sidebar-footer {
+  flex-shrink: 0;
+}
+.sidebar-header,
 .sidebar-content,
 .sidebar-group,
 .sidebar-menu,
@@ -1585,17 +1589,26 @@
   flex: 1 1 auto;
   min-height: 0;
   flex-direction: column;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding-bottom: var(--spacing-sm);
 }
 .sidebar-group {
   display: flex;
   flex-direction: column;
 }
 .sidebar-group + .sidebar-group {
-  margin-top: 8px;
+  margin-top: var(--spacing-xs);
 }
 .sidebar-group-label {
   display: block;
   flex-shrink: 0;
+}
+.sidebar-group .nav-section-label {
+  padding: 10px 18px 4px;
+}
+.sidebar-group:first-child .nav-section-label {
+  padding-top: 4px;
 }
 .sidebar-menu {
   display: flex;
@@ -1652,17 +1665,14 @@
    ==================================================== */
 [data-theme="light"] .command-item[data-selected='true'],
 [data-theme="light"] .command-item[aria-selected='true'] {
-  color: #18181B;
-}
-[data-theme="light"] .command-item[data-selected='true'],
-[data-theme="light"] .command-item[aria-selected='true'] {
+  color: var(--color-on-surface-emphasis);
   background: var(--color-surface-secondary);
   border-color: var(--color-border-structural);
   box-shadow: none;
 }
 [data-theme="light"] .command-item[data-selected='true'] .command-item-icon,
 [data-theme="light"] .command-item[aria-selected='true'] .command-item-icon {
-  color: #18181B;
+  color: var(--color-on-surface-emphasis);
 }
 [data-theme="light"] .chart-crosshair {
   background: rgba(0, 0, 0, 0.15);

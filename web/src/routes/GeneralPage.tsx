@@ -1,5 +1,4 @@
 import { useEffect, useState, type CSSProperties } from 'react';
-import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Select,
@@ -165,16 +164,6 @@ export function GeneralPage({
         persistGeneral(...features);
       }
     };
-
-  const onSaveAll = async () => {
-    try {
-      await saveSettingsNow();
-    } catch (err) {
-      toast('Could not save settings. ' + describeError(err), 'error');
-      return;
-    }
-    toast('Settings saved', 'success');
-  };
 
   return (
     <section className="page active" id="page-general">
@@ -522,11 +511,9 @@ export function GeneralPage({
         </TabsContent>
       </Tabs>
 
-      {tab !== 'appearance' && (
-        <div className="page-actions">
-          <Button variant="default" id="save-general-btn" onClick={() => void onSaveAll()}>Save Now</Button>
-        </div>
-      )}
+      <div className="page-actions page-actions-autosave">
+        <p className="autosave-hint">Changes save automatically.</p>
+      </div>
     </section>
   );
 }

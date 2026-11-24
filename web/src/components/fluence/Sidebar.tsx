@@ -60,18 +60,38 @@ const THEME_META: Record<ThemeChoice, { label: string; Icon: ReactNode }> = {
   auto: { label: 'System', Icon: <Monitor className="sidebar-theme-icon" data-icon="inline-start" aria-hidden="true" /> },
 };
 
-const NAV: { page: Route; label: string; icon: LucideIcon }[] = [
-  { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { page: 'history', label: 'History', icon: History },
-  { page: 'general', label: 'General', icon: Settings2 },
-  { page: 'bubble', label: 'Floating Bubble', icon: CircleDot },
-  { page: 'providers', label: 'Providers', icon: Server },
-  { page: 'formatting', label: 'AI Cleanup', icon: CaseSensitive },
-  { page: 'agents', label: 'Agents', icon: Bot },
-  { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
-  { page: 'snippets', label: 'Snippets', icon: Braces },
-  { page: 'sync', label: 'Sync', icon: RefreshCw },
-  { page: 'about', label: 'About', icon: Info },
+const NAV_GROUPS: { label: string; items: { page: Route; label: string; icon: LucideIcon }[] }[] = [
+  {
+    label: 'Home',
+    items: [
+      { page: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+      { page: 'history', label: 'History', icon: History },
+    ],
+  },
+  {
+    label: 'Capture',
+    items: [
+      { page: 'general', label: 'General', icon: Settings2 },
+      { page: 'bubble', label: 'Floating Bubble', icon: CircleDot },
+      { page: 'providers', label: 'Providers', icon: Server },
+    ],
+  },
+  {
+    label: 'Intelligence',
+    items: [
+      { page: 'formatting', label: 'AI Cleanup', icon: CaseSensitive },
+      { page: 'agents', label: 'Agents', icon: Bot },
+      { page: 'dictionary', label: 'Dictionary', icon: BookOpen },
+      { page: 'snippets', label: 'Snippets', icon: Braces },
+    ],
+  },
+  {
+    label: 'App',
+    items: [
+      { page: 'sync', label: 'Sync', icon: RefreshCw },
+      { page: 'about', label: 'About', icon: Info },
+    ],
+  },
 ];
 
 export function Sidebar({
@@ -185,22 +205,21 @@ export function Sidebar({
       </SidebarHeader>
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel className="nav-section-label">Home</SidebarGroupLabel>
-          <SidebarMenu>
-            {NAV.slice(0, 2).map((item) => (
-              <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
-        <SidebarGroup className="sidebar-config-group">
-          <SidebarGroupLabel className="nav-section-label">Configuration</SidebarGroupLabel>
-          <SidebarMenu>
-            {NAV.slice(2).map((item) => (
-              <NavButton key={item.page} item={item} active={route === item.page} onNavigate={onNavigate} />
-            ))}
-          </SidebarMenu>
-        </SidebarGroup>
+        {NAV_GROUPS.map((group) => (
+          <SidebarGroup key={group.label}>
+            <SidebarGroupLabel className="nav-section-label">{group.label}</SidebarGroupLabel>
+            <SidebarMenu>
+              {group.items.map((item) => (
+                <NavButton
+                  key={item.page}
+                  item={item}
+                  active={route === item.page}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </SidebarMenu>
+          </SidebarGroup>
+        ))}
       </SidebarContent>
 
       <SidebarSeparator className="sidebar-footer-separator" />
@@ -308,7 +327,7 @@ function NavButton({
   active,
   onNavigate,
 }: {
-  item: (typeof NAV)[number];
+  item: { page: Route; label: string; icon: LucideIcon };
   active: boolean;
   onNavigate: (page: Route) => void;
 }) {

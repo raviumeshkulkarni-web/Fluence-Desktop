@@ -1501,3 +1501,86 @@ label.setting-label-clickable {
   margin-top: var(--spacing-xs);
 }
 
+/* PR B: Bubble interactive preview legend, autosave footer, History polish, Sidebar compact rail */
+.bubble-legend {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--spacing-sm);
+}
+
+.bubble-legend-prefix {
+  font-family: var(--font-label);
+  font-size: var(--text-label-xs);
+  color: var(--color-ink-muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  margin-right: var(--spacing-xs);
+}
+
+.bubble-legend-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: 5px 10px;
+  border-radius: var(--radius-full);
+  background: transparent;
+  border: 1px solid var(--color-border-structural);
+  color: var(--color-on-surface-variant);
+  font-family: var(--font-body);
+  font-size: var(--text-label-sm);
+  font-weight: 500;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.bubble-legend-btn:hover {
+  background: var(--color-hover);
+  color: var(--color-on-surface);
+  border-color: var(--color-border-focus);
+}
+
+.bubble-legend-btn.is-active {
+  background: var(--color-surface-elevated);
+  color: var(--color-on-surface);
+  border-color: var(--color-border-focus);
+  box-shadow: var(--shadow-sm);
+}
+
+.page-actions-autosave {
+  justify-content: flex-start;
+}
+
+.history-loading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+}
+
+.history-loading .skeleton {
+  height: 64px;
+}
+
+.history-item .history-expand-btn {
+  opacity: 0;
+  transition: opacity 0.15s var(--ease-standard);
+}
+
+.history-item:hover .history-expand-btn,
+.history-item:focus-within .history-expand-btn,
+.history-item.is-expanded .history-expand-btn {
+  opacity: 1;
+}
+
+.history-expand-btn svg {
+  transition: transform 0.12s var(--ease-standard);
+}
+
+.history-expand-btn svg.is-expanded {
+  transform: rotate(180deg);
+}
+
+.sidebar.collapsed .sidebar-group + .sidebar-group {
+  margin-top: var(--spacing-xs);
+}
+
